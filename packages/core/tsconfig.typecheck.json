@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "@silent/core",
+    "paths": {
+      "@silent/core/jsx-runtime": ["./src/jsx.ts"]
+    }
+  },
+  "include": ["src/jsx.ts", "tests/jsx-typecheck.tsx"]
+}

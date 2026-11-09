@@ -1,0 +1,19 @@
+[package]
+name = "silent-node"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+silent-transform.workspace = true
+napi.workspace = true
+napi-derive.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+swc_core.workspace = true
+
+[build-dependencies]
+napi-build = "2"

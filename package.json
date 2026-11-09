@@ -1,0 +1,31 @@
+{
+  "name": "silent-framework",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.17.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter \"./packages/**\" build",
+    "build:native": "pnpm --filter @silent/swc build",
+    "test": "cargo test -p silent-transform && pnpm -r --filter \"./packages/**\" --if-present test",
+    "typecheck": "pnpm -r --filter \"./packages/**\" --if-present typecheck && tsc -p packages/core/tsconfig.typecheck.json && pnpm --filter @silent/example-counter typecheck && pnpm --filter @silent/bench exec tsc --noEmit -p tsconfig.json",
+    "dev": "pnpm --filter @silent/example-counter dev",
+    "build:example": "pnpm --filter @silent/example-counter build",
+    "bench": "pnpm --filter @silent/bench bench",
+    "test:e2e": "node scripts/e2e.mjs",
+    "pack:check": "node scripts/pack-check.mjs"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.10.12",
+    "@types/node": "^26.6.6",
+    "jsdom": "^31.0.0",
+    "tinybench": "^6.2.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0",
+    "playwright-core": "^1.65.0"
+  }
+}

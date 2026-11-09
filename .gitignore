@@ -1,0 +1,11 @@
+node_modules
+dist
+target
+coverage
+*.node
+.tmp-*
+.DS_Store
+*.tsbuildinfo
+reference/
+.playwright-mcp/
+packages/swc/native/

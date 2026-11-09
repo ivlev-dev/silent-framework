@@ -1,0 +1,36 @@
+{
+  "name": "@silent/swc",
+  "version": "0.0.1",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "native/*.node"
+  ],
+  "scripts": {
+    "build": "napi build --release --platform --manifest-path ../../crates/silent-node/Cargo.toml --output-dir native",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.10.12",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "description": "Native SWC addon for Silent Framework compilation",
+  "keywords": [
+    "swc",
+    "rust",
+    "napi",
+    "compiler"
+  ]
+}
