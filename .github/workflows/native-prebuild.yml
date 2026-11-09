@@ -2,9 +2,6 @@ name: Native prebuilds
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "v*"
 
 jobs:
   prebuild:
