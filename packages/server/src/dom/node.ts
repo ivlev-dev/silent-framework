@@ -271,12 +271,19 @@ export class ElementImpl extends NodeImpl implements DomElement {
   }
 
   get value(): string {
+    if (this.tagName === "TEXTAREA") {
+      return this.textContent ?? "";
+    }
     return this.valueState;
   }
 
   set value(next: string | number | boolean | null | undefined) {
     const text = next === null || next === undefined ? "" : String(next);
     this.valueState = text;
+    if (this.tagName === "TEXTAREA") {
+      this.textContent = text;
+      return;
+    }
     if (text === "") {
       this.removeAttribute("value");
       return;

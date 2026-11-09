@@ -10,6 +10,7 @@ import {
 } from "@silent/reactivity";
 import type { Children } from "./jsx.js";
 import { attachDisposer, collectNodes, createMountPoint, disposeNode } from "./dom.js";
+import { extractMetadata } from "./metadata.js";
 import {
   ITEM,
   LIST_END,
@@ -128,10 +129,11 @@ export function For<T>(props: ForProps<T>): Node {
         ? [value]
         : collectNodes(value as Children);
     const reference = state.anchor.nextSibling;
-    for (const node of nodes) {
+    const placed = extractMetadata(nodes);
+    for (const node of placed) {
       parent.insertBefore(node, reference);
     }
-    state.nodes = nodes;
+    state.nodes = placed;
   };
 
   const removeState = (state: ItemState<T>): void => {

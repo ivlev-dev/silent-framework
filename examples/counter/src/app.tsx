@@ -8,6 +8,7 @@ export function App(
 ) {
   return (
     <main class="app">
+      <title>Silent Framework: счётчик</title>
       <h1>{props.title}</h1>
       <Counter step={this.vm.step} />
     </main>

@@ -66,6 +66,11 @@ async function main() {
     await page.goto(url, { waitUntil: "domcontentloaded" });
     await page.locator(".value").waitFor();
     assert.equal((await page.locator(".value").textContent())?.trim(), "0");
+    assert.equal(
+      await page.title(),
+      "Silent Framework: счётчик",
+      "заголовок страницы не установлен из view",
+    );
 
     await page.getByRole("button", { name: "+" }).click();
     assert.equal((await page.locator(".value").textContent())?.trim(), "2");

@@ -14,6 +14,7 @@
 - Прелоадеры на уровне view и HMR с сохранением состояния.
 - `Suspense` и `lazy`: асинхронные границы и отложенная загрузка модулей.
 - SSR без внешних DOM-зависимостей (`@silent/server`) и гидрация без вспышки прелоадера.
+- `<title>` из любого компонента выносится в `<head>` — как в React 19, с SSR-поддержкой.
 - Справочник API с автопроверкой полноты (`pnpm api:check`).
 
 ## Установка
@@ -106,8 +107,25 @@ export function App() {
 import { renderToString } from "@silent/server";
 import { App } from "./app";
 
-const { html } = await renderToString(App, { props: { title: "Hi" } });
+const { html, head } = await renderToString(App, { props: { title: "Hi" } });
+
+const page = `<!doctype html><html><head>${head}</head><body><div id="app">${html}</div></body></html>`;
 ```
+
+`<title>` можно рендерить прямо во view — он уедет в `head`, а в SSR попадёт в `head` результата:
+
+```tsx
+export function Page(this: { vm: PageVM }, props: { name: string }) {
+  return (
+    <div>
+      <title>{`Профиль ${props.name}`}</title>
+      <h1>{props.name}</h1>
+    </div>
+  );
+}
+```
+
+Несколько одновременных заголовков не дедуплицируются (как в React 19 — рендерите один), `<title>` внутри `<svg>` и с `itemProp` не выносятся.
 
 Рендер дожидается асинхронных ViewModel, `Suspense` и `lazy`, сериализует дерево с якорями и серверными маркерами атрибутов. Вызовы сериализуются внутренней очередью, DOM-глобалы живут только на время рендера.
 

@@ -1,3 +1,5 @@
+import { isMetadataTitle } from "./metadata.js";
+
 export class HydrationMismatchError extends Error {
   constructor(message: string) {
     super(message);
@@ -158,7 +160,7 @@ export function detachNode(node: Node): void {
   node.parentNode?.removeChild(node);
 }
 
-function shapeChildren(node: Node): Node[] {
+function shapeChildren(node: Node, ignoreTopTitles: boolean): Node[] {
   const result: Node[] = [];
   let depth = 0;
   for (const child of node.childNodes) {
@@ -175,12 +177,33 @@ function shapeChildren(node: Node): Node[] {
     if (depth > 0) {
       continue;
     }
+    if (ignoreTopTitles && isMetadataTitle(child)) {
+      continue;
+    }
     result.push(child);
   }
   return result;
 }
 
-export function shapeMatches(fresh: Node, claimed: Node): boolean {
+export function mergeTopLevelTitles(fresh: Node, claimed: Node): void {
+  let claimedChild = claimed.firstChild;
+  for (const freshChild of Array.from(fresh.childNodes)) {
+    if (isMetadataTitle(freshChild)) {
+      freshChild.parentNode?.removeChild(freshChild);
+      claimed.insertBefore(freshChild, claimedChild);
+      continue;
+    }
+    if (claimedChild !== null) {
+      claimedChild = claimedChild.nextSibling;
+    }
+  }
+}
+
+export function shapeMatches(
+  fresh: Node,
+  claimed: Node,
+  ignoreTopTitles = false,
+): boolean {
   if (fresh.nodeType !== claimed.nodeType) {
     return false;
   }
@@ -205,8 +228,8 @@ export function shapeMatches(fresh: Node, claimed: Node): boolean {
         return false;
       }
     }
-    const freshChildren = shapeChildren(left);
-    const claimedChildren = shapeChildren(right);
+    const freshChildren = shapeChildren(left, ignoreTopTitles);
+    const claimedChildren = shapeChildren(right, false);
     if (freshChildren.length !== claimedChildren.length) {
       return false;
     }

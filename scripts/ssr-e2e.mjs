@@ -29,13 +29,13 @@ function findChrome() {
   throw new Error("Chromium не найден в ~/.cache/ms-playwright");
 }
 
-function pageTemplate(ssrHtml) {
+function pageTemplate(ssrHtml, head) {
   return `<!doctype html>
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Silent Framework SSR</title>
+    ${head}
   </head>
   <body>
     <div id="app">${ssrHtml}</div>
@@ -80,8 +80,20 @@ async function main() {
       ssrHtml.includes('data-ssr="1"'),
       "не удалось пометить серверный узел",
     );
+    assert.match(
+      rendered.head,
+      /<title>Silent Framework: счётчик<\/title>/,
+      `SSR head не содержит заголовок: ${rendered.head}`,
+    );
+    assert.ok(
+      !rendered.html.includes("<title>"),
+      "заголовок не должен попадать в body",
+    );
 
-    const html = await vite.transformIndexHtml("/", pageTemplate(ssrHtml));
+    const html = await vite.transformIndexHtml(
+      "/",
+      pageTemplate(ssrHtml, rendered.head),
+    );
     http = createHttpServer((request, response) => {
       if (request.url === "/favicon.ico") {
         response.statusCode = 204;
@@ -131,6 +143,11 @@ async function main() {
 
     const renderedValue = await page.textContent("strong.value");
     assert.equal(renderedValue, "0", "гидрация изменила начальное значение счётчика");
+    assert.equal(
+      await page.title(),
+      "Silent Framework: счётчик",
+      "гидрация не сохранила заголовок страницы",
+    );
 
     await page.click('button:has-text("+")');
     await page.waitForFunction(
@@ -153,6 +170,7 @@ async function main() {
       listItems: document.querySelectorAll("ul.items li").length,
       adopted: document.querySelectorAll("[data-ssr]").length,
       adoptedMain: document.querySelector("main.app")?.querySelector("h1") !== null,
+      titles: document.head.querySelectorAll("title").length,
     }));
     assert.equal(state.apps, 1, "после гидрации осталось несколько копий приложения");
     assert.equal(state.markers, false, "маркеры data-silent-a-* остались в DOM");
@@ -163,6 +181,7 @@ async function main() {
       "серверный узел не переиспользован: гидрация откатилась на клиентский рендер",
     );
     assert.ok(state.adoptedMain);
+    assert.equal(state.titles, 1, "в head остался дубликат заголовка");
     assert.deepEqual(errors, [], `ошибки в консоли: ${errors.join(" | ")}`);
 
     const source = readFileSync(join(example, "src", "main.tsx"), "utf8");

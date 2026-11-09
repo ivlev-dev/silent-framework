@@ -12,6 +12,7 @@ import {
   type Owner,
 } from "@silent/reactivity";
 import { registerView } from "./registry.js";
+import { extractMetadata } from "./metadata.js";
 import {
   getCurrentBoundary,
   runWithBoundary,
@@ -492,7 +493,7 @@ function createViewResult(
           if (window.cursor !== end) {
             mismatch("view не совпал с серверной разметкой");
           }
-          currentNodes = normalizeNodes(output);
+          currentNodes = extractMetadata(normalizeNodes(output));
           return null;
         });
       });
@@ -528,7 +529,7 @@ function createViewResult(
         if (disposed) {
           return null;
         }
-        currentNodes = normalizeNodes(output);
+        currentNodes = extractMetadata(normalizeNodes(output));
         insertBetween(start, end, currentNodes);
         return null;
       });
@@ -691,7 +692,7 @@ export function createComponent(
     const result = withRuntimeOptions(options, () =>
       (component as unknown as (props: Record<string, unknown>) => unknown)(props),
     );
-    const nodes = normalizeNodes(result);
+    const nodes = extractMetadata(normalizeNodes(result));
     let node: Node;
     if (nodes.length === 1) {
       const single = nodes[0];

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "../src/render.js";
-import { attr, on, prop, spread, style } from "@silent/core";
+import { attr, on, prop, spread, style, templateHoles } from "@silent/core";
 
 function componentWithEvents(): Node {
   const wrapper = document.createElement("div");
@@ -65,5 +65,34 @@ describe("SSR DOM compatibility", () => {
     };
     const { html } = await renderToString(View);
     expect(html).toBe("<div><b>raw</b></div>");
+  });
+});
+
+describe("RCDATA и метаданные", () => {
+  it("выносит title в head и убирает из body", async () => {
+    const View = (): Node => {
+      const template = templateHoles(
+        '<div class="page"><title data-silent-a-0="" data-silent-text=""></title><h1>Body</h1></div>',
+      )();
+      prop(template.attrs[0]!, "textContent", () => "Page title");
+      return template.node;
+    };
+    const { html, head } = await renderToString(View);
+    expect(head).toBe("<title>Page title</title>");
+    expect(html).not.toContain("<title>");
+    expect(html).toContain("<h1>Body</h1>");
+  });
+
+  it("рендерит значение textarea как текст", async () => {
+    const View = (): Node => {
+      const template = templateHoles(
+        '<textarea data-silent-a-0="" data-silent-text=""></textarea>',
+      )();
+      prop(template.attrs[0]!, "value", () => "hello");
+      return template.node;
+    };
+    const { html } = await renderToString(View);
+    expect(html).toContain("hello</textarea>");
+    expect(html).not.toContain('value="hello"');
   });
 });

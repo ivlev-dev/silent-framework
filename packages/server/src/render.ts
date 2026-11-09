@@ -2,6 +2,7 @@ import { container as rootContainer } from "@silent/di";
 import type { Container } from "@silent/di";
 import {
   createComponent,
+  setMetadataCollector,
   setServerMode,
   whenIdle,
   type AnyComponent,
@@ -23,6 +24,7 @@ export interface RenderOptions {
 
 export interface RenderResult {
   readonly html: string;
+  readonly head: string;
 }
 
 let queue: Promise<void> = Promise.resolve();
@@ -52,6 +54,11 @@ async function renderOnce(app: AnyComponent, options: RenderOptions): Promise<Re
   let disposeRoot: () => void = () => {};
   let failure: unknown = null;
   let failed = false;
+  const headNodes: Element[] = [];
+
+  setMetadataCollector((node) => {
+    headNodes.push(node);
+  });
 
   const handleError = (error: unknown, component: AnyComponent): void => {
     if (options.onError !== undefined) {
@@ -100,8 +107,12 @@ async function renderOnce(app: AnyComponent, options: RenderOptions): Promise<Re
 
     const fragment = document.createDocumentFragment();
     fragment.appendChild(result.node as unknown as DomNode);
-    return { html: serializeNode(fragment as unknown as DomNode) };
+    const head = headNodes
+      .map((node) => serializeNode(node as unknown as DomNode))
+      .join("");
+    return { html: serializeNode(fragment as unknown as DomNode), head };
   } finally {
+    setMetadataCollector(null);
     restore();
     setServerMode(false);
     holder.value?.dispose();

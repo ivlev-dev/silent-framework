@@ -6,6 +6,7 @@ export * from "./component-context.js";
 export * from "./component.js";
 export * from "./mount.js";
 export { HydrationMismatchError } from "./hydration.js";
+export { setMetadataCollector } from "./metadata.js";
 export * from "./types.js";
 export * from "./jsx.js";
 export { For, Show } from "./control-flow.js";

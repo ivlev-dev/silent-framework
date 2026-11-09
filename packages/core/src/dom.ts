@@ -1,5 +1,6 @@
 import type { Child, Children } from "./jsx.js";
 import { createRenderEffect, onCleanup } from "@silent/reactivity";
+import { extractMetadata } from "./metadata.js";
 import {
   FRAGMENT,
   INSERT_END,
@@ -10,10 +11,12 @@ import {
   findInsertWindow,
   isHydrating,
   isMarker,
+  mergeTopLevelTitles,
   mismatch,
   shapeMatches,
   withWindow,
 } from "./hydration.js";
+import { isMetadataTitle } from "./metadata.js";
 
 export const NODE_DISPOSER = Symbol("silent.disposer");
 
@@ -247,6 +250,7 @@ export function createMountPoint(
         return;
       }
       nodes = collectNodes(value as Child);
+      nodes = extractMetadata(nodes);
       for (const node of nodes) {
         place(node);
       }
@@ -286,10 +290,14 @@ export function template(html: string): () => Node {
     if (fresh instanceof DocumentFragment) {
       return mismatch("многослойный шаблон не поддерживается при гидрации");
     }
+    if (isMetadataTitle(fresh)) {
+      return fresh;
+    }
     const node = claimNext();
-    if (node === null || !shapeMatches(fresh, node)) {
+    if (node === null || !shapeMatches(fresh, node, true)) {
       return mismatch("шаблон не совпал с серверной разметкой");
     }
+    mergeTopLevelTitles(fresh, node);
     return node;
   };
 }
@@ -306,6 +314,12 @@ function collectParts(node: Node): { holes: Comment[]; attrs: Element[] } {
 
   const scanAttributes = (element: Element): void => {
     for (const attribute of Array.from(element.attributes)) {
+      if (attribute.name === "data-silent-text") {
+        if (!isServerMode()) {
+          element.removeAttribute(attribute.name);
+        }
+        continue;
+      }
       const match = /^data-silent-a-(\d+)$/.exec(attribute.name);
       if (match === null) {
         continue;
@@ -385,28 +399,33 @@ export function templateHoles(html: string): () => TemplateClone {
     cached = element;
   }
   const template = cached;
-  const create = (): TemplateClone => {
+  const cloneNode = (): Node => {
     const content = template.content.cloneNode(true) as DocumentFragment;
     const rootNodes = Array.from(content.childNodes);
-    const node =
-      rootNodes.length === 1 && rootNodes[0] !== undefined
-        ? rootNodes[0]
-        : content;
+    return rootNodes.length === 1 && rootNodes[0] !== undefined
+      ? rootNodes[0]
+      : content;
+  };
+  const create = (): TemplateClone => {
+    const node = cloneNode();
     return { node, ...collectParts(node) };
   };
   return () => {
     if (!isHydrating()) {
       return create();
     }
-    const fresh = create();
-    const rootCount = fresh.node instanceof DocumentFragment ? fresh.node.childNodes.length : 1;
-    if (rootCount !== 1) {
+    const fresh = cloneNode();
+    if (fresh instanceof DocumentFragment) {
       return mismatch("многослойный шаблон не поддерживается при гидрации");
     }
+    if (isMetadataTitle(fresh)) {
+      return { node: fresh, ...collectParts(fresh) };
+    }
     const node = claimNext();
-    if (node === null || !shapeMatches(fresh.node, node)) {
+    if (node === null || !shapeMatches(fresh, node, true)) {
       return mismatch("шаблон не совпал с серверной разметкой");
     }
+    mergeTopLevelTitles(fresh, node);
     return { node, ...collectParts(node) };
   };
 }
@@ -435,7 +454,7 @@ export function writeRegion(start: Node, end: Node, value: unknown): void {
     disposeNode(node);
     parent.removeChild(node);
   }
-  for (const node of collectNodes(value as Children)) {
+  for (const node of extractMetadata(collectNodes(value as Children))) {
     parent.insertBefore(node, end);
   }
 }

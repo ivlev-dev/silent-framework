@@ -685,6 +685,7 @@ async function hydrate(
 4. `For`, `Show`, `Suspense`, `lazy` и `fragment` находят свои якоря/регионы (`silent-item`, `silent-end`, `silent-show`, `silent-suspense`, `silent-fragment`, `silent-lazy`) и продолжают обычную реконсиляцию на последующих обновлениях.
 5. Маркеры `data-silent-a-*` снимаются с адоптированных элементов, значения применяются заново.
 6. Пока идут асинхронные ViewModel, серверная разметка остаётся видимой; прелоадеры не показываются.
+7. Заголовок страницы (`<title>`) в серверной разметке отсутствует: он вынесен в `head` результата SSR, а на клиенте создаётся заново и занимает `document.head`.
 
 При несовпадении формы узла (другая разметка, многослойный шаблон, `For` с `fallback`) бросается `HydrationMismatchError`; ближайший view отказывается от адоптации и рендерится клиентски, сохраняя корректность. Ошибка передаётся в `options.onMismatch`.
 
@@ -700,8 +701,45 @@ const handle = await hydrate("#root", App, {
 Ограничения адоптации:
 
 - значения должны создаваться через `template()`/`templateHoles()`; произвольный DOM, собранный вручную внутри синхронного компонента, не адоптируется;
+- `<title>` должен быть прямым потомком корневого элемента шаблона view (вложенные глубже заголовки вызывают откат к клиентскому рендеру);
 - шаблон с несколькими корневыми узлами и `For` с `fallback` вызывают откат к клиентскому рендеру для этого view;
 - `lazy` адоптирует содержимое после загрузки модуля, до этого остаётся серверная разметка.
+
+### `setMetadataCollector`
+
+*Стабильность: internal.*
+
+```ts
+function setMetadataCollector(
+  collector: ((node: Element) => void) | null,
+): void;
+```
+
+Внутренний хук SSR: `@silent/server` устанавливает коллектор на время `renderToString`, чтобы вынесенные `<title>` попали в `head` результата, а не в `body`. Приложение этот API не использует.
+
+## Метаданные и `<title>`
+
+`<title>` можно рендерить из любого компонента — рантайм вынесет элемент в `document.head`, как React 19.
+
+```tsx
+export function Page(this: { vm: PageVM }, props: { name: string }) {
+  return (
+    <div>
+      <title>{`Профиль ${props.name}`}</title>
+      <h1>{props.name}</h1>
+    </div>
+  );
+}
+```
+
+Правила:
+
+- заголовок выносится из разметки view и вставляется в `head`; текст обновляется реактивно;
+- при размонтировании view заголовок удаляется, и восстанавливается предыдущий (например, статический `<title>` из `index.html`);
+- несколько одновременных заголовков не дедуплицируются — все попадают в `head`, поведение браузера в этом случае не определено (как в React 19); рендерите один `<title>`;
+- `<title>` внутри `<svg>` и `<title>` с `itemprop` не выносятся;
+- содержимое должно быть текстом: компилятор сворачивает статические и динамические части в один `textContent`-бондинг, поэтому комментарии-хуки не попадают в RCDATA и значение не ломается;
+- в SSR заголовок возвращается в `RenderResult.head`, в `html` его нет.
 
 ### `HydrationMismatchError`
 
@@ -737,7 +775,8 @@ function renderToString(
 3. Включается серверный режим: `templateHoles` сохраняет атрибуты `data-silent-a-N`, нужные клиенту.
 4. `createComponent` + `ready` + `whenIdle` + `flushSync` дожидаются асинхронных ViewModel, `Suspense` и `lazy`.
 5. Корневой узел сериализуется вместе с якорями (`silent-view`, `silent-item`, `silent-end`, `silent-hole-N`).
-6. Пакетный компонент демонтируется: ViewModel проходит `unmounted` и `dispose`.
+6. Заголовки страницы выносятся из дерева и возвращаются в `head`; в `html` их нет.
+7. Пакетный компонент демонтируется: ViewModel проходит `unmounted` и `dispose`.
 
 ```ts
 import { renderToString } from "@silent/server";
@@ -770,7 +809,17 @@ interface RenderOptions {
 ```ts
 interface RenderResult {
   readonly html: string;
+  readonly head: string;
 }
+```
+
+- `html` — разметка приложения без `<title>`: заголовок вынесен в `head`.
+- `head` — сериализованные метаданные (`<title>…</title>` в порядке регистрации); вставьте их в `<head>` документа.
+
+```ts
+const { html, head } = await renderToString(App);
+
+const page = `<!doctype html><html><head>${head}</head><body><div id="app">${html}</div></body></html>`;
 ```
 
 Ограничения SSR:
