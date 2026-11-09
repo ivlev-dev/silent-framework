@@ -17,6 +17,7 @@
     "bench": "pnpm --filter @silent/bench bench",
     "test:e2e": "node scripts/e2e.mjs",
     "test:ssr": "node scripts/ssr-e2e.mjs",
+    "install:check": "node scripts/install-check.mjs",
     "pack:check": "node scripts/pack-check.mjs",
     "api:check": "node scripts/api-check.mjs"
   },

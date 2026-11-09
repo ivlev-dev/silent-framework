@@ -36,6 +36,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm api:check
+      - run: pnpm install:check
       - run: pnpm --filter @silent/example-counter build
       - run: pnpm exec playwright-core install --with-deps chromium
       - run: pnpm test:e2e

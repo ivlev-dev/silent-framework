@@ -362,3 +362,11 @@ packages/server/src/dom/
 ### Внешний рантайм в SSR
 
 Vite не должен встраивать копию `@silent/core` в SSR-граф, иначе приложение и `renderToString` получат разные модульные экземпляры (разные `whenIdle`/`setServerMode`). В `vite.config.ts` задавайте `ssr.external` для всех `@silent/*`.
+
+
+## Релиз
+
+- Версии всех публичных пакетов синхронны и совпадают с тегом `v<version>`.
+- `pnpm pack:check` проверяет состав tarball'ов и отсутствие `workspace:` в зависимостях.
+- `pnpm install:check` распаковывает tarball'ы в чистый `node_modules`, проверяет импорты, рантайм-экспорты и версию нативного addon.
+- Workflow `Release` собирает пребилды addon под три платформы, прогоняет тесты и публикует пакеты; нужен `NPM_TOKEN`.

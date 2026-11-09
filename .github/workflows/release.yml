@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  prebuild:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            triple: x86_64-unknown-linux-gnu
+          - os: macos-14
+            triple: aarch64-apple-darwin
+          - os: windows-latest
+            triple: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @silent/swc build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.triple }}
+          path: packages/swc/native/*.node
+          if-no-files-found: error
+
+  publish:
+    needs: prebuild
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: packages/swc/native
+          merge-multiple: true
+      - name: Verify tag matches package versions
+        run: |
+          node -e "const tag=process.env.GITHUB_REF_NAME.replace(/^v/,''); const names=['reactivity','di','core','swc','vite','server']; for (const name of names) { const version=require('./packages/'+name+'/package.json').version; if (version!==tag) { console.error('@silent/'+name+': '+version+' != tag '+tag); process.exit(1); } } console.log('version ok:', tag);"
+      - run: pnpm build
+      - run: pnpm typecheck
+      - run: cargo fmt --all -- --check
+      - run: cargo test -p silent-transform
+      - run: pnpm test
+      - run: pnpm api:check
+      - run: pnpm pack:check
+      - run: pnpm install:check
+      - run: pnpm -r --filter "./packages/**" publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

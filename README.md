@@ -241,4 +241,16 @@ pnpm dev
 pnpm bench
 pnpm test:e2e
 pnpm test:ssr
+pnpm install:check
 ```
+
+## Релиз
+
+Все пакеты `@silent/*` версионируются синхронно (сейчас `0.1.0`). Релиз запускается тегом:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+GitHub Actions `Release` соберёт нативные бинарники под Linux/macOS/Windows, прогонит тесты, проверит совпадение тега и версий, соберёт пакеты и опубликует их в npm. Для публикации нужен секрет репозитория `NPM_TOKEN`. Локальная проверка установки из tarball'ов — `pnpm install:check`.
