@@ -7,15 +7,15 @@ import {
   onCleanup,
   runWithOwner,
 } from "@silent/reactivity";
-import { attachDisposer, createMountPoint, type MountPoint } from "./dom";
+import type { Children } from "./jsx";
+import { attachDisposer, collectNodes, createMountPoint, disposeNode } from "./dom";
 
 interface ItemState<T> {
   item: T;
   index: Accessor<number>;
   setIndex: Setter<number>;
-  anchor: Node;
-  tail: Node;
-  mount: MountPoint;
+  anchor: Comment;
+  nodes: Node[];
   cleanup: () => void;
   disposed: boolean;
 }
@@ -101,13 +101,37 @@ export function For<T>(props: ForProps<T>): Node {
     }
   };
 
+  const renderItem = (state: ItemState<T>, value: unknown): void => {
+    for (const node of state.nodes) {
+      disposeNode(node);
+      detachNode(node);
+    }
+    state.nodes = [];
+    const parent = state.anchor.parentNode;
+    if (parent === null) {
+      return;
+    }
+    const nodes: Node[] =
+      value instanceof Node && !(value instanceof DocumentFragment)
+        ? [value]
+        : collectNodes(value as Children);
+    const reference = state.anchor.nextSibling;
+    for (const node of nodes) {
+      parent.insertBefore(node, reference);
+    }
+    state.nodes = nodes;
+  };
+
   const removeState = (state: ItemState<T>): void => {
     if (state.disposed) {
       return;
     }
     state.disposed = true;
-    state.mount.clear();
-    detachNode(state.tail);
+    for (const node of state.nodes) {
+      disposeNode(node);
+      detachNode(node);
+    }
+    state.nodes = [];
     detachNode(state.anchor);
     state.cleanup();
   };
@@ -120,74 +144,97 @@ export function For<T>(props: ForProps<T>): Node {
     fallbackMount.clear();
   };
 
-  const createState = (item: T): ItemState<T> => {
+  const createState = (item: T, parent: Node, position: number): ItemState<T> => {
     const anchor = document.createComment("silent-item");
-    const tail = document.createComment("silent-tail");
-    container.appendChild(anchor);
-    container.appendChild(tail);
-    const [index, setIndex] = createSignal(0);
-    const mount = createMountPoint(container, tail);
-    let cleanup: () => void = () => {};
-    runWithOwner(parentOwner, () => {
-      createRoot((dispose) => {
-        cleanup = dispose;
-        createRenderEffect(() => {
-          mount.render(props.children(item, index));
-        });
-      });
-    });
+    parent.insertBefore(anchor, endAnchor);
+
+    let handle: [Accessor<number>, Setter<number>] | null = null;
+    let current = position;
+    const index: Accessor<number> = () => {
+      if (handle === null) {
+        handle = createSignal(current);
+      }
+      return handle[0]();
+    };
+    const setIndex: Setter<number> = (value) => {
+      const next: number = typeof value === "function" ? value(current) : value;
+      current = next;
+      if (handle !== null) {
+        handle[1](next);
+      }
+      return next;
+    };
+
     const state: ItemState<T> = {
       item,
       index,
       setIndex,
       anchor,
-      tail,
-      mount,
-      cleanup,
+      nodes: [],
+      cleanup: () => {},
       disposed: false,
     };
+
+    state.cleanup = runWithOwner(parentOwner, () =>
+      createRoot((dispose) => {
+        createRenderEffect(() => {
+          renderItem(state, props.children(item, index));
+        });
+        return dispose;
+      }),
+    );
+
     attachDisposer(anchor, () => removeState(state));
     return state;
   };
 
   createRenderEffect(() => {
-    if (endAnchor.parentNode === null) {
+    const parent = endAnchor.parentNode;
+    if (parent === null) {
       removeAll();
       return;
     }
 
     const { each } = props;
     const items: readonly T[] = typeof each === "function" ? each() : each;
+    const previous = states;
 
-    const previousOrder = new Map<ItemState<T>, number>();
-    for (let position = 0; position < states.length; position += 1) {
-      previousOrder.set(states[position]!, position);
-    }
-
-    const pool = new Map<T, ItemState<T>[]>();
-    for (const state of states) {
-      const bucket = pool.get(state.item);
-      if (bucket === undefined) {
-        pool.set(state.item, [state]);
+    const pool = new Map<T, ItemState<T> | ItemState<T>[]>();
+    for (const state of previous) {
+      const existing = pool.get(state.item);
+      if (existing === undefined) {
+        pool.set(state.item, state);
         continue;
       }
-      bucket.push(state);
+      if (Array.isArray(existing)) {
+        existing.push(state);
+        continue;
+      }
+      pool.set(state.item, [existing, state]);
     }
 
     const next: ItemState<T>[] = [];
+    const created: ItemState<T>[] = [];
     const used = new Set<ItemState<T>>();
     for (const item of items) {
-      const bucket = pool.get(item);
-      const state = bucket === undefined || bucket.length === 0 ? undefined : bucket.shift();
+      const entry = pool.get(item);
+      const state =
+        entry === undefined
+          ? undefined
+          : Array.isArray(entry)
+            ? entry.shift()
+            : entry;
       if (state === undefined) {
-        next.push(createState(item));
+        const fresh = createState(item, parent, next.length);
+        created.push(fresh);
+        next.push(fresh);
         continue;
       }
       used.add(state);
       next.push(state);
     }
 
-    for (const state of states) {
+    for (const state of previous) {
       if (!used.has(state)) {
         removeState(state);
       }
@@ -199,35 +246,67 @@ export function For<T>(props: ForProps<T>): Node {
       next[position]!.setIndex(position);
     }
 
-    const positions: number[] = [];
-    const slots: number[] = [];
-    for (let position = 0; position < next.length; position += 1) {
-      const previous = previousOrder.get(next[position]!);
-      if (previous !== undefined) {
-        positions.push(previous);
-        slots.push(position);
+    let inOrder = true;
+    let cursor = 0;
+    for (const state of previous) {
+      if (!used.has(state)) {
+        continue;
+      }
+      if (next[cursor] !== state) {
+        inOrder = false;
+        break;
+      }
+      cursor += 1;
+    }
+    if (inOrder) {
+      for (const state of created) {
+        if (next[cursor] !== state) {
+          inOrder = false;
+          break;
+        }
+        cursor += 1;
       }
     }
-
-    const stableSlots = new Set<number>();
-    for (const index of longestIncreasingSubsequence(positions)) {
-      const slot = slots[index];
-      if (slot !== undefined) {
-        stableSlots.add(slot);
-      }
+    if (inOrder && cursor !== next.length) {
+      inOrder = false;
     }
 
-    let reference: Node = endAnchor;
-    for (let position = next.length - 1; position >= 0; position -= 1) {
-      const state = next[position]!;
-      const block: Node[] = [state.anchor, ...state.mount.nodes(), state.tail];
-      const parent = reference.parentNode;
-      if (parent !== null && !stableSlots.has(position) && !precedes(block, reference)) {
-        for (const node of block) {
-          parent.insertBefore(node, reference);
+    if (!inOrder) {
+      const previousOrder = new Map<ItemState<T>, number>();
+      for (let position = 0; position < previous.length; position += 1) {
+        previousOrder.set(previous[position]!, position);
+      }
+
+      const positions: number[] = [];
+      const slots: number[] = [];
+      for (let position = 0; position < next.length; position += 1) {
+        const previousPosition = previousOrder.get(next[position]!);
+        if (previousPosition !== undefined) {
+          positions.push(previousPosition);
+          slots.push(position);
         }
       }
-      reference = state.anchor;
+
+      const stableSlots = new Set<number>();
+      for (const index of longestIncreasingSubsequence(positions)) {
+        const slot = slots[index];
+        if (slot !== undefined) {
+          stableSlots.add(slot);
+        }
+      }
+
+      let reference: Node = endAnchor;
+      for (let position = next.length - 1; position >= 0; position -= 1) {
+        const state = next[position]!;
+        const block: Node[] = [state.anchor, ...state.nodes];
+        const parent = reference.parentNode;
+        if (parent !== null && !stableSlots.has(position) && !precedes(block, reference)) {
+          for (const node of block) {
+            parent.insertBefore(node, reference);
+          }
+        }
+        reference = state.anchor;
+      }
     }
 
     fallbackMount.render(

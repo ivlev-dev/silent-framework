@@ -1,80 +1,58 @@
-import { JSDOM } from "jsdom";
-import { Bench } from "tinybench";
-import {
-  batch,
-  createMemo,
-  createSignal,
-  flushSync,
-} from "@silent/reactivity";
-import { For } from "@silent/core";
+import { cpus } from "node:os";
+import { silentSuite } from "./silent";
+import { solidSuite } from "./solid";
+import { runSuite, type BenchSuite } from "./suite";
 
-const dom = new JSDOM("<!doctype html><html><body></body></html>");
-const documentRef = dom.window.document;
-Object.defineProperty(globalThis, "document", {
-  value: documentRef,
-  configurable: true,
-});
-Object.defineProperty(globalThis, "Node", {
-  value: dom.window.Node,
-  configurable: true,
-});
-Object.defineProperty(globalThis, "Element", {
-  value: dom.window.Element,
-  configurable: true,
-});
-Object.defineProperty(globalThis, "DocumentFragment", {
-  value: dom.window.DocumentFragment,
-  configurable: true,
-});
-Object.defineProperty(globalThis, "SVGElement", {
-  value: dom.window.SVGElement,
-  configurable: true,
-});
-Object.defineProperty(globalThis, "NodeFilter", {
-  value: dom.window.NodeFilter,
-  configurable: true,
-});
+const RUNS = 3;
 
-const bench = new Bench({ time: 500, warmupTime: 100 });
+function format(value: number | undefined): string {
+  return value === undefined ? "n/a" : Math.round(value).toLocaleString("ru-RU");
+}
 
-bench.add("signal write + flush", () => {
-  const [value, setValue] = createSignal(0);
-  for (let index = 0; index < 1000; index += 1) {
-    setValue(index);
-    flushSync();
-    void value();
+function ratio(silent: number | undefined, solid: number | undefined): string {
+  if (silent === undefined || solid === undefined || solid === 0) {
+    return "n/a";
   }
-});
+  return `${(silent / solid).toFixed(2)}x`;
+}
 
-bench.add("computed chain", () => {
-  const [value, setValue] = createSignal(1);
-  const double = createMemo(() => value() * 2);
-  const quadruple = createMemo(() => double() * 2);
-  batch(() => {
-    for (let index = 0; index < 1000; index += 1) {
-      setValue(index);
-      void quadruple();
+function mergeBest(
+  target: Map<string, number>,
+  source: Map<string, number>,
+): void {
+  for (const [name, value] of source) {
+    const current = target.get(name);
+    if (current === undefined || value > current) {
+      target.set(name, value);
     }
-  });
+  }
+}
+
+async function measure(suite: BenchSuite): Promise<Map<string, number>> {
+  const best = new Map<string, number>();
+  for (let run = 0; run < RUNS; run += 1) {
+    console.log(`▶ ${suite.name} (${run + 1}/${RUNS})`);
+    mergeBest(best, await runSuite(suite));
+  }
+  return best;
+}
+
+const silentResults = await measure(silentSuite);
+const solidResults = await measure(solidSuite);
+
+const rows = silentSuite.tasks.map((task) => {
+  const silent = silentResults.get(task.name);
+  const solid = solidResults.get(task.name);
+  return {
+    scenario: task.name,
+    "silent ops/s": format(silent),
+    "solid ops/s": format(solid),
+    "silent/solid": ratio(silent, solid),
+  };
 });
 
-bench.add("keyed For 1000 rows", () => {
-  const host = documentRef.createElement("div");
-  const [items] = createSignal(
-    Array.from({ length: 1000 }, (_, index) => ({ id: index })),
-  );
-  host.appendChild(
-    For({
-      each: items,
-      children: (item: { id: number }) => {
-        const row = documentRef.createElement("div");
-        row.textContent = String(item.id);
-        return row;
-      },
-    }),
-  );
-  flushSync();
-});
-
-await bench.run();
-console.table(bench.table());
+const cpu = cpus()[0]?.model ?? "unknown";
+console.log(`\nCPU: ${cpu}`);
+console.log(`Node.js ${process.version}, solid-js 1.9.18, лучший результат из ${RUNS} прогонов`);
+console.table(rows);
+console.log("Больше — лучше; silent/solid > 1 — silent быстрее.");

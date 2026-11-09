@@ -111,8 +111,11 @@ export function collectNodes(value: Children): Node[] {
     }
     if (current instanceof Node) {
       if (current instanceof DocumentFragment) {
-        for (const child of Array.from(current.childNodes)) {
+        let child = current.firstChild;
+        while (child !== null) {
+          const next = child.nextSibling;
           visit(child);
+          child = next;
         }
         return;
       }
@@ -131,8 +134,14 @@ export function disposeNode(node: Node): void {
     dispose();
     return;
   }
-  for (const child of Array.from(node.childNodes)) {
+  if (node.nodeType !== 1 && node.nodeType !== 11) {
+    return;
+  }
+  let child = node.firstChild;
+  while (child !== null) {
+    const next = child.nextSibling;
     disposeNode(child);
+    child = next;
   }
 }
 

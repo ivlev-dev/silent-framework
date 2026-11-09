@@ -89,6 +89,66 @@ describe("For", () => {
     expect(captured.get("c")?.parentNode).toBeNull();
   });
 
+  it("вставляет элемент в середину после монтирования", () => {
+    const a = item("a");
+    const b = item("b");
+    const c = item("c");
+    const x = item("x");
+    const [items, setItems] = createSignal<Item[]>([a, b, c]);
+    const container = For({ each: items, children: row });
+    const host = install(container);
+    const captured = new Map(
+      Array.from(host.querySelectorAll("span")).map((span) => [span.dataset.id, span]),
+    );
+    setItems([a, x, b, c]);
+    flushSync();
+    expect(idsOf(host)).toEqual(["a", "x", "b", "c"]);
+    expect(host.querySelectorAll("span")[0]).toBe(captured.get("a"));
+    expect(host.querySelectorAll("span")[2]).toBe(captured.get("b"));
+    expect(host.querySelectorAll("span")[3]).toBe(captured.get("c"));
+  });
+
+  it("вставка в середину вместе с перестановкой сохраняет узлы", () => {
+    const a = item("a");
+    const b = item("b");
+    const c = item("c");
+    const x = item("x");
+    const [items, setItems] = createSignal<Item[]>([a, b, c]);
+    const container = For({ each: items, children: row });
+    const host = install(container);
+    const captured = new Map(
+      Array.from(host.querySelectorAll("span")).map((span) => [span.dataset.id, span]),
+    );
+    setItems([x, c, a]);
+    flushSync();
+    expect(idsOf(host)).toEqual(["x", "c", "a"]);
+    expect(host.querySelectorAll("span")[1]).toBe(captured.get("c"));
+    expect(host.querySelectorAll("span")[2]).toBe(captured.get("a"));
+    expect(captured.get("b")?.parentNode).toBeNull();
+  });
+
+  it("не перемещает узлы без изменения порядка", () => {
+    const a = item("a");
+    const b = item("b");
+    const [items, setItems] = createSignal<Item[]>([a, b]);
+    const container = For({ each: items, children: row });
+    const host = install(container);
+    const original = Node.prototype.insertBefore;
+    let moves = 0;
+    Node.prototype.insertBefore = function (this: Node, node: Node, child: Node | null): Node {
+      moves += 1;
+      return original.call(this, node, child);
+    };
+    try {
+      setItems([a, b]);
+      flushSync();
+    } finally {
+      Node.prototype.insertBefore = original;
+    }
+    expect(moves).toBe(0);
+    expect(idsOf(host)).toEqual(["a", "b"]);
+  });
+
   it("сохраняет состояния для повторяющихся элементов", () => {
     const a = item("a");
     const [items, setItems] = createSignal<Item[]>([a, a]);
