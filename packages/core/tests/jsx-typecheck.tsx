@@ -2,6 +2,7 @@ import type {
   ViewContext,
   Component,
 } from "../src/jsx";
+import { Suspense, lazy } from "../src/suspense";
 
 interface CounterVM {
   count: number;
@@ -38,6 +39,23 @@ function Loader(props: { text?: string }) {
 
 export function LoaderUsage() {
   return <Loader />;
+}
+
+const LazyCounter = lazy<{ count: number }>(async () => ({
+  default: Counter as unknown as (...args: never[]) => unknown,
+}));
+
+export function SuspenseUsage() {
+  return (
+    <Suspense fallback={<span>wait</span>}>
+      <LazyCounter count={1} />
+    </Suspense>
+  );
+}
+
+export function LazyBadProp() {
+  // @ts-expect-error
+  return <LazyCounter count="x" />;
 }
 
 export const IntrinsicCheck = () => (

@@ -12,6 +12,11 @@ import {
   type Owner,
 } from "@silent/reactivity";
 import { registerView } from "./registry";
+import {
+  getCurrentBoundary,
+  runWithBoundary,
+  type AsyncBoundary,
+} from "./boundary";
 
 export const VIEW_META = Symbol.for("silent.view");
 export const PRELOADER = Symbol.for("silent.preloader");
@@ -22,6 +27,7 @@ export interface RuntimeOptions {
   readonly container?: import("@silent/di").Container | undefined;
   readonly preloader?: Preloader | null | undefined;
   readonly onError?: ((error: unknown, component: AnyComponent) => void) | undefined;
+  readonly boundary?: AsyncBoundary | null | undefined;
 }
 
 export interface ComponentResult {
@@ -46,6 +52,26 @@ let defaultErrorHandler: (error: unknown, component: AnyComponent) => void = (
   console.error(error);
 };
 
+let currentRuntimeOptions: RuntimeOptions = {};
+
+export function getRuntimeOptions(): RuntimeOptions {
+  return currentRuntimeOptions;
+}
+
+export function getDefaultPreloader(): Preloader | null {
+  return defaultPreloader;
+}
+
+export function withRuntimeOptions<T>(options: RuntimeOptions, fn: () => T): T {
+  const previous = currentRuntimeOptions;
+  currentRuntimeOptions = options;
+  try {
+    return options.boundary === undefined ? fn() : runWithBoundary(options.boundary, fn);
+  } finally {
+    currentRuntimeOptions = previous;
+  }
+}
+
 export function setDefaultPreloader(preloader: Preloader | null): void {
   defaultPreloader = preloader;
 }
@@ -58,6 +84,10 @@ export function setErrorHandler(
     ((error) => {
       console.error(error);
     });
+}
+
+export function getErrorHandler(): (error: unknown, component: AnyComponent) => void {
+  return defaultErrorHandler;
 }
 
 function trackPending<T>(promise: Promise<T>): Promise<T> {
@@ -236,7 +266,7 @@ function renderError(start: Comment, end: Comment, error: unknown): void {
   insertBetween(start, end, [text]);
 }
 
-function setReady(node: Node, ready: Promise<void>): void {
+export function setReady(node: Node, ready: Promise<void>): void {
   (node as ReadyHost)[COMPONENT_READY] = ready;
 }
 
@@ -266,9 +296,13 @@ function reportError(
   handler(error, component);
 }
 
-function renderSync(component: AnyComponent, props: Record<string, unknown>): Node {
-  const result = (component as unknown as (props: Record<string, unknown>) => unknown)(
-    props,
+function renderSync(
+  component: AnyComponent,
+  props: Record<string, unknown>,
+  options: RuntimeOptions,
+): Node {
+  const result = withRuntimeOptions(options, () =>
+    (component as unknown as (props: Record<string, unknown>) => unknown)(props),
   );
   return toNode(result);
 }
@@ -286,11 +320,18 @@ function createViewResult(
   fragment.appendChild(end);
 
   const controller = new AbortController();
+  const boundary =
+    options.boundary === undefined ? getCurrentBoundary() : options.boundary;
   const scope = (options.container ?? rootContainer).createScope(
     `view:${getComponentName(component)}`,
   );
   const context = new ComponentContext(props, scope, controller.signal);
   scope.bind(ComponentContext, () => context);
+  const runtimeOptions: RuntimeOptions = {
+    ...options,
+    container: scope,
+    boundary,
+  };
 
   let disposed = false;
   let vmInstance: object | null = null;
@@ -304,7 +345,7 @@ function createViewResult(
   let componentOwner: Owner | null = null;
   let componentRootDispose: (() => void) | null = null;
 
-  let preloaderRef = resolvePreloader(component, meta);
+  let preloaderRef = boundary === null ? resolvePreloader(component, meta) : null;
 
   const clearView = (): void => {
     viewRootDispose?.();
@@ -330,7 +371,7 @@ function createViewResult(
       runWithOwner(componentOwner, () => {
         const root = createRoot((disposeFallback) => {
           fallbackRootDispose = disposeFallback;
-          const fallbackNode = renderSync(preloaderRef as Preloader, {});
+          const fallbackNode = renderSync(preloaderRef as Preloader, {}, runtimeOptions);
           insertBetween(start, end, normalizeNodes(fallbackNode));
           return null;
         });
@@ -392,12 +433,14 @@ function createViewResult(
           vm: nextVm,
           preloader: preloaderRef as Preloader,
         };
-        const output = (
-          componentRef as unknown as (
-            this: unknown,
-            props: Record<string, unknown>,
-          ) => unknown
-        ).call(viewContext, props);
+        const output = withRuntimeOptions(runtimeOptions, () =>
+          (
+            componentRef as unknown as (
+              this: unknown,
+              props: Record<string, unknown>,
+            ) => unknown
+          ).call(viewContext, props),
+        );
         if (disposed) {
           return null;
         }
@@ -510,6 +553,7 @@ function createViewResult(
     })();
 
     setReady(start, trackPending(ready));
+    boundary?.register(getReady(start));
     return null;
   });
 
@@ -533,8 +577,8 @@ export function createComponent(
 ): ComponentResult {
   const meta = readMeta(component);
   if (meta === null) {
-    const result = (component as unknown as (props: Record<string, unknown>) => unknown)(
-      props,
+    const result = withRuntimeOptions(options, () =>
+      (component as unknown as (props: Record<string, unknown>) => unknown)(props),
     );
     const nodes = normalizeNodes(result);
     let node: Node;
@@ -550,7 +594,7 @@ export function createComponent(
     }
     return {
       node,
-      ready: Promise.resolve(),
+      ready: getReady(node),
       dispose: () => {
         for (const child of nodes) {
           disposeNode(child);
@@ -566,7 +610,7 @@ export function component(
   componentFn: AnyComponent,
   props: Record<string, unknown>,
 ): Node {
-  return createComponent(componentFn, props).node;
+  return createComponent(componentFn, props, getRuntimeOptions()).node;
 }
 
 export function isViewComponent(componentFn: AnyComponent): boolean {

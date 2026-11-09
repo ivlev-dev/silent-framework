@@ -8,6 +8,7 @@ export * from "./mount";
 export * from "./types";
 export * from "./jsx";
 export { For, Show } from "./control-flow";
+export { Suspense, lazy, type SuspenseProps, type LazyOptions } from "./suspense";
 export {
   applyProps,
   attachDisposer,

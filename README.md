@@ -12,6 +12,7 @@
 - Компилятор на Rust + `swc_core` и нативный Node-API addon.
 - Vite 8 плагин с полной компиляцией TS/TSX и HMR.
 - Прелоадеры на уровне view и HMR с сохранением состояния.
+- `Suspense` и `lazy`: асинхронные границы и отложенная загрузка модулей.
 
 ## Установка
 
@@ -74,6 +75,24 @@ export function Counter(
 `vm` и `preloader` извлекаются из `this`-типа компилятором. `<Counter step={2} />` типизируется без параметра `vm`.
 
 Если `preloader` не указан, используется глобальный прелоадер или пустой якорь. Опция плагина `requirePreloader: true` делает его обязательным.
+
+## Suspense и lazy
+
+```tsx
+import { lazy, Suspense } from "@silent/core";
+
+const Profile = lazy<{ id: number }>(() => import("./profile"));
+
+export function App() {
+  return (
+    <Suspense fallback={<span>Загрузка...</span>}>
+      <Profile id={1} />
+    </Suspense>
+  );
+}
+```
+
+`Suspense` держит fallback, пока не завершатся все асинхронные view внутри. `lazy` кеширует загрузку модуля на обёртку, поддерживает `preloader` и `onError` в опциях.
 
 ## Реактивность
 

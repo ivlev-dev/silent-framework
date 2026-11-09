@@ -206,6 +206,16 @@ Counter.call({ vm, preloader: CounterPreloader }, props);
 7. `vm.beforeMount?.()` перед вставкой, `vm.mounted?.()` после.
 8. При удалении: `vm.beforeUnmount?.()`, dispose store/эффектов/scope, `vm.unmounted?.()`.
 
+### Наследование DI-скоупа
+
+При рендере view устанавливаются runtime-опции `{ container: scope }`, поэтому компоненты, вызванные из view (в том числе синхронные), создают дочерние scope от скоупа родителя. Наследование сохраняется и при асинхронном резолве VM: вложенные компоненты получают тот же контейнер.
+
+```tsx
+mount(target, App, { container: appScope });
+```
+
+Внутри `App` любой `<Child />` видит биндинги `appScope`.
+
 ### Прелоадер
 
 Приоритет:
@@ -237,9 +247,37 @@ export function effect(fn: () => void): void;
 export function component(fn: Function, props: Record<string, unknown>): Node;
 export function dynamic(tag: () => string, props: Record<string, unknown>): Node;
 export function fragment(accessor: () => unknown): Node;
+export function Suspense(props: SuspenseProps): Node;
+export function lazy<P extends Record<string, unknown>>(
+  loader: () => Promise<AnyComponent | { default: AnyComponent }>,
+  options?: LazyOptions,
+): (props: P) => Node;
 ```
 
-Управляющие компоненты: `For`, `Show`. Асинхронность view покрывается `preloader` в `this`-типе.
+Управляющие компоненты: `For`, `Show`, `Suspense`. Асинхронность одиночного view покрывается `preloader` в `this`-типе. 
+
+#### Suspense и lazy
+
+```tsx
+import { lazy, Suspense } from "@silent/core";
+
+const Profile = lazy<{ id: number }>(() => import("./profile"));
+
+export function App() {
+  return (
+    <Suspense fallback={<span>Загрузка...</span>}>
+      <Profile id={1} />
+    </Suspense>
+  );
+}
+```
+
+- `Suspense` переключает fallback на детей, когда все зарегистрированные промисы завершились.
+- Внутри `Suspense` прелоадеры вложенных view не показываются: граница берёт ожидание на себя.
+- `lazy(loader, options)` грузит модуль один раз на обёртку и рендерит `default`-экспорт.
+- Без `Suspense` `lazy` показывает `options.preloader`, иначе глобальный прелоадер, иначе пустой якорь.
+- `options.onError` вызывается при ошибке загрузки; без него используется `setErrorHandler`.
+- Готовность `lazy` доступна через `getReady` и учитывается `mount().ready`.
 
 - `template` кеширует клонирование по HTML-строке.
 - `insert` принимает Node, строку, число, массив, функцию, `null`/`undefined`/boolean.
