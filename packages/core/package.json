@@ -1,5 +1,5 @@
 {
-  "name": "@silent/core",
+  "name": "@ivlev98/silent-core",
   "version": "0.1.0",
   "type": "module",
   "sideEffects": false,
@@ -32,14 +32,14 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@silent/di": "workspace:*",
-    "@silent/reactivity": "workspace:*"
+    "@ivlev98/silent-di": "workspace:*",
+    "@ivlev98/silent-reactivity": "workspace:*"
   },
   "devDependencies": {
     "jsdom": "^31.0.0",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0",
-    "@silent/vite": "workspace:*"
+    "@ivlev98/silent-vite": "workspace:*"
   },
   "license": "MIT",
   "repository": {

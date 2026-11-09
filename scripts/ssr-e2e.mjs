@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { createServer } from "vite";
-import { renderToString } from "@silent/server";
+import { renderToString } from "@ivlev98/silent-server";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const example = join(root, "examples", "counter");

@@ -1,5 +1,5 @@
 {
-  "name": "@silent/bench",
+  "name": "@ivlev98/silent-bench",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -7,8 +7,8 @@
     "bench": "tsx --conditions=browser src/index.ts"
   },
   "dependencies": {
-    "@silent/core": "workspace:*",
-    "@silent/reactivity": "workspace:*"
+    "@ivlev98/silent-core": "workspace:*",
+    "@ivlev98/silent-reactivity": "workspace:*"
   },
   "devDependencies": {
     "@types/jsdom": "^27.0.0",

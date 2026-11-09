@@ -1,6 +1,6 @@
-# @silent/vite
+# @ivlev98/silent-vite
 
-Vite-плагин компиляции Silent Framework: преобразует TS/TSX/JS/JSX в JavaScript через нативный addon `@silent/swc`, внедряет HMR и генерирует индекс DI для автоматического разрешения интерфейсов.
+Vite-плагин компиляции Silent Framework: преобразует TS/TSX/JS/JSX в JavaScript через нативный addon `@ivlev98/silent-swc`, внедряет HMR и генерирует индекс DI для автоматического разрешения интерфейсов.
 
 #### `silent`
 
@@ -8,7 +8,7 @@ Vite-плагин компиляции Silent Framework: преобразует 
 
 ```ts
 import type { Plugin } from "vite";
-import type { SilentOptions } from "@silent/vite";
+import type { SilentOptions } from "@ivlev98/silent-vite";
 
 declare function silent(options?: SilentOptions): Plugin;
 ```
@@ -17,7 +17,7 @@ declare function silent(options?: SilentOptions): Plugin;
 
 ```ts
 import { defineConfig } from "vite";
-import { silent } from "@silent/vite";
+import { silent } from "@ivlev98/silent-vite";
 
 export default defineConfig({
   plugins: [silent()],
@@ -54,7 +54,7 @@ export default defineConfig({
 | `root` | `string` | `process.cwd()` (абсолютный путь) | Корень проекта: файлы вне него не трансформируются. |
 | `swc` | `Record<string, unknown>` | `{}` | Опции компилятора SWC, передаваемые в addon. JSX всегда компилируется рантаймом Silent Framework. |
 | `requirePreloader` | `boolean` | `false` | Требовать наличие прелоадера на уровне view. |
-| `runtime` | `string` | `"@silent/core"` | Имя модуля рантайма для сгенерированного кода. |
+| `runtime` | `string` | `"@ivlev98/silent-core"` | Имя модуля рантайма для сгенерированного кода. |
 | `hmr` | `boolean` | `true` | Включить внедрение HMR в компилируемый код. |
 | `index` | `boolean` | `true` | Строить индекс DI по файлам проекта. При `false` передаётся пустой индекс `{ interfaces: {}, values: {} }`. |
 
@@ -109,9 +109,9 @@ interface ResolvedOptions {
 
 ### Компиляция TS/TSX
 
-Компиляцию выполняет нативный addon `@silent/swc`:
+Компиляцию выполняет нативный addon `@ivlev98/silent-swc`:
 
-- `loadSwc()` динамически импортирует `@silent/swc` и кеширует модуль.
+- `loadSwc()` динамически импортирует `@ivlev98/silent-swc` и кеширует модуль.
 - `nativeTransform()` вызывает `swc.transform(source, filename, optionsJson, indexJson)` и проверяет, что ответ — валидный JSON структуры `{ code, map, diagnostics }`.
 - `nativeScan()` вызывает `swc.scan(root)` и проверяет структуру индекса `{ interfaces, values }`.
 
@@ -132,7 +132,7 @@ interface SilentIndex {
 
 ### Внедрение HMR
 
-Флаг `hmr` (по умолчанию `true`) передаётся в `optionsJson`. Компилятор внедряет `import.meta.hot.accept` в зависимости от этого флага и метаданных компонентов. В рантайме `@silent/core` использует реестр инстансов (`globalThis`) и функции `hmrUpdate`/`hmrInvalidate` для сохранения или пересоздания ViewModel.
+Флаг `hmr` (по умолчанию `true`) передаётся в `optionsJson`. Компилятор внедряет `import.meta.hot.accept` в зависимости от этого флага и метаданных компонентов. В рантайме `@ivlev98/silent-core` использует реестр инстансов (`globalThis`) и функции `hmrUpdate`/`hmrInvalidate` для сохранения или пересоздания ViewModel.
 
 ### Source maps
 
@@ -156,29 +156,29 @@ interface SilentIndex {
 - При отсутствии нативного бинарника `loadSwc()` выбрасывает ошибку:
 
 ```text
-@silent/vite: не удалось загрузить нативный addon @silent/swc.
+@ivlev98/silent-vite: не удалось загрузить нативный addon @ivlev98/silent-swc.
 Соберите нативный addon перед использованием плагина:
-  pnpm --filter @silent/swc build
+  pnpm --filter @ivlev98/silent-swc build
 Причина: ...
 ```
 
-Действие: выполнить `pnpm --filter @silent/swc build`, убедиться, что версия Node.js не ниже 22.
+Действие: выполнить `pnpm --filter @ivlev98/silent-swc build`, убедиться, что версия Node.js не ниже 22.
 
-- Ошибки `transform` и `scan` оборачиваются в `Error` с префиксом `@silent/vite:` и именем файла/корня. Текст причины сохраняется.
+- Ошибки `transform` и `scan` оборачиваются в `Error` с префиксом `@ivlev98/silent-vite:` и именем файла/корня. Текст причины сохраняется.
 
-- Если addon вернул невалидный JSON, плагин выбрасывает `@silent/vite: @silent/swc transform вернул невалидный JSON для <file>`.
+- Если addon вернул невалидный JSON, плагин выбрасывает `@ivlev98/silent-vite: @ivlev98/silent-swc transform вернул невалидный JSON для <file>`.
 
 - Если структура ответа не соответствует `{ code, map, diagnostics }`, выбрасывается ошибка `неожиданную структуру`.
 
 - Диагностики компилятора возвращаются в поле `warnings` результата `transform` и передаются Vite как warnings.
 
-- Подробные ошибки SWC видны в `diagnostics`/`warnings` и в stderr при падении addon. Для повторной сборки addon используйте `pnpm --filter @silent/swc build`; при несовпадении ABI версии addon также пересоберите его и синхронизируйте версию Node.js.
+- Подробные ошибки SWC видны в `diagnostics`/`warnings` и в stderr при падении addon. Для повторной сборки addon используйте `pnpm --filter @ivlev98/silent-swc build`; при несовпадении ABI версии addon также пересоберите его и синхронизируйте версию Node.js.
 
 ## Ограничения
 
 - Обрабатываются только файлы, попадающие под `include` и находящиеся внутри `root`; по умолчанию исключены `node_modules`.
 - Vite версии не ниже 8 (peer dependency), Node.js не ниже 22.
-- Addon `@silent/swc` должен быть собран (`dist` нативного модуля), иначе плагин выбрасывает ошибку.
+- Addon `@ivlev98/silent-swc` должен быть собран (`dist` нативного модуля), иначе плагин выбрасывает ошибку.
 - Виртуальные модули (`\0…`, `virtual:…`) пропускаются.
 - `map` может быть `null`, если addon не вернул source map.
 - Индекс DI строится один раз за запуск и инвалидируется только при изменении исходных модулей; правки конфигурации требуют перезапуска dev-сервера.

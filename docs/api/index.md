@@ -11,12 +11,12 @@
 
 | Пакет | Файл | Что описывает |
 | --- | --- | --- |
-| `@silent/reactivity` | [reactivity.md](./reactivity.md) | сигналы, мемо, эффекты, глубокие прокси, store |
-| `@silent/di` | [di.md](./di.md) | асинхронный контейнер зависимостей |
-| `@silent/core` | [core.md](./core.md) | декораторы, ViewModel, компоненты, JSX runtime, HMR, Suspense, hydration |
-| `@silent/server` | [core.md](./core.md#ssr) | `renderToString` и серверный мини-DOM |
-| `@silent/swc` | [swc.md](./swc.md) | нативный Node-API addon |
-| `@silent/vite` | [vite.md](./vite.md) | Vite-плагин и его опции |
+| `@ivlev98/silent-reactivity` | [reactivity.md](./reactivity.md) | сигналы, мемо, эффекты, глубокие прокси, store |
+| `@ivlev98/silent-di` | [di.md](./di.md) | асинхронный контейнер зависимостей |
+| `@ivlev98/silent-core` | [core.md](./core.md) | декораторы, ViewModel, компоненты, JSX runtime, HMR, Suspense, hydration |
+| `@ivlev98/silent-server` | [core.md](./core.md#ssr) | `renderToString` и серверный мини-DOM |
+| `@ivlev98/silent-swc` | [swc.md](./swc.md) | нативный Node-API addon |
+| `@ivlev98/silent-vite` | [vite.md](./vite.md) | Vite-плагин и его опции |
 
 ## Соглашения
 

@@ -1,5 +1,5 @@
-import { container as rootContainer } from "@silent/di";
-import type { Container } from "@silent/di";
+import { container as rootContainer } from "@ivlev98/silent-di";
+import type { Container } from "@ivlev98/silent-di";
 import {
   createComponent,
   setMetadataCollector,
@@ -9,8 +9,8 @@ import {
   type ComponentResult,
   type Preloader,
   type RuntimeOptions,
-} from "@silent/core";
-import { createRoot, flushSync } from "@silent/reactivity";
+} from "@ivlev98/silent-core";
+import { createRoot, flushSync } from "@ivlev98/silent-reactivity";
 import { createDocument, installDomGlobals } from "./dom/document.js";
 import { serializeNode } from "./dom/serializer.js";
 import type { DomNode } from "./dom/types.js";

@@ -1,4 +1,4 @@
-import type { Accessor, Setter } from "@silent/reactivity";
+import type { Accessor, Setter } from "@ivlev98/silent-reactivity";
 import {
   createRenderEffect,
   createRoot,
@@ -7,7 +7,7 @@ import {
   onCleanup,
   runWithOwner,
   untrack,
-} from "@silent/reactivity";
+} from "@ivlev98/silent-reactivity";
 import type { Children } from "./jsx.js";
 import {
   attachDisposer,

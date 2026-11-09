@@ -23,14 +23,14 @@ function platformTriple() {
 function loadNative() {
   const triple = platformTriple();
   try {
-    return require(`@silent/swc-${triple}`);
+    return require(`@ivlev98/silent-swc-${triple}`);
   } catch {
     void triple;
   }
 
   if (!existsSync(nativeDirectory)) {
     throw new Error(
-      "@silent/swc: native directory is missing. Run `pnpm --filter @silent/swc build`.",
+      "@ivlev98/silent-swc: native directory is missing. Run `pnpm --filter @ivlev98/silent-swc build`.",
     );
   }
 
@@ -49,7 +49,7 @@ function loadNative() {
 
   if (candidate === undefined) {
     throw new Error(
-      "@silent/swc: native addon is not built. Run `pnpm --filter @silent/swc build`.",
+      "@ivlev98/silent-swc: native addon is not built. Run `pnpm --filter @ivlev98/silent-swc build`.",
     );
   }
   return require(join(nativeDirectory, candidate));

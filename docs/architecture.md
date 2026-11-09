@@ -4,16 +4,16 @@
 
 ## Пакеты
 
-- `@silent/reactivity` — граф сигналов, эффекты, мемо, батчинг, глубокие прокси.
-- `@silent/di` — асинхронный контейнер зависимостей.
-- `@silent/core` — декораторы, ViewModel, JSX runtime, компоненты, монтирование, HMR.
-- `@silent/swc` — нативный Node-API addon.
-- `@silent/vite` — Vite-плагин.
-- `@silent/server` — SSR: мини-DOM, `renderToString`, сериализация без внешних DOM-зависимостей.
+- `@ivlev98/silent-reactivity` — граф сигналов, эффекты, мемо, батчинг, глубокие прокси.
+- `@ivlev98/silent-di` — асинхронный контейнер зависимостей.
+- `@ivlev98/silent-core` — декораторы, ViewModel, JSX runtime, компоненты, монтирование, HMR.
+- `@ivlev98/silent-swc` — нативный Node-API addon.
+- `@ivlev98/silent-vite` — Vite-плагин.
+- `@ivlev98/silent-server` — SSR: мини-DOM, `renderToString`, сериализация без внешних DOM-зависимостей.
 
 Все пакеты публикуются как ESM; относительные импорты в собранном коде содержат явное расширение `.js`, чтобы пакеты грузились в чистом Node без бандлера.
 
-## `@silent/reactivity`
+## `@ivlev98/silent-reactivity`
 
 ```ts
 export type Accessor<T> = () => T;
@@ -79,7 +79,7 @@ export function getComputed<T>(instance: object, key: PropertyKey, compute: () =
 - `readField`/`writeField` используются декоратором `@reactive`.
 - `getComputed` создаёт мемо на экземпляр и привязывает его к store.
 
-## `@silent/di`
+## `@ivlev98/silent-di`
 
 ```ts
 export type ScopeName = "singleton" | "transient" | "scoped";
@@ -233,7 +233,7 @@ this.preloader из метаданных
 
 ## JSX runtime
 
-Компилятор импортирует из `@silent/core/jsx-runtime`:
+Компилятор импортирует из `@ivlev98/silent-core/jsx-runtime`:
 
 ```ts
 export function template(html: string): () => Node;
@@ -262,7 +262,7 @@ export function lazy<P extends Record<string, unknown>>(
 #### Suspense и lazy
 
 ```tsx
-import { lazy, Suspense } from "@silent/core";
+import { lazy, Suspense } from "@ivlev98/silent-core";
 
 const Profile = lazy<{ id: number }>(() => import("./profile"));
 
@@ -327,7 +327,7 @@ version(): string;
 
 ## SSR и гидрация
 
-### `@silent/server`
+### `@ivlev98/silent-server`
 
 Пакет не зависит от jsdom/linkedom. Внутри — собственный мини-DOM:
 
@@ -361,7 +361,7 @@ packages/server/src/dom/
 
 ### Внешний рантайм в SSR
 
-Vite не должен встраивать копию `@silent/core` в SSR-граф, иначе приложение и `renderToString` получат разные модульные экземпляры (разные `whenIdle`/`setServerMode`). В `vite.config.ts` задавайте `ssr.external` для всех `@silent/*`.
+Vite не должен встраивать копию `@ivlev98/silent-core` в SSR-граф, иначе приложение и `renderToString` получат разные модульные экземпляры (разные `whenIdle`/`setServerMode`). В `vite.config.ts` задавайте `ssr.external` для всех `@ivlev98/silent-*`.
 
 
 ## Релиз

@@ -1,8 +1,8 @@
-# @silent/swc
+# @ivlev98/silent-swc
 
 Нативный Node-API addon на `swc_core`: компиляция TS/TSX, JSX-преобразование Silent Framework и сканирование DI-индекса.
 
-Addon синхронно экспортирует три функции — `transform`, `scan`, `version`. Загрузка бинарника выполняется модулем-обёрткой `packages/swc/index.js`: сначала ищется платформенный пакет `@silent/swc-<triple>`, затем локальный `*.node` в каталоге `native`.
+Addon синхронно экспортирует три функции — `transform`, `scan`, `version`. Загрузка бинарника выполняется модулем-обёрткой `packages/swc/index.js`: сначала ищется платформенный пакет `@ivlev98/silent-swc-<triple>`, затем локальный `*.node` в каталоге `native`.
 
 #### `NativeTransformResult`
 
@@ -61,7 +61,7 @@ interface SwcAddonOptions {
 Пример:
 
 ```ts
-import { transform } from "@silent/swc";
+import { transform } from "@ivlev98/silent-swc";
 
 const raw = transform(
   "export const value = 1;",
@@ -96,7 +96,7 @@ interface SilentIndex {
 Пример:
 
 ```ts
-import { scan } from "@silent/swc";
+import { scan } from "@ivlev98/silent-swc";
 
 const index = JSON.parse(scan("/project")) as {
   interfaces: Record<string, string[]>;
@@ -117,7 +117,7 @@ function version(): string;
 Пример:
 
 ```ts
-import { version } from "@silent/swc";
+import { version } from "@ivlev98/silent-swc";
 console.log(version());
 ```
 
@@ -126,7 +126,7 @@ console.log(version());
 Сборка addon:
 
 ```bash
-pnpm --filter @silent/swc build
+pnpm --filter @ivlev98/silent-swc build
 ```
 
 Команда эквивалентна:
@@ -140,7 +140,7 @@ napi build --release --platform --manifest-path ../../crates/silent-node/Cargo.t
 - release-профиль workspace задаёт `lto = "thin"`, `codegen-units = 1`, `strip = "symbols"`.
 - В зависимостях `swc_core` включён feature `ecma_helpers_inline`: хелперы ECMAScript встраиваются в генерируемый код, а не импортируются из внешнего runtime.
 - `transform` вызывает `swc_core::common::GLOBALS.set(...)` вокруг обработки, чтобы инициализировать thread-local состояние SWC для текущего вызова из Node.
-- Артефакты: `packages/swc/native/*.node` и платформенные пакеты `@silent/swc-<triple>`; `packages/swc/index.js` выбирает подходящий бинарник по `process.platform`/`process.arch`.
+- Артефакты: `packages/swc/native/*.node` и платформенные пакеты `@ivlev98/silent-swc-<triple>`; `packages/swc/index.js` выбирает подходящий бинарник по `process.platform`/`process.arch`.
 
 Поддерживаемые платформы по умолчанию: `linux-x64` (`linux-x64-gnu`), `linux-arm64`, `darwin-x64`, `darwin-arm64`, `win32-x64` (`win32-x64-msvc`), `win32-arm64`.
 
@@ -148,7 +148,7 @@ napi build --release --platform --manifest-path ../../crates/silent-node/Cargo.t
 
 - Синтаксическая ошибка или ошибка преобразования: `transform` бросает исключение (napi-ошибка с текстом причины), JSON-результат не возвращается.
 - Ошибки Silent-компилятора (например, интерфейс без реализации или отсутствие preloader при `requirePreloader: true`) накапливаются и выбрасываются одной строкой через `\n`.
-- Отсутствие нативного бинарника: `packages/swc/index.js` бросает `Error` с сообщением `@silent/swc: native addon is not built...`; `@silent/vite` оборачивает её и предлагает `pnpm --filter @silent/swc build`.
+- Отсутствие нативного бинарника: `packages/swc/index.js` бросает `Error` с сообщением `@ivlev98/silent-swc: native addon is not built...`; `@ivlev98/silent-vite` оборачивает её и предлагает `pnpm --filter @ivlev98/silent-swc build`.
 - `diagnostics` в успешном результате содержат сообщения SWC и читаются как обычные строки; они не прерывают возврат `code`/`map`.
 - `scan` не возвращает диагностики; при недоступном каталоге возвращает пустой или частичный индекс.
 
@@ -156,7 +156,7 @@ napi build --release --platform --manifest-path ../../crates/silent-node/Cargo.t
 
 - Версия addon: `0.0.1` ( workspace и Cargo-пакет `silent-node`), `version()` возвращает ту же строку.
 - `swc_core`: `84.0.2` с набором features из корневого `Cargo.toml`.
-- `@silent/vite`: `0.0.1`, зависит от `@silent/swc` через `workspace:*` и вызывает `transform`/`scan` через `loadSwc`.
+- `@ivlev98/silent-vite`: `0.0.1`, зависит от `@ivlev98/silent-swc` через `workspace:*` и вызывает `transform`/`scan` через `loadSwc`.
 - Требования: Node.js `>=22`.
 
 ## Ограничения

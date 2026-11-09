@@ -12,7 +12,7 @@ function parse(code: string) {
   };
 }
 
-describe("@silent/swc", () => {
+describe("@ivlev98/silent-swc", () => {
   it("транслирует JSX в шаблонный runtime", () => {
     const result = parse(
       transform(

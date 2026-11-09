@@ -1,5 +1,5 @@
 {
-  "name": "@silent/vite",
+  "name": "@ivlev98/silent-vite",
   "version": "0.1.0",
   "type": "module",
   "sideEffects": false,
@@ -20,7 +20,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@silent/swc": "workspace:*"
+    "@ivlev98/silent-swc": "workspace:*"
   },
   "peerDependencies": {
     "vite": ">=8"

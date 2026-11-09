@@ -29,23 +29,25 @@ for (const [name, required] of Object.entries(expectations)) {
     cwd: directory,
     encoding: "utf8",
   });
-  const tarball = readdirSync(output).find((file) => file.startsWith(`silent-${name}-`));
-  assert.ok(tarball, `не найден tarball для @silent/${name}`);
+  const tarball = readdirSync(output).find((file) =>
+    file.startsWith(`ivlev98-silent-${name}-`),
+  );
+  assert.ok(tarball, `не найден tarball для @ivlev98/silent-${name}`);
   const file = join(output, tarball);
   const entries = execFileSync("tar", ["-tzf", file], { encoding: "utf8" })
     .split("\n")
     .filter(Boolean);
   for (const entry of required) {
-    assert.ok(entries.includes(entry), `@silent/${name}: нет ${entry}`);
+    assert.ok(entries.includes(entry), `@ivlev98/silent-${name}: нет ${entry}`);
   }
   assert.ok(
     !entries.some((entry) => entry.startsWith("package/node_modules/")),
-    `@silent/${name}: в tarball попал node_modules`,
+    `@ivlev98/silent-${name}: в tarball попал node_modules`,
   );
   if (name === "swc") {
     assert.ok(
       entries.some((entry) => entry.endsWith(".node")),
-      "@silent/swc: в tarball нет нативного addon",
+      "@ivlev98/silent-swc: в tarball нет нативного addon",
     );
   }
   const manifest = JSON.parse(
@@ -59,9 +61,9 @@ for (const [name, required] of Object.entries(expectations)) {
   };
   assert.ok(
     !Object.values(dependencies).some((value) => String(value).startsWith("workspace:")),
-    `@silent/${name}: workspace-зависимость не заменена версией`,
+    `@ivlev98/silent-${name}: workspace-зависимость не заменена версией`,
   );
-  console.log(`pack: @silent/${name} ${tarball}`);
+  console.log(`pack: @ivlev98/silent-${name} ${tarball}`);
 }
 
 console.log("pack: ok");

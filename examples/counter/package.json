@@ -1,5 +1,5 @@
 {
-  "name": "@silent/example-counter",
+  "name": "@ivlev98/silent-example-counter",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,12 +10,12 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@silent/core": "workspace:*",
-    "@silent/di": "workspace:*",
-    "@silent/reactivity": "workspace:*"
+    "@ivlev98/silent-core": "workspace:*",
+    "@ivlev98/silent-di": "workspace:*",
+    "@ivlev98/silent-reactivity": "workspace:*"
   },
   "devDependencies": {
-    "@silent/vite": "workspace:*",
+    "@ivlev98/silent-vite": "workspace:*",
     "typescript": "^7.0.2",
     "vite": "^8.3.6"
   }

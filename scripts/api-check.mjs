@@ -8,12 +8,12 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(scriptDir, "..");
 
 const PACKAGES = [
-  { name: "@silent/reactivity", entry: "packages/reactivity/dist/index.d.ts", doc: "docs/api/reactivity.md" },
-  { name: "@silent/di", entry: "packages/di/dist/index.d.ts", doc: "docs/api/di.md" },
-  { name: "@silent/core", entry: "packages/core/dist/index.d.ts", doc: "docs/api/core.md" },
-  { name: "@silent/swc", entry: "packages/swc/index.d.ts", doc: "docs/api/swc.md" },
-  { name: "@silent/vite", entry: "packages/vite/dist/index.d.ts", doc: "docs/api/vite.md" },
-  { name: "@silent/server", entry: "packages/server/dist/index.d.ts", doc: "docs/api/core.md" },
+  { name: "@ivlev98/silent-reactivity", entry: "packages/reactivity/dist/index.d.ts", doc: "docs/api/reactivity.md" },
+  { name: "@ivlev98/silent-di", entry: "packages/di/dist/index.d.ts", doc: "docs/api/di.md" },
+  { name: "@ivlev98/silent-core", entry: "packages/core/dist/index.d.ts", doc: "docs/api/core.md" },
+  { name: "@ivlev98/silent-swc", entry: "packages/swc/index.d.ts", doc: "docs/api/swc.md" },
+  { name: "@ivlev98/silent-vite", entry: "packages/vite/dist/index.d.ts", doc: "docs/api/vite.md" },
+  { name: "@ivlev98/silent-server", entry: "packages/server/dist/index.d.ts", doc: "docs/api/core.md" },
 ];
 
 function compilerOptions() {
@@ -92,7 +92,7 @@ function resolvePackageFilters(filters) {
   for (const filter of filters) {
     const found = PACKAGES.find((pkg) => (
       pkg.name === filter
-      || pkg.name === `@silent/${filter}`
+      || pkg.name === `@ivlev98/silent-${filter}`
       || pkg.name.endsWith(`/${filter}`)
     ));
     if (!found) throw new Error(`неизвестный пакет: ${filter}`);

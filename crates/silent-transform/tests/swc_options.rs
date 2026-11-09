@@ -132,7 +132,7 @@ fn keep_class_names_preserves_name() {
 #[test]
 fn minify_with_decorators_and_accessor_does_not_fail() {
     let source = r#"
-import { reactive } from "@silent/core";
+import { reactive } from "@ivlev98/silent-core";
 class CounterVM {
   @reactive accessor count = 0;
 }

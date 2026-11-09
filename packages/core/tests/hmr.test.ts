@@ -3,7 +3,7 @@ import { hmrInvalidate, hmrUpdate } from "../src/hmr";
 import { createComponent } from "../src/component";
 import { mount } from "../src/mount";
 import { reactive } from "../src/decorators";
-import { createRenderEffect, flushSync } from "@silent/reactivity";
+import { createRenderEffect, flushSync } from "@ivlev98/silent-reactivity";
 import type { AnyComponent } from "../src/types";
 
 const VIEW = Symbol.for("silent.view");

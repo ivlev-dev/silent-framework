@@ -81,7 +81,7 @@ impl SilentPass {
             runtime: options
                 .runtime
                 .clone()
-                .unwrap_or_else(|| "@silent/core".to_string()),
+                .unwrap_or_else(|| "@ivlev98/silent-core".to_string()),
             require_preloader: options.require_preloader,
             module_id: filename.to_string_lossy().replace('\\', "/"),
             imports,

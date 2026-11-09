@@ -169,7 +169,7 @@ importers:
       '@napi-rs/cli':
         specifier: ^3.10.12
         version: 3.10.12(@emnapi/core@2.0.0-beta.3)(@emnapi/runtime@2.0.0-beta.3)(@types/node@26.6.6)
-      '@silent/server':
+      '@ivlev98/silent-server':
         specifier: workspace:*
         version: link:packages/server
       '@types/node':
@@ -196,10 +196,10 @@ importers:
 
   bench:
     dependencies:
-      '@silent/core':
+      '@ivlev98/silent-core':
         specifier: workspace:*
         version: link:../packages/core
-      '@silent/reactivity':
+      '@ivlev98/silent-reactivity':
         specifier: workspace:*
         version: link:../packages/reactivity
     devDependencies:
@@ -227,17 +227,17 @@ importers:
 
   examples/counter:
     dependencies:
-      '@silent/core':
+      '@ivlev98/silent-core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@silent/di':
+      '@ivlev98/silent-di':
         specifier: workspace:*
         version: link:../../packages/di
-      '@silent/reactivity':
+      '@ivlev98/silent-reactivity':
         specifier: workspace:*
         version: link:../../packages/reactivity
     devDependencies:
-      '@silent/vite':
+      '@ivlev98/silent-vite':
         specifier: workspace:*
         version: link:../../packages/vite
       typescript:
@@ -249,14 +249,14 @@ importers:
 
   packages/core:
     dependencies:
-      '@silent/di':
+      '@ivlev98/silent-di':
         specifier: workspace:*
         version: link:../di
-      '@silent/reactivity':
+      '@ivlev98/silent-reactivity':
         specifier: workspace:*
         version: link:../reactivity
     devDependencies:
-      '@silent/vite':
+      '@ivlev98/silent-vite':
         specifier: workspace:*
         version: link:../vite
       jsdom:
@@ -289,13 +289,13 @@ importers:
 
   packages/server:
     dependencies:
-      '@silent/core':
+      '@ivlev98/silent-core':
         specifier: workspace:*
         version: link:../core
-      '@silent/di':
+      '@ivlev98/silent-di':
         specifier: workspace:*
         version: link:../di
-      '@silent/reactivity':
+      '@ivlev98/silent-reactivity':
         specifier: workspace:*
         version: link:../reactivity
     devDependencies:
@@ -323,7 +323,7 @@ importers:
 
   packages/vite:
     dependencies:
-      '@silent/swc':
+      '@ivlev98/silent-swc':
         specifier: workspace:*
         version: link:../swc
     devDependencies:

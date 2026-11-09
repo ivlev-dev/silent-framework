@@ -1,5 +1,5 @@
 import type { CounterService } from "./service";
-import { computed, reactive, ViewModel, watch } from "@silent/core";
+import { computed, reactive, ViewModel, watch } from "@ivlev98/silent-core";
 
 export class Item {
   @reactive accessor name: string;

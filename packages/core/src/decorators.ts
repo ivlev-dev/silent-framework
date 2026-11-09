@@ -8,7 +8,7 @@ import {
   storeFor,
   untrack,
   writeField,
-} from "@silent/reactivity";
+} from "@ivlev98/silent-reactivity";
 
 export function reactive<Instance extends object, Value>(
   target: ClassAccessorDecoratorTarget<Instance, Value>,

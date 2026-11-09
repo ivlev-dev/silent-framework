@@ -13,22 +13,22 @@
 - Vite 8 плагин с полной компиляцией TS/TSX и HMR.
 - Прелоадеры на уровне view и HMR с сохранением состояния.
 - `Suspense` и `lazy`: асинхронные границы и отложенная загрузка модулей.
-- SSR без внешних DOM-зависимостей (`@silent/server`) и гидрация без вспышки прелоадера.
+- SSR без внешних DOM-зависимостей (`@ivlev98/silent-server`) и гидрация без вспышки прелоадера.
 - `<title>` из любого компонента выносится в `<head>` — как в React 19, с SSR-поддержкой.
 - Справочник API с автопроверкой полноты (`pnpm api:check`).
 
 ## Установка
 
 ```bash
-pnpm add @silent/core @silent/di @silent/reactivity
-pnpm add -D @silent/vite
+pnpm add @ivlev98/silent-core @ivlev98/silent-di @ivlev98/silent-reactivity
+pnpm add -D @ivlev98/silent-vite
 # для SSR:
-pnpm add @silent/server
+pnpm add @ivlev98/silent-server
 ```
 
 ```ts
 import { defineConfig } from "vite";
-import { silent } from "@silent/vite";
+import { silent } from "@ivlev98/silent-vite";
 
 export default defineConfig({
   plugins: [silent()],
@@ -40,7 +40,7 @@ export default defineConfig({
 ## Компонент и ViewModel
 
 ```tsx
-import { computed, reactive, ViewModel, watch } from "@silent/core";
+import { computed, reactive, ViewModel, watch } from "@ivlev98/silent-core";
 
 function CounterPreloader() {
   return <span>Загрузка...</span>;
@@ -84,7 +84,7 @@ export function Counter(
 ## Suspense и lazy
 
 ```tsx
-import { lazy, Suspense } from "@silent/core";
+import { lazy, Suspense } from "@ivlev98/silent-core";
 
 const Profile = lazy<{ id: number }>(() => import("./profile"));
 
@@ -101,10 +101,10 @@ export function App() {
 
 ## SSR и гидрация
 
-Серверный рендер не тащит jsdom или linkedom: в `@silent/server` собственный мини-DOM (парсер шаблонов компилятора, документ, TreeWalker, сериализатор).
+Серверный рендер не тащит jsdom или linkedom: в `@ivlev98/silent-server` собственный мини-DOM (парсер шаблонов компилятора, документ, TreeWalker, сериализатор).
 
 ```ts
-import { renderToString } from "@silent/server";
+import { renderToString } from "@ivlev98/silent-server";
 import { App } from "./app";
 
 const { html, head } = await renderToString(App, { props: { title: "Hi" } });
@@ -132,7 +132,7 @@ export function Page(this: { vm: PageVM }, props: { name: string }) {
 На клиенте используйте `hydrate` вместо `mount`:
 
 ```ts
-import { hydrate } from "@silent/core";
+import { hydrate } from "@ivlev98/silent-core";
 
 void hydrate("#app", App, { props: { title: "Hi" } });
 ```
@@ -145,7 +145,7 @@ void hydrate("#app", App, { props: { title: "Hi" } });
 export default defineConfig({
   plugins: [silent()],
   ssr: {
-    external: ["@silent/core", "@silent/di", "@silent/reactivity", "@silent/server"],
+    external: ["@ivlev98/silent-core", "@ivlev98/silent-di", "@ivlev98/silent-reactivity", "@ivlev98/silent-server"],
   },
 });
 ```
@@ -157,7 +157,7 @@ export default defineConfig({
 ## Реактивность
 
 ```ts
-import { batch, createEffect, createSignal } from "@silent/reactivity";
+import { batch, createEffect, createSignal } from "@ivlev98/silent-reactivity";
 
 const [count, setCount] = createSignal(0);
 createEffect(() => console.log(count()));
@@ -246,7 +246,7 @@ pnpm install:check
 
 ## Релиз
 
-Все пакеты `@silent/*` версионируются синхронно (сейчас `0.1.0`). Релиз запускается тегом:
+Все пакеты `@ivlev98/silent-*` версионируются синхронно (сейчас `0.1.0`). Релиз запускается тегом:
 
 ```bash
 git tag v0.1.0

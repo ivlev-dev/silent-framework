@@ -333,11 +333,11 @@ describe("installDomGlobals", () => {
     restore();
   });
 
-  it("работает с templateHoles из @silent/core", async () => {
+  it("работает с templateHoles из @ivlev98/silent-core", async () => {
     const previous = Object.getOwnPropertyDescriptor(globalThis, "document");
     const restore = installDomGlobals();
     try {
-      const core = await import("@silent/core");
+      const core = await import("@ivlev98/silent-core");
       const factory = core.templateHoles(
         "<div class=\"app\"><h1><!--silent-hole-0--></h1><button data-silent-a-0=\"\"></button></div>",
       );

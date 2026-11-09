@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "../src/render.js";
-import { attr, on, prop, spread, style, templateHoles } from "@silent/core";
+import { attr, on, prop, spread, style, templateHoles } from "@ivlev98/silent-core";
 
 function componentWithEvents(): Node {
   const wrapper = document.createElement("div");

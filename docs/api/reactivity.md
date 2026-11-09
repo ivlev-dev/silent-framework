@@ -1,4 +1,4 @@
-# @silent/reactivity
+# @ivlev98/silent-reactivity
 
 Пакет содержит примитивы гранулярной реактивности: сигналы, мемо, эффекты, владельцы, батчинг, глубокие прокси и реактивные store. Экспорты пакета используются напрямую и компилятором Silent Framework для `@reactive`, `@computed`, `@watch`.
 
@@ -142,7 +142,7 @@ function batch<T>(fn: () => T): T;
 Выполняет `fn`, объединяя записи в сигналы. Flush эффектов происходи́т при выходе из внешнего (depth=0) батча.
 
 ```ts
-import { batch, createSignal } from "@silent/reactivity";
+import { batch, createSignal } from "@ivlev98/silent-reactivity";
 
 const [count, setCount] = createSignal(0);
 batch(() => {
@@ -164,7 +164,7 @@ function createEffect(fn: () => void): void;
 Создаёт эффект. Первый запуск планируется в микротаске; последующие — при изменении зависимостей. Эффект создаёт собственный `Owner`.
 
 ```ts
-import { createEffect, createSignal } from "@silent/reactivity";
+import { createEffect, createSignal } from "@ivlev98/silent-reactivity";
 
 const [count, setCount] = createSignal(0);
 createEffect(() => console.log(count()));
@@ -183,7 +183,7 @@ function createMemo<T>(fn: () => T, options?: MemoOptions<T>): Accessor<T>;
 Создаёт ленивый мемо. Возвращает `Accessor<T>`, вычисляющий `fn` при первом чтении и при изменении зависимостей. Значение кешируется; dependent-эффекты уведомляются только если значение изменилось.
 
 ```ts
-import { createMemo, createSignal } from "@silent/reactivity";
+import { createMemo, createSignal } from "@ivlev98/silent-reactivity";
 
 const [count, setCount] = createSignal(2);
 const double = createMemo(() => count() * 2);
@@ -203,7 +203,7 @@ function createRenderEffect(fn: () => void): void;
 Создаёт render-эффект: первый запуск синхронный, обновления помещаются в общую очередь flush.
 
 ```ts
-import { createRenderEffect, createSignal } from "@silent/reactivity";
+import { createRenderEffect, createSignal } from "@ivlev98/silent-reactivity";
 
 const [text, setText] = createSignal("a");
 createRenderEffect(() => {
@@ -224,7 +224,7 @@ function createRoot<T>(fn: (dispose: () => void) => T): T;
 Создаёт корневой `Owner`. Возвращает результат `fn`, передавая функцию `dispose` для уничтожения поддерева. Если `fn` бросает — owner dispose-ится и ошибка пробрасывается.
 
 ```ts
-import { createRoot, createSignal } from "@silent/reactivity";
+import { createRoot, createSignal } from "@ivlev98/silent-reactivity";
 
 const value = createRoot((dispose) => {
   const [count] = createSignal(0);
@@ -243,7 +243,7 @@ function createSignal<T>(value: T, options?: SignalOptions<T>): [Accessor<T>, Se
 Создаёт сигнал. Возвращает пару `[read, set]`.
 
 ```ts
-import { createSignal } from "@silent/reactivity";
+import { createSignal } from "@ivlev98/silent-reactivity";
 
 const [count, setCount] = createSignal(0);
 setCount((prev) => prev + 1);
@@ -262,7 +262,7 @@ function flushSync(): void;
 Принудительно прогоняет начальные и обычные эффекты (initial + queued). Игнорирует планирование через микротаску.
 
 ```ts
-import { createEffect, createSignal, flushSync } from "@silent/reactivity";
+import { createEffect, createSignal, flushSync } from "@ivlev98/silent-reactivity";
 
 const [count, setCount] = createSignal(0);
 createEffect(() => console.log(count()));
@@ -280,7 +280,7 @@ function getOwner(): Owner | null;
 Возвращает текущего владельца или `null`, если вызов вне эффекта/мемо/`createRoot`.
 
 ```ts
-import { getOwner } from "@silent/reactivity";
+import { getOwner } from "@ivlev98/silent-reactivity";
 
 const owner = getOwner();
 ```
@@ -296,7 +296,7 @@ function onCleanup(fn: () => void): void;
 Регистрирует cleanup для текущего владельца. Если владелец уже dispose-нут — `fn` вызывается синхронно. Cleanup-и выполняются в обратном порядке регистрации.
 
 ```ts
-import { createEffect, onCleanup } from "@silent/reactivity";
+import { createEffect, onCleanup } from "@ivlev98/silent-reactivity";
 
 createEffect(() => {
   const timer = setInterval(() => {}, 1000);
@@ -317,7 +317,7 @@ function runWithOwner<T>(owner: Owner | null, fn: () => T): T;
 Выполняет `fn` с указанным владельцем как текущим и восстанавливает предыдущего в `finally`.
 
 ```ts
-import { getOwner, runWithOwner } from "@silent/reactivity";
+import { getOwner, runWithOwner } from "@ivlev98/silent-reactivity";
 
 const owner = getOwner();
 runWithOwner(owner, () => {
@@ -336,7 +336,7 @@ function untrack<T>(fn: () => T): T;
 Выполняет `fn` без трекинга зависимостей (currentListener = null) и восстанавливает предыдущий listener.
 
 ```ts
-import { createEffect, createSignal, untrack } from "@silent/reactivity";
+import { createEffect, createSignal, untrack } from "@ivlev98/silent-reactivity";
 
 const [count, setCount] = createSignal(0);
 createEffect(() => {
@@ -360,7 +360,7 @@ function on<T>(
 Создаёт эффект, реагирующий на `deps`. Если `deps` — массив, `value`/`prev` тоже массивы. При первом запуске, если `defer` не задан, `fn` вызывается с `prev === value`. При `defer: true` первый вызов пропускается.
 
 ```ts
-import { createSignal, on } from "@silent/reactivity";
+import { createSignal, on } from "@ivlev98/silent-reactivity";
 
 const [count, setCount] = createSignal(0);
 on(count, (value, prev) => {
@@ -381,7 +381,7 @@ function deepReactive<T>(value: T): T;
 Возвращает прокси над объектом/массивом. Каждое свойство, индекс и `length` получает отдельный сигнал. Вложенные объекты оборачиваются лениво при доступе.
 
 ```ts
-import { deepReactive } from "@silent/reactivity";
+import { deepReactive } from "@ivlev98/silent-reactivity";
 
 const state = deepReactive({ user: { name: "Ann" } });
 state.user.name = "Bob";
@@ -400,7 +400,7 @@ function isReactive(value: unknown): boolean;
 Проверяет, является ли значение прокси, созданным `deepReactive`.
 
 ```ts
-import { deepReactive, isReactive } from "@silent/reactivity";
+import { deepReactive, isReactive } from "@ivlev98/silent-reactivity";
 
 const state = deepReactive({ a: 1 });
 console.log(isReactive(state)); // true
@@ -417,7 +417,7 @@ function isReactiveClass(value: unknown): boolean;
 Проверяет, отмечен ли конструктор как реактивный класс через `markReactiveClass`.
 
 ```ts
-import { isReactiveClass, markReactiveClass } from "@silent/reactivity";
+import { isReactiveClass, markReactiveClass } from "@ivlev98/silent-reactivity";
 
 class VM {}
 markReactiveClass(VM);
@@ -435,7 +435,7 @@ function markReactiveClass(ctor: Function): void;
 Отмечает конструктор реактивным классом. Экземпляры с таким прототипом не оборачиваются `deepReactive` повторно.
 
 ```ts
-import { markReactiveClass } from "@silent/reactivity";
+import { markReactiveClass } from "@ivlev98/silent-reactivity";
 
 class VM {}
 markReactiveClass(VM);
@@ -454,7 +454,7 @@ function unwrap<T>(value: T): T;
 Разворачивает прокси, созданный `deepReactive`, до исходного объекта. Снимает несколько уровней обёртки.
 
 ```ts
-import { deepReactive, unwrap } from "@silent/reactivity";
+import { deepReactive, unwrap } from "@ivlev98/silent-reactivity";
 
 const state = deepReactive({ a: 1 });
 console.log(unwrap(state) === state); // false на оригинале
@@ -473,7 +473,7 @@ function createReactiveStore(): ReactiveStore;
 Создаёт новый `ReactiveStore`, не привязанный к экземпляру.
 
 ```ts
-import { createReactiveStore } from "@silent/reactivity";
+import { createReactiveStore } from "@ivlev98/silent-reactivity";
 
 const store = createReactiveStore();
 store.dispose();
@@ -490,7 +490,7 @@ function copyReactiveState(source: object, target: object): void;
 Копирует сигналы полей из store источника в store получателя. Для существующих ключей — перезаписывает значение; для новых — создаёт сигнал. Игнорирует disposed source store.
 
 ```ts
-import { copyReactiveState } from "@silent/reactivity";
+import { copyReactiveState } from "@ivlev98/silent-reactivity";
 
 copyReactiveState(sourceInstance, targetInstance);
 ```
@@ -508,7 +508,7 @@ function getComputed<T>(instance: object, key: PropertyKey, compute: () => T): T
 Создаёт (или переиспользует) мемо на экземпляр, привязанный к его store, и возвращает текущее значение. При dispose store мемо удаляется.
 
 ```ts
-import { getComputed } from "@silent/reactivity";
+import { getComputed } from "@ivlev98/silent-reactivity";
 
 const value = getComputed(instance, "double", () => count * 2);
 ```
@@ -524,7 +524,7 @@ function readField<T>(instance: object, key: PropertyKey, getRaw: () => T): T;
 Читает поле экземпляра через store: создаёт сигнал при первом чтении, оборачивает значение в `deepReactive`. Если store disposed — возвращает `deepReactive(getRaw())`.
 
 ```ts
-import { readField } from "@silent/reactivity";
+import { readField } from "@ivlev98/silent-reactivity";
 
 const value = readField(instance, "count", () => instance.count);
 ```
@@ -542,7 +542,7 @@ function registerCleanup(store: ReactiveStore, fn: () => void): void;
 Регистрирует cleanup в store. Если store уже disposed — `fn` вызывается синхронно.
 
 ```ts
-import { registerCleanup } from "@silent/reactivity";
+import { registerCleanup } from "@ivlev98/silent-reactivity";
 
 registerCleanup(store, () => {
   // очистка
@@ -560,7 +560,7 @@ function storeFor(instance: object): ReactiveStore;
 Возвращает (или создаёт) store, привязанный к экземпляру, из WeakMap. Один store на экземпляр.
 
 ```ts
-import { storeFor } from "@silent/reactivity";
+import { storeFor } from "@ivlev98/silent-reactivity";
 
 const store = storeFor(instance);
 ```
@@ -576,7 +576,7 @@ function writeField<T>(instance: object, key: PropertyKey, value: T, setRaw: (va
 Записывает поле экземпляра: unwraps значение, вызывает `setRaw`, затем обновляет сигнал store. Возвращает переданное `value`. Если store disposed — только `setRaw`.
 
 ```ts
-import { writeField } from "@silent/reactivity";
+import { writeField } from "@ivlev98/silent-reactivity";
 
 writeField(instance, "count", 5, (v) => {
   instance.count = v;

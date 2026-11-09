@@ -4,7 +4,7 @@ import {
   flushSync,
   isReactiveClass,
   storeFor,
-} from "@silent/reactivity";
+} from "@ivlev98/silent-reactivity";
 import { computed, reactive, watch } from "../src/decorators";
 
 type CountCall = { next: number; prev: number | undefined };

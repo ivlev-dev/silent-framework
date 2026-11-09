@@ -3,8 +3,8 @@ import { createComponent, getReady, setPreloader, whenIdle } from "../src/compon
 import { mount } from "../src/mount";
 import type { AnyComponent, Preloader } from "../src/types";
 import { ComponentContext } from "../src/component-context";
-import { container } from "@silent/di";
-import { createSignal, flushSync } from "@silent/reactivity";
+import { container } from "@ivlev98/silent-di";
+import { createSignal, flushSync } from "@ivlev98/silent-reactivity";
 
 const VIEW = Symbol.for("silent.view");
 const DI_CREATE = Symbol.for("silent.di.create");
@@ -215,7 +215,7 @@ describe("component runtime", () => {
       readonly [key: string]: unknown;
     }
     const [count, setCount] = createSignal(0);
-    const runtime = await import("@silent/reactivity");
+    const runtime = await import("@ivlev98/silent-reactivity");
     const ReactiveCounter = function (this: { vm: ReactiveVM }): Node {
       const element = document.createElement("span");
       runtime.createRenderEffect(() => {

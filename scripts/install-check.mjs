@@ -18,7 +18,7 @@ const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const output = mkdtempSync(join(tmpdir(), "silent-install-"));
 const packs = join(output, "packs");
 const project = join(output, "project");
-const modules = join(project, "node_modules", "@silent");
+const modules = join(project, "node_modules", "@ivlev98");
 
 try {
   mkdirSync(packs, { recursive: true });
@@ -38,9 +38,9 @@ try {
       encoding: "utf8",
     });
     const tarball = readdirSync(packs).find((file) =>
-      file.startsWith(`silent-${name}-${manifest.version}.tgz`),
+      file.startsWith(`ivlev98-silent-${name}-${manifest.version}.tgz`),
     );
-    assert.ok(tarball, `не найден tarball для @silent/${name}`);
+    assert.ok(tarball, `не найден tarball для @ivlev98/silent-${name}`);
     tarballs.set(name, tarball);
   }
 
@@ -51,7 +51,7 @@ try {
   );
 
   for (const [name, tarball] of tarballs) {
-    const target = join(modules, name);
+    const target = join(modules, `silent-${name}`);
     mkdirSync(target, { recursive: true });
     execFileSync("tar", [
       "-xzf",
@@ -60,18 +60,18 @@ try {
       target,
       "--strip-components=1",
     ]);
-    console.log(`install: @silent/${name} ${[...versions][0]}`);
+    console.log(`install: @ivlev98/silent-${name} ${[...versions][0]}`);
   }
 
   const expectedVersion = [...versions][0];
   writeFileSync(
     join(project, "check.mjs"),
-    `import { createSignal } from "@silent/reactivity";
-import { container } from "@silent/di";
-import { hydrate, mount } from "@silent/core";
-import { renderToString } from "@silent/server";
-import silent from "@silent/vite";
-import { transform, version } from "@silent/swc";
+    `import { createSignal } from "@ivlev98/silent-reactivity";
+import { container } from "@ivlev98/silent-di";
+import { hydrate, mount } from "@ivlev98/silent-core";
+import { renderToString } from "@ivlev98/silent-server";
+import silent from "@ivlev98/silent-vite";
+import { transform, version } from "@ivlev98/silent-swc";
 
 const [read, write] = createSignal(1);
 write(2);

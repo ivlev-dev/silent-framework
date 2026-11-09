@@ -3,12 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Plugin } from "vite";
 import { silent } from "../src/index.js";
 import type { SilentOptions } from "../src/index.js";
-import { transform as nativeTransform, scan as nativeScan } from "@silent/swc";
+import { transform as nativeTransform, scan as nativeScan } from "@ivlev98/silent-swc";
 
 const transformMock = vi.mocked(nativeTransform);
 const scanMock = vi.mocked(nativeScan);
 
-vi.mock("@silent/swc", () => ({
+vi.mock("@ivlev98/silent-swc", () => ({
   transform: vi.fn(() =>
     JSON.stringify({ code: "empty", map: null, diagnostics: [] }),
   ),
@@ -144,7 +144,7 @@ describe("silent()", () => {
     const optionsJson = JSON.parse(transformMock.mock.calls[0]?.[2] ?? "{}");
     expect(optionsJson.swc).toEqual({});
     expect(optionsJson.requirePreloader).toBe(false);
-    expect(optionsJson.runtime).toBe("@silent/core");
+    expect(optionsJson.runtime).toBe("@ivlev98/silent-core");
     expect(optionsJson.hmr).toBe(true);
   });
 

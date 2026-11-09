@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from "vitest";
-import { createRoot, createSignal, flushSync, onCleanup } from "@silent/reactivity";
+import { createRoot, createSignal, flushSync, onCleanup } from "@ivlev98/silent-reactivity";
 import {
   NODE_DISPOSER,
   attachDisposer,
@@ -672,7 +672,7 @@ describe("jsx-runtime", () => {
     const viewMetaSymbol = Symbol.for("silent.view");
     const component = (props: Record<string, unknown>): Node => document.createElement("u");
     (component as unknown as Record<symbol, unknown>)[viewMetaSymbol] = { name: "View" };
-    expect(() => jsx(component, {})).toThrow(/@silent\/vite/);
+    expect(() => jsx(component, {})).toThrow(/@ivlev98\/silent-vite/);
   });
 
   it("рендерит Fragment как DocumentFragment", () => {

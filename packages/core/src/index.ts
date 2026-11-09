@@ -1,5 +1,5 @@
-export * from "@silent/reactivity";
-export * from "@silent/di";
+export * from "@ivlev98/silent-reactivity";
+export * from "@ivlev98/silent-di";
 export * from "./decorators.js";
 export * from "./view-model.js";
 export * from "./component-context.js";

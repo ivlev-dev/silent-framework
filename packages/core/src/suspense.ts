@@ -21,7 +21,7 @@ import {
   reportMismatch,
   withWindow,
 } from "./hydration.js";
-import { getOwner, onCleanup, runWithOwner } from "@silent/reactivity";
+import { getOwner, onCleanup, runWithOwner } from "@ivlev98/silent-reactivity";
 
 export interface SuspenseProps {
   readonly fallback?: unknown;

@@ -3,9 +3,9 @@
   "compilerOptions": {
     "noEmit": true,
     "jsx": "react-jsx",
-    "jsxImportSource": "@silent/core",
+    "jsxImportSource": "@ivlev98/silent-core",
     "paths": {
-      "@silent/core/jsx-runtime": ["./src/jsx.ts"]
+      "@ivlev98/silent-core/jsx-runtime": ["./src/jsx.ts"]
     }
   },
   "include": ["src/jsx.ts", "tests/jsx-typecheck.tsx"]

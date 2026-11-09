@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createSignal, flushSync } from "@silent/reactivity";
+import { createSignal, flushSync } from "@ivlev98/silent-reactivity";
 import { mount, type MountHandle } from "../src/mount.js";
 import { prop, templateHoles } from "../src/dom.js";
 import type { AnyComponent } from "../src/types.js";

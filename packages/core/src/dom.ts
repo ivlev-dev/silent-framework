@@ -1,5 +1,5 @@
 import type { Child, Children } from "./jsx.js";
-import { createRenderEffect, onCleanup } from "@silent/reactivity";
+import { createRenderEffect, onCleanup } from "@ivlev98/silent-reactivity";
 import { extractMetadata } from "./metadata.js";
 import {
   FRAGMENT,

@@ -1,6 +1,6 @@
 import type { CounterVM } from "./counter.vm";
 import { CounterPreloader } from "./preloader";
-import { For } from "@silent/core";
+import { For } from "@ivlev98/silent-core";
 
 export function Counter(
   this: { vm: CounterVM; preloader: typeof CounterPreloader },

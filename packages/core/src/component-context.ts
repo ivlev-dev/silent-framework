@@ -1,4 +1,4 @@
-import type { Container } from "@silent/di";
+import type { Container } from "@ivlev98/silent-di";
 
 export interface ComponentContextValue<P = unknown> {
   readonly props: P;

@@ -1,5 +1,5 @@
-import type { Container } from "@silent/di";
-import { createRoot, flushSync, getOwner, runWithOwner } from "@silent/reactivity";
+import type { Container } from "@ivlev98/silent-di";
+import { createRoot, flushSync, getOwner, runWithOwner } from "@ivlev98/silent-reactivity";
 import {
   createComponent,
   setDefaultPreloader,
