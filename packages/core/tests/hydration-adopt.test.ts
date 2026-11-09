@@ -332,6 +332,77 @@ describe("гидрация с сохранением узлов", () => {
     expect(target.querySelector("strong.value")?.textContent).toBe("1");
   });
 
+  it("адоптирует fallback пустого списка и переключает его", async () => {
+    const items = createSignal<{ name: string }[]>([]);
+    class EmptyVM {}
+    function EmptyListView(this: { vm: EmptyVM }): Node {
+      void this.vm;
+      const template = templateHoles('<div class="list"><!--silent-hole-0--></div>')();
+      insert(
+        holeParent(template, 0),
+        () =>
+          For({
+            each: items[0],
+            children: (item: { name: string }) => {
+              const row = templateHoles("<li><!--silent-hole-0--></li>")();
+              insert(holeParent(row, 0), () => item.name, row.holes[0]);
+              return row.node;
+            },
+            fallback: () => templateHoles("<p>empty</p>")().node,
+          }),
+        template.holes[0],
+      );
+      return template.node;
+    }
+    attachMeta(EmptyListView, EmptyVM);
+
+    const target = host(await renderServer(EmptyListView as unknown as AnyComponent));
+    const serverParagraph = target.querySelector("p");
+
+    const mismatches: HydrationMismatchError[] = [];
+    await hydrate(target, EmptyListView as unknown as AnyComponent, {
+      onMismatch: (error) => mismatches.push(error),
+    });
+
+    expect(mismatches).toEqual([]);
+    expect(target.querySelector("p")).toBe(serverParagraph);
+    expect(target.textContent).toBe("empty");
+
+    items[1]([{ name: "a" }]);
+    flushSync();
+    expect(target.querySelector("p")).toBeNull();
+    expect(target.querySelectorAll("li").length).toBe(1);
+    expect(target.textContent).toBe("a");
+
+    items[1]([]);
+    flushSync();
+    expect(target.querySelector("li")).toBeNull();
+    expect(target.textContent).toBe("empty");
+  });
+
+  it("адоптирует шаблон с несколькими корневыми узлами", async () => {
+    class MultiVM {}
+    function MultiView(this: { vm: MultiVM }): Node {
+      void this.vm;
+      return templateHoles("<h1>Title</h1><p>Body</p>")().node;
+    }
+    attachMeta(MultiView, MultiVM);
+
+    const target = host(await renderServer(MultiView as unknown as AnyComponent));
+    const serverHeading = target.querySelector("h1");
+    const serverParagraph = target.querySelector("p");
+
+    const mismatches: HydrationMismatchError[] = [];
+    await hydrate(target, MultiView as unknown as AnyComponent, {
+      onMismatch: (error) => mismatches.push(error),
+    });
+
+    expect(mismatches).toEqual([]);
+    expect(target.querySelector("h1")).toBe(serverHeading);
+    expect(target.querySelector("p")).toBe(serverParagraph);
+    expect(target.textContent).toBe("TitleBody");
+  });
+
   it("откатывается на клиентский рендер при несовпадении", async () => {
     count[1](0);
     const target = host("<div>stale</div>");

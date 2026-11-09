@@ -308,7 +308,7 @@ export interface TemplateClone {
   readonly attrs: readonly Element[];
 }
 
-function collectParts(node: Node): { holes: Comment[]; attrs: Element[] } {
+function collectPartsMany(nodes: readonly Node[]): { holes: Comment[]; attrs: Element[] } {
   const holesByIndex = new Map<number, Comment>();
   const attrsByIndex = new Map<number, Element>();
 
@@ -369,7 +369,9 @@ function collectParts(node: Node): { holes: Comment[]; attrs: Element[] } {
     }
   };
 
-  visit(node);
+  for (const node of nodes) {
+    visit(node);
+  }
 
   const holes: Comment[] = [];
   for (let index = 0; index < holesByIndex.size; index += 1) {
@@ -388,6 +390,10 @@ function collectParts(node: Node): { holes: Comment[]; attrs: Element[] } {
     attrs.push(element);
   }
   return { holes, attrs };
+}
+
+function collectParts(node: Node): { holes: Comment[]; attrs: Element[] } {
+  return collectPartsMany([node]);
 }
 
 export function templateHoles(html: string): () => TemplateClone {
@@ -415,19 +421,50 @@ export function templateHoles(html: string): () => TemplateClone {
       return create();
     }
     const fresh = cloneNode();
-    if (fresh instanceof DocumentFragment) {
-      return mismatch("многослойный шаблон не поддерживается при гидрации");
+    const roots =
+      fresh instanceof DocumentFragment ? Array.from(fresh.childNodes) : [fresh];
+    if (roots.length === 1 && isMetadataTitle(roots[0])) {
+      const title = roots[0]!;
+      return { node: title, ...collectPartsMany([title]) };
     }
-    if (isMetadataTitle(fresh)) {
-      return { node: fresh, ...collectParts(fresh) };
+    const claimed: Node[] = [];
+    for (const root of roots) {
+      if (isMetadataTitle(root)) {
+        claimed.push(root);
+        continue;
+      }
+      const node = claimNext();
+      if (node === null || !shapeMatches(root, node, true)) {
+        return mismatch("шаблон не совпал с серверной разметкой");
+      }
+      mergeTopLevelTitles(root, node);
+      claimed.push(node);
     }
-    const node = claimNext();
-    if (node === null || !shapeMatches(fresh, node, true)) {
-      return mismatch("шаблон не совпал с серверной разметкой");
+    const parts = collectPartsMany(claimed);
+    if (claimed.length === 1 && !(fresh instanceof DocumentFragment)) {
+      return { node: claimed[0]!, ...parts };
     }
-    mergeTopLevelTitles(fresh, node);
-    return { node, ...collectParts(node) };
+    const container = document.createDocumentFragment();
+    for (const node of claimed) {
+      container.appendChild(node);
+    }
+    return { node: container, ...parts };
   };
+}
+
+export function settleNodes(end: Node | null, value: unknown): void {
+  if (end === null || !(value instanceof Node)) {
+    return;
+  }
+  const parent = end.parentNode;
+  if (parent === null) {
+    return;
+  }
+  for (const node of collectNodes(value as Children)) {
+    if (node.parentNode !== parent) {
+      parent.insertBefore(node, end);
+    }
+  }
 }
 
 export function writeRegion(start: Node, end: Node, value: unknown): void {
@@ -490,6 +527,7 @@ function insertHydrated(
     if (!initialized) {
       initialized = true;
       const value = withWindow(window, () => accessor());
+      settleNodes(window.end, value);
       const nodes = collectBetween(window.start, window.end);
       if (
         (typeof value === "string" ||
@@ -922,7 +960,8 @@ export function fragment(accessor: () => unknown): Node {
     createRenderEffect(() => {
       if (!initialized) {
         initialized = true;
-        withWindow(window, () => accessor());
+        const value = withWindow(window, () => accessor());
+        settleNodes(anchor, value);
         if (window.cursor !== anchor) {
           mismatch("содержимое fragment не совпало");
         }

@@ -2,7 +2,7 @@ import { container as rootContainer } from "@silent/di";
 import type { Children } from "./jsx.js";
 import type { AnyComponent, Preloader, ViewMeta } from "./types.js";
 import { ComponentContext } from "./component-context.js";
-import { attachDisposer, collectNodes, disposeNode } from "./dom.js";
+import { attachDisposer, collectNodes, disposeNode, settleNodes } from "./dom.js";
 import {
   copyReactiveState,
   createRoot,
@@ -490,10 +490,12 @@ function createViewResult(
               ).call(viewContext, props),
             ),
           );
+          const nodes = normalizeNodes(output);
+          settleNodes(end, output);
           if (window.cursor !== end) {
             mismatch("view не совпал с серверной разметкой");
           }
-          currentNodes = extractMetadata(normalizeNodes(output));
+          currentNodes = extractMetadata(nodes);
           return null;
         });
       });
@@ -692,7 +694,11 @@ export function createComponent(
     const result = withRuntimeOptions(options, () =>
       (component as unknown as (props: Record<string, unknown>) => unknown)(props),
     );
-    const nodes = extractMetadata(normalizeNodes(result));
+    const normalized = normalizeNodes(result);
+    if (isHydrating()) {
+      settleNodes(currentWindow()?.end ?? null, result);
+    }
+    const nodes = extractMetadata(normalized);
     let node: Node;
     if (nodes.length === 1) {
       const single = nodes[0];

@@ -9,7 +9,13 @@ import {
   untrack,
 } from "@silent/reactivity";
 import type { Children } from "./jsx.js";
-import { attachDisposer, collectNodes, createMountPoint, disposeNode } from "./dom.js";
+import {
+  attachDisposer,
+  collectNodes,
+  createMountPoint,
+  disposeNode,
+  settleNodes,
+} from "./dom.js";
 import { extractMetadata } from "./metadata.js";
 import {
   ITEM,
@@ -204,7 +210,7 @@ export function For<T>(props: ForProps<T>): Node {
               cursor: anchor.nextSibling,
             };
             const value = withWindow(window, () => props.children(item, index));
-            void value;
+            settleNodes(itemEnd, value);
             if (window.cursor !== itemEnd) {
               mismatch("содержимое элемента списка не совпало");
             }
@@ -226,6 +232,8 @@ export function For<T>(props: ForProps<T>): Node {
     return makeState(item, anchor, [], null, position);
   };
 
+  let fallbackSeed: Node[] = [];
+
   if (hydrating) {
     if (outer === null) {
       return mismatch("For вне окна гидрации");
@@ -238,10 +246,21 @@ export function For<T>(props: ForProps<T>): Node {
     const items: readonly T[] = untrack(() =>
       typeof props.each === "function" ? props.each() : props.each,
     );
-    if (items.length === 0 && fallback !== undefined) {
-      return mismatch("For с fallback не поддерживается при гидрации");
+    if (items.length === 0) {
+      if (fallback !== undefined) {
+        const window = {
+          start: outer.start,
+          end: endAnchor,
+          cursor: outer.start.nextSibling,
+        };
+        withWindow(window, () => resolve(fallback));
+        if (window.cursor !== endAnchor) {
+          return mismatch("содержимое fallback списка не совпало");
+        }
+        fallbackSeed = collectBetween(outer.start, endAnchor);
+      }
     }
-    let cursor: Node | null = outer.start.nextSibling;
+    let cursor: Node | null = items.length === 0 ? endAnchor : outer.start.nextSibling;
     let position = 0;
     while (cursor !== null && cursor !== endAnchor) {
       if (!isItemMarker(cursor)) {
@@ -270,7 +289,13 @@ export function For<T>(props: ForProps<T>): Node {
     container.appendChild(endAnchor);
   }
 
-  const fallbackMount = createMountPoint(container, endAnchor);
+  const fallbackParent = hydrating ? endAnchor.parentNode : null;
+  if (hydrating && fallbackParent === null) {
+    return mismatch("список отсоединён от документа");
+  }
+  const fallbackMount = hydrating
+    ? createMountPoint(fallbackParent as Node, endAnchor, fallbackSeed)
+    : createMountPoint(container, endAnchor);
   const skipFirst = { value: hydrating };
 
   createRenderEffect(() => {
@@ -434,7 +459,10 @@ export function Show(props: ShowProps): Node {
           end: anchor,
           cursor: outer.start.nextSibling,
         };
-        withWindow(window, () => resolve(active ? props.children : props.fallback));
+        const value = withWindow(window, () =>
+          resolve(active ? props.children : props.fallback),
+        );
+        settleNodes(anchor, value);
         if (window.cursor !== anchor) {
           mismatch("содержимое Show не совпало");
         }

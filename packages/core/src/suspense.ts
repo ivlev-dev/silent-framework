@@ -8,7 +8,7 @@ import {
   trackAsyncWork,
   withRuntimeOptions,
 } from "./component.js";
-import { createMountPoint } from "./dom.js";
+import { createMountPoint, settleNodes } from "./dom.js";
 import { getCurrentBoundary, runWithBoundary, type AsyncBoundary } from "./boundary.js";
 import {
   HydrationMismatchError,
@@ -138,9 +138,11 @@ function hydrateSuspense(props: SuspenseProps): Node {
     cursor: outer.start.nextSibling,
   };
 
+  let children: unknown = null;
   withRuntimeOptions({ ...options, boundary }, () => {
-    withWindow(window, () => resolveValue(props.children));
+    children = withWindow(window, () => resolveValue(props.children));
   });
+  settleNodes(anchor, children);
 
   onCleanup(() => {
     mount.clear();
@@ -203,9 +205,10 @@ export function lazy<P extends Record<string, unknown>>(
           runWithOwner(owner, () => {
             try {
               withRuntimeOptions(runtimeOptions, () => {
-                withWindow(window, () => {
-                  component(target, propsRecord);
-                });
+                const value = withWindow(window, () =>
+                  component(target, propsRecord),
+                );
+                settleNodes(window.end, value);
                 if (window.cursor !== window.end) {
                   mismatch("содержимое lazy не совпало");
                 }
