@@ -17,6 +17,21 @@ import {
   runWithBoundary,
   type AsyncBoundary,
 } from "./boundary.js";
+import {
+  HydrationMismatchError,
+  VIEW_END,
+  VIEW_START,
+  claimNext,
+  currentWindow,
+  findViewEnd,
+  isHydrating,
+  isMarker,
+  mismatch,
+  reportMismatch,
+  withWindow,
+  withoutHydration,
+  type HydrationWindow,
+} from "./hydration.js";
 
 export const VIEW_META = Symbol.for("silent.view");
 export const PRELOADER = Symbol.for("silent.preloader");
@@ -318,10 +333,32 @@ function createViewResult(
   options: RuntimeOptions,
 ): ComponentResult {
   const fragment = document.createDocumentFragment();
-  const start = document.createComment("silent-view");
-  const end = document.createComment("silent-view-end");
-  fragment.appendChild(start);
-  fragment.appendChild(end);
+  const hydrated = isHydrating();
+  let adoptPending = hydrated;
+  let start: Comment;
+  let end: Comment;
+  if (hydrated) {
+    const outer = currentWindow();
+    if (outer === null) {
+      return mismatch("view вне окна гидрации");
+    }
+    const claimed = claimNext();
+    if (!isMarker(claimed, VIEW_START)) {
+      return mismatch("не найден стартовый маркер view");
+    }
+    start = claimed;
+    const claimedEnd = findViewEnd(start, outer.end);
+    if (!isMarker(claimedEnd, VIEW_END)) {
+      return mismatch("не найден закрывающий маркер view");
+    }
+    end = claimedEnd;
+    outer.cursor = outer.end;
+  } else {
+    start = document.createComment(VIEW_START);
+    end = document.createComment(VIEW_END);
+    fragment.appendChild(start);
+    fragment.appendChild(end);
+  }
 
   const controller = new AbortController();
   const boundary =
@@ -349,7 +386,8 @@ function createViewResult(
   let componentOwner: Owner | null = null;
   let componentRootDispose: (() => void) | null = null;
 
-  let preloaderRef = boundary === null ? resolvePreloader(component, meta) : null;
+  let preloaderRef =
+    boundary === null && !hydrated ? resolvePreloader(component, meta) : null;
 
   const clearView = (): void => {
     viewRootDispose?.();
@@ -366,10 +404,10 @@ function createViewResult(
   const renderFallback = (): void => {
     fallbackRootDispose?.();
     fallbackRootDispose = null;
-    removeBetween(start, end);
-    if (disposed || preloaderRef === null) {
+    if (hydrated || disposed || preloaderRef === null) {
       return;
     }
+    removeBetween(start, end);
     try {
       assertSyncPreloader(preloaderRef, componentRef);
       runWithOwner(componentOwner, () => {
@@ -415,21 +453,63 @@ function createViewResult(
   attachDisposer(start, disposeInstance);
   (start as unknown as DisposeHost)[COMPONENT_DISPOSE] = disposeInstance;
 
-  const renderView = (nextVm: object, initial: boolean): void => {
-    if (disposed) {
-      return;
-    }
-    clearView();
-    propsAssign(nextVm, props);
+  const finishRender = (nextVm: object, initial: boolean): void => {
+    const rootNode = currentNodes[0] ?? start;
+    assignVm(nextVm, props, rootNode);
+    context.view = rootNode;
     if (initial) {
-      callHook(nextVm, "created");
-      createdCalled = true;
-      callHook(nextVm, "beforeMount");
+      callHook(nextVm, "mounted");
+    } else {
+      callHook(nextVm, "updated");
     }
-    const owner = componentOwner;
-    if (owner === null) {
-      return;
+  };
+
+  const renderAdopted = (nextVm: object, owner: Owner): boolean => {
+    const holder: { dispose: (() => void) | null } = { dispose: null };
+    try {
+      const window: HydrationWindow = {
+        start,
+        end,
+        cursor: start.nextSibling,
+      };
+      runWithOwner(owner, () => {
+        createRoot((disposeView) => {
+          holder.dispose = disposeView;
+          const viewContext = {
+            vm: nextVm,
+            preloader: preloaderRef as Preloader,
+          };
+          const output = withWindow(window, () =>
+            withRuntimeOptions(runtimeOptions, () =>
+              (
+                componentRef as unknown as (
+                  this: unknown,
+                  props: Record<string, unknown>,
+                ) => unknown
+              ).call(viewContext, props),
+            ),
+          );
+          if (window.cursor !== end) {
+            mismatch("view не совпал с серверной разметкой");
+          }
+          currentNodes = normalizeNodes(output);
+          return null;
+        });
+      });
+      viewRootDispose = holder.dispose;
+      return true;
+    } catch (error) {
+      holder.dispose?.();
+      viewRootDispose = null;
+      if (!(error instanceof HydrationMismatchError)) {
+        throw error;
+      }
+      reportMismatch(error);
+      return false;
     }
+  };
+
+  const renderFresh = (nextVm: object, owner: Owner): void => {
     runWithOwner(owner, () => {
       const viewRoot = createRoot((disposeView) => {
         viewRootDispose = disposeView;
@@ -454,14 +534,41 @@ function createViewResult(
       });
       void viewRoot;
     });
-    const rootNode = currentNodes[0] ?? start;
-    assignVm(nextVm, props, rootNode);
-    context.view = rootNode;
-    if (initial) {
-      callHook(nextVm, "mounted");
-    } else {
-      callHook(nextVm, "updated");
+  };
+
+  const renderView = (nextVm: object, initial: boolean): void => {
+    if (disposed) {
+      return;
     }
+    const adopt = adoptPending && initial;
+    if (!adopt) {
+      clearView();
+    }
+    propsAssign(nextVm, props);
+    if (initial) {
+      callHook(nextVm, "created");
+      createdCalled = true;
+      callHook(nextVm, "beforeMount");
+    }
+    const owner = componentOwner;
+    if (owner === null) {
+      return;
+    }
+    if (adopt) {
+      adoptPending = false;
+      if (renderAdopted(nextVm, owner)) {
+        finishRender(nextVm, initial);
+        return;
+      }
+      clearView();
+      withoutHydration(() => {
+        renderFresh(nextVm, owner);
+      });
+      finishRender(nextVm, initial);
+      return;
+    }
+    renderFresh(nextVm, owner);
+    finishRender(nextVm, initial);
   };
 
   const root = createRoot((disposeRoot) => {
@@ -564,7 +671,7 @@ function createViewResult(
   void root;
 
   return {
-    node: fragment,
+    node: hydrated ? start : fragment,
     ready: getReady(start),
     dispose: disposeInstance,
   };

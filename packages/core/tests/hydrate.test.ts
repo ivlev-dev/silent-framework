@@ -54,7 +54,7 @@ describe("hydrate", () => {
     attachMeta(View, SlowVM);
 
     const target = host('<p id="server">server markup</p>');
-    const hydration = hydrate(target, View as unknown as AnyComponent);
+    const hydration = hydrate(target, View as unknown as AnyComponent, { onMismatch: () => undefined });
     expect(target.textContent).toBe("server markup");
 
     gate.resolve();
@@ -75,7 +75,7 @@ describe("hydrate", () => {
     attachMeta(View, FreshVM);
 
     const target = host("<div>stale</div>");
-    await hydrate(target, View as unknown as AnyComponent);
+    await hydrate(target, View as unknown as AnyComponent, { onMismatch: () => undefined });
     expect(target.innerHTML).toBe(
       "<!--silent-view--><span>fresh</span><!--silent-view-end-->",
     );
@@ -99,7 +99,7 @@ describe("hydrate", () => {
     attachMeta(View, SlowVM, Loading);
 
     const target = host("<b>server</b>");
-    const hydration = hydrate(target, View as unknown as AnyComponent);
+    const hydration = hydrate(target, View as unknown as AnyComponent, { onMismatch: () => undefined });
     await Promise.resolve();
     expect(target.textContent).toBe("server");
 
@@ -123,7 +123,7 @@ describe("hydrate", () => {
     attachMeta(Counter, CounterVM);
 
     const target = host("<button>0</button>");
-    await hydrate(target, Counter as unknown as AnyComponent);
+    await hydrate(target, Counter as unknown as AnyComponent, { onMismatch: () => undefined });
     expect(target.textContent).toBe("0");
 
     target.querySelector("button")?.click();
@@ -152,6 +152,7 @@ describe("hydrate", () => {
     const target = host("<i>server</i>");
     const handle = await hydrate(target, Scoped as unknown as AnyComponent, {
       container: scope,
+      onMismatch: () => undefined,
     });
     expect(target.textContent).toBe("scoped");
 

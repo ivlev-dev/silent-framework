@@ -6,9 +6,22 @@ import {
   getOwner,
   onCleanup,
   runWithOwner,
+  untrack,
 } from "@silent/reactivity";
 import type { Children } from "./jsx.js";
 import { attachDisposer, collectNodes, createMountPoint, disposeNode } from "./dom.js";
+import {
+  ITEM,
+  LIST_END,
+  SHOW,
+  collectBetween,
+  currentWindow,
+  isHydrating,
+  isItemMarker,
+  isMarker,
+  mismatch,
+  withWindow,
+} from "./hydration.js";
 
 interface ItemState<T> {
   item: T;
@@ -86,14 +99,13 @@ function longestIncreasingSubsequence(values: readonly number[]): Set<number> {
 }
 
 export function For<T>(props: ForProps<T>): Node {
+  const hydrating = isHydrating();
+  const outer = hydrating ? currentWindow() : null;
   const container = document.createDocumentFragment();
-  const endAnchor = document.createComment("silent-end");
-  container.appendChild(endAnchor);
-  const fallbackMount = createMountPoint(container, endAnchor);
   const fallback = props.fallback;
-
   const parentOwner = getOwner();
   let states: ItemState<T>[] = [];
+  let endAnchor: Comment;
 
   const detachNode = (node: Node): void => {
     if (node.parentNode !== null) {
@@ -144,10 +156,13 @@ export function For<T>(props: ForProps<T>): Node {
     fallbackMount.clear();
   };
 
-  const createState = (item: T, parent: Node, position: number): ItemState<T> => {
-    const anchor = document.createComment("silent-item");
-    parent.insertBefore(anchor, endAnchor);
-
+  const makeState = (
+    item: T,
+    anchor: Comment,
+    nodes: Node[],
+    itemEnd: Node | null,
+    position: number,
+  ): ItemState<T> => {
     let handle: [Accessor<number>, Setter<number>] | null = null;
     let current = position;
     const index: Accessor<number> = () => {
@@ -170,14 +185,29 @@ export function For<T>(props: ForProps<T>): Node {
       index,
       setIndex,
       anchor,
-      nodes: [],
+      nodes,
       cleanup: () => {},
       disposed: false,
     };
 
+    let seeded = itemEnd !== null;
     state.cleanup = runWithOwner(parentOwner, () =>
       createRoot((dispose) => {
         createRenderEffect(() => {
+          if (seeded) {
+            seeded = false;
+            const window = {
+              start: anchor,
+              end: itemEnd as Node,
+              cursor: anchor.nextSibling,
+            };
+            const value = withWindow(window, () => props.children(item, index));
+            void value;
+            if (window.cursor !== itemEnd) {
+              mismatch("содержимое элемента списка не совпало");
+            }
+            return;
+          }
           renderItem(state, props.children(item, index));
         });
         return dispose;
@@ -188,6 +218,59 @@ export function For<T>(props: ForProps<T>): Node {
     return state;
   };
 
+  const createState = (item: T, parent: Node, position: number): ItemState<T> => {
+    const anchor = document.createComment(ITEM);
+    parent.insertBefore(anchor, endAnchor);
+    return makeState(item, anchor, [], null, position);
+  };
+
+  if (hydrating) {
+    if (outer === null) {
+      return mismatch("For вне окна гидрации");
+    }
+    const candidate = outer.end.previousSibling;
+    if (!isMarker(candidate, LIST_END)) {
+      return mismatch("не найден конец списка");
+    }
+    endAnchor = candidate;
+    const items: readonly T[] = untrack(() =>
+      typeof props.each === "function" ? props.each() : props.each,
+    );
+    if (items.length === 0 && fallback !== undefined) {
+      return mismatch("For с fallback не поддерживается при гидрации");
+    }
+    let cursor: Node | null = outer.start.nextSibling;
+    let position = 0;
+    while (cursor !== null && cursor !== endAnchor) {
+      if (!isItemMarker(cursor)) {
+        return mismatch("ожидался маркер элемента списка");
+      }
+      const anchor = cursor;
+      const nodes: Node[] = [];
+      let node = cursor.nextSibling;
+      while (node !== null && node !== endAnchor && !isItemMarker(node)) {
+        nodes.push(node);
+        node = node.nextSibling;
+      }
+      const item = items[position];
+      if (item === undefined) {
+        return mismatch("лишний элемент списка");
+      }
+      states.push(makeState(item, anchor, nodes, node ?? endAnchor, position));
+      position += 1;
+      cursor = node;
+    }
+    if (position !== items.length) {
+      return mismatch("число элементов списка не совпало");
+    }
+  } else {
+    endAnchor = document.createComment(LIST_END);
+    container.appendChild(endAnchor);
+  }
+
+  const fallbackMount = createMountPoint(container, endAnchor);
+  const skipFirst = { value: hydrating };
+
   createRenderEffect(() => {
     const parent = endAnchor.parentNode;
     if (parent === null) {
@@ -197,6 +280,10 @@ export function For<T>(props: ForProps<T>): Node {
 
     const { each } = props;
     const items: readonly T[] = typeof each === "function" ? each() : each;
+    if (skipFirst.value) {
+      skipFirst.value = false;
+      return;
+    }
     const previous = states;
 
     const pool = new Map<T, ItemState<T> | ItemState<T>[]>();
@@ -316,12 +403,49 @@ export function For<T>(props: ForProps<T>): Node {
 
   onCleanup(removeAll);
 
-  return container;
+  return hydrating ? document.createDocumentFragment() : container;
 }
 
 export function Show(props: ShowProps): Node {
+  if (isHydrating()) {
+    const outer = currentWindow();
+    if (outer === null) {
+      return mismatch("Show вне окна гидрации");
+    }
+    const anchor = outer.end.previousSibling;
+    if (!isMarker(anchor, SHOW)) {
+      return mismatch("не найден якорь Show");
+    }
+    const parent = anchor.parentNode;
+    if (parent === null) {
+      return mismatch("якорь Show отсоединён");
+    }
+    const mount = createMountPoint(parent, anchor, collectBetween(outer.start, anchor));
+    let initialized = false;
+    createRenderEffect(() => {
+      const when = resolve(props.when);
+      const active = truthy(when);
+      if (!initialized) {
+        initialized = true;
+        const window = {
+          start: outer.start,
+          end: anchor,
+          cursor: outer.start.nextSibling,
+        };
+        withWindow(window, () => resolve(active ? props.children : props.fallback));
+        if (window.cursor !== anchor) {
+          mismatch("содержимое Show не совпало");
+        }
+        return;
+      }
+      mount.render(active ? resolve(props.children) : resolve(props.fallback));
+    });
+    onCleanup(() => mount.clear());
+    return document.createDocumentFragment();
+  }
+
   const container = document.createDocumentFragment();
-  const anchor = document.createComment("silent-show");
+  const anchor = document.createComment(SHOW);
   container.appendChild(anchor);
   const mount = createMountPoint(container, anchor);
   createRenderEffect(() => {

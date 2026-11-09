@@ -1,5 +1,19 @@
 import type { Child, Children } from "./jsx.js";
 import { createRenderEffect, onCleanup } from "@silent/reactivity";
+import {
+  FRAGMENT,
+  INSERT_END,
+  INSERT_START,
+  claimNext,
+  collectBetween,
+  currentWindow,
+  findInsertWindow,
+  isHydrating,
+  isMarker,
+  mismatch,
+  shapeMatches,
+  withWindow,
+} from "./hydration.js";
 
 export const NODE_DISPOSER = Symbol("silent.disposer");
 
@@ -165,11 +179,15 @@ function detach(node: Node): void {
   node.parentNode?.removeChild(node);
 }
 
-export function createMountPoint(parent: Node, marker: Node | null): MountPoint {
+export function createMountPoint(
+  parent: Node,
+  marker: Node | null,
+  initial?: readonly Node[],
+): MountPoint {
   let initialized = false;
   let prev: unknown = null;
   let textNode: Text | null = null;
-  let nodes: Node[] = [];
+  let nodes: Node[] = initial === undefined ? [] : [...initial];
 
   const holder = (): Node => {
     if (marker === null) {
@@ -247,7 +265,7 @@ export function template(html: string): () => Node {
   const content = cached.content;
   const roots = Array.from(content.childNodes);
   const singleRoot: Node | null = roots.length === 1 ? roots[0] ?? null : null;
-  return () => {
+  const create = (): Node => {
     if (singleRoot !== null) {
       return singleRoot.cloneNode(true);
     }
@@ -260,12 +278,102 @@ export function template(html: string): () => Node {
     }
     return fragment;
   };
+  return () => {
+    if (!isHydrating()) {
+      return create();
+    }
+    const fresh = create();
+    if (fresh instanceof DocumentFragment) {
+      return mismatch("многослойный шаблон не поддерживается при гидрации");
+    }
+    const node = claimNext();
+    if (node === null || !shapeMatches(fresh, node)) {
+      return mismatch("шаблон не совпал с серверной разметкой");
+    }
+    return node;
+  };
 }
 
 export interface TemplateClone {
   readonly node: Node;
   readonly holes: readonly Comment[];
   readonly attrs: readonly Element[];
+}
+
+function collectParts(node: Node): { holes: Comment[]; attrs: Element[] } {
+  const holesByIndex = new Map<number, Comment>();
+  const attrsByIndex = new Map<number, Element>();
+
+  const scanAttributes = (element: Element): void => {
+    for (const attribute of Array.from(element.attributes)) {
+      const match = /^data-silent-a-(\d+)$/.exec(attribute.name);
+      if (match === null) {
+        continue;
+      }
+      const index = Number(match[1]);
+      if (Number.isInteger(index)) {
+        attrsByIndex.set(index, element);
+      }
+      if (!isServerMode()) {
+        element.removeAttribute(attribute.name);
+      }
+    }
+  };
+
+  const visit = (current: Node): void => {
+    if (current.nodeType === Node.COMMENT_NODE) {
+      const match = /^silent-hole-(\d+)$/.exec((current as Comment).data);
+      if (match !== null) {
+        const index = Number(match[1]);
+        if (Number.isInteger(index)) {
+          holesByIndex.set(index, current as Comment);
+        }
+      }
+    } else if (current.nodeType === Node.ELEMENT_NODE) {
+      scanAttributes(current as Element);
+    }
+    let depth = 0;
+    let child = current.firstChild;
+    while (child !== null) {
+      if (child.nodeType === Node.COMMENT_NODE) {
+        const data = (child as Comment).data;
+        if (data === INSERT_START) {
+          depth += 1;
+          child = child.nextSibling;
+          continue;
+        }
+        if (data === INSERT_END) {
+          depth = Math.max(0, depth - 1);
+          child = child.nextSibling;
+          continue;
+        }
+      }
+      if (depth === 0) {
+        visit(child);
+      }
+      child = child.nextSibling;
+    }
+  };
+
+  visit(node);
+
+  const holes: Comment[] = [];
+  for (let index = 0; index < holesByIndex.size; index += 1) {
+    const hole = holesByIndex.get(index);
+    if (hole === undefined) {
+      break;
+    }
+    holes.push(hole);
+  }
+  const attrs: Element[] = [];
+  for (let index = 0; index < attrsByIndex.size; index += 1) {
+    const element = attrsByIndex.get(index);
+    if (element === undefined) {
+      break;
+    }
+    attrs.push(element);
+  }
+  return { holes, attrs };
 }
 
 export function templateHoles(html: string): () => TemplateClone {
@@ -277,68 +385,121 @@ export function templateHoles(html: string): () => TemplateClone {
     cached = element;
   }
   const template = cached;
-  return () => {
+  const create = (): TemplateClone => {
     const content = template.content.cloneNode(true) as DocumentFragment;
     const rootNodes = Array.from(content.childNodes);
     const node =
       rootNodes.length === 1 && rootNodes[0] !== undefined
         ? rootNodes[0]
         : content;
-    const holesByIndex = new Map<number, Comment>();
-    const attrsByIndex = new Map<number, Element>();
-    const walker = document.createTreeWalker(
-      node,
-      NodeFilter.SHOW_COMMENT | NodeFilter.SHOW_ELEMENT,
-    );
-    let current: Node | null = walker.currentNode;
-    while (current !== null) {
-      if (current.nodeType === Node.COMMENT_NODE) {
-        const comment = current as Comment;
-        const match = /^silent-hole-(\d+)$/.exec(comment.data);
-        if (match !== null) {
-          const index = Number(match[1]);
-          if (Number.isInteger(index)) {
-            holesByIndex.set(index, comment);
-          }
-        }
-      } else if (current.nodeType === Node.ELEMENT_NODE) {
-        const element = current as Element;
-        for (const attribute of Array.from(element.attributes)) {
-          const match = /^data-silent-a-(\d+)$/.exec(attribute.name);
-          if (match !== null) {
-            const index = Number(match[1]);
-            if (Number.isInteger(index)) {
-              attrsByIndex.set(index, element);
-            }
-            if (!isServerMode()) {
-              element.removeAttribute(attribute.name);
-            }
-          }
-        }
-      }
-      current = walker.nextNode();
+    return { node, ...collectParts(node) };
+  };
+  return () => {
+    if (!isHydrating()) {
+      return create();
     }
-    const holes: Comment[] = [];
-    for (let index = 0; index < holesByIndex.size; index += 1) {
-      const hole = holesByIndex.get(index);
-      if (hole === undefined) {
-        break;
-      }
-      holes.push(hole);
+    const fresh = create();
+    const rootCount = fresh.node instanceof DocumentFragment ? fresh.node.childNodes.length : 1;
+    if (rootCount !== 1) {
+      return mismatch("многослойный шаблон не поддерживается при гидрации");
     }
-    const attrs: Element[] = [];
-    for (let index = 0; index < attrsByIndex.size; index += 1) {
-      const element = attrsByIndex.get(index);
-      if (element === undefined) {
-        break;
-      }
-      attrs.push(element);
+    const node = claimNext();
+    if (node === null || !shapeMatches(fresh.node, node)) {
+      return mismatch("шаблон не совпал с серверной разметкой");
     }
-    return { node, holes, attrs };
+    return { node, ...collectParts(node) };
   };
 }
 
+export function writeRegion(start: Node, end: Node, value: unknown): void {
+  const parent = end.parentNode;
+  if (parent === null) {
+    return;
+  }
+  const existing = collectBetween(start, end);
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "bigint"
+  ) {
+    const next = stringOf(value);
+    if (existing.length === 1 && existing[0] instanceof Text) {
+      const text = existing[0];
+      if (text.data !== next) {
+        text.data = next;
+      }
+      return;
+    }
+  }
+  for (const node of existing) {
+    disposeNode(node);
+    parent.removeChild(node);
+  }
+  for (const node of collectNodes(value as Children)) {
+    parent.insertBefore(node, end);
+  }
+}
+
+function insertServer(
+  parent: Node,
+  accessor: () => unknown,
+  marker: Node | null,
+): void {
+  const start = document.createComment(INSERT_START);
+  const end = document.createComment(INSERT_END);
+  if (marker === null) {
+    parent.appendChild(start);
+    parent.appendChild(end);
+  } else {
+    parent.insertBefore(start, marker);
+    parent.insertBefore(end, marker);
+  }
+  const mount = createMountPoint(parent, end);
+  createRenderEffect(() => {
+    mount.render(accessor());
+  });
+}
+
+function insertHydrated(
+  parent: Node,
+  accessor: () => unknown,
+  marker: Node | null,
+): void {
+  const window = findInsertWindow(marker, parent);
+  let initialized = false;
+  createRenderEffect(() => {
+    if (!initialized) {
+      initialized = true;
+      const value = withWindow(window, () => accessor());
+      const nodes = collectBetween(window.start, window.end);
+      if (
+        (typeof value === "string" ||
+          typeof value === "number" ||
+          typeof value === "bigint") &&
+        nodes.length === 1 &&
+        nodes[0] instanceof Text
+      ) {
+        const text = nodes[0];
+        const next = stringOf(value);
+        if (text.data !== next) {
+          text.data = next;
+        }
+      }
+      return;
+    }
+    writeRegion(window.start, window.end, accessor());
+  });
+}
+
 export function insert(parent: Node, accessor: () => unknown, marker?: Node): void {
+  if (isServerMode()) {
+    insertServer(parent, accessor, marker ?? null);
+    return;
+  }
+  if (isHydrating()) {
+    insertHydrated(parent, accessor, marker ?? null);
+    return;
+  }
   const mount = createMountPoint(parent, marker ?? null);
   createRenderEffect(() => {
     mount.render(accessor());
@@ -724,6 +885,34 @@ export function effect(fn: () => void): void {
 }
 
 export function fragment(accessor: () => unknown): Node {
+  if (isHydrating()) {
+    const outer = currentWindow();
+    if (outer === null) {
+      return mismatch("fragment вне окна гидрации");
+    }
+    const anchor = outer.end.previousSibling;
+    if (!isMarker(anchor, FRAGMENT)) {
+      return mismatch("не найден якорь fragment");
+    }
+    const window = {
+      start: outer.start,
+      end: anchor,
+      cursor: outer.start.nextSibling,
+    };
+    let initialized = false;
+    createRenderEffect(() => {
+      if (!initialized) {
+        initialized = true;
+        withWindow(window, () => accessor());
+        if (window.cursor !== anchor) {
+          mismatch("содержимое fragment не совпало");
+        }
+        return;
+      }
+      writeRegion(window.start, window.end, accessor());
+    });
+    return document.createDocumentFragment();
+  }
   const container = document.createDocumentFragment();
   const anchor = document.createComment("silent-fragment");
   container.appendChild(anchor);

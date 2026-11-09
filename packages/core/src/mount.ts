@@ -8,6 +8,15 @@ import {
   type ComponentResult,
   type RuntimeOptions,
 } from "./component.js";
+import {
+  HYDRATE_END,
+  HYDRATE_START,
+  HydrationMismatchError,
+  beginHydration,
+  endHydration,
+  withWindow,
+  withoutHydration,
+} from "./hydration.js";
 import type { AnyComponent, Preloader } from "./types.js";
 
 export interface MountOptions {
@@ -16,6 +25,7 @@ export interface MountOptions {
   readonly onError?: ((error: unknown, component: AnyComponent) => void) | undefined;
   readonly props?: Record<string, unknown> | undefined;
   readonly clear?: boolean | undefined;
+  readonly onMismatch?: ((error: HydrationMismatchError) => void) | undefined;
 }
 
 export interface MountHandle {
@@ -114,6 +124,80 @@ export async function hydrate(
     ...(options.onError !== undefined ? { onError: options.onError } : {}),
   };
 
+  const onMismatch =
+    options.onMismatch ??
+    ((error: HydrationMismatchError) => {
+      console.warn(`[silent] гидрация: ${error.message}`);
+    });
+
+  const boundaryStart = document.createComment(HYDRATE_START);
+  const boundaryEnd = document.createComment(HYDRATE_END);
+  element.insertBefore(boundaryStart, element.firstChild);
+  element.appendChild(boundaryEnd);
+
+  let adopted: { readonly result: ComponentResult; readonly dispose: () => void } | null = null;
+  const hasServerMarkup = boundaryStart.nextSibling !== boundaryEnd;
+
+  if (hasServerMarkup) {
+    beginHydration(onMismatch);
+    try {
+      adopted = withWindow(
+        { start: boundaryStart, end: boundaryEnd, cursor: boundaryStart.nextSibling },
+        () => createRootResult(app, options, runtimeOptions),
+      );
+      await adopted.result.ready;
+      await whenIdle();
+      flushSync();
+      await whenIdle();
+      flushSync();
+    } catch (error) {
+      if (!(error instanceof HydrationMismatchError)) {
+        throw error;
+      }
+      onMismatch(error);
+      adopted = null;
+    } finally {
+      endHydration();
+    }
+  }
+
+  boundaryStart.remove();
+  boundaryEnd.remove();
+
+  if (adopted === null) {
+    const fresh = withoutHydration(() => createRootResult(app, options, runtimeOptions));
+    await fresh.result.ready;
+    await whenIdle();
+    flushSync();
+    await whenIdle();
+    flushSync();
+    element.replaceChildren(fresh.result.node);
+    return handleFor(fresh.result, fresh.dispose);
+  }
+
+  return handleFor(adopted.result, adopted.dispose);
+}
+
+function handleFor(result: ComponentResult, rootDispose: () => void): MountHandle {
+  let disposed = false;
+  return {
+    ready: result.ready,
+    dispose: () => {
+      if (disposed) {
+        return;
+      }
+      disposed = true;
+      result.dispose();
+      rootDispose();
+    },
+  };
+}
+
+function createRootResult(
+  app: AnyComponent,
+  options: MountOptions,
+  runtimeOptions: RuntimeOptions,
+): { readonly result: ComponentResult; readonly dispose: () => void } {
   let rootDispose: () => void = () => {};
   const holder: { value: ComponentResult | null } = { value: null };
 
@@ -131,26 +215,5 @@ export async function hydrate(
     rootDispose();
     throw new Error("Не удалось создать корневой компонент");
   }
-
-  await created.ready;
-  await whenIdle();
-  flushSync();
-  await whenIdle();
-  flushSync();
-
-  element.replaceChildren(created.node);
-
-  let disposed = false;
-  return {
-    ready: created.ready,
-    dispose: () => {
-      if (disposed) {
-        return;
-      }
-      disposed = true;
-      created.dispose();
-      rootDispose();
-      rootDispose = () => {};
-    },
-  };
+  return { result: created, dispose: rootDispose };
 }

@@ -61,22 +61,27 @@ async function main() {
     const rendered = await renderToString(module.App, {
       props: { title: "Silent Framework" },
     });
+    const ssrHtml = rendered.html.replace("<h1", '<h1 data-ssr="1"');
 
     assert.match(
-      rendered.html,
-      /<strong class="value">0/,
-      `SSR не содержит начального значения счётчика: ${rendered.html.slice(0, 240)}`,
+      ssrHtml,
+      /<strong class="value">(?:<!--silent-insert-->)?0/,
+      `SSR не содержит начального значения счётчика: ${ssrHtml.slice(0, 240)}`,
     );
     assert.ok(
-      rendered.html.includes("Счётчик"),
+      ssrHtml.includes("Счётчик"),
       "SSR не содержит заголовка счётчика",
     );
     assert.ok(
-      rendered.html.includes("data-silent-a-"),
+      ssrHtml.includes("data-silent-a-"),
       "SSR не сохранил маркеры data-silent-a-*",
     );
+    assert.ok(
+      ssrHtml.includes('data-ssr="1"'),
+      "не удалось пометить серверный узел",
+    );
 
-    const html = await vite.transformIndexHtml("/", pageTemplate(rendered.html));
+    const html = await vite.transformIndexHtml("/", pageTemplate(ssrHtml));
     http = createHttpServer((request, response) => {
       if (request.url === "/favicon.ico") {
         response.statusCode = 204;
@@ -146,10 +151,18 @@ async function main() {
       apps: document.querySelectorAll("main.app").length,
       markers: document.body.innerHTML.includes("data-silent-a-"),
       listItems: document.querySelectorAll("ul.items li").length,
+      adopted: document.querySelectorAll("[data-ssr]").length,
+      adoptedMain: document.querySelector("main.app")?.querySelector("h1") !== null,
     }));
     assert.equal(state.apps, 1, "после гидрации осталось несколько копий приложения");
     assert.equal(state.markers, false, "маркеры data-silent-a-* остались в DOM");
     assert.equal(state.listItems, 1);
+    assert.equal(
+      state.adopted,
+      1,
+      "серверный узел не переиспользован: гидрация откатилась на клиентский рендер",
+    );
+    assert.ok(state.adoptedMain);
     assert.deepEqual(errors, [], `ошибки в консоли: ${errors.join(" | ")}`);
 
     const source = readFileSync(join(example, "src", "main.tsx"), "utf8");

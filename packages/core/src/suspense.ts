@@ -10,6 +10,17 @@ import {
 } from "./component.js";
 import { createMountPoint } from "./dom.js";
 import { getCurrentBoundary, runWithBoundary, type AsyncBoundary } from "./boundary.js";
+import {
+  HydrationMismatchError,
+  SUSPENSE,
+  collectBetween,
+  currentWindow,
+  isHydrating,
+  isMarker,
+  mismatch,
+  reportMismatch,
+  withWindow,
+} from "./hydration.js";
 import { getOwner, onCleanup, runWithOwner } from "@silent/reactivity";
 
 export interface SuspenseProps {
@@ -37,6 +48,9 @@ function errorNode(error: unknown): Node {
 }
 
 export function Suspense(props: SuspenseProps): Node {
+  if (isHydrating()) {
+    return hydrateSuspense(props);
+  }
   const container = document.createDocumentFragment();
   const anchor = document.createComment("silent-suspense");
   container.appendChild(anchor);
@@ -100,6 +114,41 @@ export function Suspense(props: SuspenseProps): Node {
   return container;
 }
 
+function hydrateSuspense(props: SuspenseProps): Node {
+  const outer = currentWindow();
+  if (outer === null) {
+    return mismatch("Suspense вне окна гидрации");
+  }
+  const anchor = outer.end.previousSibling;
+  if (!isMarker(anchor, SUSPENSE)) {
+    return mismatch("не найден якорь Suspense");
+  }
+  const parent = anchor.parentNode;
+  if (parent === null) {
+    return mismatch("якорь Suspense отсоединён");
+  }
+  const mount = createMountPoint(parent, anchor, collectBetween(outer.start, anchor));
+  const options = getRuntimeOptions();
+  const boundary: AsyncBoundary = {
+    register(): void {},
+  };
+  const window = {
+    start: outer.start,
+    end: anchor,
+    cursor: outer.start.nextSibling,
+  };
+
+  withRuntimeOptions({ ...options, boundary }, () => {
+    withWindow(window, () => resolveValue(props.children));
+  });
+
+  onCleanup(() => {
+    mount.clear();
+  });
+
+  return document.createDocumentFragment();
+}
+
 export function lazy<P extends Record<string, unknown>>(
   loader: () => Promise<AnyComponent | { default: AnyComponent }>,
   options: LazyOptions = {},
@@ -118,10 +167,6 @@ export function lazy<P extends Record<string, unknown>>(
   };
 
   return function Lazy(props: P): Node {
-    const container = document.createDocumentFragment();
-    const anchor = document.createComment("silent-lazy");
-    container.appendChild(anchor);
-    const mount = createMountPoint(container, anchor);
     const owner = getOwner();
     const boundary = getCurrentBoundary();
     const runtimeOptions = getRuntimeOptions();
@@ -129,6 +174,66 @@ export function lazy<P extends Record<string, unknown>>(
       options.preloader === undefined ? getDefaultPreloader() : options.preloader;
     const propsRecord: Record<string, unknown> = props;
     let disposed = false;
+
+    if (isHydrating()) {
+      const outer = currentWindow();
+      if (outer === null) {
+        return mismatch("lazy вне окна гидрации");
+      }
+      const anchor = outer.end.previousSibling;
+      if (anchor === null) {
+        return mismatch("не найден якорь lazy");
+      }
+      const window = {
+        start: outer.start,
+        end: anchor,
+        cursor: outer.start.nextSibling,
+      };
+      onCleanup(() => {
+        disposed = true;
+      });
+      const pending = trackAsyncWork(ensure());
+      boundary?.register(pending);
+      void pending.then(
+        () => {
+          if (disposed || loaded === null) {
+            return;
+          }
+          const target = loaded;
+          runWithOwner(owner, () => {
+            try {
+              withRuntimeOptions(runtimeOptions, () => {
+                withWindow(window, () => {
+                  component(target, propsRecord);
+                });
+                if (window.cursor !== window.end) {
+                  mismatch("содержимое lazy не совпало");
+                }
+              });
+            } catch (error) {
+              if (error instanceof HydrationMismatchError) {
+                reportMismatch(error);
+                return;
+              }
+              throw error;
+            }
+          });
+        },
+        (error: unknown) => {
+          if (disposed) {
+            return;
+          }
+          const handler = options.onError ?? getErrorHandler();
+          handler(error, Lazy);
+        },
+      );
+      return document.createDocumentFragment();
+    }
+
+    const container = document.createDocumentFragment();
+    const anchor = document.createComment("silent-lazy");
+    container.appendChild(anchor);
+    const mount = createMountPoint(container, anchor);
 
     onCleanup(() => {
       disposed = true;

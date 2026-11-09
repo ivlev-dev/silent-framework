@@ -5,6 +5,7 @@ export * from "./view-model.js";
 export * from "./component-context.js";
 export * from "./component.js";
 export * from "./mount.js";
+export { HydrationMismatchError } from "./hydration.js";
 export * from "./types.js";
 export * from "./jsx.js";
 export { For, Show } from "./control-flow.js";
