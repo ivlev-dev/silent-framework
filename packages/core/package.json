@@ -42,6 +42,14 @@
     "@silent/vite": "workspace:*"
   },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ivlev-dev/silent-framework.git"
+  },
+  "homepage": "https://github.com/ivlev-dev/silent-framework#readme",
+  "bugs": {
+    "url": "https://github.com/ivlev-dev/silent-framework/issues"
+  },
   "engines": {
     "node": ">=22"
   },
