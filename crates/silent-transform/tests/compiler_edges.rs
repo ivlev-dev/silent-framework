@@ -347,3 +347,76 @@ export function Counter(this: { vm: CounterVM }, props: object) {
     assert!(!code.contains("import.meta.hot"));
     assert!(!code.contains("_hmrUpdate"));
 }
+
+#[test]
+fn textarea_dynamic_child_uses_value_binding() {
+    let code = run(
+        r#"export function Form(props: { value: string }) {
+  return <textarea class="field">{props.value}</textarea>;
+}
+"#,
+        "/proj/src/form.tsx",
+    );
+    assert!(
+        !code.contains("<textarea class=\"field\"><!--silent-hole-0-->"),
+        "textarea must not contain hole comments: {code}"
+    );
+    assert!(
+        code.contains("data-silent-text"),
+        "missing text marker: {code}"
+    );
+    assert!(code.contains("\"value\""), "missing value binding: {code}");
+}
+
+#[test]
+fn textarea_static_text_stays_in_markup() {
+    let code = run(
+        r#"export function Form() {
+  return <textarea>hello</textarea>;
+}
+"#,
+        "/proj/src/form.tsx",
+    );
+    assert!(code.contains("<textarea>hello</textarea>"), "code: {code}");
+    assert!(!code.contains("data-silent-text"), "code: {code}");
+}
+
+#[test]
+fn title_dynamic_text_uses_text_content_binding() {
+    let code = run(
+        r#"export function Page(props: { name: string }) {
+  return <title>Hello {props.name}</title>;
+}
+"#,
+        "/proj/src/page.tsx",
+    );
+    assert!(
+        !code.contains("<title><!--silent-hole-0-->"),
+        "title must not contain hole comments: {code}"
+    );
+    assert!(
+        code.contains("data-silent-text"),
+        "missing text marker: {code}"
+    );
+    assert!(
+        code.contains("\"textContent\""),
+        "missing textContent binding: {code}"
+    );
+    assert!(
+        code.contains("\"Hello \""),
+        "space must be preserved: {code}"
+    );
+}
+
+#[test]
+fn title_static_text_stays_in_markup() {
+    let code = run(
+        r#"export function Page() {
+  return <title>My Blog</title>;
+}
+"#,
+        "/proj/src/page.tsx",
+    );
+    assert!(code.contains("<title>My Blog</title>"), "code: {code}");
+    assert!(!code.contains("data-silent-text"), "code: {code}");
+}

@@ -29,6 +29,8 @@ enum DynamicAttrKind {
     Style,
     Spread,
     InnerHtml,
+    TextValue,
+    TextContent,
 }
 
 #[derive(Clone)]
@@ -96,10 +98,115 @@ impl SilentPass {
         }
 
         parts.html.push('>');
+        if is_rcdata_tag(&tag) && self.build_rcdata_children(&tag, &element.children, parts) {
+            parts.html.push_str("</");
+            parts.html.push_str(&tag);
+            parts.html.push('>');
+            return;
+        }
         self.build_children_html(&element.children, parts);
         parts.html.push_str("</");
         parts.html.push_str(&tag);
         parts.html.push('>');
+    }
+
+    fn build_rcdata_children(
+        &mut self,
+        tag: &str,
+        children: &[JSXElementChild],
+        parts: &mut TemplateParts,
+    ) -> bool {
+        enum Piece {
+            Text(String),
+            Dynamic(Expr),
+        }
+
+        let mut pieces: Vec<Piece> = Vec::new();
+        for child in children {
+            match child {
+                JSXElementChild::JSXText(text) => {
+                    let raw = text.value.to_string_lossy();
+                    let value = if raw.contains('\n') {
+                        process_text(&raw)
+                    } else {
+                        raw.into_owned()
+                    };
+                    if !value.is_empty() {
+                        pieces.push(Piece::Text(value));
+                    }
+                }
+                JSXElementChild::JSXExprContainer(container) => {
+                    let JSXExpr::Expr(expr) = &container.expr else {
+                        continue;
+                    };
+                    match unwrap_paren(expr) {
+                        Expr::Lit(Lit::Str(value)) => {
+                            let text = value.value.to_string_lossy().into_owned();
+                            if !text.is_empty() {
+                                pieces.push(Piece::Text(text));
+                            }
+                        }
+                        Expr::Lit(Lit::Num(value)) => {
+                            pieces.push(Piece::Text(format_number(value.value)));
+                        }
+                        Expr::Lit(Lit::Bool(_)) | Expr::Lit(Lit::Null(_)) => {}
+                        Expr::JSXElement(_) | Expr::JSXFragment(_) => return false,
+                        other => {
+                            let compiled = self.compile_expr(other);
+                            pieces.push(Piece::Dynamic(*compiled));
+                        }
+                    }
+                }
+                JSXElementChild::JSXElement(_)
+                | JSXElementChild::JSXFragment(_)
+                | JSXElementChild::JSXSpreadChild(_) => return false,
+            }
+        }
+
+        let static_only = pieces.iter().all(|piece| matches!(piece, Piece::Text(_)));
+
+        if static_only {
+            let mut text = String::new();
+            for piece in pieces {
+                if let Piece::Text(value) = piece {
+                    text.push_str(&value);
+                }
+            }
+            if !text.is_empty() {
+                parts.html.push_str(&escape_html(&text));
+            }
+            return true;
+        }
+
+        let mut combined: Option<Expr> = None;
+        for piece in pieces {
+            let expr = match piece {
+                Piece::Text(value) => string_expr(&value),
+                Piece::Dynamic(expr) => expr,
+            };
+            combined = Some(match combined {
+                None => expr,
+                Some(previous) => Expr::Bin(BinExpr {
+                    span: DUMMY_SP,
+                    op: BinaryOp::Add,
+                    left: Box::new(previous),
+                    right: Box::new(expr),
+                }),
+            });
+        }
+
+        let expr = combined.unwrap_or_else(|| string_expr(""));
+        let kind = if tag.eq_ignore_ascii_case("textarea") {
+            DynamicAttrKind::TextValue
+        } else {
+            DynamicAttrKind::TextContent
+        };
+        let index = parts.attrs.len();
+        parts.html.push_str(&format!(
+            " data-silent-a-{index}=\"\" data-silent-text=\"\""
+        ));
+        parts.attrs.push(DynamicAttr { kind, expr });
+        true
     }
 
     fn build_html_attr(&mut self, attr: &JSXAttr, parts: &mut TemplateParts) {
@@ -284,6 +391,14 @@ impl SilentPass {
                         vec![element, string_expr("innerHTML"), arrow_expr(html)],
                     )
                 }
+                DynamicAttrKind::TextValue => call_expr(
+                    Expr::Ident(self.helper("prop")),
+                    vec![element, string_expr("value"), arrow_expr(attr.expr)],
+                ),
+                DynamicAttrKind::TextContent => call_expr(
+                    Expr::Ident(self.helper("prop")),
+                    vec![element, string_expr("textContent"), arrow_expr(attr.expr)],
+                ),
             };
             statements.push(Stmt::Expr(swc_core::ecma::ast::ExprStmt {
                 span: DUMMY_SP,
@@ -786,6 +901,10 @@ fn format_number(value: f64) -> String {
     } else {
         value.to_string()
     }
+}
+
+fn is_rcdata_tag(tag: &str) -> bool {
+    matches!(tag.to_ascii_lowercase().as_str(), "textarea" | "title")
 }
 
 fn is_void_tag(tag: &str) -> bool {
