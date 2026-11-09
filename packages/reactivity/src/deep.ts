@@ -1,4 +1,4 @@
-import { createSignalHandle, type SignalHandle } from "./graph";
+import { createSignalHandle, type SignalHandle } from "./graph.js";
 
 interface ReactiveRecord {
   readonly raw: object;

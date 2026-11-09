@@ -6,7 +6,7 @@ export type {
   ReactiveStore,
   Setter,
   SignalOptions,
-} from "./types";
+} from "./types.js";
 
 export {
   batch,
@@ -20,9 +20,9 @@ export {
   onCleanup,
   runWithOwner,
   untrack,
-} from "./graph";
+} from "./graph.js";
 
-export { on } from "./on";
+export { on } from "./on.js";
 
 export {
   deepReactive,
@@ -30,7 +30,7 @@ export {
   isReactiveClass,
   markReactiveClass,
   unwrap,
-} from "./deep";
+} from "./deep.js";
 
 export {
   createReactiveStore,
@@ -40,4 +40,4 @@ export {
   registerCleanup,
   storeFor,
   writeField,
-} from "./store";
+} from "./store.js";

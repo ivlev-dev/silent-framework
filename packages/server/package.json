@@ -1,0 +1,46 @@
+{
+  "name": "@silent/server",
+  "version": "0.0.1",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@silent/core": "workspace:*",
+    "@silent/di": "workspace:*",
+    "@silent/reactivity": "workspace:*"
+  },
+  "devDependencies": {
+    "jsdom": "^31.0.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "description": "Server-side rendering for Silent Framework without DOM dependencies",
+  "keywords": [
+    "ssr",
+    "server",
+    "reactivity",
+    "frontend"
+  ]
+}

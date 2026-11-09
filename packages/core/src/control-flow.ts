@@ -7,8 +7,8 @@ import {
   onCleanup,
   runWithOwner,
 } from "@silent/reactivity";
-import type { Children } from "./jsx";
-import { attachDisposer, collectNodes, createMountPoint, disposeNode } from "./dom";
+import type { Children } from "./jsx.js";
+import { attachDisposer, collectNodes, createMountPoint, disposeNode } from "./dom.js";
 
 interface ItemState<T> {
   item: T;

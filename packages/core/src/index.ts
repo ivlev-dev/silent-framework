@@ -1,14 +1,14 @@
 export * from "@silent/reactivity";
 export * from "@silent/di";
-export * from "./decorators";
-export * from "./view-model";
-export * from "./component-context";
-export * from "./component";
-export * from "./mount";
-export * from "./types";
-export * from "./jsx";
-export { For, Show } from "./control-flow";
-export { Suspense, lazy, type SuspenseProps, type LazyOptions } from "./suspense";
+export * from "./decorators.js";
+export * from "./view-model.js";
+export * from "./component-context.js";
+export * from "./component.js";
+export * from "./mount.js";
+export * from "./types.js";
+export * from "./jsx.js";
+export { For, Show } from "./control-flow.js";
+export { Suspense, lazy, type SuspenseProps, type LazyOptions } from "./suspense.js";
 export {
   applyProps,
   attachDisposer,
@@ -21,9 +21,11 @@ export {
   effect,
   fragment,
   insert,
+  isServerMode,
   on,
   prop,
   ref,
+  setServerMode,
   spread,
   style,
   template,
@@ -32,4 +34,4 @@ export {
   NODE_DISPOSER,
   type MountPoint,
   type TemplateClone,
-} from "./dom";
+} from "./dom.js";

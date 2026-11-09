@@ -1,4 +1,4 @@
-import type { Accessor, MemoOptions, Owner, Setter, SignalOptions } from "./types";
+import type { Accessor, MemoOptions, Owner, Setter, SignalOptions } from "./types.js";
 
 type EqualityFn<T> = (a: T, b: T) => boolean;
 type NodeState = 0 | 1 | 2;

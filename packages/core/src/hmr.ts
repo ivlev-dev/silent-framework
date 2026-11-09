@@ -1,6 +1,6 @@
-import { getViewMeta } from "./component";
-import { getViewInstances } from "./registry";
-import type { AnyComponent, ViewMeta } from "./types";
+import { getViewMeta } from "./component.js";
+import { getViewInstances } from "./registry.js";
+import type { AnyComponent, ViewMeta } from "./types.js";
 
 export function hmrUpdate(
   moduleId: string,

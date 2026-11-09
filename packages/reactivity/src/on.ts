@@ -1,5 +1,5 @@
-import { createEffect, untrack } from "./graph";
-import type { Accessor, OnOptions } from "./types";
+import { createEffect, untrack } from "./graph.js";
+import type { Accessor, OnOptions } from "./types.js";
 
 export function on<T>(
   deps: Accessor<T> | Accessor<T>[],

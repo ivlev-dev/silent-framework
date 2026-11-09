@@ -1,14 +1,15 @@
-import type { AnyComponent, Preloader } from "./types";
+import type { AnyComponent, Preloader } from "./types.js";
 import {
   component,
   getDefaultPreloader,
   getErrorHandler,
   getRuntimeOptions,
   setReady,
+  trackAsyncWork,
   withRuntimeOptions,
-} from "./component";
-import { createMountPoint } from "./dom";
-import { getCurrentBoundary, runWithBoundary, type AsyncBoundary } from "./boundary";
+} from "./component.js";
+import { createMountPoint } from "./dom.js";
+import { getCurrentBoundary, runWithBoundary, type AsyncBoundary } from "./boundary.js";
 import { getOwner, onCleanup, runWithOwner } from "@silent/reactivity";
 
 export interface SuspenseProps {
@@ -143,7 +144,7 @@ export function lazy<P extends Record<string, unknown>>(
       mount.render(withRuntimeOptions(runtimeOptions, () => component(preloader, {})));
     }
 
-    const promise = ensure();
+    const promise = trackAsyncWork(ensure());
     setReady(
       anchor,
       promise.then(

@@ -16,10 +16,13 @@
     "build:example": "pnpm --filter @silent/example-counter build",
     "bench": "pnpm --filter @silent/bench bench",
     "test:e2e": "node scripts/e2e.mjs",
-    "pack:check": "node scripts/pack-check.mjs"
+    "test:ssr": "node scripts/ssr-e2e.mjs",
+    "pack:check": "node scripts/pack-check.mjs",
+    "api:check": "node scripts/api-check.mjs"
   },
   "devDependencies": {
     "@napi-rs/cli": "^3.10.12",
+    "@silent/server": "workspace:*",
     "@types/node": "^26.6.6",
     "jsdom": "^31.0.0",
     "tinybench": "^6.2.3",

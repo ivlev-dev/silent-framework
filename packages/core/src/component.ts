@@ -1,8 +1,8 @@
 import { container as rootContainer } from "@silent/di";
-import type { Children } from "./jsx";
-import type { AnyComponent, Preloader, ViewMeta } from "./types";
-import { ComponentContext } from "./component-context";
-import { attachDisposer, collectNodes, disposeNode } from "./dom";
+import type { Children } from "./jsx.js";
+import type { AnyComponent, Preloader, ViewMeta } from "./types.js";
+import { ComponentContext } from "./component-context.js";
+import { attachDisposer, collectNodes, disposeNode } from "./dom.js";
 import {
   copyReactiveState,
   createRoot,
@@ -11,12 +11,12 @@ import {
   runWithOwner,
   type Owner,
 } from "@silent/reactivity";
-import { registerView } from "./registry";
+import { registerView } from "./registry.js";
 import {
   getCurrentBoundary,
   runWithBoundary,
   type AsyncBoundary,
-} from "./boundary";
+} from "./boundary.js";
 
 export const VIEW_META = Symbol.for("silent.view");
 export const PRELOADER = Symbol.for("silent.preloader");
@@ -97,6 +97,10 @@ function trackPending<T>(promise: Promise<T>): Promise<T> {
     () => pending.delete(promise),
   );
   return promise;
+}
+
+export function trackAsyncWork<T>(promise: Promise<T>): Promise<T> {
+  return trackPending(promise);
 }
 
 export async function whenIdle(): Promise<void> {

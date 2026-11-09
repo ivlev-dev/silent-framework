@@ -1,4 +1,4 @@
-import type { Child, Children } from "./jsx";
+import type { Child, Children } from "./jsx.js";
 import { createRenderEffect, onCleanup } from "@silent/reactivity";
 
 export const NODE_DISPOSER = Symbol("silent.disposer");
@@ -19,6 +19,16 @@ export interface MountPoint {
 const templateCache = new Map<string, HTMLTemplateElement>();
 const listenerRegistry = new WeakMap<Element, Map<string, ListenerHolder>>();
 const styleSnapshots = new WeakMap<Element, Set<string>>();
+
+let serverMode = false;
+
+export function setServerMode(enabled: boolean): void {
+  serverMode = enabled;
+}
+
+export function isServerMode(): boolean {
+  return serverMode;
+}
 
 const propertyNames = new Set<string>(["value", "checked", "selected", "disabled"]);
 
@@ -300,7 +310,9 @@ export function templateHoles(html: string): () => TemplateClone {
             if (Number.isInteger(index)) {
               attrsByIndex.set(index, element);
             }
-            element.removeAttribute(attribute.name);
+            if (!isServerMode()) {
+              element.removeAttribute(attribute.name);
+            }
           }
         }
       }

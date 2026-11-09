@@ -1,4 +1,4 @@
-import type { AnyComponent, ViewMeta } from "./types";
+import type { AnyComponent, ViewMeta } from "./types.js";
 
 export interface ViewInstance {
   readonly moduleId: string;
@@ -9,7 +9,7 @@ export interface ViewInstance {
   rerender(component: AnyComponent, meta: ViewMeta): void;
   replaceVm(vm: object): void;
   recreateVm(nextVm?: unknown): Promise<void>;
-  updatePreloader(preloader: import("./types").Preloader): void;
+  updatePreloader(preloader: import("./types.js").Preloader): void;
   dispose(): void;
 }
 

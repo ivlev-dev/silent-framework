@@ -9,6 +9,9 @@
 - `@silent/core` — декораторы, ViewModel, JSX runtime, компоненты, монтирование, HMR.
 - `@silent/swc` — нативный Node-API addon.
 - `@silent/vite` — Vite-плагин.
+- `@silent/server` — SSR: мини-DOM, `renderToString`, сериализация без внешних DOM-зависимостей.
+
+Все пакеты публикуются как ESM; относительные импорты в собранном коде содержат явное расширение `.js`, чтобы пакеты грузились в чистом Node без бандлера.
 
 ## `@silent/reactivity`
 
@@ -320,3 +323,37 @@ version(): string;
 - При обновлении view-модуля сохраняется VM и контекст.
 - При обновлении VM-модуля VM пересоздаётся с переносом значений `@reactive`-полей.
 - Несовместимые изменения приводят к `import.meta.hot.invalidate()`.
+
+## SSR и гидрация
+
+### `@silent/server`
+
+Пакет не зависит от jsdom/linkedom. Внутри — собственный мини-DOM:
+
+```text
+packages/server/src/dom/
+  types.ts       # контракты DomNode/DomElement/DomDocument
+  node.ts        # NodeImpl, TextImpl, CommentImpl, ElementImpl, SvgElementImpl
+  attributes.ts  # AttributesImpl
+  style.ts       # StyleImpl, отражает cssText в атрибут style
+  parser.ts      # парсер подмножества HTML компилятора, TemplateElementImpl
+  document.ts    # DocumentImpl, TreeWalkerImpl, installDomGlobals
+  serializer.ts  # сериализация с экранированием и void-тегами
+```
+
+`renderToString(app, options)`:
+
+1. Ставит мини-DOM в глобалы и включает серверный режим (`setServerMode`).
+2. Создаёт корень и ждёт `ready`, `whenIdle`, `flushSync` — включая `Suspense` и `lazy` (`trackAsyncWork`).
+3. Сериализует дерево со всеми якорями; `data-silent-a-N` сохраняются для клиента.
+4. В `finally` восстанавливает глобалы и демонтирует корень.
+
+Вызовы сериализуются очередью, потому что DOM-глобалы общие на процесс.
+
+### Гидрация
+
+`hydrate(target, app, options)` — отложенный клиентский рендер: приложение рендерится в отсоединённый фрагмент, серверная разметка остаётся видимой до готовности всех асинхронных view, затем содержимое заменяется один раз. Поузловая адоптация требует стабильных идентификаторов в разметке и запланирована отдельно; текущая реализация гарантирует отсутствие прелоадера и двойного рендера в видимой области.
+
+### Внешний рантайм в SSR
+
+Vite не должен встраивать копию `@silent/core` в SSR-граф, иначе приложение и `renderToString` получат разные модульные экземпляры (разные `whenIdle`/`setServerMode`). В `vite.config.ts` задавайте `ssr.external` для всех `@silent/*`.

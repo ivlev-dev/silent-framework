@@ -20,6 +20,7 @@ const expectations = {
   ],
   swc: ["package/index.js", "package/index.d.ts"],
   vite: ["package/dist/index.js", "package/dist/index.d.ts"],
+  server: ["package/dist/index.js", "package/dist/index.d.ts"],
 };
 
 for (const [name, required] of Object.entries(expectations)) {

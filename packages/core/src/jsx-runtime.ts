@@ -1,5 +1,5 @@
-import type { Children } from "./jsx";
-import { applyProps, collectNodes, createElement } from "./dom";
+import type { Children } from "./jsx.js";
+import { applyProps, collectNodes, createElement } from "./dom.js";
 
 export {
   effect,
@@ -17,10 +17,10 @@ export {
   dynamic,
   attachDisposer,
   NODE_DISPOSER,
-} from "./dom";
+} from "./dom.js";
 
-export { For, Show } from "./control-flow";
-export { Suspense, lazy, type SuspenseProps, type LazyOptions } from "./suspense";
+export { For, Show } from "./control-flow.js";
+export { Suspense, lazy, type SuspenseProps, type LazyOptions } from "./suspense.js";
 export {
   component,
   createComponent,
@@ -37,10 +37,10 @@ export {
   COMPONENT_DISPOSE,
   PRELOADER,
   VIEW_META,
-} from "./component";
+} from "./component.js";
 
-export type { JSX, Children, Child } from "./jsx";
-export type { AnyComponent, Preloader, ViewMeta, ViewRuntimeContext } from "./types";
+export type { JSX, Children, Child } from "./jsx.js";
+export type { AnyComponent, Preloader, ViewMeta, ViewRuntimeContext } from "./types.js";
 
 export const Fragment = Symbol.for("silent.fragment");
 

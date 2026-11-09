@@ -1,4 +1,4 @@
-import { deepReactive, unwrap } from "./deep";
+import { deepReactive, unwrap } from "./deep.js";
 import {
   createMemo,
   createRoot,
@@ -6,8 +6,8 @@ import {
   runWithOwner,
   untrack,
   type SignalHandle,
-} from "./graph";
-import type { Accessor, ReactiveStore } from "./types";
+} from "./graph.js";
+import type { Accessor, ReactiveStore } from "./types.js";
 
 interface ComputedRecord {
   readonly accessor: Accessor<unknown>;

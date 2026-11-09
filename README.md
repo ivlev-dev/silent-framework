@@ -13,12 +13,16 @@
 - Vite 8 плагин с полной компиляцией TS/TSX и HMR.
 - Прелоадеры на уровне view и HMR с сохранением состояния.
 - `Suspense` и `lazy`: асинхронные границы и отложенная загрузка модулей.
+- SSR без внешних DOM-зависимостей (`@silent/server`) и гидрация без вспышки прелоадера.
+- Справочник API с автопроверкой полноты (`pnpm api:check`).
 
 ## Установка
 
 ```bash
 pnpm add @silent/core @silent/di @silent/reactivity
 pnpm add -D @silent/vite
+# для SSR:
+pnpm add @silent/server
 ```
 
 ```ts
@@ -93,6 +97,44 @@ export function App() {
 ```
 
 `Suspense` держит fallback, пока не завершатся все асинхронные view внутри. `lazy` кеширует загрузку модуля на обёртку, поддерживает `preloader` и `onError` в опциях.
+
+## SSR и гидрация
+
+Серверный рендер не тащит jsdom или linkedom: в `@silent/server` собственный мини-DOM (парсер шаблонов компилятора, документ, TreeWalker, сериализатор).
+
+```ts
+import { renderToString } from "@silent/server";
+import { App } from "./app";
+
+const { html } = await renderToString(App, { props: { title: "Hi" } });
+```
+
+Рендер дожидается асинхронных ViewModel, `Suspense` и `lazy`, сериализует дерево с якорями и серверными маркерами атрибутов. Вызовы сериализуются внутренней очередью, DOM-глобалы живут только на время рендера.
+
+На клиенте используйте `hydrate` вместо `mount`:
+
+```ts
+import { hydrate } from "@silent/core";
+
+void hydrate("#app", App, { props: { title: "Hi" } });
+```
+
+`hydrate` не трогает серверную разметку, пока не завершатся все асинхронные ViewModel, и только потом заменяет содержимое одним `replaceChildren`: пользователь не видит прелоадер и пустой экран. Поузловая адоптация серверных узлов (с сохранением идентичности) — в дорожной карте.
+
+Для SSR-сборки Vite держите рантайм внешним, иначе приложение получит вторую копию рантайма и гидрация не дождётся компонентов:
+
+```ts
+export default defineConfig({
+  plugins: [silent()],
+  ssr: {
+    external: ["@silent/core", "@silent/di", "@silent/reactivity", "@silent/server"],
+  },
+});
+```
+
+## API
+
+Полный справочник: [`docs/api/index.md`](./docs/api/index.md). Проверка полноты — `pnpm api:check`: скрипт сверяет экспорты `dist/*.d.ts` с документацией и падает при расхождениях.
 
 ## Реактивность
 
@@ -176,6 +218,9 @@ pnpm build:native
 pnpm build
 pnpm test
 pnpm typecheck
+pnpm api:check
 pnpm dev
 pnpm bench
+pnpm test:e2e
+pnpm test:ssr
 ```
