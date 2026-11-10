@@ -1,0 +1,44 @@
+{
+  "name": "@ivlev-dev/silent",
+  "version": "0.3.0",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts"
+  ],
+  "dependencies": {
+    "@ivlev-dev/silent-core": "workspace:*",
+    "@ivlev-dev/silent-di": "workspace:*",
+    "@ivlev-dev/silent-reactivity": "workspace:*",
+    "@ivlev-dev/silent-vite": "workspace:*"
+  },
+  "peerDependencies": {
+    "vite": ">=8"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ivlev-dev/silent-framework.git"
+  },
+  "homepage": "https://github.com/ivlev-dev/silent-framework#readme",
+  "bugs": {
+    "url": "https://github.com/ivlev-dev/silent-framework/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "description": "Silent Framework meta package: runtime and Vite plugin in one install",
+  "keywords": [
+    "silent",
+    "reactive",
+    "mvvm",
+    "jsx",
+    "vite"
+  ]
+}

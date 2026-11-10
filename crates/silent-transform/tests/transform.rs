@@ -21,6 +21,18 @@ fn compiles_jsx_template_and_dynamic_text() {
 }
 
 #[test]
+fn keeps_rcdata_marker_inside_opening_tag() {
+    let code = run(
+        "const el = <div><title>{name}</title></div>;",
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(code.contains("<title data-silent-a-0"));
+    assert!(!code.contains("title> data-silent-a-"));
+    assert!(code.contains("_$prop"));
+}
+
+#[test]
 fn emits_component_metadata() {
     let source = r#"
 import type { CounterVM } from "./counter.vm";

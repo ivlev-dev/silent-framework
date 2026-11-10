@@ -37,6 +37,7 @@ jobs:
       - run: pnpm api:check
       - run: pnpm install:check
       - run: pnpm --filter @ivlev-dev/silent-example-counter build
+      - run: pnpm --filter @ivlev-dev/silent-example-ssr-counter build
       - run: pnpm exec playwright-core install --with-deps chromium
       - run: pnpm test:e2e
       - run: pnpm test:ssr

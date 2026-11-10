@@ -20,9 +20,20 @@
 
 ## Установка
 
+Одной командой — метапакет с рантаймом и плагином:
+
 ```bash
-pnpm add @ivlev-dev/silent-core @ivlev-dev/silent-di @ivlev-dev/silent-reactivity
-pnpm add -D @ivlev-dev/silent-vite
+pnpm add @ivlev-dev/silent
+pnpm add -D vite typescript
+# для SSR:
+pnpm add @ivlev-dev/silent-server
+```
+
+Точечная установка:
+
+```bash
+pnpm add @ivlev-dev/silent-core
+pnpm add -D @ivlev-dev/silent-vite vite typescript
 # для SSR:
 pnpm add @ivlev-dev/silent-server
 ```
@@ -35,6 +46,8 @@ export default defineConfig({
   plugins: [silent()],
 });
 ```
+
+При установке метапакета плагин доступен и оттуда: `import { silent } from "@ivlev-dev/silent"`.
 
 По умолчанию плагин компилирует TS/TSX с `target: "es2024"`, включает source maps и HMR.
 
@@ -264,6 +277,16 @@ silent({
 - Сложные re-export и generic-типы в DI требуют ручной привязки.
 - HMR рантайма самого фреймворка выполняет полную перезагрузку.
 
+## Документация
+
+- [С чего начать](./docs/getting-started.md)
+- [SSR и деплой](./docs/guides/ssr.md)
+- [Гидрация](./docs/guides/hydration.md)
+- [Dependency Injection](./docs/guides/di.md)
+- [Миграция с SolidJS](./docs/guides/migration-from-solid.md)
+- [Справочник API](./docs/api/index.md)
+- Примеры: [`examples/counter`](./examples/counter), [`examples/ssr-counter`](./examples/ssr-counter)
+
 ## Разработка
 
 ```bash
@@ -282,11 +305,11 @@ pnpm install:check
 
 ## Релиз
 
-Все пакеты `@ivlev-dev/silent-*` версионируются синхронно (сейчас `0.2.0`). Релиз запускается тегом:
+Все пакеты `@ivlev-dev/silent-*` версионируются синхронно (сейчас `0.3.0`). Релиз запускается тегом:
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
 GitHub Actions `Release` соберёт нативные бинарники под Linux/Windows, прогонит тесты, проверит совпадение тега и версий, соберёт пакеты и опубликует их в npm. Для публикации нужен секрет репозитория `NPM_TOKEN`. Локальная проверка установки из tarball'ов — `pnpm install:check`.

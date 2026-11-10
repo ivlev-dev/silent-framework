@@ -1,0 +1,21 @@
+{
+  "name": "@ivlev-dev/silent-example-ssr-counter",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs",
+    "build": "vite build && vite build --ssr src/entry-server.tsx --outDir dist/server",
+    "start": "NODE_ENV=production node server.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@ivlev-dev/silent-core": "workspace:*",
+    "@ivlev-dev/silent-server": "workspace:*"
+  },
+  "devDependencies": {
+    "@ivlev-dev/silent-vite": "workspace:*",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.6"
+  }
+}

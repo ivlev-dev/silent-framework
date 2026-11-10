@@ -22,6 +22,11 @@ struct DynamicAttr {
     expr: Expr,
 }
 
+struct RcdataChildren {
+    attrs: String,
+    text: String,
+}
+
 enum DynamicAttrKind {
     Attr(String),
     Event(String),
@@ -97,8 +102,17 @@ impl SilentPass {
             return;
         }
 
+        let rcdata = if is_rcdata_tag(&tag) {
+            self.build_rcdata_children(&tag, &element.children, parts)
+        } else {
+            None
+        };
+        if let Some(piece) = &rcdata {
+            parts.html.push_str(&piece.attrs);
+        }
         parts.html.push('>');
-        if is_rcdata_tag(&tag) && self.build_rcdata_children(&tag, &element.children, parts) {
+        if let Some(piece) = rcdata {
+            parts.html.push_str(&piece.text);
             parts.html.push_str("</");
             parts.html.push_str(&tag);
             parts.html.push('>');
@@ -115,7 +129,7 @@ impl SilentPass {
         tag: &str,
         children: &[JSXElementChild],
         parts: &mut TemplateParts,
-    ) -> bool {
+    ) -> Option<RcdataChildren> {
         enum Piece {
             Text(String),
             Dynamic(Expr),
@@ -150,7 +164,7 @@ impl SilentPass {
                             pieces.push(Piece::Text(format_number(value.value)));
                         }
                         Expr::Lit(Lit::Bool(_)) | Expr::Lit(Lit::Null(_)) => {}
-                        Expr::JSXElement(_) | Expr::JSXFragment(_) => return false,
+                        Expr::JSXElement(_) | Expr::JSXFragment(_) => return None,
                         other => {
                             let compiled = self.compile_expr(other);
                             pieces.push(Piece::Dynamic(*compiled));
@@ -159,7 +173,7 @@ impl SilentPass {
                 }
                 JSXElementChild::JSXElement(_)
                 | JSXElementChild::JSXFragment(_)
-                | JSXElementChild::JSXSpreadChild(_) => return false,
+                | JSXElementChild::JSXSpreadChild(_) => return None,
             }
         }
 
@@ -172,10 +186,14 @@ impl SilentPass {
                     text.push_str(&value);
                 }
             }
-            if !text.is_empty() {
-                parts.html.push_str(&escape_html(&text));
-            }
-            return true;
+            return Some(RcdataChildren {
+                attrs: String::new(),
+                text: if text.is_empty() {
+                    String::new()
+                } else {
+                    escape_html(&text)
+                },
+            });
         }
 
         let mut combined: Option<Expr> = None;
@@ -202,11 +220,12 @@ impl SilentPass {
             DynamicAttrKind::TextContent
         };
         let index = parts.attrs.len();
-        parts.html.push_str(&format!(
-            " data-silent-a-{index}=\"\" data-silent-text=\"\""
-        ));
+        let attrs = format!(" data-silent-a-{index}=\"\" data-silent-text=\"\"");
         parts.attrs.push(DynamicAttr { kind, expr });
-        true
+        Some(RcdataChildren {
+            attrs,
+            text: String::new(),
+        })
     }
 
     fn build_html_attr(&mut self, attr: &JSXAttr, parts: &mut TemplateParts) {

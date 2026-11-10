@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const names = ["reactivity", "di", "core", "swc", "vite", "server"];
+const names = ["reactivity", "di", "core", "swc", "vite", "server", "silent"];
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const output = mkdtempSync(join(tmpdir(), "silent-install-"));
 const packs = join(output, "packs");
@@ -38,7 +38,9 @@ try {
       encoding: "utf8",
     });
     const tarball = readdirSync(packs).find((file) =>
-      file.startsWith(`ivlev-dev-silent-${name}-${manifest.version}.tgz`),
+      name === "silent"
+        ? file === `ivlev-dev-silent-${manifest.version}.tgz`
+        : file.startsWith(`ivlev-dev-silent-${name}-${manifest.version}.tgz`),
     );
     assert.ok(tarball, `не найден tarball для @ivlev-dev/silent-${name}`);
     tarballs.set(name, tarball);
@@ -51,7 +53,7 @@ try {
   );
 
   for (const [name, tarball] of tarballs) {
-    const target = join(modules, `silent-${name}`);
+    const target = join(modules, name === "silent" ? "silent" : `silent-${name}`);
     mkdirSync(target, { recursive: true });
     execFileSync("tar", [
       "-xzf",
@@ -60,7 +62,9 @@ try {
       target,
       "--strip-components=1",
     ]);
-    console.log(`install: @ivlev-dev/silent-${name} ${[...versions][0]}`);
+    console.log(
+      `install: @ivlev-dev/${name === "silent" ? "silent" : `silent-${name}`} ${[...versions][0]}`,
+    );
   }
 
   const expectedVersion = [...versions][0];
@@ -72,6 +76,7 @@ import { hydrate, mount } from "@ivlev-dev/silent-core";
 import { renderToString } from "@ivlev-dev/silent-server";
 import silent from "@ivlev-dev/silent-vite";
 import { transform, version } from "@ivlev-dev/silent-swc";
+import { mount as metaMount, silent as metaSilent } from "@ivlev-dev/silent";
 
 const [read, write] = createSignal(1);
 write(2);
@@ -82,6 +87,8 @@ if (typeof mount !== "function" || typeof hydrate !== "function") {
 }
 if (typeof renderToString !== "function") throw new Error("server: renderToString");
 if (typeof silent !== "function") throw new Error("vite: plugin export");
+if (typeof metaMount !== "function") throw new Error("silent: mount re-export");
+if (typeof metaSilent !== "function") throw new Error("silent: plugin re-export");
 const result = JSON.parse(
   transform("export const answer: number = 42;", "answer.ts", "{}", "{}"),
 );

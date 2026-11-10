@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.0
+
+### Документация
+
+- `docs/getting-started.md` — создание проекта, первый ViewModel и view, жизненный цикл, control flow, SSR.
+- Гайды: `docs/guides/ssr.md`, `docs/guides/hydration.md`, `docs/guides/di.md`, `docs/guides/migration-from-solid.md`.
+
+### Примеры
+
+- `examples/ssr-counter` — SSR с реальным HTTP-сервером: dev-режим через middleware Vite и продакшен-режим со статикой.
+
+### Пакеты
+
+- Метапакет `@ivlev-dev/silent`: рантайм и Vite-плагин одной установкой.
+- Проверка наличия README в tarball метапакета; `install:check` и `pack:check` покрывают новый пакет.
+
+### Компилятор
+
+- Исправлено: маркеры `data-silent-a-N` у RCDATA-элементов (`title`, `textarea`) больше не попадают в текст, а остаются в открывающем теге.
+
 ## 0.2.0
 
 ### Управляющие конструкции
