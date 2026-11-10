@@ -1,0 +1,37 @@
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "Silent Framework",
+  "description": "Lightweight SolidJS-like frontend framework: fine-grained reactivity without a virtual DOM, MVVM with async dependency injection, Stage-3 class-field decorators, a Rust/SWC JSX compiler, a Vite plugin, SSR and per-node hydration.",
+  "folders": ["README.md", "docs", "examples", "packages"],
+  "excludeFolders": [
+    "node_modules",
+    "dist",
+    "build",
+    "coverage",
+    ".git",
+    "crates",
+    "bench",
+    "scripts",
+    "reference"
+  ],
+  "excludeFiles": [
+    "CHANGELOG.md",
+    "LICENSE",
+    "pnpm-lock.yaml",
+    "Cargo.lock"
+  ],
+  "rules": [
+    "Install the runtime with @ivlev-dev/silent-core (or the @ivlev-dev/silent meta package) and the compiler with @ivlev-dev/silent-vite; the Vite plugin alone does not include the runtime.",
+    "Configure Vite with silent() from @ivlev-dev/silent-vite and set tsconfig jsx to react-jsx with jsxImportSource @ivlev-dev/silent-core.",
+    "Every view component receives its ViewModel through a this-parameter: function Counter(this: { vm: CounterVM; preloader: typeof CounterPreloader }, props: { count: number }).",
+    "The ViewModel must be imported with import type; the compiler reads the this-type to build silent.view metadata. Never pass vm explicitly: use <Counter count={3} />.",
+    "Define ViewModel fields with Stage-3 decorators on accessor fields: @reactive accessor count = 0, @computed get double(), and @watch on methods. Do not enable experimentalDecorators.",
+    "Dependency injection is constructor-based: declare dependencies as constructor parameters, import interfaces with import type, and let the compiler resolve the single implementation. Use bind() when an interface has several implementations.",
+    "resolve() is always asynchronous and returns a Promise; use createScope() for request-scoped instances and dispose() for cleanup.",
+    "Use For for keyed lists (DOM follows values), Index for position-keyed lists (DOM follows positions), Show, Switch/Match, ErrorBoundary and Suspense for conditional and async rendering.",
+    "For SSR, render with renderToString or renderToStream from @ivlev-dev/silent-server, put RenderResult.head into <head>, and hydrate on the client with hydrate() using the same props.",
+    "In Vite SSR builds keep the runtime external via ssr.external: @ivlev-dev/silent-core, @ivlev-dev/silent-di, @ivlev-dev/silent-reactivity, @ivlev-dev/silent-server.",
+    "Render <title>, <meta> and <link> from any component; the runtime hoists them into <head> (and into RenderResult.head during SSR). Elements with itemprop and content inside <svg> are not hoisted.",
+    "Requires Node.js >= 22, Vite >= 8, TypeScript 7 and ESM (type: module). Packages are ESM-only."
+  ]
+}

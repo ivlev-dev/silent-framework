@@ -119,7 +119,7 @@ export const container: Container;
 export function createToken<T>(name: string): Token<T>;
 ```
 
-Семантика: точно как `reference/silentwire/src/runtime/container.ts`, с добавлениями `peek`, `has`, `onDispose`, `dispose`.
+Семантика: асинхронный контейнер с кешем промисов и разрешением конструкторов на этапе компиляции, дополненный `peek`, `has`, `onDispose`, `dispose`.
 
 - Singleton живёт в контейнере-владельце binding-а.
 - Scoped живёт в контейнере, с которого начался resolve.
