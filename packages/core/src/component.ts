@@ -1,4 +1,4 @@
-import { container as rootContainer } from "@ivlev98/silent-di";
+import { container as rootContainer } from "@ivlev-dev/silent-di";
 import type { Children } from "./jsx.js";
 import type { AnyComponent, Preloader, ViewMeta } from "./types.js";
 import { ComponentContext } from "./component-context.js";
@@ -10,7 +10,7 @@ import {
   onCleanup,
   runWithOwner,
   type Owner,
-} from "@ivlev98/silent-reactivity";
+} from "@ivlev-dev/silent-reactivity";
 import { registerView } from "./registry.js";
 import { extractMetadata } from "./metadata.js";
 import {
@@ -40,7 +40,7 @@ export const COMPONENT_READY = Symbol.for("silent.ready");
 export const COMPONENT_DISPOSE = Symbol.for("silent.dispose");
 
 export interface RuntimeOptions {
-  readonly container?: import("@ivlev98/silent-di").Container | undefined;
+  readonly container?: import("@ivlev-dev/silent-di").Container | undefined;
   readonly preloader?: Preloader | null | undefined;
   readonly onError?: ((error: unknown, component: AnyComponent) => void) | undefined;
   readonly boundary?: AsyncBoundary | null | undefined;

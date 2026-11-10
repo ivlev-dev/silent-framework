@@ -10,8 +10,8 @@ import {
 } from "../src/component";
 import { mount } from "../src/mount";
 import { lazy, Suspense } from "../src/suspense";
-import { container, DI_CREATE } from "@ivlev98/silent-di";
-import type { Container } from "@ivlev98/silent-di";
+import { container, DI_CREATE } from "@ivlev-dev/silent-di";
+import type { Container } from "@ivlev-dev/silent-di";
 
 const VIEW = Symbol.for("silent.view");
 const hosts: HTMLElement[] = [];

@@ -1,4 +1,4 @@
-import { onCleanup } from "@ivlev98/silent-reactivity";
+import { onCleanup } from "@ivlev-dev/silent-reactivity";
 
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 

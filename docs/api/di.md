@@ -1,4 +1,4 @@
-# @ivlev98/silent-di
+# @ivlev-dev/silent-di
 
 Асинхронный контейнер зависимостей без декораторов: токены, явные и неявные привязки, скоупы, кеш промисов, обнаружение циклов, `peek`, `has`, `dispose`.
 
@@ -69,7 +69,7 @@ class Container {
 Пример:
 
 ```ts
-import { Container, createToken } from "@ivlev98/silent-di";
+import { Container, createToken } from "@ivlev-dev/silent-di";
 
 const root = new Container("root");
 const token = createToken<string>("value");
@@ -93,7 +93,7 @@ const container: Container;
 Пример:
 
 ```ts
-import { container, createToken } from "@ivlev98/silent-di";
+import { container, createToken } from "@ivlev-dev/silent-di";
 
 const token = createToken<number>("answer");
 container.bind(token, () => 42);
@@ -117,7 +117,7 @@ class CircularDependencyError extends Error {
 Пример:
 
 ```ts
-import { CircularDependencyError, Container, createToken } from "@ivlev98/silent-di";
+import { CircularDependencyError, Container, createToken } from "@ivlev-dev/silent-di";
 
 const root = new Container("root");
 const a = createToken<unknown>("a");
@@ -149,7 +149,7 @@ const DI_CREATE: unique symbol; // Symbol.for("silent.di.create")
 Пример:
 
 ```ts
-import { Container, DI_CREATE } from "@ivlev98/silent-di";
+import { Container, DI_CREATE } from "@ivlev-dev/silent-di";
 
 class Handler {
   readonly origin: string;
@@ -180,7 +180,7 @@ function createToken<T>(name: string): Token<T>;
 Пример:
 
 ```ts
-import { createToken } from "@ivlev98/silent-di";
+import { createToken } from "@ivlev-dev/silent-di";
 
 const token = createToken<{ id: number }>("user");
 ```
@@ -200,7 +200,7 @@ type Token<T> = symbol & { readonly __type?: T };
 Пример:
 
 ```ts
-import type { Token } from "@ivlev98/silent-di";
+import type { Token } from "@ivlev-dev/silent-di";
 
 const token: Token<number> = createToken<number>("num");
 ```
@@ -220,7 +220,7 @@ type ScopeName = "singleton" | "transient" | "scoped";
 Пример:
 
 ```ts
-import type { ScopeName } from "@ivlev98/silent-di";
+import type { ScopeName } from "@ivlev-dev/silent-di";
 
 const scope: ScopeName = "scoped";
 ```
@@ -240,8 +240,8 @@ type Factory<T> = (container: Container) => T | Promise<T>;
 Пример:
 
 ```ts
-import type { Factory } from "@ivlev98/silent-di";
-import { Container } from "@ivlev98/silent-di";
+import type { Factory } from "@ivlev-dev/silent-di";
+import { Container } from "@ivlev-dev/silent-di";
 
 const factory: Factory<string> = (container: Container) => container.name;
 ```
@@ -264,7 +264,7 @@ interface Binding<T = unknown> {
 Пример:
 
 ```ts
-import type { Binding } from "@ivlev98/silent-di";
+import type { Binding } from "@ivlev-dev/silent-di";
 
 const binding: Binding<number> = {
   factory: () => 1,
@@ -291,7 +291,7 @@ interface BindingBuilder {
 Пример:
 
 ```ts
-import { Container, createToken } from "@ivlev98/silent-di";
+import { Container, createToken } from "@ivlev-dev/silent-di";
 
 const root = new Container("root");
 const token = createToken<string>("chain");
@@ -306,7 +306,7 @@ builder.inTransientScope().inSingletonScope();
 ### Singleton / transient / scoped
 
 ```ts
-import { Container, createToken } from "@ivlev98/silent-di";
+import { Container, createToken } from "@ivlev-dev/silent-di";
 
 const root = new Container("root");
 const singletonToken = createToken<{ id: number }>("singleton");

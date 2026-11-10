@@ -10,7 +10,7 @@ import {
   templateHoles,
   type AnyComponent,
   type Preloader,
-} from "@ivlev98/silent-core";
+} from "@ivlev-dev/silent-core";
 import { renderToString } from "../src/render.js";
 
 const VIEW = Symbol.for("silent.view");

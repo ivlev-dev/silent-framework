@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from "vitest";
-import { createRoot, createSignal, flushSync, onCleanup } from "@ivlev98/silent-reactivity";
+import { createRoot, createSignal, flushSync, onCleanup } from "@ivlev-dev/silent-reactivity";
 import { For, Show } from "../src/control-flow";
 import { disposeTree, insert, text } from "../src/dom";
 

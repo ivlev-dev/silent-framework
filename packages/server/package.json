@@ -1,6 +1,6 @@
 {
-  "name": "@ivlev98/silent-server",
-  "version": "0.1.0",
+  "name": "@ivlev-dev/silent-server",
+  "version": "0.1.1",
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.js",
@@ -20,9 +20,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ivlev98/silent-core": "workspace:*",
-    "@ivlev98/silent-di": "workspace:*",
-    "@ivlev98/silent-reactivity": "workspace:*"
+    "@ivlev-dev/silent-core": "workspace:*",
+    "@ivlev-dev/silent-di": "workspace:*",
+    "@ivlev-dev/silent-reactivity": "workspace:*"
   },
   "devDependencies": {
     "jsdom": "^31.0.0",

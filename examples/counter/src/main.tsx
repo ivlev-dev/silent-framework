@@ -1,5 +1,5 @@
 import "./style.css";
-import { hydrate } from "@ivlev98/silent-core";
+import { hydrate } from "@ivlev-dev/silent-core";
 import { App } from "./app";
 
 const root = document.querySelector("#app");

@@ -4,7 +4,7 @@
     "noEmit": true,
     "types": ["vite/client"],
     "jsx": "react-jsx",
-    "jsxImportSource": "@ivlev98/silent-core"
+    "jsxImportSource": "@ivlev-dev/silent-core"
   },
   "include": ["src", "vite.config.ts"]
 }

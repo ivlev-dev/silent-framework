@@ -1,6 +1,6 @@
 {
-  "name": "@ivlev98/silent-vite",
-  "version": "0.1.0",
+  "name": "@ivlev-dev/silent-vite",
+  "version": "0.1.1",
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.js",
@@ -20,7 +20,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ivlev98/silent-swc": "workspace:*"
+    "@ivlev-dev/silent-swc": "workspace:*"
   },
   "peerDependencies": {
     "vite": ">=8"

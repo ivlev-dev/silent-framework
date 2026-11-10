@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createRoot, createSignal, flushSync } from "@ivlev98/silent-reactivity";
+import { createRoot, createSignal, flushSync } from "@ivlev-dev/silent-reactivity";
 import {
   component,
   createComponent,

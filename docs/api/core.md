@@ -1,4 +1,4 @@
-# @ivlev98/silent-core
+# @ivlev-dev/silent-core
 
 Основной пакет рантайма Silent Framework: Stage-3 декораторы реактивности, ViewModel, view-компоненты с асинхронным DI, монтирование, JSX-рантайм, управляющие конструкции `For` / `Show` / `Suspense`, `lazy`, прелоадеры и обработка ошибок.
 
@@ -6,7 +6,7 @@
 
 ## Импорты
 
-Прикладной код импортируется из `@ivlev98/silent-core`:
+Прикладной код импортируется из `@ivlev-dev/silent-core`:
 
 ```ts
 import {
@@ -22,10 +22,10 @@ import {
   setDefaultPreloader,
   setErrorHandler,
   whenIdle,
-} from "@ivlev98/silent-core";
+} from "@ivlev-dev/silent-core";
 ```
 
-Компилятор (плагин `@ivlev98/silent-vite`, встроенный в сборку) генерирует импорты из сабпути `@ivlev98/silent-core/jsx-runtime`. Этот entry переэкспортирует зарезервированные имена:
+Компилятор (плагин `@ivlev-dev/silent-vite`, встроенный в сборку) генерирует импорты из сабпути `@ivlev-dev/silent-core/jsx-runtime`. Этот entry переэкспортирует зарезервированные имена:
 
 - точки входа компиляции JSX: `jsx`, `jsxs`, `jsxDEV`, `Fragment`;
 - DOM-примитивы скомпилированных шаблонов: `template`, `templateHoles`, `insert`, `text`, `attr`, `prop`, `style`, `spread`, `on`, `ref`, `effect`, `fragment`, `dynamic`, `attachDisposer`, `NODE_DISPOSER`;
@@ -34,7 +34,7 @@ import {
 - символы метаданных: `VIEW_META`, `PRELOADER`, `COMPONENT_READY`, `COMPONENT_DISPOSE`;
 - типы: `JSX`, `Child`, `Children`, `AnyComponent`, `Preloader`, `ViewMeta`, `ViewRuntimeContext`, `SuspenseProps`, `LazyOptions`.
 
-Прикладному коду сабпуть `@ivlev98/silent-core/jsx-runtime` не нужен: всё перечисленное доступно и из `@ivlev98/silent-core`.
+Прикладному коду сабпуть `@ivlev-dev/silent-core/jsx-runtime` не нужен: всё перечисленное доступно и из `@ivlev-dev/silent-core`.
 
 ## Архитектура рантайма
 
@@ -102,7 +102,7 @@ Scope наследуется вниз: компоненты, вызванные 
 
 ## Декораторы и ViewModel
 
-Декораторы реализуют связку с `@ivlev98/silent-reactivity`: каждое поле получает собственную цепочку сигналов, вычисления мемоизируются, watcher-ы привязаны к reactive store экземпляра.
+Декораторы реализуют связку с `@ivlev-dev/silent-reactivity`: каждое поле получает собственную цепочку сигналов, вычисления мемоизируются, watcher-ы привязаны к reactive store экземпляра.
 
 ### `reactive`
 
@@ -115,7 +115,7 @@ Scope наследуется вниз: компоненты, вызванные 
 - экземпляры классов с `@reactive`-полями повторно не оборачиваются в прокси.
 
 ```ts
-import { reactive } from "@ivlev98/silent-core";
+import { reactive } from "@ivlev-dev/silent-core";
 
 class Profile {
   @reactive accessor name = "Ann";
@@ -132,7 +132,7 @@ class Profile {
 Декоратор stage-3 для геттера. Значение вычисляется лениво, мемоизируется на экземпляр по имени свойства и не перезапускает зависимые эффекты, если результат не изменился.
 
 ```ts
-import { computed, reactive } from "@ivlev98/silent-core";
+import { computed, reactive } from "@ivlev-dev/silent-core";
 
 class Basket {
   @reactive accessor items: number[] = [];
@@ -167,7 +167,7 @@ interface WatchOptions<R> {
 Декоратор метода: `@watch(selector, options?)`. Селектор выполняется внутри эффекта и читает реактивные поля экземпляра. Обработчик вызывается вне отслеживания, через `untrack`, как `(next, prev)`:
 
 ```ts
-import { reactive, watch } from "@ivlev98/silent-core";
+import { reactive, watch } from "@ivlev-dev/silent-core";
 
 class Tolerance {
   @reactive accessor value = 0;
@@ -217,7 +217,7 @@ abstract class ViewModel<P = unknown> {
 Пример из README:
 
 ```tsx
-import { computed, reactive, ViewModel, watch } from "@ivlev98/silent-core";
+import { computed, reactive, ViewModel, watch } from "@ivlev-dev/silent-core";
 
 export class CounterVM extends ViewModel<{ step: number }> {
   @reactive accessor count = 0;
@@ -284,7 +284,7 @@ interface RuntimeOptions {
 function getRuntimeOptions(): RuntimeOptions;
 ```
 
-Возвращает текущие амбиентные runtime-опции. Используется компилированным кодом (`component`, `lazy`, `Suspense`) и интеграции (`@ivlev98/silent-vite`, `@ivlev98/silent-server`); в прикладном коде прямое применение не требуется.
+Возвращает текущие амбиентные runtime-опции. Используется компилированным кодом (`component`, `lazy`, `Suspense`) и интеграции (`@ivlev-dev/silent-vite`, `@ivlev-dev/silent-server`); в прикладном коде прямое применение не требуется.
 
 ### `withRuntimeOptions`
 
@@ -443,9 +443,9 @@ class ComponentContext<P = unknown> implements ComponentContextValue<P> {
 Класс одновременно является DI-токеном: рантайм биндит экземпляр в scope каждого view, поэтому VM получает его через конструктор или `container.resolve(ComponentContext)`:
 
 ```ts
-import type { Container } from "@ivlev98/silent-di";
-import { DI_CREATE } from "@ivlev98/silent-di";
-import { ComponentContext } from "@ivlev98/silent-core";
+import type { Container } from "@ivlev-dev/silent-di";
+import { DI_CREATE } from "@ivlev-dev/silent-di";
+import { ComponentContext } from "@ivlev-dev/silent-core";
 
 interface Props {
   count: number;
@@ -617,7 +617,7 @@ async function mount(
 5. Ожидается `ready` компонента; возвращается `MountHandle`.
 
 ```ts
-import { mount } from "@ivlev98/silent-core";
+import { mount } from "@ivlev-dev/silent-core";
 
 const handle = await mount("#root", App, {
   container: appScope,
@@ -690,7 +690,7 @@ async function hydrate(
 При несовпадении формы узла (другая разметка или структура) бросается `HydrationMismatchError`; ближайший view отказывается от адоптации и рендерится клиентски, сохраняя корректность. Ошибка передаётся в `options.onMismatch`.
 
 ```ts
-import { hydrate } from "@ivlev98/silent-core";
+import { hydrate } from "@ivlev-dev/silent-core";
 
 const handle = await hydrate("#root", App, {
   container: appScope,
@@ -714,7 +714,7 @@ function setMetadataCollector(
 ): void;
 ```
 
-Внутренний хук SSR: `@ivlev98/silent-server` устанавливает коллектор на время `renderToString`, чтобы вынесенные `<title>` попали в `head` результата, а не в `body`. Приложение этот API не использует.
+Внутренний хук SSR: `@ivlev-dev/silent-server` устанавливает коллектор на время `renderToString`, чтобы вынесенные `<title>` попали в `head` результата, а не в `body`. Приложение этот API не использует.
 
 ## Метаданные и `<title>`
 
@@ -754,7 +754,7 @@ class HydrationMismatchError extends Error {
 
 ## SSR
 
-Пакет `@ivlev98/silent-server` рендерит приложение в HTML без браузера и без внешних DOM-зависимостей: внутри пакета собственный мини-DOM (`Document`, парсер шаблонов компилятора, сериализатор).
+Пакет `@ivlev-dev/silent-server` рендерит приложение в HTML без браузера и без внешних DOM-зависимостей: внутри пакета собственный мини-DOM (`Document`, парсер шаблонов компилятора, сериализатор).
 
 ### `renderToString`
 
@@ -778,7 +778,7 @@ function renderToString(
 7. Пакетный компонент демонтируется: ViewModel проходит `unmounted` и `dispose`.
 
 ```ts
-import { renderToString } from "@ivlev98/silent-server";
+import { renderToString } from "@ivlev-dev/silent-server";
 
 const { html } = await renderToString(App, { props: { title: "Hi" } });
 ```
@@ -832,7 +832,7 @@ const page = `<!doctype html><html><head>${head}</head><body><div id="app">${htm
 Типы JSX описывают контракт между компилятором и рантаймом. Ключевое правило: **компонент принимает props обычным параметром, ViewModel приходит через `this`** — тип параметра `this` сообщает компилятору, что перед ним view-компонент, и какая VM с прелоадером ему нужны:
 
 ```tsx
-import type { ViewContext } from "@ivlev98/silent-core";
+import type { ViewContext } from "@ivlev-dev/silent-core";
 
 interface CounterVM {
   count: number;
@@ -921,7 +921,7 @@ type ViewComponent<P, VM extends object, PreloaderB extends Component<never>> = 
 Аннотирует уже готовую функцию, если удобно описать её как значение:
 
 ```tsx
-import type { ViewComponent, ViewContext } from "@ivlev98/silent-core";
+import type { ViewComponent, ViewContext } from "@ivlev-dev/silent-core";
 
 interface BadgeVM {
   label: string;
@@ -1044,7 +1044,7 @@ function lazy<P extends Record<string, unknown>>(
 - Ошибка загрузки: `options.onError` или глобальный `getErrorHandler`; в DOM вместо контента вставляется текст `Error: <message>`.
 
 ```tsx
-import { lazy, Suspense } from "@ivlev98/silent-core";
+import { lazy, Suspense } from "@ivlev-dev/silent-core";
 
 const Profile = lazy<{ id: number }>(() => import("./profile"));
 
@@ -1230,7 +1230,7 @@ function ref(el: Element, accessor: () => unknown): void;
 function effect(fn: () => void): void;
 ```
 
-Обертка над `createRenderEffect`: первый запуск синхронный, последующие — в общем flush. Для прикладного кода предпочтительно использовать `createEffect` / `createRenderEffect` напрямую из `@ivlev98/silent-reactivity`.
+Обертка над `createRenderEffect`: первый запуск синхронный, последующие — в общем flush. Для прикладного кода предпочтительно использовать `createEffect` / `createRenderEffect` напрямую из `@ivlev-dev/silent-reactivity`.
 
 ### `fragment`
 

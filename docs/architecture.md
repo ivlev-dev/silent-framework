@@ -4,16 +4,16 @@
 
 ## Пакеты
 
-- `@ivlev98/silent-reactivity` — граф сигналов, эффекты, мемо, батчинг, глубокие прокси.
-- `@ivlev98/silent-di` — асинхронный контейнер зависимостей.
-- `@ivlev98/silent-core` — декораторы, ViewModel, JSX runtime, компоненты, монтирование, HMR.
-- `@ivlev98/silent-swc` — нативный Node-API addon.
-- `@ivlev98/silent-vite` — Vite-плагин.
-- `@ivlev98/silent-server` — SSR: мини-DOM, `renderToString`, сериализация без внешних DOM-зависимостей.
+- `@ivlev-dev/silent-reactivity` — граф сигналов, эффекты, мемо, батчинг, глубокие прокси.
+- `@ivlev-dev/silent-di` — асинхронный контейнер зависимостей.
+- `@ivlev-dev/silent-core` — декораторы, ViewModel, JSX runtime, компоненты, монтирование, HMR.
+- `@ivlev-dev/silent-swc` — нативный Node-API addon.
+- `@ivlev-dev/silent-vite` — Vite-плагин.
+- `@ivlev-dev/silent-server` — SSR: мини-DOM, `renderToString`, сериализация без внешних DOM-зависимостей.
 
 Все пакеты публикуются как ESM; относительные импорты в собранном коде содержат явное расширение `.js`, чтобы пакеты грузились в чистом Node без бандлера.
 
-## `@ivlev98/silent-reactivity`
+## `@ivlev-dev/silent-reactivity`
 
 ```ts
 export type Accessor<T> = () => T;
@@ -79,7 +79,7 @@ export function getComputed<T>(instance: object, key: PropertyKey, compute: () =
 - `readField`/`writeField` используются декоратором `@reactive`.
 - `getComputed` создаёт мемо на экземпляр и привязывает его к store.
 
-## `@ivlev98/silent-di`
+## `@ivlev-dev/silent-di`
 
 ```ts
 export type ScopeName = "singleton" | "transient" | "scoped";
@@ -233,7 +233,7 @@ this.preloader из метаданных
 
 ## JSX runtime
 
-Компилятор импортирует из `@ivlev98/silent-core/jsx-runtime`:
+Компилятор импортирует из `@ivlev-dev/silent-core/jsx-runtime`:
 
 ```ts
 export function template(html: string): () => Node;
@@ -262,7 +262,7 @@ export function lazy<P extends Record<string, unknown>>(
 #### Suspense и lazy
 
 ```tsx
-import { lazy, Suspense } from "@ivlev98/silent-core";
+import { lazy, Suspense } from "@ivlev-dev/silent-core";
 
 const Profile = lazy<{ id: number }>(() => import("./profile"));
 
@@ -327,7 +327,7 @@ version(): string;
 
 ## SSR и гидрация
 
-### `@ivlev98/silent-server`
+### `@ivlev-dev/silent-server`
 
 Пакет не зависит от jsdom/linkedom. Внутри — собственный мини-DOM:
 
@@ -361,7 +361,7 @@ packages/server/src/dom/
 
 ### Внешний рантайм в SSR
 
-Vite не должен встраивать копию `@ivlev98/silent-core` в SSR-граф, иначе приложение и `renderToString` получат разные модульные экземпляры (разные `whenIdle`/`setServerMode`). В `vite.config.ts` задавайте `ssr.external` для всех `@ivlev98/silent-*`.
+Vite не должен встраивать копию `@ivlev-dev/silent-core` в SSR-граф, иначе приложение и `renderToString` получат разные модульные экземпляры (разные `whenIdle`/`setServerMode`). В `vite.config.ts` задавайте `ssr.external` для всех `@ivlev-dev/silent-*`.
 
 
 ## Релиз

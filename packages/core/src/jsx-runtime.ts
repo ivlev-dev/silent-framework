@@ -78,7 +78,7 @@ function jsxValue(type: JsxType, props: Record<string, unknown>): Node {
     const meta = (type as { [VIEW_META]?: unknown })[VIEW_META];
     if (meta !== undefined) {
       throw new Error(
-        "Компонент использует метаданные silent.view: для его рендера нужен плагин @ivlev98/silent-vite",
+        "Компонент использует метаданные silent.view: для его рендера нужен плагин @ivlev-dev/silent-vite",
       );
     }
     const result = type(props);

@@ -1,5 +1,5 @@
 import { defineConfig } from "vitest/config";
-import { silent } from "@ivlev98/silent-vite";
+import { silent } from "@ivlev-dev/silent-vite";
 
 export default defineConfig({
   plugins: [silent({ hmr: false })],

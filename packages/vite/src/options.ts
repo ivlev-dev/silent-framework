@@ -24,7 +24,7 @@ export interface ResolvedOptions {
 
 export const DEFAULT_INCLUDE = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
 export const DEFAULT_EXCLUDE = /node_modules/;
-export const DEFAULT_RUNTIME = "@ivlev98/silent-core";
+export const DEFAULT_RUNTIME = "@ivlev-dev/silent-core";
 
 export function resolveOptions(options: SilentOptions = {}): ResolvedOptions {
   return {

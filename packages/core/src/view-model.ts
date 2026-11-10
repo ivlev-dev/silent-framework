@@ -1,4 +1,4 @@
-import { storeFor } from "@ivlev98/silent-reactivity";
+import { storeFor } from "@ivlev-dev/silent-reactivity";
 
 export abstract class ViewModel<P = unknown> {
   props!: P;

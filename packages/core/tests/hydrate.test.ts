@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { hydrate } from "../src/mount.js";
-import { createRenderEffect, createSignal, flushSync } from "@ivlev98/silent-reactivity";
-import { container, DI_CREATE } from "@ivlev98/silent-di";
+import { createRenderEffect, createSignal, flushSync } from "@ivlev-dev/silent-reactivity";
+import { container, DI_CREATE } from "@ivlev-dev/silent-di";
 import type { AnyComponent, Preloader } from "../src/types.js";
 
 const VIEW = Symbol.for("silent.view");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { flushSync, storeFor } from "@ivlev98/silent-reactivity";
+import { flushSync, storeFor } from "@ivlev-dev/silent-reactivity";
 import { reactive, watch } from "../src/decorators";
 import { ViewModel } from "../src/view-model";
 

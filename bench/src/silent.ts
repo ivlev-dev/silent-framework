@@ -7,8 +7,8 @@ import {
   deepReactive,
   flushSync,
   type Setter,
-} from "@ivlev98/silent-reactivity";
-import { For, text } from "@ivlev98/silent-core";
+} from "@ivlev-dev/silent-reactivity";
+import { For, text } from "@ivlev-dev/silent-core";
 import { createHost, documentRef } from "./env";
 import type { BenchSuite, BenchTask } from "./suite";
 

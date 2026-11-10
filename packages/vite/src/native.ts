@@ -1,24 +1,24 @@
-import type { NativeTransformResult } from "@ivlev98/silent-swc";
+import type { NativeTransformResult } from "@ivlev-dev/silent-swc";
 
 export interface SilentIndex {
   interfaces: Record<string, string[]>;
   values: Record<string, string[]>;
 }
 
-type SwcModule = typeof import("@ivlev98/silent-swc");
+type SwcModule = typeof import("@ivlev-dev/silent-swc");
 
 let swcPromise: Promise<SwcModule> | null = null;
 
 export function loadSwc(): Promise<SwcModule> {
   if (!swcPromise) {
-    swcPromise = import("@ivlev98/silent-swc").catch((error: unknown) => {
+    swcPromise = import("@ivlev-dev/silent-swc").catch((error: unknown) => {
       swcPromise = null;
       const reason = describeError(error);
       throw new Error(
         [
-          "@ivlev98/silent-vite: не удалось загрузить нативный addon @ivlev98/silent-swc.",
+          "@ivlev-dev/silent-vite: не удалось загрузить нативный addon @ivlev-dev/silent-swc.",
           "Соберите нативный addon перед использованием плагина:",
-          "  pnpm --filter @ivlev98/silent-swc build",
+          "  pnpm --filter @ivlev-dev/silent-swc build",
           `Причина: ${reason}`,
         ].join("\n"),
       );
@@ -39,7 +39,7 @@ export function nativeTransform(
     raw = swc.transform(source, filename, optionsJson, indexJson);
   } catch (error) {
     throw new Error(
-      `@ivlev98/silent-vite: transform упал для ${filename}:\n${describeError(error)}`,
+      `@ivlev-dev/silent-vite: transform упал для ${filename}:\n${describeError(error)}`,
     );
   }
 
@@ -48,13 +48,13 @@ export function nativeTransform(
     parsed = JSON.parse(raw);
   } catch (error) {
     throw new Error(
-      `@ivlev98/silent-vite: @ivlev98/silent-swc transform вернул невалидный JSON для ${filename}: ${describeError(error)}`,
+      `@ivlev-dev/silent-vite: @ivlev-dev/silent-swc transform вернул невалидный JSON для ${filename}: ${describeError(error)}`,
     );
   }
 
   if (!isTransformResult(parsed)) {
     throw new Error(
-      `@ivlev98/silent-vite: @ivlev98/silent-swc transform вернул неожиданную структуру для ${filename}: ${truncate(raw)}`,
+      `@ivlev-dev/silent-vite: @ivlev-dev/silent-swc transform вернул неожиданную структуру для ${filename}: ${truncate(raw)}`,
     );
   }
 
@@ -67,7 +67,7 @@ export function nativeScan(swc: SwcModule, root: string): SilentIndex {
     raw = swc.scan(root);
   } catch (error) {
     throw new Error(
-      `@ivlev98/silent-vite: scan упал для root ${root}:\n${describeError(error)}`,
+      `@ivlev-dev/silent-vite: scan упал для root ${root}:\n${describeError(error)}`,
     );
   }
 
@@ -76,13 +76,13 @@ export function nativeScan(swc: SwcModule, root: string): SilentIndex {
     parsed = JSON.parse(raw);
   } catch (error) {
     throw new Error(
-      `@ivlev98/silent-vite: @ivlev98/silent-swc scan вернул невалидный JSON для root ${root}: ${describeError(error)}`,
+      `@ivlev-dev/silent-vite: @ivlev-dev/silent-swc scan вернул невалидный JSON для root ${root}: ${describeError(error)}`,
     );
   }
 
   if (!isSilentIndex(parsed)) {
     throw new Error(
-      `@ivlev98/silent-vite: @ivlev98/silent-swc scan вернул неожиданную структуру для root ${root}`,
+      `@ivlev-dev/silent-vite: @ivlev-dev/silent-swc scan вернул неожиданную структуру для root ${root}`,
     );
   }
 

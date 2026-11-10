@@ -85,7 +85,7 @@ export async function main(di: any) {
 #[test]
 fn keeps_stage3_accessor_decorators_compilable() {
     let source = r#"
-import { reactive } from "@ivlev98/silent-core";
+import { reactive } from "@ivlev-dev/silent-core";
 class CounterVM {
   @reactive accessor count = 0;
 }
