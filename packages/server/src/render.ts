@@ -2,6 +2,7 @@ import { container as rootContainer } from "@ivlev-dev/silent-di";
 import type { Container } from "@ivlev-dev/silent-di";
 import {
   createComponent,
+  hasPendingWork,
   setMetadataCollector,
   setServerMode,
   whenIdle,
@@ -28,13 +29,26 @@ export interface RenderResult {
 }
 
 let queue: Promise<void> = Promise.resolve();
+let pendingTasks = 0;
+
+function ignore(): void {}
 
 function enqueue<T>(task: () => Promise<T>): Promise<T> {
+  if (pendingTasks === 0) {
+    pendingTasks = 1;
+    const run = task();
+    queue = run.then(ignore, ignore);
+    void run.then(ignore, ignore).finally(() => {
+      pendingTasks -= 1;
+    });
+    return run;
+  }
+  pendingTasks += 1;
   const run = queue.then(task, task);
-  queue = run.then(
-    () => undefined,
-    () => undefined,
-  );
+  queue = run.then(ignore, ignore);
+  void run.then(ignore, ignore).finally(() => {
+    pendingTasks -= 1;
+  });
   return run;
 }
 
@@ -90,15 +104,12 @@ async function renderOnce(app: AnyComponent, options: RenderOptions): Promise<Re
     }
 
     await result.ready;
-    await whenIdle();
     flushSync();
-    await whenIdle();
-    flushSync();
-    for (let index = 0; index < 3; index += 1) {
-      await Promise.resolve();
+    while (hasPendingWork()) {
+      await whenIdle();
       flushSync();
     }
-    await whenIdle();
+    await Promise.resolve();
     flushSync();
 
     if (failed) {

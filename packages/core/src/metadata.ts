@@ -4,6 +4,16 @@ const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 
 let collector: ((node: Element) => void) | null = null;
 
+const metadataFree = new WeakSet<Node>();
+
+export function markMetadataFree(node: Node): void {
+  metadataFree.add(node);
+}
+
+export function isMetadataFree(node: Node): boolean {
+  return metadataFree.has(node);
+}
+
 const titles: Element[] = [];
 let foreignTitles: Element[] | null = null;
 
@@ -31,7 +41,9 @@ export function extractMetadata(nodes: readonly Node[]): Node[] {
       hoist(node);
       continue;
     }
-    collectNested(node);
+    if (!metadataFree.has(node)) {
+      collectNested(node);
+    }
     kept.push(node);
   }
   return kept;
@@ -41,12 +53,15 @@ function collectNested(node: Node): void {
   if (node.nodeType !== 1) {
     return;
   }
-  for (const child of Array.from(node.childNodes)) {
+  let child = node.firstChild;
+  while (child !== null) {
+    const next = child.nextSibling;
     if (isMetadataElement(child)) {
       hoist(child);
-      continue;
+    } else {
+      collectNested(child);
     }
-    collectNested(child);
+    child = next;
   }
 }
 

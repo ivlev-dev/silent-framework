@@ -231,6 +231,7 @@ export class DocumentFragmentImpl extends NodeImpl implements DomDocumentFragmen
 export class ElementImpl extends NodeImpl implements DomElement {
   override readonly nodeType = NODE_ELEMENT;
   readonly tagName: string;
+  readonly localName: string;
   readonly nodeName: string;
   readonly namespaceURI: string;
   readonly attributes: AttributesImpl = new AttributesImpl();
@@ -240,6 +241,7 @@ export class ElementImpl extends NodeImpl implements DomElement {
   constructor(tagName: string, namespaceURI: string = HTML_NAMESPACE) {
     super(NODE_ELEMENT);
     this.namespaceURI = namespaceURI;
+    this.localName = namespaceURI === HTML_NAMESPACE ? tagName.toLowerCase() : tagName;
     this.tagName = namespaceURI === HTML_NAMESPACE ? tagName.toUpperCase() : tagName;
     this.nodeName = this.tagName;
   }

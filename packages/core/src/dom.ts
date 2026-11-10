@@ -1,6 +1,6 @@
 import type { Child, Children } from "./jsx.js";
 import { createRenderEffect, onCleanup } from "@ivlev-dev/silent-reactivity";
-import { extractMetadata } from "./metadata.js";
+import { extractMetadata, isMetadataElement, markMetadataFree } from "./metadata.js";
 import {
   FRAGMENT,
   INSERT_END,
@@ -16,7 +16,6 @@ import {
   shapeMatches,
   withWindow,
 } from "./hydration.js";
-import { isMetadataElement } from "./metadata.js";
 
 export const NODE_DISPOSER = Symbol("silent.disposer");
 
@@ -34,6 +33,7 @@ export interface MountPoint {
 }
 
 const templateCache = new Map<string, HTMLTemplateElement>();
+const METADATA_PATTERN = /<(?:title|meta|link)[\s/>]/i;
 const listenerRegistry = new WeakMap<Element, Map<string, ListenerHolder>>();
 const styleSnapshots = new WeakMap<Element, Set<string>>();
 
@@ -269,18 +269,30 @@ export function template(html: string): () => Node {
   const content = cached.content;
   const roots = Array.from(content.childNodes);
   const singleRoot: Node | null = roots.length === 1 ? roots[0] ?? null : null;
+  const metadata = METADATA_PATTERN.test(html);
+  const mark = (node: Node): Node => {
+    if (!metadata) {
+      if (node instanceof DocumentFragment) {
+        for (const child of node.childNodes) {
+          markMetadataFree(child);
+        }
+      }
+      markMetadataFree(node);
+    }
+    return node;
+  };
   const create = (): Node => {
     if (singleRoot !== null) {
-      return singleRoot.cloneNode(true);
+      return mark(singleRoot.cloneNode(true));
     }
     if (roots.length === 0) {
-      return content.cloneNode(false);
+      return mark(content.cloneNode(false));
     }
     const fragment = document.createDocumentFragment();
     for (const root of roots) {
       fragment.appendChild(root.cloneNode(true));
     }
-    return fragment;
+    return mark(fragment);
   };
   return () => {
     if (!isHydrating()) {
@@ -405,6 +417,18 @@ export function templateHoles(html: string): () => TemplateClone {
     cached = element;
   }
   const template = cached;
+  const metadata = METADATA_PATTERN.test(html);
+  const mark = (node: Node): Node => {
+    if (!metadata) {
+      if (node instanceof DocumentFragment) {
+        for (const child of node.childNodes) {
+          markMetadataFree(child);
+        }
+      }
+      markMetadataFree(node);
+    }
+    return node;
+  };
   const cloneNode = (): Node => {
     const content = template.content.cloneNode(true) as DocumentFragment;
     const rootNodes = Array.from(content.childNodes);
@@ -413,7 +437,7 @@ export function templateHoles(html: string): () => TemplateClone {
       : content;
   };
   const create = (): TemplateClone => {
-    const node = cloneNode();
+    const node = mark(cloneNode());
     return { node, ...collectParts(node) };
   };
   return () => {
@@ -441,12 +465,20 @@ export function templateHoles(html: string): () => TemplateClone {
       claimed.push(node);
     }
     const parts = collectPartsMany(claimed);
+    if (!metadata) {
+      for (const node of claimed) {
+        markMetadataFree(node);
+      }
+    }
     if (claimed.length === 1 && !(fresh instanceof DocumentFragment)) {
       return { node: claimed[0]!, ...parts };
     }
     const container = document.createDocumentFragment();
     for (const node of claimed) {
       container.appendChild(node);
+    }
+    if (!metadata) {
+      markMetadataFree(container);
     }
     return { node: container, ...parts };
   };

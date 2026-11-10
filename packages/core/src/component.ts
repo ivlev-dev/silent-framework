@@ -126,6 +126,10 @@ export async function whenIdle(): Promise<void> {
   }
 }
 
+export function hasPendingWork(): boolean {
+  return pending.size > 0;
+}
+
 function callHook(target: object, name: string, ...args: unknown[]): void {
   const value = (target as Record<string, unknown>)[name];
   if (typeof value === "function") {
@@ -362,13 +366,17 @@ function createViewResult(
     fragment.appendChild(end);
   }
 
-  const controller = new AbortController();
+  let controller: AbortController | null = null;
+  const getSignal = (): AbortSignal => {
+    controller ??= new AbortController();
+    return controller.signal;
+  };
   const boundary =
     options.boundary === undefined ? getCurrentBoundary() : options.boundary;
   const scope = (options.container ?? rootContainer).createScope(
     `view:${getComponentName(component)}`,
   );
-  const context = new ComponentContext(props, scope, controller.signal);
+  const context = new ComponentContext(props, scope, getSignal);
   scope.bind(ComponentContext, () => context);
   const runtimeOptions: RuntimeOptions = {
     ...options,
@@ -431,7 +439,7 @@ function createViewResult(
       return;
     }
     disposed = true;
-    controller.abort();
+    controller?.abort();
     if (vmInstance !== null) {
       callHook(vmInstance, "beforeUnmount");
     }
@@ -579,7 +587,7 @@ function createViewResult(
     componentRootDispose = disposeRoot;
     componentOwner = getOwner();
     onCleanup(() => {
-      controller.abort();
+      controller?.abort();
     });
 
     renderFallback();
@@ -653,7 +661,7 @@ function createViewResult(
         const resolved = await Promise.resolve().then(() =>
           scope.resolve<object>(metaRef.vm),
         );
-        if (disposed || controller.signal.aborted) {
+        if (disposed || (controller !== null && controller.signal.aborted)) {
           disposeVm(resolved);
           return;
         }

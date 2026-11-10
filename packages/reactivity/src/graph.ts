@@ -55,7 +55,7 @@ type ComputationNode = MemoNode | EffectNode;
 interface OwnerNode {
   disposed: boolean;
   readonly parent: OwnerNode | null;
-  readonly children: Set<OwnerNode>;
+  children: Set<OwnerNode>;
   readonly cleanups: (() => void)[];
   computation: ComputationNode | null;
 }
@@ -337,8 +337,8 @@ function runCleanups(owner: OwnerNode): void {
 }
 
 function disposeOwnerChildren(owner: OwnerNode): void {
-  const children = Array.from(owner.children);
-  owner.children.clear();
+  const children = owner.children;
+  owner.children = new Set<OwnerNode>();
   for (const child of children) {
     if (child.computation !== null) {
       disposeComputation(child.computation);

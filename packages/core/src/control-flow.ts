@@ -120,13 +120,17 @@ export function For<T>(props: ForProps<T>): Node {
     }
   };
 
-  const renderItem = (state: ItemState<T>, value: unknown): void => {
+  const renderItem = (
+    state: ItemState<T>,
+    value: unknown,
+    mountParent: Node | null = null,
+  ): void => {
     for (const node of state.nodes) {
       disposeNode(node);
       detachNode(node);
     }
     state.nodes = [];
-    const parent = state.anchor.parentNode;
+    const parent = mountParent ?? state.anchor.parentNode;
     if (parent === null) {
       return;
     }
@@ -170,9 +174,11 @@ export function For<T>(props: ForProps<T>): Node {
     nodes: Node[],
     itemEnd: Node | null,
     position: number,
+    mountParent: Node | null = null,
   ): ItemState<T> => {
     let handle: [Accessor<number>, Setter<number>] | null = null;
     let current = position;
+    let initialMount: Node | null = mountParent;
     const index: Accessor<number> = () => {
       if (handle === null) {
         handle = createSignal(current);
@@ -216,7 +222,8 @@ export function For<T>(props: ForProps<T>): Node {
             }
             return;
           }
-          renderItem(state, props.children(item, index));
+          renderItem(state, props.children(item, index), initialMount);
+          initialMount = null;
         });
         return dispose;
       }),
@@ -226,10 +233,17 @@ export function For<T>(props: ForProps<T>): Node {
     return state;
   };
 
-  const createState = (item: T, parent: Node, position: number): ItemState<T> => {
+  const createState = (
+    item: T,
+    position: number,
+    sink: DocumentFragment,
+  ): ItemState<T> => {
     const anchor = document.createComment(ITEM);
-    parent.insertBefore(anchor, endAnchor);
-    return makeState(item, anchor, [], null, position);
+    const fragment = document.createDocumentFragment();
+    fragment.appendChild(anchor);
+    const state = makeState(item, anchor, [], null, position, fragment);
+    sink.appendChild(fragment);
+    return state;
   };
 
   let fallbackSeed: Node[] = [];
@@ -329,6 +343,8 @@ export function For<T>(props: ForProps<T>): Node {
 
     const next: ItemState<T>[] = [];
     const created: ItemState<T>[] = [];
+    const batch = document.createDocumentFragment();
+    let batchUsed = false;
     const used = new Set<ItemState<T>>();
     for (const item of items) {
       const entry = pool.get(item);
@@ -339,7 +355,8 @@ export function For<T>(props: ForProps<T>): Node {
             ? entry.shift()
             : entry;
       if (state === undefined) {
-        const fresh = createState(item, parent, next.length);
+        const fresh = createState(item, next.length, batch);
+        batchUsed = true;
         created.push(fresh);
         next.push(fresh);
         continue;
@@ -352,6 +369,10 @@ export function For<T>(props: ForProps<T>): Node {
       if (!used.has(state)) {
         removeState(state);
       }
+    }
+
+    if (batchUsed) {
+      parent.insertBefore(batch, endAnchor);
     }
 
     states = next;

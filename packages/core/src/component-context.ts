@@ -7,16 +7,25 @@ export interface ComponentContextValue<P = unknown> {
   view: Node | null;
 }
 
+export type SignalSource = AbortSignal | (() => AbortSignal);
+
 export class ComponentContext<P = unknown> implements ComponentContextValue<P> {
   readonly props: P;
   readonly container: Container;
-  readonly signal: AbortSignal;
-  view: Node | null;
+  view: Node | null = null;
+  private readonly source: SignalSource;
+  private resolved: AbortSignal | null = null;
 
-  constructor(props: P, container: Container, signal: AbortSignal) {
+  constructor(props: P, container: Container, signal: SignalSource) {
     this.props = props;
     this.container = container;
-    this.signal = signal;
-    this.view = null;
+    this.source = signal;
+  }
+
+  get signal(): AbortSignal {
+    if (this.resolved === null) {
+      this.resolved = typeof this.source === "function" ? this.source() : this.source;
+    }
+    return this.resolved;
   }
 }

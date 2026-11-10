@@ -19,11 +19,20 @@ const VOID_ELEMENTS: ReadonlySet<string> = new Set([
   "wbr",
 ]);
 
+const ESCAPE_TEXT = /[&<>]/;
+const ESCAPE_ATTRIBUTE = /[&<>"]/;
+
 function escapeText(value: string): string {
+  if (!ESCAPE_TEXT.test(value)) {
+    return value;
+  }
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function escapeAttribute(value: string): string {
+  if (!ESCAPE_ATTRIBUTE.test(value)) {
+    return value;
+  }
   return escapeText(value).replace(/"/g, "&quot;");
 }
 
@@ -36,8 +45,7 @@ function serializeAttributes(element: ElementImpl): string {
 }
 
 function serializeElement(element: ElementImpl): string {
-  const tag =
-    element.namespaceURI === HTML_NAMESPACE ? element.tagName.toLowerCase() : element.tagName;
+  const tag = element.localName;
   const opening = `<${tag}${serializeAttributes(element)}>`;
   if (element.namespaceURI === HTML_NAMESPACE && VOID_ELEMENTS.has(tag)) {
     return opening;
@@ -61,9 +69,9 @@ export function serializeNode(node: DomNode): string {
 }
 
 export function serializeChildren(node: DomNode): string {
-  let result = "";
+  const parts: string[] = [];
   for (const child of node.childNodes) {
-    result += serializeNode(child);
+    parts.push(serializeNode(child));
   }
-  return result;
+  return parts.join("");
 }

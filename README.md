@@ -259,14 +259,14 @@ silent({
 
 | Сценарий | silent ops/s | solid ops/s | silent/solid |
 | --- | ---: | ---: | ---: |
-| signal: 10k writes | 294 | 300 | 0.98x |
-| signal: 10k batched writes | 3 885 | 4 179 | 0.93x |
-| memo chain: 5k writes | 155 | 168 | 0.92x |
-| deep reactive: 10k path writes | 120 | 87 | 1.38x |
-| effect → textContent: 10k updates | 172 | 176 | 0.98x |
-| keyed list: create 1000 rows | 82 | 322 | 0.25x |
-| keyed list: append 100 rows | 837 | 2 171 | 0.39x |
-| keyed list: reorder 1000 rows | 587 | 1 242 | 0.47x |
+| signal: 10k writes | 339 | 316 | 1.07x |
+| signal: 10k batched writes | 3 986 | 4 370 | 0.91x |
+| memo chain: 5k writes | 184 | 172 | 1.07x |
+| deep reactive: 10k path writes | 127 | 92 | 1.37x |
+| effect → textContent: 10k updates | 188 | 181 | 1.04x |
+| keyed list: create 1000 rows | 55 | 288 | 0.19x |
+| keyed list: append 100 rows | 577 | 2 122 | 0.27x |
+| keyed list: reorder 1000 rows | 531 | 648 | 0.82x |
 
 Примитивы работают на уровне Solid, вложенная реактивность быстрее. Разрыв в `For` — стоимость отдельного реактивного владельца и якоря на элемент; реконсиляция без изменения порядка не трогает DOM. Цифры зависят от машины — сравнивайте только свой прогон.
 
@@ -277,9 +277,9 @@ silent({
 
 | Сценарий | ops/s |
 | --- | ---: |
-| SSR: silent renderToString | 14 531 |
-| SSR: solid renderToString | 200 484 |
-| Гидрация: silent hydrate | 1 358 |
+| SSR: silent renderToString | 21 576 |
+| SSR: solid renderToString | 214 019 |
+| Гидрация: silent hydrate | 1 028 |
 
 SSR Silent медленнее: собственный мини-DOM разбирает шаблон и сериализует дерево, тогда как Solid собирает строку из `ssr`-тегов. Это цена SSR без jsdom/linkedom.
 
@@ -320,11 +320,11 @@ pnpm deprecate:legacy --dry-run
 
 ## Релиз
 
-Все пакеты `@ivlev-dev/silent-*` версионируются синхронно (сейчас `0.4.0`). Релиз запускается тегом:
+Все пакеты `@ivlev-dev/silent-*` версионируются синхронно (сейчас `0.5.0`). Релиз запускается тегом:
 
 ```bash
-git tag v0.4.0
-git push origin v0.4.0
+git tag v0.5.0
+git push origin v0.5.0
 ```
 
 GitHub Actions `Release` соберёт нативные бинарники под Linux/Windows, прогонит тесты, проверит совпадение тега и версий, соберёт пакеты и опубликует их в npm. Для публикации нужен секрет репозитория `NPM_TOKEN`. Локальная проверка установки из tarball'ов — `pnpm install:check`.

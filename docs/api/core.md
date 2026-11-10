@@ -352,6 +352,16 @@ document.body.appendChild(result.node);
 await whenIdle();
 ```
 
+### `hasPendingWork`
+
+*Стабильность: internal.*
+
+```ts
+function hasPendingWork(): boolean;
+```
+
+Синхронная проверка: есть ли промисы, которые ждёт `whenIdle`. Используется SSR-рендером, чтобы не создавать лишние микротаски, когда асинхронной работы нет.
+
 ### `trackAsyncWork`
 
 *Стабильность: internal.*
@@ -426,8 +436,18 @@ interface ComponentContextValue<P = unknown> {
 
 - `props` — props компонента, переданные `createComponent`/`mount`.
 - `container` — дочерний scope контейнера этого view.
-- `signal` — `AbortSignal`, прерываемый при dispose view.
+- `signal` — `AbortSignal`, прерываемый при dispose view; создаётся лениво, при первом чтении.
 - `view` — корневой узел view после вставки; до рендера — `null`.
+
+### `SignalSource`
+
+*Стабильность: internal.*
+
+```ts
+type SignalSource = AbortSignal | (() => AbortSignal);
+```
+
+Источник сигнала для `ComponentContext`: готовый `AbortSignal` или ленивая фабрика. Рантайм передаёт фабрику, чтобы не создавать `AbortController`, если VM не читает `signal`.
 
 ### `ComponentContext`
 
@@ -435,7 +455,7 @@ interface ComponentContextValue<P = unknown> {
 
 ```ts
 class ComponentContext<P = unknown> implements ComponentContextValue<P> {
-  constructor(props: P, container: Container, signal: AbortSignal);
+  constructor(props: P, container: Container, signal: SignalSource);
   // ... поля ComponentContextValue
 }
 ```

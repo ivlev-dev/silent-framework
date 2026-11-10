@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0
+
+### Производительность
+
+- SSR: `installDomGlobals` кэширует дескрипторы глобалов, сериализатор не делает лишних `replace`/`join`, из `renderToString` убраны фиксированные микротаски (`hasPendingWork`). `renderToString` на 20 элементах: 13 500 → 21 500 ops/s.
+- `ComponentContext.signal` создаётся лениво: VM без чтения `signal` не платит за `AbortController` (`createComponent` с VM: 20 → 10 µs).
+- `For` вставляет новые строки одним `DocumentFragment`, `disposeOwnerChildren` не копирует `Set` в массив.
+- Шаблоны без метаданных помечаются и пропускают обход в `extractMetadata`.
+- SPA-бенчмарк: примитивы 1.04–1.37x от Solid, перестановки списка 0.82x.
+
 ## 0.4.0
 
 ### Качество

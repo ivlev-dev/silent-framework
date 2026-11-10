@@ -144,6 +144,27 @@ const GLOBAL_VALUES: ReadonlyArray<readonly [string, unknown]> = [
   ["NodeFilter", { SHOW_ALL, SHOW_ELEMENT, SHOW_COMMENT }],
 ];
 
+interface SavedGlobal {
+  readonly name: string;
+  readonly descriptor: PropertyDescriptor | undefined;
+  readonly writable: boolean;
+}
+
+let savedGlobals: SavedGlobal[] | null = null;
+const GLOBAL_VALUE_LIST: readonly unknown[] = GLOBAL_VALUES.map(([, value]) => value);
+
+function captureGlobals(): SavedGlobal[] {
+  const names = ["document", "Node", ...GLOBAL_VALUES.map(([name]) => name)];
+  return names.map((name) => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, name);
+    return {
+      name,
+      descriptor,
+      writable: descriptor === undefined || descriptor.writable === true,
+    };
+  });
+}
+
 function defineNodeConstants(): void {
   for (const [name, value] of NODE_CONSTANTS) {
     if (!(name in NodeImpl)) {
@@ -154,15 +175,20 @@ function defineNodeConstants(): void {
 
 export function installDomGlobals(document: DocumentImpl = createDocument()): () => void {
   defineNodeConstants();
-  const values: ReadonlyArray<readonly [string, unknown]> = [
-    ["document", document],
-    ["Node", NodeImpl],
-    ...GLOBAL_VALUES,
-  ];
-  const saved = new Map<string, PropertyDescriptor | undefined>();
-  for (const [name, value] of values) {
-    saved.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
-    Object.defineProperty(globalThis, name, {
+  const saved = savedGlobals ?? (savedGlobals = captureGlobals());
+  const values: readonly unknown[] = [document, NodeImpl, ...GLOBAL_VALUE_LIST];
+  const target = globalThis as unknown as Record<string, unknown>;
+  for (let index = 0; index < saved.length; index += 1) {
+    const entry = saved[index];
+    if (entry === undefined) {
+      continue;
+    }
+    const value = values[index];
+    if (entry.writable) {
+      target[entry.name] = value;
+      continue;
+    }
+    Object.defineProperty(globalThis, entry.name, {
       configurable: true,
       writable: true,
       enumerable: true,
@@ -175,12 +201,16 @@ export function installDomGlobals(document: DocumentImpl = createDocument()): ()
       return;
     }
     restored = true;
-    for (const [name, descriptor] of saved) {
-      if (descriptor === undefined) {
-        Reflect.deleteProperty(globalThis, name);
+    for (const entry of saved) {
+      if (entry.descriptor === undefined) {
+        Reflect.deleteProperty(globalThis, entry.name);
         continue;
       }
-      Object.defineProperty(globalThis, name, descriptor);
+      if (entry.writable) {
+        target[entry.name] = entry.descriptor.value;
+        continue;
+      }
+      Object.defineProperty(globalThis, entry.name, entry.descriptor);
     }
   };
 }
