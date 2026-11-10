@@ -10,17 +10,22 @@ const output = mkdtempSync(join(tmpdir(), "silent-pack-"));
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 
 const expectations = {
-  reactivity: ["package/dist/index.js", "package/dist/index.d.ts"],
-  di: ["package/dist/index.js", "package/dist/index.d.ts"],
+  reactivity: [
+    "package/README.md",
+    "package/dist/index.js",
+    "package/dist/index.d.ts",
+  ],
+  di: ["package/README.md", "package/dist/index.js", "package/dist/index.d.ts"],
   core: [
+    "package/README.md",
     "package/dist/index.js",
     "package/dist/jsx-runtime.js",
     "package/dist/hmr.js",
     "package/dist/index.d.ts",
   ],
-  swc: ["package/index.js", "package/index.d.ts"],
-  vite: ["package/dist/index.js", "package/dist/index.d.ts"],
-  server: ["package/dist/index.js", "package/dist/index.d.ts"],
+  swc: ["package/README.md", "package/index.js", "package/index.d.ts"],
+  vite: ["package/README.md", "package/dist/index.js", "package/dist/index.d.ts"],
+  server: ["package/README.md", "package/dist/index.js", "package/dist/index.d.ts"],
 };
 
 for (const [name, required] of Object.entries(expectations)) {

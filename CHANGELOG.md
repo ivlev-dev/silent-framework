@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2
+
+- Подробные русскоязычные README в каждом пакете: возможности, установка, быстрый старт, API и ограничения.
+- Проверка наличия `README.md` в tarball'ах (`pnpm pack:check`).
+
 ## 0.1.1
 
 - Пакеты перенесены в scope `@ivlev-dev`: `@ivlev-dev/silent-reactivity`, `@ivlev-dev/silent-di`, `@ivlev-dev/silent-core`, `@ivlev-dev/silent-swc`, `@ivlev-dev/silent-vite`, `@ivlev-dev/silent-server`.
