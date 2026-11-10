@@ -37,6 +37,9 @@ function escapeAttribute(value: string): string {
 }
 
 function serializeAttributes(element: ElementImpl): string {
+  if (element.attributeCount === 0) {
+    return "";
+  }
   let result = "";
   for (const attribute of element.attributes) {
     result += ` ${attribute.name}="${escapeAttribute(attribute.value)}"`;

@@ -234,9 +234,21 @@ export class ElementImpl extends NodeImpl implements DomElement {
   readonly localName: string;
   readonly nodeName: string;
   readonly namespaceURI: string;
-  readonly attributes: AttributesImpl = new AttributesImpl();
-  readonly style: StyleImpl = new StyleImpl(() => this.syncStyle());
+  private attributesValue: AttributesImpl | null = null;
+  private styleValue: StyleImpl | null = null;
   private valueState = "";
+
+  get attributes(): AttributesImpl {
+    return (this.attributesValue ??= new AttributesImpl());
+  }
+
+  get attributeCount(): number {
+    return this.attributesValue?.length ?? 0;
+  }
+
+  get style(): StyleImpl {
+    return (this.styleValue ??= new StyleImpl(() => this.syncStyle()));
+  }
 
   constructor(tagName: string, namespaceURI: string = HTML_NAMESPACE) {
     super(NODE_ELEMENT);
@@ -247,7 +259,7 @@ export class ElementImpl extends NodeImpl implements DomElement {
   }
 
   getAttribute(name: string): string | null {
-    return this.attributes.get(this.normalizeName(name)) ?? null;
+    return this.attributesValue?.get(this.normalizeName(name)) ?? null;
   }
 
   setAttribute(name: string, value: string): void {
@@ -260,16 +272,18 @@ export class ElementImpl extends NodeImpl implements DomElement {
   }
 
   hasAttribute(name: string): boolean {
-    return this.attributes.has(this.normalizeName(name));
+    return this.attributesValue?.has(this.normalizeName(name)) ?? false;
   }
 
   removeAttribute(name: string): void {
     const normalized = this.normalizeName(name);
     if (normalized === "style") {
-      this.style.cssText = "";
+      if (this.styleValue !== null) {
+        this.styleValue.cssText = "";
+      }
       return;
     }
-    this.attributes.delete(normalized);
+    this.attributesValue?.delete(normalized);
   }
 
   get value(): string {
@@ -313,10 +327,14 @@ export class ElementImpl extends NodeImpl implements DomElement {
 
   protected override createShallowClone(): ElementImpl {
     const clone = this.createEmptyClone();
-    for (const attribute of this.attributes) {
-      clone.attributes.set(attribute.name, attribute.value);
+    if (this.attributesValue !== null) {
+      for (const attribute of this.attributesValue) {
+        clone.attributes.set(attribute.name, attribute.value);
+      }
     }
-    clone.style.cssText = this.style.cssText;
+    if (this.styleValue !== null) {
+      clone.style.cssText = this.styleValue.cssText;
+    }
     return clone;
   }
 
@@ -325,9 +343,12 @@ export class ElementImpl extends NodeImpl implements DomElement {
   }
 
   private syncStyle(): void {
-    const text = this.style.cssText;
+    if (this.styleValue === null) {
+      return;
+    }
+    const text = this.styleValue.cssText;
     if (text === "") {
-      this.attributes.delete(this.normalizeName("style"));
+      this.attributesValue?.delete(this.normalizeName("style"));
       return;
     }
     this.attributes.set(this.normalizeName("style"), text);
