@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "bench": "tsx --conditions=browser src/index.ts"
+    "bench": "tsx --conditions=browser src/index.ts",
+    "bench:ssr": "tsx src/ssr-server.ts && tsx --conditions=browser src/ssr-hydrate.ts"
   },
   "dependencies": {
     "@ivlev-dev/silent-core": "workspace:*",

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0
+
+### Качество
+
+- `cargo clippy -D warnings` в CI; исправлены 7 замечаний в `silent-transform` (мёртвый параметр, лишние `Ok/?`, `clone` для `Copy`, `Box::new` при замене).
+- Бенчмарк `pnpm bench:ssr`: SSR против Solid и гидрация Silent.
+- Скрипт `pnpm deprecate:legacy` для пометки старых `@ivlev98/silent-*` (нужен `NPM_TOKEN`).
+
 ## 0.3.0
 
 ### Документация

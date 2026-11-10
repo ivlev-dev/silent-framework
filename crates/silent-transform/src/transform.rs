@@ -328,7 +328,7 @@ impl SilentPass {
         }
     }
 
-    fn resolve_type_value(&mut self, ty: &TsType, allow_interface: bool) -> Option<Expr> {
+    fn resolve_type_value(&mut self, ty: &TsType) -> Option<Expr> {
         match ty {
             TsType::TsTypeRef(reference) => {
                 if reference.type_params.is_some() {
@@ -340,9 +340,7 @@ impl SilentPass {
                 TsTypeQueryExpr::TsEntityName(entity) => self.resolve_entity_value(entity),
                 TsTypeQueryExpr::Import(import) => self.resolve_import_type(import),
             },
-            TsType::TsParenthesizedType(paren) => {
-                self.resolve_type_value(&paren.type_ann, allow_interface)
-            }
+            TsType::TsParenthesizedType(paren) => self.resolve_type_value(&paren.type_ann),
             TsType::TsKeywordType(_) => None,
             TsType::TsTypeLit(_) => None,
             _ => None,
@@ -417,12 +415,8 @@ impl SilentPass {
                     },
                 },
             };
-            let Some(type_ann) = type_ann else {
-                return None;
-            };
-            let Some(dependency) = self.resolve_type_value(&type_ann.type_ann, true) else {
-                return None;
-            };
+            let type_ann = type_ann?;
+            let dependency = self.resolve_type_value(&type_ann.type_ann)?;
             if ident.sym == "this" {
                 return None;
             }
@@ -482,7 +476,7 @@ impl SilentPass {
         let Some((vm_type, preloader_type)) = view_context_types(this_type) else {
             return;
         };
-        let Some(vm) = self.resolve_type_value(&vm_type, true) else {
+        let Some(vm) = self.resolve_type_value(&vm_type) else {
             self.error(format!(
                 "компонент {}: не удалось разрешить класс ViewModel",
                 name.sym
@@ -491,7 +485,7 @@ impl SilentPass {
         };
         let preloader = preloader_type
             .as_ref()
-            .and_then(|value| self.resolve_type_value(value, false));
+            .and_then(|value| self.resolve_type_value(value));
         let preloader_name = preloader_type.as_ref().and_then(type_value_name);
         if self.require_preloader && preloader.is_none() {
             self.error(format!(
@@ -721,8 +715,8 @@ impl VisitMut for SilentPass {
     fn visit_mut_call_expr(&mut self, call: &mut CallExpr) {
         let mut resolve_type_args: Option<Box<TsTypeParamInstantiation>> = None;
         let mut is_resolve = false;
-        match &mut call.callee {
-            Callee::Expr(callee) => match &mut **callee {
+        if let Callee::Expr(callee) = &mut call.callee {
+            match &mut **callee {
                 Expr::Member(member) => {
                     if let MemberProp::Ident(property) = &member.prop {
                         if property.sym == "resolve" {
@@ -741,20 +735,19 @@ impl VisitMut for SilentPass {
                                     &mut *instantiation.expr,
                                     Expr::Invalid(swc_core::ecma::ast::Invalid { span: DUMMY_SP }),
                                 );
-                                *callee = Box::new(replacement);
+                                **callee = replacement;
                             }
                         }
                     }
                 }
                 _ => {}
-            },
-            _ => {}
+            }
         }
         if is_resolve {
             if let Some(type_args) = resolve_type_args {
                 if type_args.params.len() == 1 {
                     if let Some(ty) = type_args.params.first() {
-                        if let Some(value) = self.resolve_type_value(ty, true) {
+                        if let Some(value) = self.resolve_type_value(ty) {
                             call.args = vec![ExprOrSpread {
                                 spread: None,
                                 expr: Box::new(value),
@@ -1186,12 +1179,12 @@ fn transform_inner(
         return Err(collected.join("\n"));
     }
 
-    Ok(serde_json::to_string(&TransformResult {
+    serde_json::to_string(&TransformResult {
         code: output.code,
         map: output.map,
         diagnostics: output.diagnostics,
     })
-    .map_err(|error| error.to_string())?)
+    .map_err(|error| error.to_string())
 }
 
 fn build_hmr_statement(module_id: &str, deps: &[String]) -> Result<Stmt, String> {
@@ -1246,7 +1239,7 @@ fn parse_module(
     options: &Options,
 ) -> Result<Module, String> {
     use swc_core::ecma::parser::{lexer::Lexer, Parser, StringInput};
-    let syntax = options.config.jsc.syntax.clone().unwrap_or_else(|| {
+    let syntax = options.config.jsc.syntax.unwrap_or_else(|| {
         Syntax::Typescript(swc_core::ecma::parser::TsSyntax {
             tsx: filename.ends_with(".tsx") || filename.ends_with(".jsx"),
             decorators: true,

@@ -15,11 +15,13 @@
     "dev": "pnpm --filter @ivlev-dev/silent-example-counter dev",
     "build:example": "pnpm --filter @ivlev-dev/silent-example-counter build",
     "bench": "pnpm --filter @ivlev-dev/silent-bench bench",
+    "bench:ssr": "pnpm --filter @ivlev-dev/silent-bench bench:ssr",
     "test:e2e": "node scripts/e2e.mjs",
     "test:ssr": "node scripts/ssr-e2e.mjs",
     "install:check": "node scripts/install-check.mjs",
     "pack:check": "node scripts/pack-check.mjs",
-    "api:check": "node scripts/api-check.mjs"
+    "api:check": "node scripts/api-check.mjs",
+    "deprecate:legacy": "node scripts/deprecate-legacy.mjs"
   },
   "devDependencies": {
     "@napi-rs/cli": "^3.10.12",

@@ -2,7 +2,7 @@ import { Bench } from "tinybench";
 
 export interface BenchTask {
   readonly name: string;
-  readonly fn: () => void;
+  readonly fn: () => void | Promise<void>;
 }
 
 export interface BenchSuite {

@@ -270,6 +270,19 @@ silent({
 
 Примитивы работают на уровне Solid, вложенная реактивность быстрее. Разрыв в `For` — стоимость отдельного реактивного владельца и якоря на элемент; реконсиляция без изменения порядка не трогает DOM. Цифры зависят от машины — сравнивайте только свой прогон.
 
+`pnpm bench:ssr` измеряет SSR и гидрацию:
+
+- SSR: `renderToString` Silent против Solid (`ssr`-теги из `solid-js/web`), 20 элементов.
+- Гидрация: `hydrate` Silent — регрессионный ориентир. Solid `hydrate` требует разметку с `data-hk` от JSX-компилятора, которого в наборе нет, поэтому сравнение не приводится.
+
+| Сценарий | ops/s |
+| --- | ---: |
+| SSR: silent renderToString | 14 531 |
+| SSR: solid renderToString | 200 484 |
+| Гидрация: silent hydrate | 1 358 |
+
+SSR Silent медленнее: собственный мини-DOM разбирает шаблон и сериализует дерево, тогда как Solid собирает строку из `ssr`-тегов. Это цена SSR без jsdom/linkedom.
+
 ## Ограничения
 
 - Синхронные компоненты без ViewModel разрешены только для прелоадеров и простых UI-листьев.
@@ -298,18 +311,20 @@ pnpm typecheck
 pnpm api:check
 pnpm dev
 pnpm bench
+pnpm bench:ssr
 pnpm test:e2e
 pnpm test:ssr
 pnpm install:check
+pnpm deprecate:legacy --dry-run
 ```
 
 ## Релиз
 
-Все пакеты `@ivlev-dev/silent-*` версионируются синхронно (сейчас `0.3.0`). Релиз запускается тегом:
+Все пакеты `@ivlev-dev/silent-*` версионируются синхронно (сейчас `0.4.0`). Релиз запускается тегом:
 
 ```bash
-git tag v0.3.0
-git push origin v0.3.0
+git tag v0.4.0
+git push origin v0.4.0
 ```
 
 GitHub Actions `Release` соберёт нативные бинарники под Linux/Windows, прогонит тесты, проверит совпадение тега и версий, соберёт пакеты и опубликует их в npm. Для публикации нужен секрет репозитория `NPM_TOKEN`. Локальная проверка установки из tarball'ов — `pnpm install:check`.
