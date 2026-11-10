@@ -11,12 +11,12 @@ import {
   findInsertWindow,
   isHydrating,
   isMarker,
-  mergeTopLevelTitles,
+  mergeTopLevelMetadata,
   mismatch,
   shapeMatches,
   withWindow,
 } from "./hydration.js";
-import { isMetadataTitle } from "./metadata.js";
+import { isMetadataElement } from "./metadata.js";
 
 export const NODE_DISPOSER = Symbol("silent.disposer");
 
@@ -290,14 +290,14 @@ export function template(html: string): () => Node {
     if (fresh instanceof DocumentFragment) {
       return mismatch("многослойный шаблон не поддерживается при гидрации");
     }
-    if (isMetadataTitle(fresh)) {
+    if (isMetadataElement(fresh)) {
       return fresh;
     }
     const node = claimNext();
     if (node === null || !shapeMatches(fresh, node, true)) {
       return mismatch("шаблон не совпал с серверной разметкой");
     }
-    mergeTopLevelTitles(fresh, node);
+    mergeTopLevelMetadata(fresh, node);
     return node;
   };
 }
@@ -423,13 +423,13 @@ export function templateHoles(html: string): () => TemplateClone {
     const fresh = cloneNode();
     const roots =
       fresh instanceof DocumentFragment ? Array.from(fresh.childNodes) : [fresh];
-    if (roots.length === 1 && isMetadataTitle(roots[0])) {
+    if (roots.length === 1 && isMetadataElement(roots[0])) {
       const title = roots[0]!;
       return { node: title, ...collectPartsMany([title]) };
     }
     const claimed: Node[] = [];
     for (const root of roots) {
-      if (isMetadataTitle(root)) {
+      if (isMetadataElement(root)) {
         claimed.push(root);
         continue;
       }
@@ -437,7 +437,7 @@ export function templateHoles(html: string): () => TemplateClone {
       if (node === null || !shapeMatches(root, node, true)) {
         return mismatch("шаблон не совпал с серверной разметкой");
       }
-      mergeTopLevelTitles(root, node);
+      mergeTopLevelMetadata(root, node);
       claimed.push(node);
     }
     const parts = collectPartsMany(claimed);

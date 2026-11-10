@@ -716,9 +716,9 @@ function setMetadataCollector(
 
 Внутренний хук SSR: `@ivlev-dev/silent-server` устанавливает коллектор на время `renderToString`, чтобы вынесенные `<title>` попали в `head` результата, а не в `body`. Приложение этот API не использует.
 
-## Метаданные и `<title>`
+## Метаданные и `<head>`
 
-`<title>` можно рендерить из любого компонента — рантайм вынесет элемент в `document.head`, как React 19.
+`<title>`, `<meta>` и `<link>` можно рендерить из любого компонента — рантайм вынесет их в `document.head`, как React 19.
 
 ```tsx
 export function Page(this: { vm: PageVM }, props: { name: string }) {
@@ -734,11 +734,12 @@ export function Page(this: { vm: PageVM }, props: { name: string }) {
 Правила:
 
 - заголовок выносится из разметки view и вставляется в `head`; текст обновляется реактивно;
+- `<meta>` и `<link>` тоже выносятся в `head`: добавляются при монтировании и удаляются при размонтировании; существующие элементы `head` из `index.html` не трогаются;
 - при размонтировании view заголовок удаляется, и восстанавливается предыдущий (например, статический `<title>` из `index.html`);
 - несколько одновременных заголовков не дедуплицируются — все попадают в `head`, поведение браузера в этом случае не определено (как в React 19); рендерите один `<title>`;
-- `<title>` внутри `<svg>` и `<title>` с `itemprop` не выносятся;
+- `<title>` внутри `<svg>`, а также `<title>`, `<meta>` и `<link>` с `itemprop` не выносятся;
 - содержимое должно быть текстом: компилятор сворачивает статические и динамические части в один `textContent`-бондинг, поэтому комментарии-хуки не попадают в RCDATA и значение не ломается;
-- в SSR заголовок возвращается в `RenderResult.head`, в `html` его нет.
+- в SSR заголовок и остальные метаданные возвращаются в `RenderResult.head`, в `html` их нет.
 
 ### `HydrationMismatchError`
 
@@ -774,7 +775,7 @@ function renderToString(
 3. Включается серверный режим: `templateHoles` сохраняет атрибуты `data-silent-a-N`, нужные клиенту.
 4. `createComponent` + `ready` + `whenIdle` + `flushSync` дожидаются асинхронных ViewModel, `Suspense` и `lazy`.
 5. Корневой узел сериализуется вместе с якорями (`silent-view`, `silent-item`, `silent-end`, `silent-hole-N`).
-6. Заголовки страницы выносятся из дерева и возвращаются в `head`; в `html` их нет.
+6. Метаданные страницы (`<title>`, `<meta>`, `<link>`) выносятся из дерева и возвращаются в `head`; в `html` их нет.
 7. Пакетный компонент демонтируется: ViewModel проходит `unmounted` и `dispose`.
 
 ```ts
@@ -812,8 +813,8 @@ interface RenderResult {
 }
 ```
 
-- `html` — разметка приложения без `<title>`: заголовок вынесен в `head`.
-- `head` — сериализованные метаданные (`<title>…</title>` в порядке регистрации); вставьте их в `<head>` документа.
+- `html` — разметка приложения без метаданных: `<title>`, `<meta>` и `<link>` вынесены в `head`.
+- `head` — сериализованные метаданные (`<title>`, `<meta>`, `<link>` в порядке регистрации); вставьте их в `<head>` документа.
 
 ```ts
 const { html, head } = await renderToString(App);
@@ -823,9 +824,53 @@ const page = `<!doctype html><html><head>${head}</head><body><div id="app">${htm
 
 Ограничения SSR:
 
-- только строковый результат, без стриминга и `head`-менеджмента;
+- только строковый результат: `renderToStream` отдаёт готовое тело чанками, прогрессивная отдача по границам `Suspense` не поддерживается;
 - серверный мини-DOM не реализует события и `replaceChildren` — интерактивные эффекты выполняются, но ничего не делают;
 - произвольный HTML в `template()` не поддерживается: парсер рассчитан на подмножество, которое генерирует компилятор.
+
+### `renderToStream`
+
+*Стабильность: public.*
+
+```ts
+function renderToStream(
+  app: AnyComponent,
+  options?: StreamOptions,
+): ReadableStream<string>;
+```
+
+Рендерит приложение и отдаёт тело чанками. `head` передаётся в `onHead` перед первым чанком; чанки склеиваются в тот же `html`, что возвращает `renderToString`.
+
+```ts
+import { renderToStream } from "@ivlev-dev/silent-server";
+
+const stream = renderToStream(App, {
+  chunkSize: 16 * 1024,
+  onHead: (head) => res.write(`<!doctype html><html><head>${head}</head><body>`),
+});
+
+for await (const chunk of stream) {
+  res.write(chunk);
+}
+res.end("</body></html>");
+```
+
+Асинхронные ViewModel, `Suspense` и `lazy` дожидаются до начала выдачи — поток отдаёт уже итоговую разметку.
+
+### `StreamOptions`
+
+*Стабильность: public.*
+
+```ts
+interface StreamOptions extends RenderOptions {
+  readonly chunkSize?: number;
+  readonly onHead?: (head: string) => void;
+}
+```
+
+- `chunkSize` — размер чанка, по умолчанию 16 KiB; неположительные значения заменяются умолчанием.
+- `onHead` — получает сериализованный `head` один раз, до первого чанка тела.
+- Остальные поля совпадают с `RenderOptions`.
 
 ## JSX
 
@@ -990,6 +1035,94 @@ interface ForProps<T> {
 ```
 
 Props: `when` (значение или функция), `fallback`, `children`. «Правда» — всё, кроме `null`, `undefined`, `false`, `0` и `""`. Активная ветка рендерится как children, иначе как fallback; функции разворачиваются; содержимое заменяется при изменении условия.
+
+### `Index`
+
+*Стабильность: public.*
+
+Неключевой список: узлы закреплены за позициями, а не за значениями.
+
+```ts
+interface IndexProps<T> {
+  each: readonly T[] | (() => readonly T[]);
+  children: (item: () => T, index: () => number) => Node;
+  fallback?: unknown;
+}
+```
+
+- `children` получает accessor элемента: при изменении массива сигнал обновляется, а реактивные биндинги внутри узла меняются точечно; сам узел не пересоздаётся.
+- Позиции не переставляются: при смене порядка значений обновляются значения на местах.
+- Добавление и удаление затрагивает только хвост списка.
+- `fallback` — значение или функция; показывается при пустом массиве.
+
+```tsx
+<ul class="items">
+  <Index each={this.vm.items}>
+    {(item) => <li>{item()}</li>}
+  </Index>
+</ul>
+```
+
+### `IndexProps`
+
+См. сигнатуру выше: `each`, `children` (accessor элемента и accessor индекса), необязательный `fallback`.
+
+### `Switch`
+
+*Стабильность: public.*
+
+Выбирает первую правдивую ветку `Match`; если такой нет — `fallback`.
+
+```tsx
+<Switch fallback={<span>нет данных</span>}>
+  <Match when={this.vm.status === "error"}><ErrorView /></Match>
+  <Match when={this.vm.status === "loading"}><Spinner /></Match>
+  <Match when={this.vm.data}><Content /></Match>
+</Switch>
+```
+
+Ветка пересчитывается реактивно: при изменении условий содержимое заменяется. `fallback` необязателен.
+
+### `Match`
+
+*Стабильность: public.*
+
+Ветка `Switch`: `when` — значение или функция, `children` — содержимое ветки. `Match` не создаёт DOM-содержимого: он возвращает служебный узел с условием и детьми, который `Switch` снимает при выборе. Использовать `Match` вне `Switch` нельзя.
+
+### `SwitchProps`
+
+`{ fallback?: unknown; children: unknown | (() => unknown) }` — дети описывают ветки `Match`.
+
+### `MatchProps`
+
+`{ when: unknown | (() => unknown); children?: unknown }`.
+
+### `ErrorBoundary`
+
+*Стабильность: public.*
+
+Ловит синхронные ошибки рендера детей и асинхронные ошибки дочерних view, приходящие через `onError`.
+
+```tsx
+<ErrorBoundary
+  fallback={(error, reset) => (
+    <div>
+      <p>{String(error)}</p>
+      <button onClick={reset}>Повторить</button>
+    </div>
+  )}
+>
+  <Profile />
+</ErrorBoundary>
+```
+
+- `fallback(error, reset)` — ветка ошибки; `reset()` снова рендерит `children`.
+- После ошибки `children` не перерисовываются, пока не вызван `reset`.
+- Ошибки в обработчиках событий и в эффектах, созданных вне границы, не перехватываются.
+
+### `ErrorBoundaryProps`
+
+`{ fallback: (error: unknown, reset: () => void) => unknown; children: unknown | (() => unknown) }`.
 
 ### `Suspense`
 

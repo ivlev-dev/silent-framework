@@ -20,6 +20,9 @@ export {
 } from "./dom.js";
 
 export { For, Show } from "./control-flow.js";
+export { Index, type IndexProps } from "./index-list.js";
+export { Match, Switch, type MatchProps, type SwitchProps } from "./switch.js";
+export { ErrorBoundary, type ErrorBoundaryProps } from "./error-boundary.js";
 export { Suspense, lazy, type SuspenseProps, type LazyOptions } from "./suspense.js";
 export {
   component,

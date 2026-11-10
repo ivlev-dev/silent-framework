@@ -12,9 +12,10 @@
 - Компилятор на Rust + `swc_core` и нативный Node-API addon.
 - Vite 8 плагин с полной компиляцией TS/TSX и HMR.
 - Прелоадеры на уровне view и HMR с сохранением состояния.
+- `For`, `Index`, `Show`, `Switch`/`Match`, `ErrorBoundary`: keyed- и неключевые списки, условный рендер и границы ошибок.
 - `Suspense` и `lazy`: асинхронные границы и отложенная загрузка модулей.
-- SSR без внешних DOM-зависимостей (`@ivlev-dev/silent-server`) и гидрация без вспышки прелоадера.
-- `<title>` из любого компонента выносится в `<head>` — как в React 19, с SSR-поддержкой.
+- SSR без внешних DOM-зависимостей (`@ivlev-dev/silent-server`), `renderToStream` и гидрация без вспышки прелоадера.
+- `<title>`, `<meta>` и `<link>` из любого компонента выносятся в `<head>` — как в React 19, с SSR-поддержкой.
 - Справочник API с автопроверкой полноты (`pnpm api:check`).
 
 ## Установка
@@ -81,6 +82,26 @@ export function Counter(
 
 Если `preloader` не указан, используется глобальный прелоадер или пустой якорь. Опция плагина `requirePreloader: true` делает его обязательным.
 
+## Списки и условия
+
+```tsx
+<For each={this.vm.items}>{(item) => <li>{item.name}</li>}</For>
+<Index each={this.vm.numbers}>{(value) => <li>{value()}</li>}</Index>
+<Show when={this.vm.ready} fallback={<b>нет</b>}>готово</Show>
+<Switch fallback={<span>неизвестно</span>}>
+  <Match when={this.vm.status === "error"}><ErrorView /></Match>
+  <Match when={this.vm.status === "ok"}><ContentView /></Match>
+</Switch>
+<ErrorBoundary fallback={(error, reset) => <button onClick={reset}>{String(error)}</button>}>
+  <Profile />
+</ErrorBoundary>
+```
+
+- `For` — keyed-список: узлы привязаны к значениям, перестановки сохраняют DOM.
+- `Index` — неключевой список: узлы закреплены за позициями, обновляется только содержимое.
+- `Show` и `Switch`/`Match` — условный рендер; `Match` выбирается первой правдивой веткой.
+- `ErrorBoundary` ловит синхронные ошибки рендера и асинхронные ошибки дочерних view; `reset()` повторяет рендер.
+
 ## Suspense и lazy
 
 ```tsx
@@ -112,7 +133,7 @@ const { html, head } = await renderToString(App, { props: { title: "Hi" } });
 const page = `<!doctype html><html><head>${head}</head><body><div id="app">${html}</div></body></html>`;
 ```
 
-`<title>` можно рендерить прямо во view — он уедет в `head`, а в SSR попадёт в `head` результата:
+`<title>`, `<meta>` и `<link>` можно рендерить прямо во view — они уедут в `head`, а в SSR попадут в `head` результата:
 
 ```tsx
 export function Page(this: { vm: PageVM }, props: { name: string }) {
@@ -125,7 +146,22 @@ export function Page(this: { vm: PageVM }, props: { name: string }) {
 }
 ```
 
-Несколько одновременных заголовков не дедуплицируются (как в React 19 — рендерите один), `<title>` внутри `<svg>` и с `itemProp` не выносятся.
+Несколько одновременных заголовков не дедуплицируются (как в React 19 — рендерите один), `<title>` внутри `<svg>` и метаданные с `itemProp` не выносятся.
+
+Тело можно отдавать чанками через `renderToStream` — `head` приходит в `onHead` до первого чанка:
+
+```ts
+import { renderToStream } from "@ivlev-dev/silent-server";
+
+const stream = renderToStream(App, {
+  onHead: (head) => res.write(`<!doctype html><html><head>${head}</head><body>`),
+});
+
+for await (const chunk of stream) {
+  res.write(chunk);
+}
+res.end("</body></html>");
+```
 
 Рендер дожидается асинхронных ViewModel, `Suspense` и `lazy`, сериализует дерево с якорями и серверными маркерами атрибутов. Вызовы сериализуются внутренней очередью, DOM-глобалы живут только на время рендера.
 
@@ -246,11 +282,11 @@ pnpm install:check
 
 ## Релиз
 
-Все пакеты `@ivlev-dev/silent-*` версионируются синхронно (сейчас `0.1.2`). Релиз запускается тегом:
+Все пакеты `@ivlev-dev/silent-*` версионируются синхронно (сейчас `0.2.0`). Релиз запускается тегом:
 
 ```bash
-git tag v0.1.2
-git push origin v0.1.2
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
 GitHub Actions `Release` соберёт нативные бинарники под Linux/Windows, прогонит тесты, проверит совпадение тега и версий, соберёт пакеты и опубликует их в npm. Для публикации нужен секрет репозитория `NPM_TOKEN`. Локальная проверка установки из tarball'ов — `pnpm install:check`.

@@ -12,6 +12,7 @@ import {
   type Owner,
 } from "@ivlev-dev/silent-reactivity";
 import { registerView } from "./registry.js";
+import { isMatchNode } from "./match-node.js";
 import { extractMetadata } from "./metadata.js";
 import {
   getCurrentBoundary,
@@ -694,6 +695,13 @@ export function createComponent(
     const result = withRuntimeOptions(options, () =>
       (component as unknown as (props: Record<string, unknown>) => unknown)(props),
     );
+    if (isMatchNode(result)) {
+      return {
+        node: result,
+        ready: Promise.resolve(),
+        dispose: () => {},
+      };
+    }
     const normalized = normalizeNodes(result);
     if (isHydrating()) {
       settleNodes(currentWindow()?.end ?? null, result);

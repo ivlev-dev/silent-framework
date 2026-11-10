@@ -13,21 +13,21 @@ export function setMetadataCollector(
   collector = next;
 }
 
-export function isMetadataTitle(node: Node | null | undefined): node is Element {
+export function isMetadataElement(node: Node | null | undefined): node is Element {
   if (!(node instanceof Element)) {
     return false;
   }
-  return (
-    node.tagName === "TITLE" &&
-    node.namespaceURI !== SVG_NAMESPACE &&
-    !node.hasAttribute("itemprop")
-  );
+  if (node.namespaceURI === SVG_NAMESPACE || node.hasAttribute("itemprop")) {
+    return false;
+  }
+  const tag = node.tagName;
+  return tag === "TITLE" || tag === "META" || tag === "LINK";
 }
 
 export function extractMetadata(nodes: readonly Node[]): Node[] {
   const kept: Node[] = [];
   for (const node of nodes) {
-    if (isMetadataTitle(node)) {
+    if (isMetadataElement(node)) {
       hoist(node);
       continue;
     }
@@ -42,7 +42,7 @@ function collectNested(node: Node): void {
     return;
   }
   for (const child of Array.from(node.childNodes)) {
-    if (isMetadataTitle(child)) {
+    if (isMetadataElement(child)) {
       hoist(child);
       continue;
     }
@@ -68,8 +68,24 @@ function hoist(node: Element): void {
     collector(node);
     return;
   }
-  const unregister = registerTitle(node);
-  onCleanup(unregister);
+  if (node.tagName === "TITLE") {
+    onCleanup(registerTitle(node));
+    return;
+  }
+  onCleanup(registerAsset(node));
+}
+
+function registerAsset(node: Element): () => void {
+  if (typeof document === "undefined" || document.head === null) {
+    return () => {};
+  }
+  const head = document.head;
+  if (node.parentNode !== head) {
+    head.appendChild(node);
+  }
+  return () => {
+    node.parentNode?.removeChild(node);
+  };
 }
 
 function registerTitle(node: Element): () => void {

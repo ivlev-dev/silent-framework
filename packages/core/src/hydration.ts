@@ -1,4 +1,4 @@
-import { isMetadataTitle } from "./metadata.js";
+import { isMetadataElement } from "./metadata.js";
 
 export class HydrationMismatchError extends Error {
   constructor(message: string) {
@@ -20,6 +20,9 @@ export const VIEW_END = "silent-view-end";
 export const ITEM = "silent-item";
 export const LIST_END = "silent-end";
 export const SHOW = "silent-show";
+export const SWITCH = "silent-switch";
+export const ERROR_BOUNDARY = "silent-error";
+export const MATCH = "silent-match";
 export const FRAGMENT = "silent-fragment";
 export const SUSPENSE = "silent-suspense";
 export const HYDRATE_START = "silent-hydrate";
@@ -160,7 +163,7 @@ export function detachNode(node: Node): void {
   node.parentNode?.removeChild(node);
 }
 
-function shapeChildren(node: Node, ignoreTopTitles: boolean): Node[] {
+function shapeChildren(node: Node, ignoreTopMetadata: boolean): Node[] {
   const result: Node[] = [];
   let depth = 0;
   for (const child of node.childNodes) {
@@ -177,7 +180,7 @@ function shapeChildren(node: Node, ignoreTopTitles: boolean): Node[] {
     if (depth > 0) {
       continue;
     }
-    if (ignoreTopTitles && isMetadataTitle(child)) {
+    if (ignoreTopMetadata && isMetadataElement(child)) {
       continue;
     }
     result.push(child);
@@ -185,10 +188,10 @@ function shapeChildren(node: Node, ignoreTopTitles: boolean): Node[] {
   return result;
 }
 
-export function mergeTopLevelTitles(fresh: Node, claimed: Node): void {
+export function mergeTopLevelMetadata(fresh: Node, claimed: Node): void {
   let claimedChild = claimed.firstChild;
   for (const freshChild of Array.from(fresh.childNodes)) {
-    if (isMetadataTitle(freshChild)) {
+    if (isMetadataElement(freshChild)) {
       freshChild.parentNode?.removeChild(freshChild);
       claimed.insertBefore(freshChild, claimedChild);
       continue;
@@ -202,7 +205,7 @@ export function mergeTopLevelTitles(fresh: Node, claimed: Node): void {
 export function shapeMatches(
   fresh: Node,
   claimed: Node,
-  ignoreTopTitles = false,
+  ignoreTopMetadata = false,
 ): boolean {
   if (fresh.nodeType !== claimed.nodeType) {
     return false;
@@ -228,7 +231,7 @@ export function shapeMatches(
         return false;
       }
     }
-    const freshChildren = shapeChildren(left, ignoreTopTitles);
+    const freshChildren = shapeChildren(left, ignoreTopMetadata);
     const claimedChildren = shapeChildren(right, false);
     if (freshChildren.length !== claimedChildren.length) {
       return false;

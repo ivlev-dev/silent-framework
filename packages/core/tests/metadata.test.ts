@@ -135,4 +135,46 @@ describe("metadata hoisting", () => {
     expect(headTitles()).toEqual([]);
     expect(host.querySelector("title")?.textContent).toBe("Book");
   });
+
+  it("переносит meta и link в head и убирает из разметки", async () => {
+    function Page(this: { vm: object }): Node {
+      void this.vm;
+      return templateHoles(
+        '<div class="page"><meta name="description" content="page"><link rel="stylesheet" href="/page.css"><h1>Body</h1></div>',
+      )().node;
+    }
+    attachMeta(Page);
+
+    const host = await mountComponent(Page as unknown as AnyComponent);
+
+    expect(host.querySelector("meta")).toBeNull();
+    expect(host.querySelector("link")).toBeNull();
+    expect(host.querySelector("h1")?.textContent).toBe("Body");
+    expect(
+      document.head.querySelector('meta[name="description"]')?.getAttribute("content"),
+    ).toBe("page");
+    expect(document.head.querySelector('link[href="/page.css"]')).not.toBeNull();
+
+    handles.at(-1)?.dispose();
+    handles.pop();
+    expect(document.head.querySelector('meta[name="description"]')).toBeNull();
+    expect(document.head.querySelector('link[href="/page.css"]')).toBeNull();
+  });
+
+  it("не переносит meta и link с itemprop", async () => {
+    function Page(this: { vm: object }): Node {
+      void this.vm;
+      return templateHoles(
+        '<div class="book"><meta itemprop="name" content="Book"><link itemprop="url" href="/book"><h1>Body</h1></div>',
+      )().node;
+    }
+    attachMeta(Page);
+
+    const host = await mountComponent(Page as unknown as AnyComponent);
+
+    expect(host.querySelector('meta[itemprop="name"]')).not.toBeNull();
+    expect(host.querySelector('link[itemprop="url"]')).not.toBeNull();
+    expect(document.head.querySelector('meta[itemprop="name"]')).toBeNull();
+    expect(document.head.querySelector('link[itemprop="url"]')).toBeNull();
+  });
 });
