@@ -7,6 +7,12 @@ export * from "./component.js";
 export * from "./mount.js";
 export { HydrationMismatchError } from "./hydration.js";
 export { setMetadataCollector } from "./metadata.js";
+export {
+  setServerBackend,
+  type ServerBackend,
+  type ServerHole,
+  type ServerTemplate,
+} from "./server-backend.js";
 export * from "./types.js";
 export * from "./jsx.js";
 export { For, Show } from "./control-flow.js";

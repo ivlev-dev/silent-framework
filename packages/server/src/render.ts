@@ -4,6 +4,7 @@ import {
   createComponent,
   hasPendingWork,
   setMetadataCollector,
+  setServerBackend,
   setServerMode,
   whenIdle,
   type AnyComponent,
@@ -14,6 +15,7 @@ import {
 import { createRoot, flushSync } from "@ivlev-dev/silent-reactivity";
 import { createDocument, installDomGlobals } from "./dom/document.js";
 import { serializeNode } from "./dom/serializer.js";
+import { createServerBackend } from "./string-backend.js";
 import type { DomNode } from "./dom/types.js";
 
 export interface RenderOptions {
@@ -63,6 +65,7 @@ async function renderOnce(app: AnyComponent, options: RenderOptions): Promise<Re
   const document = createDocument();
   const restore = installDomGlobals(document);
   setServerMode(true);
+  setServerBackend(createServerBackend());
 
   const holder: { value: ComponentResult | null } = { value: null };
   let disposeRoot: () => void = () => {};
@@ -124,6 +127,7 @@ async function renderOnce(app: AnyComponent, options: RenderOptions): Promise<Re
     return { html: serializeNode(fragment as unknown as DomNode), head };
   } finally {
     setMetadataCollector(null);
+    setServerBackend(null);
     restore();
     setServerMode(false);
     holder.value?.dispose();

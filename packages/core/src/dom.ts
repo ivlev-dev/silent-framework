@@ -2,6 +2,12 @@ import type { Child, Children } from "./jsx.js";
 import { createRenderEffect, onCleanup } from "@ivlev-dev/silent-reactivity";
 import { extractMetadata, isMetadataElement, markMetadataFree } from "./metadata.js";
 import {
+  getServerBackend,
+  isServerHole,
+  serializeServerValue,
+  type ServerHole,
+} from "./server-backend.js";
+import {
   FRAGMENT,
   INSERT_END,
   INSERT_START,
@@ -316,7 +322,7 @@ export function template(html: string): () => Node {
 
 export interface TemplateClone {
   readonly node: Node;
-  readonly holes: readonly Comment[];
+  readonly holes: readonly (Comment | ServerHole)[];
   readonly attrs: readonly Element[];
 }
 
@@ -409,6 +415,15 @@ function collectParts(node: Node): { holes: Comment[]; attrs: Element[] } {
 }
 
 export function templateHoles(html: string): () => TemplateClone {
+  if (isServerMode()) {
+    const backend = getServerBackend();
+    if (backend !== null) {
+      const template = backend.createTemplate(html);
+      if (template !== null) {
+        return () => template as unknown as TemplateClone;
+      }
+    }
+  }
   let cached = templateCache.get(html);
   if (cached === undefined) {
     const element = document.createElement("template");
@@ -580,7 +595,17 @@ function insertHydrated(
   });
 }
 
-export function insert(parent: Node, accessor: () => unknown, marker?: Node): void {
+export function insert(
+  parent: Node,
+  accessor: () => unknown,
+  marker?: Node | ServerHole,
+): void {
+  if (isServerHole(marker)) {
+    marker.set(
+      `<!--${INSERT_START}-->${serializeServerValue(accessor())}<!--${INSERT_END}-->`,
+    );
+    return;
+  }
   if (isServerMode()) {
     insertServer(parent, accessor, marker ?? null);
     return;

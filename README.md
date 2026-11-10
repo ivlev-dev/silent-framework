@@ -277,9 +277,9 @@ silent({
 
 | Сценарий | ops/s |
 | --- | ---: |
-| SSR: silent renderToString | 21 576 |
-| SSR: solid renderToString | 214 019 |
-| Гидрация: silent hydrate | 1 028 |
+| SSR: silent renderToString | 34 343 |
+| SSR: solid renderToString | 190 689 |
+| Гидрация: silent hydrate (20 шаблонов) | 660 |
 
 SSR Silent медленнее: собственный мини-DOM разбирает шаблон и сериализует дерево, тогда как Solid собирает строку из `ssr`-тегов. Это цена SSR без jsdom/linkedom.
 
@@ -320,11 +320,11 @@ pnpm deprecate:legacy --dry-run
 
 ## Релиз
 
-Все пакеты `@ivlev-dev/silent-*` версионируются синхронно (сейчас `0.5.0`). Релиз запускается тегом:
+Все пакеты `@ivlev-dev/silent-*` версионируются синхронно (сейчас `0.6.0`). Релиз запускается тегом:
 
 ```bash
-git tag v0.5.0
-git push origin v0.5.0
+git tag v0.6.0
+git push origin v0.6.0
 ```
 
 GitHub Actions `Release` соберёт нативные бинарники под Linux/Windows, прогонит тесты, проверит совпадение тега и версий, соберёт пакеты и опубликует их в npm. Для публикации нужен секрет репозитория `NPM_TOKEN`. Локальная проверка установки из tarball'ов — `pnpm install:check`.

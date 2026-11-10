@@ -1,0 +1,38 @@
+export interface ServerHole {
+  readonly parentNode: unknown;
+  set(value: string): void;
+}
+
+export interface ServerTemplate {
+  readonly node: unknown;
+  readonly holes: readonly ServerHole[];
+  readonly attrs: readonly unknown[];
+}
+
+export interface ServerBackend {
+  createTemplate(html: string): ServerTemplate | null;
+  serialize(value: unknown): string;
+}
+
+let backend: ServerBackend | null = null;
+
+export function setServerBackend(next: ServerBackend | null): void {
+  backend = next;
+}
+
+export function getServerBackend(): ServerBackend | null {
+  return backend;
+}
+
+export function isServerHole(value: unknown): value is ServerHole {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !(value instanceof Node) &&
+    typeof (value as ServerHole).set === "function"
+  );
+}
+
+export function serializeServerValue(value: unknown): string {
+  return backend === null ? "" : backend.serialize(value);
+}

@@ -736,6 +736,56 @@ function setMetadataCollector(
 
 Внутренний хук SSR: `@ivlev-dev/silent-server` устанавливает коллектор на время `renderToString`, чтобы вынесенные `<title>` попали в `head` результата, а не в `body`. Приложение этот API не использует.
 
+### `setServerBackend`
+
+*Стабильность: internal.*
+
+```ts
+function setServerBackend(backend: ServerBackend | null): void;
+```
+
+Регистрирует строковый SSR-бэкенд, который `templateHoles` и `insert` используют в серверном режиме. Вызывается из `renderToString`; прикладной код не использует.
+
+### `ServerBackend`
+
+*Стабильность: internal.*
+
+```ts
+interface ServerBackend {
+  createTemplate(html: string): ServerTemplate | null;
+  serialize(value: unknown): string;
+}
+```
+
+`createTemplate` возвращает `null`, если шаблон содержит динамические атрибуты (`data-silent-a-*`) или метаданные — тогда используется мини-DOM. `serialize` превращает значения вставок в HTML.
+
+### `ServerHole`
+
+*Стабильность: internal.*
+
+```ts
+interface ServerHole {
+  readonly parentNode: unknown;
+  set(value: string): void;
+}
+```
+
+Слот шаблона в строковом SSR: `insert` записывает в него готовую строку.
+
+### `ServerTemplate`
+
+*Стабильность: internal.*
+
+```ts
+interface ServerTemplate {
+  readonly node: unknown;
+  readonly holes: readonly ServerHole[];
+  readonly attrs: readonly unknown[];
+}
+```
+
+Результат `createTemplate`: строковый узел и его слоты. Совместим с `TemplateClone` по форме, но не является DOM-узлом.
+
 ## Метаданные и `<head>`
 
 `<title>`, `<meta>` и `<link>` можно рендерить из любого компонента — рантайм вынесет их в `document.head`, как React 19.

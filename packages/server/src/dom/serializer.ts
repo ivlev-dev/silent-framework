@@ -57,6 +57,10 @@ function serializeElement(element: ElementImpl): string {
 }
 
 export function serializeNode(node: DomNode): string {
+  const raw = node as unknown as { render?: () => string };
+  if (typeof raw.render === "function") {
+    return raw.render();
+  }
   switch (node.nodeType) {
     case NODE_ELEMENT:
       return node instanceof ElementImpl ? serializeElement(node) : "";
