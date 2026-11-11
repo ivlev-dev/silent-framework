@@ -248,10 +248,17 @@ silent({
   requirePreloader: false,
   hmr: true,
   index: true,
+  view: true,
 });
 ```
 
 `swc` принимает опции компилятора SWC. JSX всегда компилируется рантаймом Silent Framework.
+
+`view: false` отключает view/VM-рантайм и его lazy-чанк. Используй это только если в приложении нет компонентов с ViewModel: стартовый бандл уменьшается примерно на 3 KB min, но `mount`/`hydrate` с VM-компонентом бросят ошибку.
+
+## Версионирование
+
+Проект в стадии `0.x`: ломающее изменение публичного API или новая функциональность → вторая цифра, исправления/производительность/рефакторинг → третья (`0.6.0` → `0.6.1`). Все пакеты и `Cargo.toml` версионируются синхронно. Подробности и шаги релиза — [docs/releasing.md](./docs/releasing.md).
 
 ## Бенчмарки
 
@@ -259,16 +266,16 @@ silent({
 
 | Сценарий | silent ops/s | solid ops/s | silent/solid |
 | --- | ---: | ---: | ---: |
-| signal: 10k writes | 339 | 316 | 1.07x |
-| signal: 10k batched writes | 3 986 | 4 370 | 0.91x |
-| memo chain: 5k writes | 184 | 172 | 1.07x |
-| deep reactive: 10k path writes | 127 | 92 | 1.37x |
-| effect → textContent: 10k updates | 188 | 181 | 1.04x |
-| keyed list: create 1000 rows | 55 | 288 | 0.19x |
-| keyed list: append 100 rows | 577 | 2 122 | 0.27x |
-| keyed list: reorder 1000 rows | 531 | 648 | 0.82x |
+| signal: 10k writes | 359 | 298 | 1.20x |
+| signal: 10k batched writes | 7 622 | 4 220 | 1.81x |
+| memo chain: 5k writes | 200 | 162 | 1.23x |
+| deep reactive: 10k path writes | 119 | 85 | 1.40x |
+| effect → textContent: 10k updates | 193 | 175 | 1.10x |
+| keyed list: create 1000 rows | 73 | 290 | 0.25x |
+| keyed list: append 100 rows | 989 | 2 013 | 0.49x |
+| keyed list: reorder 1000 rows | 1 396 | 1 170 | 1.19x |
 
-Примитивы работают на уровне Solid, вложенная реактивность быстрее. Разрыв в `For` — стоимость отдельного реактивного владельца и якоря на элемент; реконсиляция без изменения порядка не трогает DOM. Цифры зависят от машины — сравнивайте только свой прогон.
+Примитивы быстрее Solid на 10–40%, batched writes — в 1.8 раза быстрее. Разрыв в `For` остаётся на создании и добавлении — стоимость отдельного реактивного владельца и якоря на элемент; перестановки уже быстрее Solid. Цифры зависят от машины — сравнивайте только свой прогон.
 
 `pnpm bench:ssr` измеряет SSR и гидрацию:
 
@@ -277,11 +284,35 @@ silent({
 
 | Сценарий | ops/s |
 | --- | ---: |
-| SSR: silent renderToString | 34 343 |
-| SSR: solid renderToString | 190 689 |
-| Гидрация: silent hydrate (20 шаблонов) | 660 |
+| SSR: silent renderToString | 99 900 |
+| SSR: solid renderToString | 206 300 |
+| Гидрация: silent hydrate (20 шаблонов) | 1 368 |
 
-SSR Silent медленнее: собственный мини-DOM разбирает шаблон и сериализует дерево, тогда как Solid собирает строку из `ssr`-тегов. Это цена SSR без jsdom/linkedom.
+`pnpm bench:hydrate` сравнивает гидрацию Silent и Solid в одном jsdom (20 строк, SSR-разметка Solid скомпилирована с `data-hk`):
+
+| Сценарий | ops/s | к Solid |
+| --- | ---: | ---: |
+| Silent hydrate | 1 368 | 0.61x |
+| Solid hydrate | 2 249 | 1.00x |
+
+`pnpm bench:browser` повторяет сравнение в реальном Chromium (20 строк, 300 замеров по 20 гидраций):
+
+| Сценарий | ops/s | к Solid |
+| --- | ---: | ---: |
+| Silent hydrate | 8 746 | 0.32x |
+| Solid hydrate | 27 372 | 1.00x |
+
+`pnpm bench:build` собирает одинаковые Vite-приложения на Silent и Solid (3 cold + 3 warm прогона):
+
+| Приложение | cold, ms | warm, ms | start JS, KB | start gzip, KB | all JS, KB | CSS, KB |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Silent (`view: false`) | 56 | 27 | 23.2 | 8.3 | 23.2 | 0.2 |
+| Silent (default, VM) | 32 | 26 | 26.4 | 9.5 | 38.8 | 0.2 |
+| Solid | 147 | 40 | 12.6 | 5.1 | 12.6 | 0.2 |
+
+У Silent с VM `all JS` включает lazy-чанк `component-view` (8.98 KB / 3.66 KB gzip), который загружается только при наличии ViewModel. При `view: false` lazy-чанк и `vite/preload-helper` не генерируются.
+
+SSR Silent медленнее: собственный мини-DOM разбирает шаблон и сериализует дерево, тогда как Solid собирает строку из `ssr`-тегов. Это цена SSR без jsdom/linkedom. Пересоздание DOM-глобалов на каждый рендер убрано, и разрыв сократился примерно с 5× до 2×; для паритета нужен строковый SSR-режим компилятора. Сборка Silent быстрее, но бандл больше из-за рантайма reactivity/DI/core.
 
 ## Ограничения
 
@@ -320,11 +351,11 @@ pnpm deprecate:legacy --dry-run
 
 ## Релиз
 
-Все пакеты `@ivlev-dev/silent-*` версионируются синхронно (сейчас `0.6.0`). Релиз запускается тегом:
+Все пакеты `@ivlev-dev/silent-*` версионируются синхронно (сейчас `0.6.2`). Правила и пошаговый процесс — [docs/releasing.md](./docs/releasing.md). Релиз запускается тегом:
 
 ```bash
-git tag v0.6.0
-git push origin v0.6.0
+git tag v0.6.2
+git push origin v0.6.2
 ```
 
 GitHub Actions `Release` соберёт нативные бинарники под Linux/Windows, прогонит тесты, проверит совпадение тега и версий, соберёт пакеты и опубликует их в npm. Для публикации нужен секрет репозитория `NPM_TOKEN`. Локальная проверка установки из tarball'ов — `pnpm install:check`.
