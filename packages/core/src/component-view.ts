@@ -190,7 +190,7 @@ export function createViewResult(
   props: Record<string, unknown>,
   options: RuntimeOptions,
 ): ComponentResult {
-  const fragment = document.createDocumentFragment();
+  let fragment: DocumentFragment | null = null;
   const hydrated = isHydrating();
   let adoptPending = hydrated;
   let start: Comment;
@@ -214,6 +214,7 @@ export function createViewResult(
   } else {
     start = document.createComment(VIEW_START);
     end = document.createComment(VIEW_END);
+    fragment = document.createDocumentFragment();
     fragment.appendChild(start);
     fragment.appendChild(end);
   }
@@ -547,7 +548,7 @@ export function createViewResult(
   void root;
 
   return {
-    node: hydrated ? start : fragment,
+    node: hydrated ? start : fragment!,
     ready: getReady(start),
     dispose: disposeInstance,
   };

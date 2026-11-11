@@ -660,10 +660,64 @@ function resolvePath(
   return node;
 }
 
+function tryAdoptPartsPlan(
+  root: Node,
+  plan: TemplatePlan,
+): { holes: Comment[]; attrs: Element[] } | null {
+  const holes: Comment[] = [];
+  for (let index = 0; index < plan.holes.length; index += 1) {
+    const entry = plan.holes[index];
+    if (entry === undefined) {
+      return null;
+    }
+    const node = resolvePath(root, entry, true);
+    if (node instanceof Comment && markerIndex(node.data, HOLE_MARKER) === index) {
+      holes.push(node);
+      continue;
+    }
+    if (node instanceof Text) {
+      const next = node.nextSibling;
+      if (next instanceof Comment && markerIndex(next.data, HOLE_MARKER) === index) {
+        holes.push(next);
+        continue;
+      }
+    }
+    return null;
+  }
+  const attrs: Element[] = [];
+  for (let index = 0; index < plan.attrs.length; index += 1) {
+    const entry = plan.attrs[index];
+    if (entry === undefined) {
+      return null;
+    }
+    const node = resolvePath(root, entry, true);
+    if (
+      node === null ||
+      node.nodeType !== Node.ELEMENT_NODE ||
+      !(node as Element).hasAttribute(ATTR_MARKER + index)
+    ) {
+      return null;
+    }
+    attrs.push(node as Element);
+  }
+  for (let index = 0; index < attrs.length; index += 1) {
+    const element = attrs[index]!;
+    element.removeAttribute(ATTR_MARKER + index);
+    if (element.hasAttribute(TEXT_MARKER)) {
+      element.removeAttribute(TEXT_MARKER);
+    }
+  }
+  return { holes, attrs };
+}
+
 function adoptPartsPlan(
   root: Node,
   plan: TemplatePlan,
 ): { holes: Comment[]; attrs: Element[] } {
+  const adopted = tryAdoptPartsPlan(root, plan);
+  if (adopted !== null) {
+    return adopted;
+  }
   const collected = collectPartsMany([root]);
   if (
     collected.holes.length !== plan.holes.length ||
@@ -766,6 +820,14 @@ function createClientTemplateHoles(
     };
   };
   const claimRoots = (plan: TemplatePlan): Node => {
+    if (plan.roots === 1) {
+      const next = claimNext();
+      if (next === null) {
+        return mismatch("шаблон не совпал с серверной разметкой");
+      }
+      markMetadataFree(next);
+      return next;
+    }
     const claimed: Node[] = [];
     for (let index = 0; index < plan.roots; index += 1) {
       const next = claimNext();
@@ -774,9 +836,6 @@ function createClientTemplateHoles(
       }
       markMetadataFree(next);
       claimed.push(next);
-    }
-    if (claimed.length === 1) {
-      return claimed[0]!;
     }
     const container = document.createDocumentFragment();
     for (const node of claimed) {

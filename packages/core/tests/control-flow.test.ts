@@ -2,6 +2,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createRoot, createSignal, flushSync, onCleanup } from "@ivlev-dev/silent-reactivity";
 import { For, Show } from "../src/control-flow";
+import { beginHydration, endHydration, LIST_END, withWindow } from "../src/hydration-state";
+import "../src/hydration";
+import "../src/dom-hydration";
 import { disposeTree, insert, text } from "../src/dom";
 
 interface Item {
@@ -341,6 +344,68 @@ describe("For", () => {
     expect(after.length).toBe(2);
     expect(after[0]).toBe(before[1]);
     expect(after[1]).not.toBe(before[1]);
+  });
+
+  it("гидрация не создаёт контейнер и типизированные буферы", () => {
+    const a = item("a");
+    const b = item("b");
+    const [items, setItems] = createSignal<Item[]>([]);
+    const host = document.createElement("div");
+    host.innerHTML = `<!--silent-view--><!--${LIST_END}--><!--silent-view-end-->`;
+    document.body.appendChild(host);
+    const viewStart = host.childNodes[0] as Comment;
+    const viewEnd = host.childNodes[host.childNodes.length - 1] as Comment;
+
+    const originalFragment = Document.prototype.createDocumentFragment;
+    const originalInt32 = globalThis.Int32Array;
+    const originalUint8 = globalThis.Uint8Array;
+    let fragments = 0;
+    let typedArrays = 0;
+    Document.prototype.createDocumentFragment = function (this: Document): DocumentFragment {
+      fragments += 1;
+      return originalFragment.call(this);
+    };
+    globalThis.Int32Array = new Proxy(originalInt32, {
+      construct(target, args) {
+        typedArrays += 1;
+        return Reflect.construct(target, args);
+      },
+    });
+    globalThis.Uint8Array = new Proxy(originalUint8, {
+      construct(target, args) {
+        typedArrays += 1;
+        return Reflect.construct(target, args);
+      },
+    });
+
+    let list: Node | null = null;
+    beginHydration();
+    try {
+      withWindow({ start: viewStart, end: viewEnd, cursor: viewStart.nextSibling }, () => {
+        list = For({ each: items, children: row });
+      });
+    } finally {
+      endHydration();
+      Document.prototype.createDocumentFragment = originalFragment;
+      globalThis.Int32Array = originalInt32;
+      globalThis.Uint8Array = originalUint8;
+    }
+
+    expect(list).not.toBeNull();
+    expect(fragments).toBe(1);
+    expect(typedArrays).toBe(0);
+    expect(idsOf(host)).toEqual([]);
+
+    setItems([a, b]);
+    flushSync();
+    expect(idsOf(host)).toEqual(["a", "b"]);
+    const rows = Array.from(host.querySelectorAll("span"));
+
+    setItems([b, a]);
+    flushSync();
+    expect(idsOf(host)).toEqual(["b", "a"]);
+    expect(host.querySelectorAll("span")[0]).toBe(rows[1]);
+    expect(host.querySelectorAll("span")[1]).toBe(rows[0]);
   });
 });
 

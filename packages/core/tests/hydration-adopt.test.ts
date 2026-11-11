@@ -695,4 +695,151 @@ describe("гидрация с сохранением узлов", () => {
     expect(target.querySelector("strong.value")?.textContent).toBe("7");
     handle.dispose();
   });
+
+  it("адоптирует bare-текст перед дырой по плану", async () => {
+    const value = createSignal("start");
+    class BareVM {}
+    function BareView(this: { vm: BareVM }): Node {
+      void this.vm;
+      const template = templateHoles(
+        '<p class="bare"><!--silent-hole-0--><i>tail</i></p>',
+        {
+          roots: 1,
+          holes: [{ path: [0, 0], counts: [1, 2] }],
+          attrs: [],
+          strips: [],
+        },
+      )();
+      insert(holeParent(template, 0), () => value[0](), template.holes[0]);
+      return template.node;
+    }
+    attachMeta(BareView, BareVM);
+
+    const html = await renderServer(BareView as unknown as AnyComponent);
+    expect(html).toContain("start<!--silent-hole-0--><i>tail</i>");
+    const target = host(html);
+    const serverParagraph = target.querySelector("p.bare");
+    const serverTail = target.querySelector("p.bare > i");
+    const serverText = Array.from(serverParagraph?.childNodes ?? []).find(
+      (node) => node.nodeType === 3,
+    );
+    const mismatches: HydrationMismatchError[] = [];
+    const handle = await hydrate(target, BareView as unknown as AnyComponent, {
+      onMismatch: (error) => mismatches.push(error),
+    });
+
+    expect(mismatches).toEqual([]);
+    expect(target.querySelector("p.bare")).toBe(serverParagraph);
+    expect(target.querySelector("p.bare > i")).toBe(serverTail);
+    expect(
+      Array.from(target.querySelector("p.bare")?.childNodes ?? []).find(
+        (node) => node.nodeType === 3,
+      ),
+    ).toBe(serverText);
+
+    value[1]("next");
+    flushSync();
+    expect(target.textContent).toBe("nexttail");
+    expect(
+      Array.from(target.querySelector("p.bare")?.childNodes ?? []).find(
+        (node) => node.nodeType === 3,
+      ),
+    ).toBe(serverText);
+    handle.dispose();
+  });
+
+  it("откатывается на обход при разъехавшихся путях bare-дыр", async () => {
+    const left = createSignal("x");
+    const right = createSignal("y");
+    class PairVM {}
+    function PairView(this: { vm: PairVM }): Node {
+      void this.vm;
+      const template = templateHoles(
+        '<div class="pair"><!--silent-hole-0--><!--silent-hole-1--><i>a</i><i>b</i><i>c</i></div>',
+        {
+          roots: 1,
+          holes: [
+            { path: [0, 0], counts: [1, 5] },
+            { path: [0, 1], counts: [1, 5] },
+          ],
+          attrs: [],
+          strips: [],
+        },
+      )();
+      insert(holeParent(template, 0), () => left[0](), template.holes[0]);
+      insert(holeParent(template, 1), () => right[0](), template.holes[1]);
+      return template.node;
+    }
+    attachMeta(PairView, PairVM);
+
+    const html = await renderServer(PairView as unknown as AnyComponent);
+    expect(html).toContain("x<!--silent-hole-0-->y<!--silent-hole-1--><i>a</i>");
+    const target = host(html);
+    const serverPair = target.querySelector("div.pair");
+    const serverTexts = Array.from(serverPair?.childNodes ?? []).filter(
+      (node) => node.nodeType === 3,
+    );
+    const mismatches: HydrationMismatchError[] = [];
+    const handle = await hydrate(target, PairView as unknown as AnyComponent, {
+      onMismatch: (error) => mismatches.push(error),
+    });
+
+    expect(mismatches).toEqual([]);
+    expect(target.querySelector("div.pair")).toBe(serverPair);
+    expect(
+      Array.from(target.querySelector("div.pair")?.childNodes ?? []).filter(
+        (node) => node.nodeType === 3,
+      ),
+    ).toEqual(serverTexts);
+    expect(target.textContent).toBe("xyabc");
+
+    left[1]("z");
+    flushSync();
+    expect(target.textContent).toBe("zyabc");
+    handle.dispose();
+  });
+
+  it("откатывается на обход при attr после bare-дыры", async () => {
+    const value = createSignal("v");
+    class ShiftVM {}
+    function ShiftView(this: { vm: ShiftVM }): Node {
+      void this.vm;
+      const template = templateHoles(
+        '<div class="wrap"><!--silent-hole-0--><span data-silent-a-0="" class="s">x</span><i></i><i></i></div>',
+        {
+          roots: 1,
+          holes: [{ path: [0, 0], counts: [1, 4] }],
+          attrs: [{ path: [0, 1], counts: [1, 4] }],
+          strips: [
+            { path: [0, 1], counts: [1, 4], names: ["data-silent-a-0"] },
+          ],
+        },
+      )();
+      insert(holeParent(template, 0), () => value[0](), template.holes[0]);
+      attr(template.attrs[0]!, "title", () => value[0]());
+      return template.node;
+    }
+    attachMeta(ShiftView, ShiftVM);
+
+    const html = await renderServer(ShiftView as unknown as AnyComponent);
+    expect(html).toContain('data-silent-a-0=""');
+    const target = host(html);
+    const serverSpan = target.querySelector("div.wrap > span.s");
+    const mismatches: HydrationMismatchError[] = [];
+    const handle = await hydrate(target, ShiftView as unknown as AnyComponent, {
+      onMismatch: (error) => mismatches.push(error),
+    });
+
+    expect(mismatches).toEqual([]);
+    expect(target.querySelector("div.wrap > span.s")).toBe(serverSpan);
+    expect(target.innerHTML.includes("data-silent-a-")).toBe(false);
+    expect(serverSpan?.getAttribute("title")).toBe("v");
+    expect(target.textContent).toBe("vx");
+
+    value[1]("next");
+    flushSync();
+    expect(target.textContent).toBe("nextx");
+    expect(serverSpan?.getAttribute("title")).toBe("next");
+    handle.dispose();
+  });
 });

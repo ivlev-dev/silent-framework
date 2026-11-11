@@ -115,7 +115,7 @@ function markStableSlots(
 export function For<T>(props: ForProps<T>): Node {
   const hydrating = isHydrating();
   const outer = hydrating ? currentWindow() : null;
-  const container = document.createDocumentFragment();
+  let container: DocumentFragment | null = null;
   const fallback = props.fallback;
   const hasFallback = fallback !== undefined;
   const parentOwner = getOwner();
@@ -125,11 +125,33 @@ export function For<T>(props: ForProps<T>): Node {
   let generation = 0;
   let endAnchor: Comment;
 
-  let positions = new Int32Array(0);
-  let slots = new Int32Array(0);
-  let stable = new Uint8Array(0);
-  let lisTails = new Int32Array(0);
-  let lisPrevious = new Int32Array(0);
+  let positions: Int32Array | null = null;
+  let slots: Int32Array | null = null;
+  let stable: Uint8Array | null = null;
+  let lisTails: Int32Array | null = null;
+  let lisPrevious: Int32Array | null = null;
+
+  const ensureBuffers = (
+    reused: number,
+    length: number,
+  ): readonly [Int32Array, Int32Array, Uint8Array, Int32Array, Int32Array] => {
+    if (positions === null || slots === null || positions.length < reused) {
+      const capacity = reused * 2;
+      positions = new Int32Array(capacity);
+      slots = new Int32Array(capacity);
+    }
+    if (stable === null || stable.length < length) {
+      stable = new Uint8Array(length * 2);
+    } else {
+      stable.fill(0);
+    }
+    if (lisTails === null || lisPrevious === null || lisTails.length < reused) {
+      const capacity = reused * 2;
+      lisTails = new Int32Array(capacity);
+      lisPrevious = new Int32Array(capacity);
+    }
+    return [positions, slots, stable, lisTails, lisPrevious];
+  };
 
   const detachNode = (node: Node): void => {
     if (node.parentNode !== null) {
@@ -326,7 +348,8 @@ export function For<T>(props: ForProps<T>): Node {
     }
   } else {
     endAnchor = document.createComment(LIST_END);
-    container.appendChild(endAnchor);
+    const sink = container ?? (container = document.createDocumentFragment());
+    sink.appendChild(endAnchor);
   }
 
   const fallbackParent = hydrating ? endAnchor.parentNode : null;
@@ -335,7 +358,10 @@ export function For<T>(props: ForProps<T>): Node {
   }
   const fallbackMount = hydrating
     ? createMountPoint(fallbackParent as Node, endAnchor, fallbackSeed)
-    : createMountPoint(container, endAnchor);
+    : createMountPoint(
+        container ?? (container = document.createDocumentFragment()),
+        endAnchor,
+      );
 
   createRenderEffect(() => {
     const parent = endAnchor.parentNode;
@@ -485,29 +511,18 @@ export function For<T>(props: ForProps<T>): Node {
           reused += 1;
         }
       }
-      if (positions.length < reused) {
-        positions = new Int32Array(reused * 2);
-        slots = new Int32Array(reused * 2);
-      }
-      if (stable.length < nextLength) {
-        stable = new Uint8Array(nextLength * 2);
-      } else {
-        stable.fill(0);
-      }
-      if (lisTails.length < reused) {
-        lisTails = new Int32Array(reused * 2);
-        lisPrevious = new Int32Array(reused * 2);
-      }
+      const [orderPositions, orderSlots, orderStable, orderTails, orderPrevious] =
+        ensureBuffers(reused, nextLength);
       let sequence = 0;
       for (let position = 0; position < nextLength; position += 1) {
         const state = next[position]!;
         if (state.previousIndex >= 0) {
-          positions[sequence] = state.previousIndex;
-          slots[sequence] = position;
+          orderPositions[sequence] = state.previousIndex;
+          orderSlots[sequence] = position;
           sequence += 1;
         }
       }
-      markStableSlots(positions, slots, reused, stable, lisTails, lisPrevious);
+      markStableSlots(orderPositions, orderSlots, reused, orderStable, orderTails, orderPrevious);
 
       let reference: Node = endAnchor;
       for (let position = nextLength - 1; position >= 0; position -= 1) {
@@ -515,7 +530,7 @@ export function For<T>(props: ForProps<T>): Node {
         const holder = reference.parentNode;
         if (
           holder !== null &&
-          stable[position] === 0 &&
+          orderStable[position] === 0 &&
           !precedesBlock(state.nodes, state.anchor, reference)
         ) {
           holder.insertBefore(state.anchor, reference);
@@ -538,7 +553,9 @@ export function For<T>(props: ForProps<T>): Node {
 
   onCleanup(removeAll);
 
-  return hydrating ? document.createDocumentFragment() : container;
+  return hydrating
+    ? document.createDocumentFragment()
+    : (container ??= document.createDocumentFragment());
 }
 
 export function Show(props: ShowProps): Node {
