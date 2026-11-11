@@ -35,12 +35,14 @@ interface RunOptions {
 
 interface RunResult {
   readonly samples: readonly number[];
+  readonly baseline: readonly number[];
   readonly checks: number;
 }
 
 interface AppMetrics {
   readonly app: BenchApp;
   readonly samples: readonly number[];
+  readonly baseline: readonly number[];
   readonly checks: number;
 }
 
@@ -366,8 +368,19 @@ async function runInBrowser(
           return elapsed;
         };
 
+        const runBaseline = (): number => {
+          const started = performance.now();
+          const prepared = Array.from({ length: payload.batch }, () => prepare());
+          const elapsed = performance.now() - started;
+          for (const entry of prepared) {
+            entry.container.remove();
+          }
+          return elapsed;
+        };
+
         for (let index = 0; index < payload.warmup; index += 1) {
           await runBatch(false);
+          runBaseline();
         }
 
         const samples: number[] = [];
@@ -375,7 +388,12 @@ async function runInBrowser(
           samples.push(await runBatch(index === 0));
         }
 
-        return { samples, checks: payload.iterations * payload.batch };
+        const baseline: number[] = [];
+        for (let index = 0; index < payload.iterations; index += 1) {
+          baseline.push(runBaseline());
+        }
+
+        return { samples, baseline, checks: payload.iterations * payload.batch };
       },
       options,
     );
@@ -466,7 +484,12 @@ async function main(): Promise<void> {
           rows: ROWS,
           batch: BATCH,
         });
-        metrics.push({ app, samples: result.samples, checks: result.checks });
+        metrics.push({
+          app,
+          samples: result.samples,
+          baseline: result.baseline,
+          checks: result.checks,
+        });
       } finally {
         await server.close();
       }
@@ -485,11 +508,13 @@ async function main(): Promise<void> {
 
     const rows = metrics.map((entry) => {
       const average = mean(entry.samples) / BATCH;
+      const parse = mean(entry.baseline) / BATCH;
       return {
         приложение: entry.app.name,
-        "mean, ms": format(average, 4),
+        "гидрация, ms": format(average, 4),
         "p50, ms": format(median(entry.samples) / BATCH, 4),
         "ops/s": format(1000 / average, 1),
+        "разбор, ms": format(parse, 4),
         "к solid": entry.app.name === "solid" ? "1.00x" : ratio,
       };
     });
@@ -503,6 +528,9 @@ async function main(): Promise<void> {
     console.table(rows);
     console.log(
       `Корректность: ${String(silent.checks)} гидраций silent и ${String(solid.checks)} гидраций solid — узлы переиспользованы, значения и обработчик счётчика совпали.`,
+    );
+    console.log(
+      "«гидрация» — время без подготовки контейнера; «разбор» — создание контейнера и innerHTML, в ops/s не входит.",
     );
     console.log("Больше — лучше; silent/solid > 1 — silent быстрее.");
   } finally {
