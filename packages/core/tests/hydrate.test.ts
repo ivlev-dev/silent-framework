@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { hydrate } from "../src/hydrate.js";
+import { component } from "../src/component-lite.js";
+import {
+  getComponentCreator,
+  setComponentCreator,
+} from "../src/component-state.js";
 import { createRenderEffect, createSignal, flushSync } from "@ivlev-dev/silent-reactivity";
 import { container, DI_CREATE } from "@ivlev-dev/silent-di";
 import type { AnyComponent, Preloader } from "../src/types.js";
@@ -39,6 +44,28 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 }
 
 describe("hydrate", () => {
+  it("перегидрирует разметку после загрузки view-рантайма", async () => {
+    setComponentCreator(null);
+    class ChildVM {
+      value = "child";
+    }
+    function Child(this: { vm: ChildVM }): Node {
+      return document.createTextNode(this.vm.value);
+    }
+    attachMeta(Child, ChildVM);
+    function Parent(): Node {
+      return component(Child as unknown as AnyComponent, {});
+    }
+
+    const target = host("<span>child</span>");
+    await hydrate(target, Parent as unknown as AnyComponent, {
+      onMismatch: () => undefined,
+    });
+
+    expect(target.textContent).toBe("child");
+    expect(getComponentCreator()).not.toBeNull();
+  });
+
   it("сохраняет серверную разметку до готовности VM", async () => {
     const gate = deferred();
     class SlowVM {

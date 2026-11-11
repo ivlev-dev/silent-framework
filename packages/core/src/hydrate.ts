@@ -10,6 +10,7 @@ import {
 } from "./hydration-state.js";
 import {
   ViewRuntimeUnavailableError,
+  getComponentCreator,
   whenIdle,
   setDefaultPreloader,
   setErrorHandler,
@@ -28,6 +29,10 @@ import type { MountHandle, MountOptions } from "./mount.js";
 import type { AnyComponent } from "./types.js";
 
 let runtimes: Promise<void> | null = null;
+
+function needsMarkup(): boolean {
+  return viewEnabled && getComponentCreator() === null;
+}
 
 function ensureRuntimes(): Promise<void> {
   runtimes ??= (async () => {
@@ -135,7 +140,7 @@ export async function hydrate(
   const factory = componentFactoryFor(app);
   let create: ComponentFactory = factory instanceof Promise ? await factory : factory;
 
-  const originalMarkup = element.innerHTML;
+  const originalMarkup = needsMarkup() ? element.innerHTML : "";
   try {
     return await hydrateWith(
       element,
@@ -149,7 +154,9 @@ export async function hydrate(
     if (!viewEnabled || !(error instanceof ViewRuntimeUnavailableError)) {
       throw error;
     }
-    element.innerHTML = originalMarkup;
+    if (originalMarkup !== "") {
+      element.innerHTML = originalMarkup;
+    }
     create = await loadViewFactory();
     return await hydrateWith(
       element,
