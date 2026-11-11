@@ -5,7 +5,11 @@ export interface DomHydrationRuntime {
   settleNodes(end: Node | null, value: unknown): void;
   writeRegion(start: Node, end: Node, value: unknown): void;
   insertHydrated(parent: Node, accessor: () => unknown, marker: Node | null): void;
-  adoptPartsPlan(root: Node, plan: TemplatePlan): { holes: Comment[]; attrs: Element[] };
+  adoptPartsPlan(
+    root: Node,
+    plan: TemplatePlan,
+    out: { holes: Comment[]; attrs: Element[] },
+  ): void;
 }
 
 let runtime: DomHydrationRuntime | null = null;
@@ -43,6 +47,7 @@ export function insertHydrated(
 export function adoptPartsPlan(
   root: Node,
   plan: TemplatePlan,
-): { holes: Comment[]; attrs: Element[] } {
-  return requireRuntime().adoptPartsPlan(root, plan);
+  out: { holes: Comment[]; attrs: Element[] },
+): void {
+  requireRuntime().adoptPartsPlan(root, plan, out);
 }

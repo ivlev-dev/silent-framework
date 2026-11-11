@@ -720,6 +720,9 @@ export function templateHoles(html: string, plan?: TemplatePlan): () => Template
   };
 }
 
+const NO_HOLES: Comment[] = [];
+const NO_ATTRIBUTES: Element[] = [];
+
 function createClientTemplateHoles(
   html: string,
   providedPlan?: TemplatePlan,
@@ -789,7 +792,9 @@ function createClientTemplateHoles(
     }
     if (providedPlan !== undefined) {
       const node = claimRoots(providedPlan);
-      return { node, ...adoptPartsPlan(node, providedPlan) };
+      const clone = { node, holes: NO_HOLES, attrs: NO_ATTRIBUTES };
+      adoptPartsPlan(node, providedPlan, clone);
+      return clone;
     }
     const current = parse();
     const content = current.content;
@@ -800,7 +805,7 @@ function createClientTemplateHoles(
       if (rootCount === 0) {
         const empty = document.createDocumentFragment();
         markMetadataFree(empty);
-        return { node: empty, holes: [], attrs: [] };
+        return { node: empty, holes: NO_HOLES, attrs: NO_ATTRIBUTES };
       }
       const expected = parts();
       if (rootCount === 1) {

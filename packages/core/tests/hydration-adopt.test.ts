@@ -9,7 +9,15 @@ import {
 } from "../src/component.js";
 import { For, Show } from "../src/control-flow.js";
 import { Suspense, lazy } from "../src/suspense.js";
-import { attr, insert, on, prop, setServerMode, templateHoles } from "../src/dom.js";
+import {
+  attr,
+  insert,
+  on,
+  prop,
+  setServerMode,
+  templateHoles,
+  type TemplateClone,
+} from "../src/dom.js";
 import { hydrate } from "../src/hydrate.js";
 import { HydrationMismatchError } from "../src/hydration.js";
 
@@ -500,6 +508,39 @@ describe("гидрация с сохранением узлов", () => {
     count[1](4);
     flushSync();
     expect(target.querySelector("strong.value")?.textContent).toBe("4");
+    handle.dispose();
+  });
+
+  it("адоптирует шаблон с одной дырой и без атрибутных дыр", async () => {
+    let captured: TemplateClone | null = null;
+    function SingleView(): Node {
+      const template = templateHoles('<p class="single"><!--silent-hole-0--></p>', {
+        roots: 1,
+        holes: [{ path: [0, 0], counts: [1, 1] }],
+        attrs: [],
+        strips: [],
+      })();
+      captured = template;
+      insert(holeParent(template, 0), () => "value", template.holes[0]);
+      return template.node;
+    }
+
+    const app = SingleView as unknown as AnyComponent;
+    const target = host(await renderServer(app));
+    const serverParagraph = target.querySelector("p");
+    const mismatches: HydrationMismatchError[] = [];
+    const handle = await hydrate(target, app, {
+      onMismatch: (error) => mismatches.push(error),
+    });
+
+    expect(mismatches).toEqual([]);
+    expect(target.querySelector("p")).toBe(serverParagraph);
+    if (captured === null) {
+      throw new Error("template was not created");
+    }
+    expect(captured.holes.length).toBe(1);
+    expect(captured.attrs.length).toBe(0);
+    expect(target.innerHTML.includes("data-silent-")).toBe(false);
     handle.dispose();
   });
 

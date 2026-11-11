@@ -103,12 +103,13 @@ function trieFor(plan: TemplatePlan): TrieNode {
 function tryAdoptPartsPlanByPath(
   root: Node,
   plan: TemplatePlan,
-): { holes: Comment[]; attrs: Element[] } | null {
-  const holes: Comment[] = [];
+  holes: (Comment | undefined)[],
+  attrs: (Element | undefined)[],
+): boolean {
   for (let index = 0; index < plan.holes.length; index += 1) {
     const entry = plan.holes[index];
     if (entry === undefined) {
-      return null;
+      return false;
     }
     const node = resolvePath(root, entry, true);
     if (
@@ -116,7 +117,7 @@ function tryAdoptPartsPlanByPath(
       node.nodeType === Node.COMMENT_NODE &&
       markerIndex((node as Comment).data, HOLE_MARKER) === index
     ) {
-      holes.push(node as Comment);
+      holes[index] = node as Comment;
       continue;
     }
     if (node !== null && node.nodeType === Node.TEXT_NODE) {
@@ -126,17 +127,16 @@ function tryAdoptPartsPlanByPath(
         next.nodeType === Node.COMMENT_NODE &&
         markerIndex((next as Comment).data, HOLE_MARKER) === index
       ) {
-        holes.push(next as Comment);
+        holes[index] = next as Comment;
         continue;
       }
     }
-    return null;
+    return false;
   }
-  const attrs: Element[] = [];
   for (let index = 0; index < plan.attrs.length; index += 1) {
     const entry = plan.attrs[index];
     if (entry === undefined) {
-      return null;
+      return false;
     }
     const node = resolvePath(root, entry, true);
     if (
@@ -144,18 +144,21 @@ function tryAdoptPartsPlanByPath(
       node.nodeType !== Node.ELEMENT_NODE ||
       !(node as Element).hasAttribute(ATTR_MARKER + index)
     ) {
-      return null;
+      return false;
     }
-    attrs.push(node as Element);
+    attrs[index] = node as Element;
   }
-  for (let index = 0; index < attrs.length; index += 1) {
-    const element = attrs[index]!;
+  for (let index = 0; index < plan.attrs.length; index += 1) {
+    const element = attrs[index];
+    if (element === undefined) {
+      return false;
+    }
     element.removeAttribute(ATTR_MARKER + index);
     if (element.hasAttribute(TEXT_MARKER)) {
       element.removeAttribute(TEXT_MARKER);
     }
   }
-  return { holes, attrs };
+  return true;
 }
 
 function tryAdoptPartsPlanByTrie(
@@ -302,22 +305,41 @@ function tryAdoptPartsPlanByTrie(
 function tryAdoptPartsPlan(
   root: Node,
   plan: TemplatePlan,
-): { holes: Comment[]; attrs: Element[] } | null {
-  const byPath = tryAdoptPartsPlanByPath(root, plan);
-  if (byPath !== null) {
-    return byPath;
+  holes: (Comment | undefined)[],
+  attrs: (Element | undefined)[],
+): boolean {
+  if (tryAdoptPartsPlanByPath(root, plan, holes, attrs)) {
+    return true;
   }
-  return tryAdoptPartsPlanByTrie(root, plan);
+  const adopted = tryAdoptPartsPlanByTrie(root, plan);
+  if (adopted === null) {
+    return false;
+  }
+  for (let index = 0; index < adopted.holes.length; index += 1) {
+    holes[index] = adopted.holes[index];
+  }
+  for (let index = 0; index < adopted.attrs.length; index += 1) {
+    attrs[index] = adopted.attrs[index];
+  }
+  return true;
 }
 
+const NO_HOLES: Comment[] = [];
+const NO_ATTRIBUTES: Element[] = [];
 
 export function adoptPartsPlan(
   root: Node,
   plan: TemplatePlan,
-): { holes: Comment[]; attrs: Element[] } {
-  const adopted = tryAdoptPartsPlan(root, plan);
-  if (adopted !== null) {
-    return adopted;
+  out: { holes: Comment[]; attrs: Element[] },
+): void {
+  const holes: Comment[] =
+    plan.holes.length === 0 ? NO_HOLES : new Array<Comment>(plan.holes.length);
+  const attrs: Element[] =
+    plan.attrs.length === 0 ? NO_ATTRIBUTES : new Array<Element>(plan.attrs.length);
+  if (tryAdoptPartsPlan(root, plan, holes, attrs)) {
+    out.holes = holes;
+    out.attrs = attrs;
+    return;
   }
   const collected = collectPartsMany([root]);
   if (
@@ -326,7 +348,8 @@ export function adoptPartsPlan(
   ) {
     return mismatch("шаблон не совпал с серверной разметкой");
   }
-  return collected;
+  out.holes = collected.holes;
+  out.attrs = collected.attrs;
 }
 
 function isTextValue(value: unknown): boolean {
