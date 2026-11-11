@@ -21,6 +21,18 @@ fn compiles_jsx_template_and_dynamic_text() {
 }
 
 #[test]
+fn hoists_templates_to_module_scope_and_deduplicates() {
+    let code = run(
+        "const a = <div><span>{name}</span></div>; const b = <div><span>{name}</span></div>;",
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(code.contains("const _tmpl$0 = _$templateHoles("));
+    assert_eq!(code.matches("const _tmpl$").count(), 1);
+    assert!(code.contains("_tmpl$0()"));
+}
+
+#[test]
 fn keeps_rcdata_marker_inside_opening_tag() {
     let code = run(
         "const el = <div><title>{name}</title></div>;",

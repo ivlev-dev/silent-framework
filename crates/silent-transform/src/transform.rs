@@ -12,10 +12,10 @@ use swc_core::common::comments::SingleThreadedComments;
 use swc_core::common::errors::Handler;
 use swc_core::common::{FileName, SourceMap, SyntaxContext, DUMMY_SP};
 use swc_core::ecma::ast::{
-    AssignExpr, AssignOp, AssignTarget, CallExpr, Callee, ClassDecl, ClassExpr, ClassMember,
-    ClassMethod, Constructor, Decl, EsVersion, Expr, ExprOrSpread, Function, Ident, ImportDecl,
-    ImportNamedSpecifier, ImportSpecifier, KeyValueProp, Lit, MemberExpr, MemberProp, MethodKind,
-    Module, ModuleDecl, ModuleExportName, ModuleItem, NewExpr, ObjectLit, Param,
+    AssignExpr, AssignOp, AssignTarget, BindingIdent, CallExpr, Callee, ClassDecl, ClassExpr,
+    ClassMember, ClassMethod, Constructor, Decl, EsVersion, Expr, ExprOrSpread, Function, Ident,
+    ImportDecl, ImportNamedSpecifier, ImportSpecifier, KeyValueProp, Lit, MemberExpr, MemberProp,
+    MethodKind, Module, ModuleDecl, ModuleExportName, ModuleItem, NewExpr, ObjectLit, Param,
     ParamOrTsParamProp, Pass, Pat, Program, Prop, PropName, PropOrSpread, ReturnStmt,
     SimpleAssignTarget, Stmt, Str, TsEntityName, TsImportType, TsParamPropParam,
     TsPropertySignature, TsType, TsTypeElement, TsTypeParamInstantiation, TsTypeQueryExpr,
@@ -65,6 +65,9 @@ pub(crate) struct SilentPass {
     pub(crate) view_stack: Vec<bool>,
     pub(crate) hmr: bool,
     pub(crate) hmr_deps: Vec<String>,
+    pub(crate) hoisted_templates: Vec<(Ident, Expr)>,
+    pub(crate) hoisted_template_names: HashMap<String, Ident>,
+    pub(crate) template_counter: usize,
 }
 
 impl SilentPass {
@@ -92,6 +95,9 @@ impl SilentPass {
             view_stack: Vec::new(),
             hmr: options.hmr,
             hmr_deps: Vec::new(),
+            hoisted_templates: Vec::new(),
+            hoisted_template_names: HashMap::new(),
+            template_counter: 0,
         }
     }
 
@@ -106,6 +112,22 @@ impl SilentPass {
     pub(crate) fn helper(&mut self, name: &str) -> Ident {
         self.used_helpers.insert(name.to_string());
         Ident::new(format!("_${name}").into(), DUMMY_SP, SyntaxContext::empty())
+    }
+
+    pub(crate) fn hoisted_template(&mut self, html: &str, init: Expr) -> Ident {
+        if let Some(existing) = self.hoisted_template_names.get(html) {
+            return existing.clone();
+        }
+        let name = Ident::new(
+            format!("_tmpl${}", self.template_counter).into(),
+            DUMMY_SP,
+            SyntaxContext::empty(),
+        );
+        self.template_counter += 1;
+        self.hoisted_template_names
+            .insert(html.to_string(), name.clone());
+        self.hoisted_templates.push((name.clone(), init));
+        name
     }
 
     fn current_module(&self) -> String {
@@ -572,6 +594,34 @@ impl SilentPass {
             module
                 .body
                 .insert(0, ModuleItem::ModuleDecl(ModuleDecl::Import(import)));
+        }
+        let hoisted = std::mem::take(&mut self.hoisted_templates);
+        if !hoisted.is_empty() {
+            let mut index = 0;
+            while matches!(
+                module.body.get(index),
+                Some(ModuleItem::ModuleDecl(ModuleDecl::Import(_)))
+            ) {
+                index += 1;
+            }
+            for (offset, (name, init)) in hoisted.into_iter().enumerate() {
+                let declaration = ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(VarDecl {
+                    span: DUMMY_SP,
+                    ctxt: SyntaxContext::empty(),
+                    kind: VarDeclKind::Const,
+                    declare: false,
+                    decls: vec![VarDeclarator {
+                        span: DUMMY_SP,
+                        name: Pat::Ident(BindingIdent {
+                            id: name,
+                            type_ann: None,
+                        }),
+                        definite: false,
+                        init: Some(Box::new(init)),
+                    }],
+                }))));
+                module.body.insert(index + offset, declaration);
+            }
         }
         let metadata = std::mem::take(&mut self.metadata);
         let has_metadata = !metadata.is_empty();

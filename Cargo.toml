@@ -3,7 +3,7 @@ members = ["crates/silent-transform", "crates/silent-node"]
 resolver = "2"
 
 [workspace.package]
-version = "0.6.0"
+version = "0.6.2"
 edition = "2021"
 license = "MIT"
 
@@ -11,25 +11,13 @@ license = "MIT"
 silent-transform = { path = "crates/silent-transform" }
 swc_core = { version = "84.0.2", features = [
   "base",
-  "base_node",
   "common",
-  "common_concurrent",
   "ecma_ast",
-  "ecma_ast_serde",
   "ecma_helpers_inline",
-  "ecma_codegen",
   "ecma_parser",
   "ecma_parser_typescript",
-  "ecma_transforms",
-  "ecma_transforms_typescript",
   "ecma_transforms_proposal",
-  "ecma_transforms_compat",
-  "ecma_transforms_react",
-  "ecma_minifier",
-  "ecma_quote",
-  "ecma_utils",
-  "ecma_visit",
-  "allocator_node"
+  "ecma_visit"
 ] }
 napi = { version = "3", default-features = false, features = ["napi8", "serde-json"] }
 napi-derive = "3"

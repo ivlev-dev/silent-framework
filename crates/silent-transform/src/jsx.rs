@@ -358,8 +358,9 @@ impl SilentPass {
 
     fn finish_template(&mut self, parts: TemplateParts) -> Expr {
         let runtime = Expr::Ident(self.helper("templateHoles"));
-        let template_factory = call_expr(runtime, vec![string_expr(&parts.html)]);
-        let clone_call = call_expr(template_factory, Vec::new());
+        let init = call_expr(runtime, vec![string_expr(&parts.html)]);
+        let name = self.hoisted_template(&parts.html, init);
+        let clone_call = call_expr(Expr::Ident(name), Vec::new());
         let result = ident_expr("_r$");
 
         let mut statements = vec![Stmt::Decl(swc_core::ecma::ast::Decl::Var(Box::new(

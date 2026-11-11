@@ -197,16 +197,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cc"
-version = "1.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ff2a8126fff0f8c839080d619675a585e61720bb12d2baceae45769fd66f155"
-dependencies = [
- "find-msvc-tools",
- "shlex",
-]
-
-[[package]]
 name = "cfg-if"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -342,12 +332,6 @@ name = "equivalent"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00d174d5400e5e8fd687ad1049e2f578285fa914201b1af7e8b112a4546bd826"
-
-[[package]]
-name = "find-msvc-tools"
-version = "0.1.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
 name = "fixedbitset"
@@ -804,15 +788,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "libmimalloc-sys"
-version = "0.1.49"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a45a52f43e1c16f667ccfe4dd8c85b7f7c204fd5e3bf46c5b0db9a5c3c0b8e9"
-dependencies = [
- "cc",
-]
-
-[[package]]
 name = "litemap"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -864,15 +839,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "mimalloc"
-version = "0.1.52"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d4139bb28d14ad1facf21d5eb8825051b326e172d216b39f6d31df53cc97862"
-dependencies = [
- "libmimalloc-sys",
 ]
 
 [[package]]
@@ -1390,14 +1356,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "shlex"
-version = "2.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
-
-[[package]]
 name = "silent-node"
-version = "0.6.0"
+version = "0.6.2"
 dependencies = [
  "napi",
  "napi-build",
@@ -1410,7 +1370,7 @@ dependencies = [
 
 [[package]]
 name = "silent-transform"
-version = "0.6.0"
+version = "0.6.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -1492,8 +1452,6 @@ dependencies = [
  "either",
  "indexmap",
  "jsonc-parser",
- "napi",
- "napi-derive",
  "once_cell",
  "par-core",
  "parking_lot",
@@ -1585,8 +1543,6 @@ dependencies = [
  "anyhow",
  "base64",
  "bytes-str",
- "napi",
- "napi-derive",
  "once_cell",
  "pathdiff",
  "rustc-hash",
@@ -1647,19 +1603,10 @@ dependencies = [
  "swc_atoms",
  "swc_common",
  "swc_ecma_ast",
- "swc_ecma_codegen",
- "swc_ecma_minifier",
  "swc_ecma_parser",
- "swc_ecma_quote_macros",
  "swc_ecma_transforms_base",
- "swc_ecma_transforms_compat",
  "swc_ecma_transforms_proposal",
- "swc_ecma_transforms_react",
- "swc_ecma_transforms_typescript",
- "swc_ecma_utils",
  "swc_ecma_visit",
- "swc_malloc",
- "swc_nodejs_common",
 ]
 
 [[package]]
@@ -2016,24 +1963,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "swc_ecma_quote_macros"
-version = "47.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c89f43f60bffadee4de41f7a638fe58a8dcefe4fc22991684d8fbd44fe38f3a9"
-dependencies = [
- "anyhow",
- "proc-macro2",
- "quote",
- "rustc-hash",
- "swc_atoms",
- "swc_common",
- "swc_ecma_ast",
- "swc_ecma_parser",
- "swc_macros_common",
- "syn 2.0.119",
-]
-
-[[package]]
 name = "swc_ecma_regexp"
 version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2350,16 +2279,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "swc_malloc"
-version = "1.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d222be9e55e86fd6ee32e97c7b12829692329ac8bbed652dcd6c2e1d488af935"
-dependencies = [
- "mimalloc",
- "tikv-jemallocator",
-]
-
-[[package]]
 name = "swc_node_comments"
 version = "28.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2369,19 +2288,6 @@ dependencies = [
  "rustc-hash",
  "swc_atoms",
  "swc_common",
-]
-
-[[package]]
-name = "swc_nodejs_common"
-version = "1.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d48ec32365dba9a371950ce298483c3b714bd441878acea233711d66698863e"
-dependencies = [
- "anyhow",
- "napi",
- "serde",
- "serde_json",
- "tracing",
 ]
 
 [[package]]
@@ -2491,26 +2397,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "tikv-jemalloc-sys"
-version = "0.5.4+5.3.0-patched"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9402443cb8fd499b6f327e40565234ff34dbda27460c5b47db0db77443dd85d1"
-dependencies = [
- "cc",
- "libc",
-]
-
-[[package]]
-name = "tikv-jemallocator"
-version = "0.5.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "965fe0c26be5c56c94e38ba547249074803efd52adfb66de62107d95aab3eaca"
-dependencies = [
- "libc",
- "tikv-jemalloc-sys",
 ]
 
 [[package]]
