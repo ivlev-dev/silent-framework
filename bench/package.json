@@ -6,7 +6,8 @@
   "scripts": {
     "bench": "tsx --conditions=browser src/index.ts",
     "bench:ssr": "tsx src/ssr-server.ts && tsx --conditions=browser src/ssr-hydrate.ts",
-    "bench:browser": "tsx src/browser-bench.ts"
+    "bench:browser": "tsx src/browser-bench.ts",
+    "bench:profile": "tsx src/browser-profile.ts"
   },
   "dependencies": {
     "@ivlev-dev/silent-core": "workspace:*",

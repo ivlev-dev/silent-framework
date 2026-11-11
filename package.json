@@ -19,6 +19,7 @@
     "bench:build": "pnpm --filter @ivlev-dev/silent-bench exec tsx src/build-bench.ts",
     "bench:hydrate": "pnpm --filter @ivlev-dev/silent-bench exec tsx --conditions=browser src/hydrate-bench.ts",
     "bench:browser": "pnpm --filter @ivlev-dev/silent-bench exec tsx src/browser-bench.ts",
+    "bench:profile": "pnpm --filter @ivlev-dev/silent-bench exec tsx src/browser-profile.ts",
     "test:e2e": "node scripts/e2e.mjs",
     "test:ssr": "node scripts/ssr-e2e.mjs",
     "install:check": "node scripts/install-check.mjs",
