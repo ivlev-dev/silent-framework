@@ -302,6 +302,46 @@ describe("For", () => {
     expect(disposed.sort()).toEqual(["a", "b"]);
     expect(host.querySelector("[data-id]")).toBeNull();
   });
+
+  it("обрезает и снова расширяет список без потери состояний", () => {
+    const a = item("a");
+    const b = item("b");
+    const c = item("c");
+    const [items, setItems] = createSignal<Item[]>([a, b, c]);
+    const container = For({ each: items, children: row });
+    const host = install(container);
+    const captured = Array.from(host.querySelectorAll("span"));
+
+    setItems([a]);
+    flushSync();
+    expect(idsOf(host)).toEqual(["a"]);
+    expect(host.querySelector("span")).toBe(captured[0]);
+
+    setItems([a, c, b]);
+    flushSync();
+    expect(idsOf(host)).toEqual(["a", "c", "b"]);
+    const after = Array.from(host.querySelectorAll("span"));
+    expect(after[0]).toBe(captured[0]);
+    expect(after[1]).not.toBe(captured[1]);
+    expect(after[2]).not.toBe(captured[2]);
+  });
+
+  it("разворачивает повторяющиеся элементы после сужения", () => {
+    const a = item("a");
+    const b = item("b");
+    const [items, setItems] = createSignal<Item[]>([b, a]);
+    const container = For({ each: items, children: row });
+    const host = install(container);
+    const before = Array.from(host.querySelectorAll("span"));
+
+    setItems([a, a]);
+    flushSync();
+
+    const after = Array.from(host.querySelectorAll("span"));
+    expect(after.length).toBe(2);
+    expect(after[0]).toBe(before[1]);
+    expect(after[1]).not.toBe(before[1]);
+  });
 });
 
 describe("Show", () => {

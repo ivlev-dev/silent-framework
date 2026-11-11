@@ -8,7 +8,8 @@ import {
   trackAsyncWork,
   withRuntimeOptions,
 } from "./component.js";
-import { createMountPoint, settleNodes } from "./dom.js";
+import { createMountPoint } from "./dom.js";
+import { settleNodes } from "./dom-hydration-state.js";
 import { getCurrentBoundary, runWithBoundary, type AsyncBoundary } from "./boundary.js";
 import {
   HydrationMismatchError,
@@ -20,7 +21,7 @@ import {
   mismatch,
   reportMismatch,
   withWindow,
-} from "./hydration.js";
+} from "./hydration-proxy.js";
 import { getOwner, onCleanup, runWithOwner } from "@ivlev-dev/silent-reactivity";
 
 export interface SuspenseProps {
@@ -144,9 +145,7 @@ function hydrateSuspense(props: SuspenseProps): Node {
   });
   settleNodes(anchor, children);
 
-  onCleanup(() => {
-    mount.clear();
-  });
+  onCleanup(mount.clear);
 
   return document.createDocumentFragment();
 }

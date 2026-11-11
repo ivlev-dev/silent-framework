@@ -141,4 +141,29 @@ describe("Index", () => {
     expect(cells(host)).toEqual(["0:a", "1:b", "2:c"]);
     expect(seen).toEqual([0, 1, 2]);
   });
+
+  it("сохраняет порядок после обрезки и повторного добавления", () => {
+    const [items, setItems] = createSignal(["a", "b", "c"]);
+    const host = install(
+      Index({
+        each: items,
+        children: (item: Accessor<string>, index: Accessor<number>) => {
+          const span = document.createElement("span");
+          insert(span, () => `${index()}:${item()}`);
+          return span;
+        },
+      }),
+    );
+    const before = Array.from(host.querySelectorAll("span"));
+
+    setItems(["a"]);
+    flushSync();
+    expect(cells(host)).toEqual(["0:a"]);
+    expect(host.querySelector("span")).toBe(before[0]);
+
+    setItems(["a", "b", "c"]);
+    flushSync();
+    expect(cells(host)).toEqual(["0:a", "1:b", "2:c"]);
+    expect(host.querySelectorAll("span")[0]).toBe(before[0]);
+  });
 });

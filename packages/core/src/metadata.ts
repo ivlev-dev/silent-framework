@@ -4,14 +4,22 @@ const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 
 let collector: ((node: Element) => void) | null = null;
 
+const METADATA_FREE = Symbol.for("silent.metadataFree");
 const metadataFree = new WeakSet<Node>();
 
 export function markMetadataFree(node: Node): void {
-  metadataFree.add(node);
+  try {
+    (node as unknown as Record<symbol, unknown>)[METADATA_FREE] = true;
+  } catch {
+    metadataFree.add(node);
+  }
 }
 
 export function isMetadataFree(node: Node): boolean {
-  return metadataFree.has(node);
+  return (
+    (node as unknown as Record<symbol, unknown>)[METADATA_FREE] === true
+    || metadataFree.has(node)
+  );
 }
 
 const titles: Element[] = [];
@@ -27,26 +35,26 @@ export function isMetadataElement(node: Node | null | undefined): node is Elemen
   if (!(node instanceof Element)) {
     return false;
   }
-  if (node.namespaceURI === SVG_NAMESPACE || node.hasAttribute("itemprop")) {
+  const tag = node.tagName;
+  if (tag !== "TITLE" && tag !== "META" && tag !== "LINK") {
     return false;
   }
-  const tag = node.tagName;
-  return tag === "TITLE" || tag === "META" || tag === "LINK";
+  return node.namespaceURI !== SVG_NAMESPACE && !node.hasAttribute("itemprop");
 }
 
 export function extractMetadata(nodes: readonly Node[]): Node[] {
   const kept: Node[] = [];
   for (const node of nodes) {
-    if (isMetadataElement(node)) {
-      hoist(node);
-      continue;
-    }
-    if (!metadataFree.has(node)) {
+    if (!isMetadataFree(node)) {
+      if (isMetadataElement(node)) {
+        hoist(node);
+        continue;
+      }
       collectNested(node);
     }
     kept.push(node);
   }
-  return kept;
+  return kept.length === nodes.length ? (nodes as Node[]) : kept;
 }
 
 function collectNested(node: Node): void {

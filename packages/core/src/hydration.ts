@@ -1,80 +1,18 @@
 import { isMetadataElement } from "./metadata.js";
+import {
+  HydrationMismatchError,
+  INSERT_END,
+  INSERT_START,
+  ITEM,
+  VIEW_END,
+  VIEW_START,
+  currentWindow,
+  mismatch,
+  registerHydrationRuntime,
+  type HydrationWindow,
+} from "./hydration-state.js";
 
-export class HydrationMismatchError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "HydrationMismatchError";
-  }
-}
-
-export interface HydrationWindow {
-  readonly start: Node;
-  readonly end: Node;
-  cursor: Node | null;
-}
-
-export const INSERT_START = "silent-insert";
-export const INSERT_END = "silent-insert-end";
-export const VIEW_START = "silent-view";
-export const VIEW_END = "silent-view-end";
-export const ITEM = "silent-item";
-export const LIST_END = "silent-end";
-export const SHOW = "silent-show";
-export const SWITCH = "silent-switch";
-export const ERROR_BOUNDARY = "silent-error";
-export const MATCH = "silent-match";
-export const FRAGMENT = "silent-fragment";
-export const SUSPENSE = "silent-suspense";
-export const HYDRATE_START = "silent-hydrate";
-export const HYDRATE_END = "silent-hydrate-end";
-
-let active = false;
-let windows: HydrationWindow[] = [];
-let mismatchListener: ((error: HydrationMismatchError) => void) | null = null;
-
-export function isHydrating(): boolean {
-  return active;
-}
-
-export function beginHydration(
-  listener?: (error: HydrationMismatchError) => void,
-): void {
-  active = true;
-  windows = [];
-  mismatchListener = listener ?? null;
-}
-
-export function endHydration(): void {
-  active = false;
-  windows = [];
-  mismatchListener = null;
-}
-
-export function currentWindow(): HydrationWindow | null {
-  return windows.length === 0 ? null : windows[windows.length - 1] ?? null;
-}
-
-export function withWindow<T>(window: HydrationWindow, fn: () => T): T {
-  windows.push(window);
-  try {
-    return fn();
-  } finally {
-    windows.pop();
-  }
-}
-
-export function withoutHydration<T>(fn: () => T): T {
-  const previousActive = active;
-  const previousWindows = windows;
-  active = false;
-  windows = [];
-  try {
-    return fn();
-  } finally {
-    active = previousActive;
-    windows = previousWindows;
-  }
-}
+export * from "./hydration-state.js";
 
 export function claimNext(): Node | null {
   const window = currentWindow();
@@ -87,16 +25,6 @@ export function claimNext(): Node | null {
   }
   window.cursor = node.nextSibling;
   return node;
-}
-
-export function mismatch(message: string): never {
-  throw new HydrationMismatchError(message);
-}
-
-export function reportMismatch(error: HydrationMismatchError): void {
-  if (mismatchListener !== null) {
-    mismatchListener(error);
-  }
 }
 
 export function isMarker(node: Node | null | undefined, data: string): node is Comment {
@@ -159,46 +87,85 @@ export function collectBetween(start: Node, end: Node): Node[] {
   return nodes;
 }
 
-export function detachNode(node: Node): void {
-  node.parentNode?.removeChild(node);
+interface ShapeCursor {
+  node: Node | null;
+  depth: number;
+  ignoreTopMetadata: boolean;
 }
 
-function shapeChildren(node: Node, ignoreTopMetadata: boolean): Node[] {
-  const result: Node[] = [];
-  let depth = 0;
-  for (const child of node.childNodes) {
-    if (child instanceof Comment) {
-      if (child.data === INSERT_START) {
-        depth += 1;
-        continue;
+function nextShapeChild(cursor: ShapeCursor): Node | null {
+  let child = cursor.node;
+  while (child !== null) {
+    const next = child.nextSibling;
+    let skip = cursor.depth > 0;
+    if (child.nodeType === Node.COMMENT_NODE) {
+      const data = (child as Comment).data;
+      if (data === INSERT_START) {
+        cursor.depth += 1;
+        skip = true;
+      } else if (data === INSERT_END) {
+        if (cursor.depth > 0) {
+          cursor.depth -= 1;
+        }
+        skip = true;
       }
-      if (child.data === INSERT_END) {
-        depth = Math.max(0, depth - 1);
-        continue;
-      }
     }
-    if (depth > 0) {
-      continue;
+    cursor.node = next;
+    if (!skip && !(cursor.ignoreTopMetadata && isMetadataElement(child))) {
+      return child;
     }
-    if (ignoreTopMetadata && isMetadataElement(child)) {
-      continue;
-    }
-    result.push(child);
+    child = next;
   }
-  return result;
+  return null;
+}
+
+function attributesMatch(left: Element, right: Element): boolean {
+  const attributes = left.attributes;
+  const length = attributes.length;
+  for (let index = 0; index < length; index += 1) {
+    const attribute = attributes.item(index);
+    if (attribute === null) {
+      return false;
+    }
+    const name = attribute.name;
+    if (name.startsWith("data-silent-a-")) {
+      if (!right.hasAttribute(name)) {
+        return false;
+      }
+      continue;
+    }
+    if (attribute.value !== right.getAttribute(name)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export function mergeTopLevelMetadata(fresh: Node, claimed: Node): void {
-  let claimedChild = claimed.firstChild;
-  for (const freshChild of Array.from(fresh.childNodes)) {
+  let freshChild: Node | null = fresh.firstChild;
+  if (freshChild === null) {
+    return;
+  }
+  let hasMetadata = false;
+  for (let probe: Node | null = freshChild; probe !== null; probe = probe.nextSibling) {
+    if (isMetadataElement(probe)) {
+      hasMetadata = true;
+      break;
+    }
+  }
+  if (!hasMetadata) {
+    return;
+  }
+  let claimedChild: Node | null = claimed.firstChild;
+  while (freshChild !== null) {
+    const next: Node | null = freshChild.nextSibling;
     if (isMetadataElement(freshChild)) {
       freshChild.parentNode?.removeChild(freshChild);
       claimed.insertBefore(freshChild, claimedChild);
-      continue;
-    }
-    if (claimedChild !== null) {
+    } else if (claimedChild !== null) {
       claimedChild = claimedChild.nextSibling;
     }
+    freshChild = next;
   }
 }
 
@@ -206,50 +173,208 @@ export function shapeMatches(
   fresh: Node,
   claimed: Node,
   ignoreTopMetadata = false,
+  simpleFresh = false,
 ): boolean {
-  if (fresh.nodeType !== claimed.nodeType) {
+  const nodeType = fresh.nodeType;
+  if (nodeType !== claimed.nodeType) {
     return false;
   }
-  if (fresh.nodeType === Node.ELEMENT_NODE) {
+  if (nodeType === Node.ELEMENT_NODE) {
     const left = fresh as Element;
     const right = claimed as Element;
     if (left.tagName !== right.tagName || left.namespaceURI !== right.namespaceURI) {
       return false;
     }
-    for (let index = 0; index < left.attributes.length; index += 1) {
-      const attribute = left.attributes[index];
-      if (attribute === undefined) {
-        return false;
-      }
-      if (attribute.name.startsWith("data-silent-a-")) {
-        if (!right.hasAttribute(attribute.name)) {
-          return false;
-        }
-        continue;
-      }
-      if (right.getAttribute(attribute.name) !== attribute.value) {
-        return false;
-      }
-    }
-    const freshChildren = shapeChildren(left, ignoreTopMetadata);
-    const claimedChildren = shapeChildren(right, false);
-    if (freshChildren.length !== claimedChildren.length) {
+    if (!attributesMatch(left, right)) {
       return false;
     }
-    for (let index = 0; index < freshChildren.length; index += 1) {
-      const x = freshChildren[index];
-      const y = claimedChildren[index];
-      if (x === undefined || y === undefined || !shapeMatches(x, y)) {
+    if (simpleFresh) {
+      let freshChild = left.firstChild;
+      let claimedChild = right.firstChild;
+      let depth = 0;
+      while (freshChild !== null) {
+        let matched: Node | null = null;
+        while (claimedChild !== null) {
+          const candidate = claimedChild;
+          const next = candidate.nextSibling;
+          let skip = depth > 0;
+          if (candidate.nodeType === Node.COMMENT_NODE) {
+            const data = (candidate as Comment).data;
+            if (data === INSERT_START) {
+              depth += 1;
+              skip = true;
+            } else if (data === INSERT_END) {
+              if (depth > 0) {
+                depth -= 1;
+              }
+              skip = true;
+            }
+          }
+          claimedChild = next;
+          if (!skip) {
+            matched = candidate;
+            break;
+          }
+        }
+        if (matched === null || !shapeMatches(freshChild, matched, false, true)) {
+          return false;
+        }
+        freshChild = freshChild.nextSibling;
+      }
+      while (claimedChild !== null) {
+        const candidate = claimedChild;
+        const next = candidate.nextSibling;
+        let skip = depth > 0;
+        if (candidate.nodeType === Node.COMMENT_NODE) {
+          const data = (candidate as Comment).data;
+          if (data === INSERT_START) {
+            depth += 1;
+            skip = true;
+          } else if (data === INSERT_END) {
+            if (depth > 0) {
+              depth -= 1;
+            }
+            skip = true;
+          }
+        }
+        claimedChild = next;
+        if (!skip) {
+          return false;
+        }
+      }
+      return true;
+    }
+    const rightCursor: ShapeCursor = {
+      node: right.firstChild,
+      depth: 0,
+      ignoreTopMetadata: false,
+    };
+    const leftCursor: ShapeCursor = {
+      node: left.firstChild,
+      depth: 0,
+      ignoreTopMetadata,
+    };
+    let x = nextShapeChild(leftCursor);
+    let y = nextShapeChild(rightCursor);
+    while (x !== null && y !== null) {
+      if (!shapeMatches(x, y)) {
         return false;
       }
+      x = nextShapeChild(leftCursor);
+      y = nextShapeChild(rightCursor);
     }
-    return true;
+    return x === null && y === null;
   }
-  if (fresh.nodeType === Node.TEXT_NODE) {
+  if (nodeType === Node.TEXT_NODE) {
     return (fresh as Text).data === (claimed as Text).data;
   }
-  if (fresh.nodeType === Node.COMMENT_NODE) {
+  if (nodeType === Node.COMMENT_NODE) {
     return (fresh as Comment).data === (claimed as Comment).data;
   }
   return true;
 }
+
+export function significantChildren(node: Node, index: number): Node | null {
+  let depth = 0;
+  let child = node.firstChild;
+  let position = 0;
+  while (child !== null) {
+    const next = child.nextSibling;
+    let skip = depth > 0;
+    if (child.nodeType === Node.COMMENT_NODE) {
+      const data = (child as Comment).data;
+      if (data === INSERT_START) {
+        depth += 1;
+        skip = true;
+      } else if (data === INSERT_END) {
+        if (depth > 0) {
+          depth -= 1;
+        }
+        skip = true;
+      }
+    }
+    if (!skip) {
+      if (position === index) {
+        return child;
+      }
+      position += 1;
+    }
+    child = next;
+  }
+  return null;
+}
+
+export function significantChildrenFromEnd(node: Node, offset: number): Node | null {
+  let depth = 0;
+  let child = node.lastChild;
+  let position = 0;
+  while (child !== null) {
+    const previous = child.previousSibling;
+    let skip = depth > 0;
+    if (child.nodeType === Node.COMMENT_NODE) {
+      const data = (child as Comment).data;
+      if (data === INSERT_END) {
+        depth += 1;
+        skip = true;
+      } else if (data === INSERT_START) {
+        if (depth > 0) {
+          depth -= 1;
+        }
+        skip = true;
+      }
+    }
+    if (!skip) {
+      if (position === offset) {
+        return child;
+      }
+      position += 1;
+    }
+    child = previous;
+  }
+  return null;
+}
+
+export function countSignificantChildren(node: Node): number {
+  let depth = 0;
+  let child = node.firstChild;
+  let count = 0;
+  while (child !== null) {
+    const next = child.nextSibling;
+    let skip = depth > 0;
+    if (child.nodeType === Node.COMMENT_NODE) {
+      const data = (child as Comment).data;
+      if (data === INSERT_START) {
+        depth += 1;
+        skip = true;
+      } else if (data === INSERT_END) {
+        if (depth > 0) {
+          depth -= 1;
+        }
+        skip = true;
+      }
+    }
+    if (!skip) {
+      count += 1;
+    }
+    child = next;
+  }
+  return count;
+}
+
+export function installHydrationRuntime(): void {
+  registerHydrationRuntime({
+    claimNext,
+    isMarker,
+    isItemMarker,
+    findViewEnd,
+    findInsertWindow,
+    collectBetween,
+    mergeTopLevelMetadata,
+    shapeMatches,
+    significantChildren,
+    significantChildrenFromEnd,
+    countSignificantChildren,
+  });
+}
+
+installHydrationRuntime();

@@ -9,15 +9,20 @@ import {
   dynamic,
   effect,
   fragment,
+  hyphen,
   insert,
   on,
+  parseEventName,
   prop,
   ref,
+  setServerMode,
   spread,
   style,
   template,
+  templateHoles,
   text,
 } from "../src/dom";
+import { writeRegion } from "../src/dom-hydration";
 import { Fragment, jsx } from "../src/jsx-runtime";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -179,6 +184,16 @@ describe("insert", () => {
 });
 
 describe("text", () => {
+  it("разрешает функцию-геттер сигнала и подписывается на неё", () => {
+    const node = document.createTextNode("");
+    const [value, setValue] = createSignal(0);
+    text(node, () => value);
+    expect(node.data).toBe("0");
+    setValue(1);
+    flushSync();
+    expect(node.data).toBe("1");
+  });
+
   it("обновляет data только при изменении значения", () => {
     const node = document.createTextNode("1");
     let writes = 0;
@@ -679,5 +694,123 @@ describe("jsx-runtime", () => {
     const node = jsx(Fragment, { children: ["a", 0, null, "b"] });
     expect(node).toBeInstanceOf(DocumentFragment);
     expect(node.textContent).toBe("a0b");
+  });
+});
+
+describe("кэш разбора шаблона", () => {
+  it("переиспользует разбор между вызовами template", () => {
+    const html = `<section><b>a</b></section><p>b</p>`;
+    const firstRender = template(html);
+    const secondRender = template(html);
+    const first = firstRender() as DocumentFragment;
+    const second = secondRender() as DocumentFragment;
+    expect(first).not.toBe(second);
+    expect(first.childNodes.length).toBe(2);
+    first.firstChild?.remove();
+    expect(first.childNodes.length).toBe(1);
+    expect(second.childNodes.length).toBe(2);
+  });
+});
+
+describe("templateHoles", () => {
+  it("возвращает дыры и атрибуты и снимает маркеры у повторных клонов", () => {
+    const html =
+      '<div class="box" data-silent-a-0=""><!--silent-hole-0--><span data-silent-text=""><!--silent-hole-1--></span></div>';
+    const render = templateHoles(html);
+    const first = render();
+    const second = render();
+    expect(first.node).not.toBe(second.node);
+    expect(first.holes.length).toBe(2);
+    expect(first.attrs.length).toBe(1);
+    expect(first.attrs[0]).toBe(first.node);
+    expect((first.node as Element).hasAttribute("data-silent-a-0")).toBe(false);
+    expect(
+      (first.node as Element).querySelector("span")?.hasAttribute("data-silent-text"),
+    ).toBe(false);
+    expect(first.holes[0]).not.toBe(second.holes[0]);
+    expect((second.node as Element).hasAttribute("data-silent-a-0")).toBe(false);
+    expect(
+      (second.node as Element).querySelector("span")?.hasAttribute("data-silent-text"),
+    ).toBe(false);
+  });
+
+  it("поддерживает несколько корней и порядок дыр", () => {
+    const clone = templateHoles(
+      '<h1>t</h1><!--silent-hole-0--><p><!--silent-hole-1--></p>',
+    )();
+    expect(clone.node).toBeInstanceOf(DocumentFragment);
+    expect(clone.holes.length).toBe(2);
+    expect(clone.holes[0]?.parentNode).toBe(clone.node);
+    const nestedHole = clone.holes[1];
+    expect(nestedHole instanceof Comment).toBe(true);
+    expect(nestedHole instanceof Comment ? nestedHole.parentNode?.nodeName : null).toBe("P");
+    expect(clone.attrs.length).toBe(0);
+  });
+
+  it("сохраняет серверные маркеры, но снимает их на клиенте", () => {
+    const html =
+      '<button data-silent-a-0=""><span data-silent-text=""><!--silent-hole-0--></span></button>';
+    setServerMode(true);
+    try {
+      const clone = templateHoles(html)();
+      const button = clone.node as Element;
+      expect(button.hasAttribute("data-silent-a-0")).toBe(true);
+      expect(button.querySelector("span")?.hasAttribute("data-silent-text")).toBe(true);
+      expect(clone.attrs[0]).toBe(button);
+      expect(clone.holes.length).toBe(1);
+    } finally {
+      setServerMode(false);
+    }
+    const client = templateHoles(html)();
+    const clientButton = client.node as Element;
+    expect(clientButton.hasAttribute("data-silent-a-0")).toBe(false);
+    expect(
+      clientButton.querySelector("span")?.hasAttribute("data-silent-text"),
+    ).toBe(false);
+  });
+});
+
+describe("writeRegion", () => {
+  it("обновляет единственный текстовый узел без замены", () => {
+    const parent = document.createElement("div");
+    const start = document.createComment("start");
+    const end = document.createComment("end");
+    parent.append(start, document.createTextNode("a"), end);
+    document.body.appendChild(parent);
+    const textNode = start.nextSibling;
+    writeRegion(start, end, "b");
+    expect(start.nextSibling).toBe(textNode);
+    expect(parent.textContent).toBe("b");
+    const element = document.createElement("i");
+    writeRegion(start, end, element);
+    expect(parent.textContent).toBe("");
+    expect(start.nextSibling).toBe(element);
+    expect(element.nextSibling).toBe(end);
+  });
+});
+
+describe("hyphen", () => {
+  it("кэширует и нормализует имена свойств", () => {
+    expect(hyphen("fontFamily")).toBe("font-family");
+    expect(hyphen("fontFamily")).toBe("font-family");
+    expect(hyphen("--custom-var")).toBe("--custom-var");
+    expect(hyphen("background-COLOR")).toBe("background-color");
+  });
+});
+
+describe("parseEventName", () => {
+  it("разбирает обычные, capture и on:-имена", () => {
+    expect(parseEventName("onClick")).toEqual({ event: "click", capture: false });
+    expect(parseEventName("onClickCapture")).toEqual({ event: "click", capture: true });
+    expect(parseEventName("on:click")).toEqual({ event: "click", capture: false });
+    expect(parseEventName("on:Click")).toEqual({ event: "Click", capture: false });
+  });
+
+  it("возвращает независимые объекты при повторном вызове", () => {
+    const first = parseEventName("onInput");
+    const second = parseEventName("onInput");
+    expect(first).not.toBe(second);
+    first.event = "changed";
+    expect(parseEventName("onInput").event).toBe("input");
   });
 });

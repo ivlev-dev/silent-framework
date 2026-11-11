@@ -1,6 +1,7 @@
 import { createRenderEffect, onCleanup } from "@ivlev-dev/silent-reactivity";
 import { getRuntimeOptions, withRuntimeOptions } from "./component.js";
-import { createMountPoint, settleNodes } from "./dom.js";
+import { createMountPoint } from "./dom.js";
+import { settleNodes } from "./dom-hydration-state.js";
 import {
   ERROR_BOUNDARY,
   collectBetween,
@@ -9,7 +10,7 @@ import {
   isMarker,
   mismatch,
   withWindow,
-} from "./hydration.js";
+} from "./hydration-proxy.js";
 
 export interface ErrorBoundaryProps {
   readonly fallback: (error: unknown, reset: () => void) => unknown;
@@ -37,25 +38,9 @@ export function ErrorBoundary(props: ErrorBoundaryProps): Node {
   let disposed = false;
   let failed = false;
 
-  const render: () => void = () => {
-    if (disposed || failed) {
-      return;
-    }
-    try {
-      const value = withRuntimeOptions(
-        { ...options, onError: (error) => showFallback(error) },
-        () => resolve(props.children),
-      );
-      if (failed) {
-        return;
-      }
-      mount.render(value);
-    } catch (error) {
-      showFallback(error);
-    }
-  };
+  const guardedOptions = { ...options, onError: (error: unknown) => showFallback(error) };
 
-  const showFallback = (error: unknown): void => {
+  function showFallback(error: unknown): void {
     if (disposed) {
       return;
     }
@@ -63,15 +48,30 @@ export function ErrorBoundary(props: ErrorBoundaryProps): Node {
     mount.render(
       withRuntimeOptions(options, () => resolve(props.fallback(error, reset))),
     );
-  };
+  }
 
-  const reset = (): void => {
+  function reset(): void {
     if (disposed) {
       return;
     }
     failed = false;
     render();
-  };
+  }
+
+  function render(): void {
+    if (disposed || failed) {
+      return;
+    }
+    try {
+      const value = withRuntimeOptions(guardedOptions, () => resolve(props.children));
+      if (failed) {
+        return;
+      }
+      mount.render(value);
+    } catch (error) {
+      showFallback(error);
+    }
+  }
 
   createRenderEffect(render);
   onCleanup(() => {
@@ -124,6 +124,8 @@ function hydrateErrorBoundary(props: ErrorBoundaryProps): Node {
     initialized = true;
   };
 
+  const guardedOptions = { ...options, onError: showFallback };
+
   const render = (): void => {
     if (failed) {
       return;
@@ -131,7 +133,7 @@ function hydrateErrorBoundary(props: ErrorBoundaryProps): Node {
     try {
       if (!initialized) {
         initialized = true;
-        const value = withRuntimeOptions({ ...options, onError: showFallback }, () =>
+        const value = withRuntimeOptions(guardedOptions, () =>
           withWindow(window, () => resolve(props.children)),
         );
         if (failed) {
@@ -144,9 +146,7 @@ function hydrateErrorBoundary(props: ErrorBoundaryProps): Node {
         settleNodes(anchor, value);
         return;
       }
-      const value = withRuntimeOptions({ ...options, onError: showFallback }, () =>
-        resolve(props.children),
-      );
+      const value = withRuntimeOptions(guardedOptions, () => resolve(props.children));
       if (failed) {
         return;
       }
@@ -162,6 +162,6 @@ function hydrateErrorBoundary(props: ErrorBoundaryProps): Node {
   };
 
   createRenderEffect(render);
-  onCleanup(() => mount.clear());
+  onCleanup(mount.clear);
   return document.createDocumentFragment();
 }

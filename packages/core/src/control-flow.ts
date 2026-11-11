@@ -14,9 +14,9 @@ import {
   collectNodes,
   createMountPoint,
   disposeNode,
-  settleNodes,
 } from "./dom.js";
-import { extractMetadata } from "./metadata.js";
+import { settleNodes } from "./dom-hydration-state.js";
+import { extractMetadata, isMetadataFree } from "./metadata.js";
 import {
   ITEM,
   LIST_END,
@@ -28,7 +28,7 @@ import {
   isMarker,
   mismatch,
   withWindow,
-} from "./hydration.js";
+} from "./hydration-proxy.js";
 
 interface ItemState<T> {
   item: T;
@@ -38,6 +38,8 @@ interface ItemState<T> {
   nodes: Node[];
   cleanup: () => void;
   disposed: boolean;
+  previousIndex: number;
+  generation: number;
 }
 
 export interface ForProps<T> {
@@ -64,45 +66,50 @@ function resolve(value: unknown): unknown {
   return current;
 }
 
-function precedes(block: readonly Node[], reference: Node): boolean {
+function precedesBlock(nodes: readonly Node[], anchor: Node, reference: Node): boolean {
   let cursor: Node | null = reference.previousSibling;
-  for (let index = block.length - 1; index >= 0; index -= 1) {
-    const node = block[index];
-    if (node === undefined || cursor === null || node !== cursor) {
+  for (let index = nodes.length - 1; index >= 0; index -= 1) {
+    if (cursor === null || nodes[index] !== cursor) {
       return false;
     }
     cursor = cursor.previousSibling;
   }
-  return true;
+  return cursor === anchor;
 }
 
-function longestIncreasingSubsequence(values: readonly number[]): Set<number> {
-  const tails: number[] = [];
-  const previous: number[] = new Array<number>(values.length).fill(-1);
-  for (let index = 0; index < values.length; index += 1) {
-    const value = values[index]!;
+function markStableSlots(
+  positions: Int32Array,
+  slots: Int32Array,
+  count: number,
+  stable: Uint8Array,
+  tails: Int32Array,
+  previous: Int32Array,
+): void {
+  let length = 0;
+  for (let index = 0; index < count; index += 1) {
+    const value = positions[index]!;
     let low = 0;
-    let high = tails.length;
+    let high = length;
     while (low < high) {
       const middle = (low + high) >> 1;
-      if (values[tails[middle]!]! < value) {
+      if (positions[tails[middle]!]! < value) {
         low = middle + 1;
       } else {
         high = middle;
       }
     }
-    if (low > 0) {
-      previous[index] = tails[low - 1]!;
-    }
+    previous[index] = low > 0 ? tails[low - 1]! + 1 : 0;
     tails[low] = index;
+    if (low + 1 > length) {
+      length = low + 1;
+    }
   }
-  const result = new Set<number>();
-  let cursor = tails.length === 0 ? -1 : tails[tails.length - 1]!;
-  while (cursor !== -1) {
-    result.add(cursor);
-    cursor = previous[cursor]!;
+  let cursor = length === 0 ? 0 : tails[length - 1]! + 1;
+  while (cursor !== 0) {
+    const index = cursor - 1;
+    stable[slots[index]!] = 1;
+    cursor = previous[index]!;
   }
-  return result;
 }
 
 export function For<T>(props: ForProps<T>): Node {
@@ -110,9 +117,19 @@ export function For<T>(props: ForProps<T>): Node {
   const outer = hydrating ? currentWindow() : null;
   const container = document.createDocumentFragment();
   const fallback = props.fallback;
+  const hasFallback = fallback !== undefined;
   const parentOwner = getOwner();
   let states: ItemState<T>[] = [];
+  let spare: ItemState<T>[] = [];
+  const createdBuffer: ItemState<T>[] = [];
+  let generation = 0;
   let endAnchor: Comment;
+
+  let positions = new Int32Array(0);
+  let slots = new Int32Array(0);
+  let stable = new Uint8Array(0);
+  let lisTails = new Int32Array(0);
+  let lisPrevious = new Int32Array(0);
 
   const detachNode = (node: Node): void => {
     if (node.parentNode !== null) {
@@ -125,23 +142,28 @@ export function For<T>(props: ForProps<T>): Node {
     value: unknown,
     mountParent: Node | null = null,
   ): void => {
-    for (const node of state.nodes) {
-      disposeNode(node);
-      detachNode(node);
+    const nodes = state.nodes;
+    if (nodes.length > 0) {
+      for (let index = 0; index < nodes.length; index += 1) {
+        const node = nodes[index]!;
+        disposeNode(node);
+        detachNode(node);
+      }
+      state.nodes = [];
     }
-    state.nodes = [];
     const parent = mountParent ?? state.anchor.parentNode;
     if (parent === null) {
       return;
     }
-    const nodes: Node[] =
-      value instanceof Node && !(value instanceof DocumentFragment)
-        ? [value]
-        : collectNodes(value as Children);
+    let placed: Node[];
+    if (value instanceof Node && !(value instanceof DocumentFragment)) {
+      placed = isMetadataFree(value) ? [value] : extractMetadata([value]);
+    } else {
+      placed = extractMetadata(collectNodes(value as Children));
+    }
     const reference = state.anchor.nextSibling;
-    const placed = extractMetadata(nodes);
-    for (const node of placed) {
-      parent.insertBefore(node, reference);
+    for (let index = 0; index < placed.length; index += 1) {
+      parent.insertBefore(placed[index]!, reference);
     }
     state.nodes = placed;
   };
@@ -151,7 +173,9 @@ export function For<T>(props: ForProps<T>): Node {
       return;
     }
     state.disposed = true;
-    for (const node of state.nodes) {
+    const nodes = state.nodes;
+    for (let index = 0; index < nodes.length; index += 1) {
+      const node = nodes[index]!;
       disposeNode(node);
       detachNode(node);
     }
@@ -165,6 +189,8 @@ export function For<T>(props: ForProps<T>): Node {
       removeState(state);
     }
     states = [];
+    spare = [];
+    createdBuffer.length = 0;
     fallbackMount.clear();
   };
 
@@ -202,32 +228,32 @@ export function For<T>(props: ForProps<T>): Node {
       nodes,
       cleanup: () => {},
       disposed: false,
+      previousIndex: -1,
+      generation: -1,
     };
 
     let seeded = itemEnd !== null;
-    state.cleanup = runWithOwner(parentOwner, () =>
-      createRoot((dispose) => {
-        createRenderEffect(() => {
-          if (seeded) {
-            seeded = false;
-            const window = {
-              start: anchor,
-              end: itemEnd as Node,
-              cursor: anchor.nextSibling,
-            };
-            const value = withWindow(window, () => props.children(item, index));
-            settleNodes(itemEnd, value);
-            if (window.cursor !== itemEnd) {
-              mismatch("содержимое элемента списка не совпало");
-            }
-            return;
+    state.cleanup = createRoot((dispose) => {
+      createRenderEffect(() => {
+        if (seeded) {
+          seeded = false;
+          const window = {
+            start: anchor,
+            end: itemEnd as Node,
+            cursor: anchor.nextSibling,
+          };
+          const value = withWindow(window, () => props.children(item, index));
+          settleNodes(itemEnd, value);
+          if (window.cursor !== itemEnd) {
+            mismatch("содержимое элемента списка не совпало");
           }
-          renderItem(state, props.children(item, index), initialMount);
-          initialMount = null;
-        });
-        return dispose;
-      }),
-    );
+          return;
+        }
+        renderItem(state, props.children(item, index), initialMount);
+        initialMount = null;
+      });
+      return dispose;
+    });
 
     attachDisposer(anchor, () => removeState(state));
     return state;
@@ -239,14 +265,12 @@ export function For<T>(props: ForProps<T>): Node {
     sink: DocumentFragment,
   ): ItemState<T> => {
     const anchor = document.createComment(ITEM);
-    const fragment = document.createDocumentFragment();
-    fragment.appendChild(anchor);
-    const state = makeState(item, anchor, [], null, position, fragment);
-    sink.appendChild(fragment);
-    return state;
+    sink.appendChild(anchor);
+    return makeState(item, anchor, [], null, position, sink);
   };
 
   let fallbackSeed: Node[] = [];
+  let skipFirst = hydrating;
 
   if (hydrating) {
     if (outer === null) {
@@ -261,7 +285,7 @@ export function For<T>(props: ForProps<T>): Node {
       typeof props.each === "function" ? props.each() : props.each,
     );
     if (items.length === 0) {
-      if (fallback !== undefined) {
+      if (hasFallback) {
         const window = {
           start: outer.start,
           end: endAnchor,
@@ -276,25 +300,27 @@ export function For<T>(props: ForProps<T>): Node {
     }
     let cursor: Node | null = items.length === 0 ? endAnchor : outer.start.nextSibling;
     let position = 0;
-    while (cursor !== null && cursor !== endAnchor) {
-      if (!isItemMarker(cursor)) {
-        return mismatch("ожидался маркер элемента списка");
+    runWithOwner(parentOwner, () => {
+      while (cursor !== null && cursor !== endAnchor) {
+        if (!isItemMarker(cursor)) {
+          return mismatch("ожидался маркер элемента списка");
+        }
+        const anchor = cursor;
+        const nodes: Node[] = [];
+        let node = cursor.nextSibling;
+        while (node !== null && node !== endAnchor && !isItemMarker(node)) {
+          nodes.push(node);
+          node = node.nextSibling;
+        }
+        const item = items[position];
+        if (item === undefined) {
+          return mismatch("лишний элемент списка");
+        }
+        states.push(makeState(item, anchor, nodes, node ?? endAnchor, position));
+        position += 1;
+        cursor = node;
       }
-      const anchor = cursor;
-      const nodes: Node[] = [];
-      let node = cursor.nextSibling;
-      while (node !== null && node !== endAnchor && !isItemMarker(node)) {
-        nodes.push(node);
-        node = node.nextSibling;
-      }
-      const item = items[position];
-      if (item === undefined) {
-        return mismatch("лишний элемент списка");
-      }
-      states.push(makeState(item, anchor, nodes, node ?? endAnchor, position));
-      position += 1;
-      cursor = node;
-    }
+    });
     if (position !== items.length) {
       return mismatch("число элементов списка не совпало");
     }
@@ -310,7 +336,6 @@ export function For<T>(props: ForProps<T>): Node {
   const fallbackMount = hydrating
     ? createMountPoint(fallbackParent as Node, endAnchor, fallbackSeed)
     : createMountPoint(container, endAnchor);
-  const skipFirst = { value: hydrating };
 
   createRenderEffect(() => {
     const parent = endAnchor.parentNode;
@@ -319,72 +344,119 @@ export function For<T>(props: ForProps<T>): Node {
       return;
     }
 
-    const { each } = props;
+    const each = props.each;
     const items: readonly T[] = typeof each === "function" ? each() : each;
-    if (skipFirst.value) {
-      skipFirst.value = false;
+    if (skipFirst) {
+      skipFirst = false;
       return;
     }
-    const previous = states;
 
+    const previous = states;
+    const previousLength = previous.length;
+    const nextLength = items.length;
+    const shared = previousLength < nextLength ? previousLength : nextLength;
+    let prefix = 0;
+    while (prefix < shared && previous[prefix]!.item === items[prefix]) {
+      prefix += 1;
+    }
+
+    if (prefix === shared) {
+      if (nextLength >= previousLength) {
+        if (nextLength > previousLength) {
+          const batch = document.createDocumentFragment();
+          runWithOwner(parentOwner, () => {
+            for (let position = previousLength; position < nextLength; position += 1) {
+              previous.push(createState(items[position] as T, position, batch));
+            }
+          });
+          parent.insertBefore(batch, endAnchor);
+        }
+        fallbackMount.render(nextLength === 0 && hasFallback ? resolve(fallback) : null);
+        return;
+      }
+      for (let index = nextLength; index < previousLength; index += 1) {
+        removeState(previous[index]!);
+      }
+      previous.length = nextLength;
+      fallbackMount.render(nextLength === 0 && hasFallback ? resolve(fallback) : null);
+      return;
+    }
+
+    generation += 1;
+    const currentGeneration = generation;
     const pool = new Map<T, ItemState<T> | ItemState<T>[]>();
-    for (const state of previous) {
+    for (let index = 0; index < previousLength; index += 1) {
+      const state = previous[index]!;
+      state.previousIndex = index;
       const existing = pool.get(state.item);
       if (existing === undefined) {
         pool.set(state.item, state);
-        continue;
-      }
-      if (Array.isArray(existing)) {
+      } else if (Array.isArray(existing)) {
         existing.push(state);
-        continue;
+      } else {
+        pool.set(state.item, [existing, state]);
       }
-      pool.set(state.item, [existing, state]);
     }
 
-    const next: ItemState<T>[] = [];
-    const created: ItemState<T>[] = [];
-    const batch = document.createDocumentFragment();
-    let batchUsed = false;
-    const used = new Set<ItemState<T>>();
-    for (const item of items) {
-      const entry = pool.get(item);
-      const state =
-        entry === undefined
-          ? undefined
-          : Array.isArray(entry)
-            ? entry.shift()
-            : entry;
-      if (state === undefined) {
-        const fresh = createState(item, next.length, batch);
-        batchUsed = true;
-        created.push(fresh);
-        next.push(fresh);
-        continue;
-      }
-      used.add(state);
-      next.push(state);
-    }
+    const next = spare;
+    next.length = 0;
+    const created = createdBuffer;
+    created.length = 0;
+    let batch: DocumentFragment | null = null;
 
-    for (const state of previous) {
-      if (!used.has(state)) {
+    runWithOwner(parentOwner, () => {
+      for (let position = 0; position < nextLength; position += 1) {
+        const item = items[position] as T;
+        const entry = pool.get(item);
+        let state: ItemState<T> | undefined;
+        if (entry === undefined) {
+          state = undefined;
+        } else if (Array.isArray(entry)) {
+          state = entry.length === 0 ? undefined : entry.shift();
+          if (entry.length === 0) {
+            pool.delete(item);
+          }
+        } else {
+          state = entry;
+          pool.delete(item);
+        }
+        if (state === undefined) {
+          if (batch === null) {
+            batch = document.createDocumentFragment();
+          }
+          const fresh = createState(item, position, batch);
+          created.push(fresh);
+          next.push(fresh);
+          continue;
+        }
+        state.generation = currentGeneration;
+        next.push(state);
+      }
+    });
+
+    for (let index = 0; index < previousLength; index += 1) {
+      const state = previous[index]!;
+      if (state.generation !== currentGeneration) {
         removeState(state);
       }
     }
 
-    if (batchUsed) {
+    if (batch !== null) {
       parent.insertBefore(batch, endAnchor);
     }
 
-    states = next;
-
-    for (let position = 0; position < next.length; position += 1) {
-      next[position]!.setIndex(position);
+    for (let position = 0; position < nextLength; position += 1) {
+      const state = next[position]!;
+      if (state.previousIndex !== position) {
+        state.setIndex(position);
+      }
     }
 
     let inOrder = true;
     let cursor = 0;
-    for (const state of previous) {
-      if (!used.has(state)) {
+    for (let index = 0; index < previousLength; index += 1) {
+      const state = previous[index]!;
+      if (state.generation !== currentGeneration) {
         continue;
       }
       if (next[cursor] !== state) {
@@ -394,59 +466,74 @@ export function For<T>(props: ForProps<T>): Node {
       cursor += 1;
     }
     if (inOrder) {
-      for (const state of created) {
-        if (next[cursor] !== state) {
+      for (let index = 0; index < created.length; index += 1) {
+        if (next[cursor] !== created[index]) {
           inOrder = false;
           break;
         }
         cursor += 1;
       }
     }
-    if (inOrder && cursor !== next.length) {
+    if (inOrder && cursor !== nextLength) {
       inOrder = false;
     }
 
     if (!inOrder) {
-      const previousOrder = new Map<ItemState<T>, number>();
-      for (let position = 0; position < previous.length; position += 1) {
-        previousOrder.set(previous[position]!, position);
-      }
-
-      const positions: number[] = [];
-      const slots: number[] = [];
-      for (let position = 0; position < next.length; position += 1) {
-        const previousPosition = previousOrder.get(next[position]!);
-        if (previousPosition !== undefined) {
-          positions.push(previousPosition);
-          slots.push(position);
+      let reused = 0;
+      for (let position = 0; position < nextLength; position += 1) {
+        if (next[position]!.previousIndex >= 0) {
+          reused += 1;
         }
       }
-
-      const stableSlots = new Set<number>();
-      for (const index of longestIncreasingSubsequence(positions)) {
-        const slot = slots[index];
-        if (slot !== undefined) {
-          stableSlots.add(slot);
+      if (positions.length < reused) {
+        positions = new Int32Array(reused * 2);
+        slots = new Int32Array(reused * 2);
+      }
+      if (stable.length < nextLength) {
+        stable = new Uint8Array(nextLength * 2);
+      } else {
+        stable.fill(0);
+      }
+      if (lisTails.length < reused) {
+        lisTails = new Int32Array(reused * 2);
+        lisPrevious = new Int32Array(reused * 2);
+      }
+      let sequence = 0;
+      for (let position = 0; position < nextLength; position += 1) {
+        const state = next[position]!;
+        if (state.previousIndex >= 0) {
+          positions[sequence] = state.previousIndex;
+          slots[sequence] = position;
+          sequence += 1;
         }
       }
+      markStableSlots(positions, slots, reused, stable, lisTails, lisPrevious);
 
       let reference: Node = endAnchor;
-      for (let position = next.length - 1; position >= 0; position -= 1) {
+      for (let position = nextLength - 1; position >= 0; position -= 1) {
         const state = next[position]!;
-        const block: Node[] = [state.anchor, ...state.nodes];
-        const parent = reference.parentNode;
-        if (parent !== null && !stableSlots.has(position) && !precedes(block, reference)) {
-          for (const node of block) {
-            parent.insertBefore(node, reference);
+        const holder = reference.parentNode;
+        if (
+          holder !== null &&
+          stable[position] === 0 &&
+          !precedesBlock(state.nodes, state.anchor, reference)
+        ) {
+          holder.insertBefore(state.anchor, reference);
+          const nodes = state.nodes;
+          for (let index = 0; index < nodes.length; index += 1) {
+            holder.insertBefore(nodes[index]!, reference);
           }
         }
         reference = state.anchor;
       }
     }
 
-    fallbackMount.render(
-      items.length === 0 && fallback !== undefined ? resolve(fallback) : null,
-    );
+    states = next;
+    spare = previous;
+    previous.length = 0;
+    created.length = 0;
+
+    fallbackMount.render(nextLength === 0 && hasFallback ? resolve(fallback) : null);
   });
 
   onCleanup(removeAll);
@@ -491,7 +578,7 @@ export function Show(props: ShowProps): Node {
       }
       mount.render(active ? resolve(props.children) : resolve(props.fallback));
     });
-    onCleanup(() => mount.clear());
+    onCleanup(mount.clear);
     return document.createDocumentFragment();
   }
 
@@ -504,6 +591,6 @@ export function Show(props: ShowProps): Node {
     const next: unknown = truthy(when) ? resolve(props.children) : resolve(props.fallback);
     mount.render(next);
   });
-  onCleanup(() => mount.clear());
+  onCleanup(mount.clear);
   return container;
 }

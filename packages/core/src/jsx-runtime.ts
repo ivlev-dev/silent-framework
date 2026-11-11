@@ -96,8 +96,9 @@ function fragmentValue(props: Record<string, unknown>): Node {
   if (children === undefined) {
     return container;
   }
-  for (const node of collectNodes(children as Children)) {
-    container.appendChild(node);
+  const nodes = collectNodes(children as Children);
+  for (let index = 0; index < nodes.length; index += 1) {
+    container.appendChild(nodes[index]!);
   }
   return container;
 }

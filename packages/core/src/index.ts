@@ -5,7 +5,8 @@ export * from "./view-model.js";
 export * from "./component-context.js";
 export * from "./component.js";
 export * from "./mount.js";
-export { HydrationMismatchError } from "./hydration.js";
+export * from "./hydrate.js";
+export { HydrationMismatchError } from "./hydration-state.js";
 export { setMetadataCollector } from "./metadata.js";
 export {
   setServerBackend,

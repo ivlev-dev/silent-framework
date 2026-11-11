@@ -14,9 +14,9 @@ import {
   collectNodes,
   createMountPoint,
   disposeNode,
-  settleNodes,
 } from "./dom.js";
-import { extractMetadata } from "./metadata.js";
+import { settleNodes } from "./dom-hydration-state.js";
+import { extractMetadata, isMetadataFree } from "./metadata.js";
 import {
   ITEM,
   LIST_END,
@@ -27,7 +27,7 @@ import {
   isMarker,
   mismatch,
   withWindow,
-} from "./hydration.js";
+} from "./hydration-proxy.js";
 
 interface IndexState<T> {
   item: Accessor<T>;
@@ -59,10 +59,12 @@ export function Index<T>(props: IndexProps<T>): Node {
   const outer = hydrating ? currentWindow() : null;
   const container = document.createDocumentFragment();
   const fallback = props.fallback;
+  const hasFallback = fallback !== undefined;
   const parentOwner = getOwner();
   let states: IndexState<T>[] = [];
   let endAnchor: Comment;
   let fallbackSeed: Node[] = [];
+  let skipFirst = hydrating;
 
   const detachNode = (node: Node): void => {
     if (node.parentNode !== null) {
@@ -75,7 +77,9 @@ export function Index<T>(props: IndexProps<T>): Node {
       return;
     }
     state.disposed = true;
-    for (const node of state.nodes) {
+    const nodes = state.nodes;
+    for (let index = 0; index < nodes.length; index += 1) {
+      const node = nodes[index]!;
       disposeNode(node);
       detachNode(node);
     }
@@ -99,8 +103,42 @@ export function Index<T>(props: IndexProps<T>): Node {
     itemEnd: Node | null,
     position: number,
   ): IndexState<T> => {
-    const [item, setItem] = createSignal<T>(value);
-    const [index, setIndex] = createSignal(position);
+    let itemHandle: [Accessor<T>, Setter<T>] | null = null;
+    let currentItem = value;
+    const item: Accessor<T> = () => {
+      if (itemHandle === null) {
+        itemHandle = createSignal(currentItem);
+      }
+      return itemHandle[0]();
+    };
+    const setItem: Setter<T> = (next) => {
+      const resolved: T =
+        typeof next === "function" ? (next as (previous: T) => T)(currentItem) : next;
+      currentItem = resolved;
+      if (itemHandle !== null) {
+        itemHandle[1](resolved);
+      }
+      return resolved;
+    };
+
+    let indexHandle: [Accessor<number>, Setter<number>] | null = null;
+    let currentIndex = position;
+    const index: Accessor<number> = () => {
+      if (indexHandle === null) {
+        indexHandle = createSignal(currentIndex);
+      }
+      return indexHandle[0]();
+    };
+    const setIndex: Setter<number> = (next) => {
+      const resolved: number =
+        typeof next === "function" ? (next as (previous: number) => number)(currentIndex) : next;
+      currentIndex = resolved;
+      if (indexHandle !== null) {
+        indexHandle[1](resolved);
+      }
+      return resolved;
+    };
+
     const state: IndexState<T> = {
       item,
       setItem,
@@ -112,42 +150,41 @@ export function Index<T>(props: IndexProps<T>): Node {
       disposed: false,
     };
 
-    state.cleanup = runWithOwner(parentOwner, () =>
-      createRoot((dispose) => {
-        if (itemEnd !== null) {
-          const window = {
-            start: anchor,
-            end: itemEnd,
-            cursor: anchor.nextSibling,
-          };
-          const rendered = withWindow(window, () => props.children(item, index));
-          if (outer !== null) {
-            outer.cursor = window.cursor;
-          }
-          settleNodes(itemEnd, rendered);
-          if (window.cursor !== itemEnd) {
-            mismatch("содержимое элемента списка не совпало");
-          }
-          return dispose;
+    state.cleanup = createRoot((dispose) => {
+      if (itemEnd !== null) {
+        const window = {
+          start: anchor,
+          end: itemEnd,
+          cursor: anchor.nextSibling,
+        };
+        const rendered = withWindow(window, () => props.children(item, index));
+        if (outer !== null) {
+          outer.cursor = window.cursor;
         }
-        const parent = anchor.parentNode;
-        if (parent === null) {
-          return dispose;
+        settleNodes(itemEnd, rendered);
+        if (window.cursor !== itemEnd) {
+          mismatch("содержимое элемента списка не совпало");
         }
-        const rendered = props.children(item, index);
-        const placed: Node[] = extractMetadata(
-          rendered instanceof Node && !(rendered instanceof DocumentFragment)
-            ? [rendered]
-            : collectNodes(rendered as Children),
-        );
-        const reference = anchor.nextSibling;
-        for (const node of placed) {
-          parent.insertBefore(node, reference);
-        }
-        state.nodes = placed;
         return dispose;
-      }),
-    );
+      }
+      const parent = anchor.parentNode;
+      if (parent === null) {
+        return dispose;
+      }
+      const rendered = props.children(item, index);
+      let placed: Node[];
+      if (rendered instanceof Node && !(rendered instanceof DocumentFragment)) {
+        placed = isMetadataFree(rendered) ? [rendered] : extractMetadata([rendered]);
+      } else {
+        placed = extractMetadata(collectNodes(rendered as Children));
+      }
+      const reference = anchor.nextSibling;
+      for (let index = 0; index < placed.length; index += 1) {
+        parent.insertBefore(placed[index]!, reference);
+      }
+      state.nodes = placed;
+      return dispose;
+    });
 
     attachDisposer(anchor, () => removeState(state));
     return state;
@@ -155,11 +192,11 @@ export function Index<T>(props: IndexProps<T>): Node {
 
   const createState = (
     value: T,
-    parent: Node,
+    sink: DocumentFragment,
     position: number,
   ): IndexState<T> => {
     const anchor = document.createComment(ITEM);
-    parent.insertBefore(anchor, endAnchor);
+    sink.appendChild(anchor);
     return makeState(value, anchor, [], null, position);
   };
 
@@ -176,7 +213,7 @@ export function Index<T>(props: IndexProps<T>): Node {
       typeof props.each === "function" ? props.each() : props.each,
     );
     if (items.length === 0) {
-      if (fallback !== undefined) {
+      if (hasFallback) {
         const window = {
           start: outer.start,
           end: endAnchor,
@@ -194,25 +231,27 @@ export function Index<T>(props: IndexProps<T>): Node {
     }
     let cursor: Node | null = items.length === 0 ? endAnchor : outer.start.nextSibling;
     let position = 0;
-    while (cursor !== null && cursor !== endAnchor) {
-      if (!isItemMarker(cursor)) {
-        return mismatch("ожидался маркер элемента списка");
+    runWithOwner(parentOwner, () => {
+      while (cursor !== null && cursor !== endAnchor) {
+        if (!isItemMarker(cursor)) {
+          return mismatch("ожидался маркер элемента списка");
+        }
+        const anchor = cursor;
+        const nodes: Node[] = [];
+        let node = cursor.nextSibling;
+        while (node !== null && node !== endAnchor && !isItemMarker(node)) {
+          nodes.push(node);
+          node = node.nextSibling;
+        }
+        const item = items[position];
+        if (item === undefined) {
+          return mismatch("лишний элемент списка");
+        }
+        states.push(makeState(item, anchor, nodes, node ?? endAnchor, position));
+        position += 1;
+        cursor = node;
       }
-      const anchor = cursor;
-      const nodes: Node[] = [];
-      let node = cursor.nextSibling;
-      while (node !== null && node !== endAnchor && !isItemMarker(node)) {
-        nodes.push(node);
-        node = node.nextSibling;
-      }
-      const item = items[position];
-      if (item === undefined) {
-        return mismatch("лишний элемент списка");
-      }
-      states.push(makeState(item, anchor, nodes, node ?? endAnchor, position));
-      position += 1;
-      cursor = node;
-    }
+    });
     if (position !== items.length) {
       return mismatch("число элементов списка не совпало");
     }
@@ -229,7 +268,6 @@ export function Index<T>(props: IndexProps<T>): Node {
   const fallbackMount = hydrating
     ? createMountPoint(fallbackParent as Node, endAnchor, fallbackSeed)
     : createMountPoint(container, endAnchor);
-  const skipFirst = { value: hydrating };
 
   createRenderEffect(() => {
     const parent = endAnchor.parentNode;
@@ -238,10 +276,10 @@ export function Index<T>(props: IndexProps<T>): Node {
       return;
     }
 
-    const { each } = props;
+    const each = props.each;
     const items: readonly T[] = typeof each === "function" ? each() : each;
-    if (skipFirst.value) {
-      skipFirst.value = false;
+    if (skipFirst) {
+      skipFirst = false;
       return;
     }
 
@@ -252,20 +290,21 @@ export function Index<T>(props: IndexProps<T>): Node {
       }
     }
 
-    for (let position = 0; position < items.length; position += 1) {
-      const item = items[position] as T;
-      const state = states[position];
-      if (state === undefined) {
-        states.push(createState(item, parent, position));
-        continue;
-      }
-      state.setItem(item);
-      state.setIndex(position);
+    const previousLength = states.length;
+    for (let position = 0; position < previousLength; position += 1) {
+      states[position]!.setItem(items[position] as T);
+    }
+    if (items.length > previousLength) {
+      const batch = document.createDocumentFragment();
+      runWithOwner(parentOwner, () => {
+        for (let position = previousLength; position < items.length; position += 1) {
+          states.push(createState(items[position] as T, batch, position));
+        }
+      });
+      parent.insertBefore(batch, endAnchor);
     }
 
-    fallbackMount.render(
-      items.length === 0 && fallback !== undefined ? resolve(fallback) : null,
-    );
+    fallbackMount.render(items.length === 0 && hasFallback ? resolve(fallback) : null);
   });
 
   onCleanup(removeAll);

@@ -2,6 +2,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createSignal, flushSync } from "@ivlev-dev/silent-reactivity";
 import { mount, type MountHandle } from "../src/mount.js";
 import { prop, templateHoles } from "../src/dom.js";
+import { isMetadataElement } from "../src/metadata.js";
 import type { AnyComponent } from "../src/types.js";
 
 const VIEW = Symbol.for("silent.view");
@@ -176,5 +177,33 @@ describe("metadata hoisting", () => {
     expect(host.querySelector('link[itemprop="url"]')).not.toBeNull();
     expect(document.head.querySelector('meta[itemprop="name"]')).toBeNull();
     expect(document.head.querySelector('link[itemprop="url"]')).toBeNull();
+  });
+});
+
+describe("isMetadataElement", () => {
+  it("распознаёт title, meta и link в HTML-пространстве", () => {
+    expect(isMetadataElement(document.createElement("title"))).toBe(true);
+    expect(isMetadataElement(document.createElement("meta"))).toBe(true);
+    expect(isMetadataElement(document.createElement("link"))).toBe(true);
+  });
+
+  it("игнорирует обычные элементы и узлы другого типа", () => {
+    expect(isMetadataElement(document.createElement("div"))).toBe(false);
+    expect(isMetadataElement(document.createElement("span"))).toBe(false);
+    expect(isMetadataElement(document.createTextNode("x"))).toBe(false);
+    expect(isMetadataElement(document.createComment("x"))).toBe(false);
+    expect(isMetadataElement(null)).toBe(false);
+    expect(isMetadataElement(undefined)).toBe(false);
+  });
+
+  it("игнорирует SVG и элементы с itemprop", () => {
+    const svgTitle = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "title",
+    );
+    expect(isMetadataElement(svgTitle)).toBe(false);
+    const itemprop = document.createElement("title");
+    itemprop.setAttribute("itemprop", "name");
+    expect(isMetadataElement(itemprop)).toBe(false);
   });
 });

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
-import { hydrate } from "../src/mount";
+import { hydrate } from "../src/hydrate";
 import { templateHoles } from "../src/dom";
 import { ErrorBoundary } from "../src/error-boundary";
 import { Index } from "../src/index-list";

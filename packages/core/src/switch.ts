@@ -1,6 +1,7 @@
 import { createRenderEffect, onCleanup } from "@ivlev-dev/silent-reactivity";
 import { MATCH_DESCRIPTOR, attachMatch, isMatchNode } from "./match-node.js";
-import { createMountPoint, settleNodes } from "./dom.js";
+import { createMountPoint } from "./dom.js";
+import { settleNodes } from "./dom-hydration-state.js";
 import {
   SWITCH,
   collectBetween,
@@ -9,7 +10,7 @@ import {
   isMarker,
   mismatch,
   withWindow,
-} from "./hydration.js";
+} from "./hydration-proxy.js";
 
 export interface MatchProps {
   readonly when: unknown | (() => unknown);
@@ -33,39 +34,36 @@ function resolve(value: unknown): unknown {
   return current;
 }
 
-function flattenChildren(value: unknown): unknown[] {
-  const result: unknown[] = [];
-  const visit = (input: unknown): void => {
-    let current = input;
-    while (typeof current === "function") {
-      current = (current as () => unknown)();
+interface Selection {
+  found: boolean;
+  value: unknown;
+}
+
+function collectMatch(value: unknown, selection: Selection): void {
+  let current = value;
+  while (typeof current === "function") {
+    current = (current as () => unknown)();
+  }
+  if (Array.isArray(current)) {
+    for (let index = 0; index < current.length; index += 1) {
+      collectMatch(current[index], selection);
     }
-    if (Array.isArray(current)) {
-      for (const item of current) {
-        visit(item);
-      }
-      return;
-    }
-    if (current === null || current === undefined || typeof current === "boolean") {
-      return;
-    }
-    result.push(current);
-  };
-  visit(value);
-  return result;
+    return;
+  }
+  if (selection.found || !isMatchNode(current)) {
+    return;
+  }
+  const descriptor = current[MATCH_DESCRIPTOR];
+  if (truthy(descriptor.when())) {
+    selection.found = true;
+    selection.value = descriptor.children();
+  }
 }
 
 function select(props: SwitchProps): unknown {
-  for (const child of flattenChildren(props.children)) {
-    if (!isMatchNode(child)) {
-      continue;
-    }
-    const descriptor = child[MATCH_DESCRIPTOR];
-    if (truthy(descriptor.when())) {
-      return descriptor.children();
-    }
-  }
-  return resolve(props.fallback);
+  const selection: Selection = { found: false, value: undefined };
+  collectMatch(props.children, selection);
+  return selection.found ? selection.value : resolve(props.fallback);
 }
 
 export function Match(props: MatchProps): Node {
@@ -111,7 +109,7 @@ export function Switch(props: SwitchProps): Node {
       }
       mount.render(select(props));
     });
-    onCleanup(() => mount.clear());
+    onCleanup(mount.clear);
     return document.createDocumentFragment();
   }
 
@@ -122,6 +120,6 @@ export function Switch(props: SwitchProps): Node {
   createRenderEffect(() => {
     mount.render(select(props));
   });
-  onCleanup(() => mount.clear());
+  onCleanup(mount.clear);
   return container;
 }

@@ -45,6 +45,10 @@ export interface WatchOptions<R> {
   defer?: boolean;
 }
 
+function sameValue<R>(a: R, b: R): boolean {
+  return Object.is(a, b);
+}
+
 type WatchMethodDecorator<C extends object, R> = <
   Next extends R,
   Prev extends R | undefined,
@@ -62,7 +66,7 @@ export function watch<C extends object, R>(
     context.addInitializer(function (this: C) {
       const instance = this;
       const store = storeFor(instance);
-      const equals = options?.equals ?? ((a: R, b: R) => Object.is(a, b));
+      const equals = options?.equals ?? sameValue;
       const immediate = options?.immediate === true;
       const defer = options?.defer === true;
       let first = true;

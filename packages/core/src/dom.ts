@@ -1,27 +1,34 @@
 import type { Child, Children } from "./jsx.js";
 import { createRenderEffect, onCleanup } from "@ivlev-dev/silent-reactivity";
 import { extractMetadata, isMetadataElement, markMetadataFree } from "./metadata.js";
+import type { ServerHole } from "./server-backend.js";
 import {
   getServerBackend,
   isServerHole,
   serializeServerValue,
-  type ServerHole,
-} from "./server-backend.js";
+  setServerHoleValue,
+} from "./server-proxy.js";
 import {
   FRAGMENT,
   INSERT_END,
   INSERT_START,
   claimNext,
-  collectBetween,
   currentWindow,
-  findInsertWindow,
   isHydrating,
   isMarker,
+  countSignificantChildren,
   mergeTopLevelMetadata,
   mismatch,
   shapeMatches,
+  significantChildren,
+  significantChildrenFromEnd,
   withWindow,
-} from "./hydration.js";
+} from "./hydration-proxy.js";
+import {
+  insertHydrated,
+  settleNodes,
+  writeRegion,
+} from "./dom-hydration-state.js";
 
 export const NODE_DISPOSER = Symbol("silent.disposer");
 
@@ -38,10 +45,49 @@ export interface MountPoint {
   nodes(): readonly Node[];
 }
 
-const templateCache = new Map<string, HTMLTemplateElement>();
+interface PartPath {
+  readonly path: readonly number[];
+  readonly counts: readonly number[];
+}
+
+interface StripPlan {
+  readonly path: readonly number[];
+  readonly counts: readonly number[];
+  readonly names: readonly string[];
+}
+
+interface PartsPlan {
+  readonly holes: readonly PartPath[];
+  readonly attrs: readonly PartPath[];
+  readonly strips: readonly StripPlan[];
+}
+
+interface TemplateParse {
+  readonly content: DocumentFragment;
+  readonly rootCount: number;
+  readonly singleRoot: Node | null;
+  readonly metadata: boolean;
+  readonly simple: boolean;
+  parts: PartsPlan | null;
+}
+
+interface ParsedEvent {
+  readonly event: string;
+  readonly capture: boolean;
+  readonly key: string;
+}
+
+const parseCache = new Map<string, TemplateParse>();
 const METADATA_PATTERN = /<(?:title|meta|link)[\s/>]/i;
 const listenerRegistry = new WeakMap<Element, Map<string, ListenerHolder>>();
 const styleSnapshots = new WeakMap<Element, Set<string>>();
+const hyphenCache = new Map<string, string>();
+const eventNameCache = new Map<string, ParsedEvent>();
+
+const HOLE_MARKER = "silent-hole-";
+const ATTR_MARKER = "data-silent-a-";
+const TEXT_MARKER = "data-silent-text";
+const AUX_CACHE_LIMIT = 1024;
 
 let serverMode = false;
 
@@ -94,11 +140,20 @@ function isRenderableChild(value: unknown): boolean {
   return value !== null && value !== undefined && typeof value !== "boolean";
 }
 
-function stringOf(value: unknown): string {
-  if (value === null || value === undefined || typeof value === "boolean") {
+export function resolveValue(value: unknown): unknown {
+  let current = value;
+  while (typeof current === "function") {
+    current = (current as () => unknown)();
+  }
+  return current;
+}
+
+export function stringOf(value: unknown): string {
+  const current = resolveValue(value);
+  if (current === null || current === undefined || typeof current === "boolean") {
     return "";
   }
-  return String(value);
+  return String(current);
 }
 
 function valuesEqual(a: unknown, b: unknown): boolean {
@@ -123,41 +178,52 @@ function readDisposer(node: Node): (() => void) | undefined {
   return typeof dispose === "function" ? dispose : undefined;
 }
 
+function collectInto(nodes: Node[], value: unknown): void {
+  let current = value;
+  while (typeof current === "function") {
+    current = (current as () => unknown)();
+  }
+  if (current === null || current === undefined || typeof current === "boolean") {
+    return;
+  }
+  if (Array.isArray(current)) {
+    for (const item of current) {
+      collectInto(nodes, item);
+    }
+    return;
+  }
+  if (current instanceof Node) {
+    if (current instanceof DocumentFragment) {
+      let child = current.firstChild;
+      while (child !== null) {
+        const next = child.nextSibling;
+        collectInto(nodes, child);
+        child = next;
+      }
+      return;
+    }
+    nodes.push(current);
+    return;
+  }
+  nodes.push(document.createTextNode(stringOf(current)));
+}
+
 export function collectNodes(value: Children): Node[] {
+  if (value instanceof Node) {
+    if (!(value instanceof DocumentFragment)) {
+      return [value];
+    }
+    const nodes: Node[] = [];
+    let child = value.firstChild;
+    while (child !== null) {
+      const next = child.nextSibling;
+      collectInto(nodes, child);
+      child = next;
+    }
+    return nodes;
+  }
   const nodes: Node[] = [];
-  const visit = (input: unknown): void => {
-    let current = input;
-    while (typeof current === "function") {
-      current = (current as () => Child)();
-    }
-    if (!isRenderableChild(current)) {
-      return;
-    }
-    if (typeof current === "boolean") {
-      return;
-    }
-    if (Array.isArray(current)) {
-      for (const item of current) {
-        visit(item);
-      }
-      return;
-    }
-    if (current instanceof Node) {
-      if (current instanceof DocumentFragment) {
-        let child = current.firstChild;
-        while (child !== null) {
-          const next = child.nextSibling;
-          visit(child);
-          child = next;
-        }
-        return;
-      }
-      nodes.push(current);
-      return;
-    }
-    nodes.push(document.createTextNode(stringOf(current)));
-  };
-  visit(value);
+  collectInto(nodes, value);
   return nodes;
 }
 
@@ -198,20 +264,12 @@ export function createMountPoint(
   let textNode: Text | null = null;
   let nodes: Node[] = initial === undefined ? [] : [...initial];
 
-  const holder = (): Node => {
+  const place = (target: Node, node: Node): void => {
     if (marker === null) {
-      return parent;
-    }
-    const live = marker.parentNode;
-    return live ?? parent;
-  };
-
-  const place = (node: Node): void => {
-    if (marker === null) {
-      holder().appendChild(node);
+      target.appendChild(node);
       return;
     }
-    holder().insertBefore(node, marker);
+    target.insertBefore(node, marker);
   };
 
   const clear = (): void => {
@@ -243,7 +301,7 @@ export function createMountPoint(
           clear();
           textNode = document.createTextNode(next);
           nodes = [textNode];
-          place(textNode);
+          place(marker === null ? parent : marker.parentNode ?? parent, textNode);
           return;
         }
         if (textNode.data !== next) {
@@ -255,27 +313,47 @@ export function createMountPoint(
       if (!isRenderableChild(value)) {
         return;
       }
-      nodes = collectNodes(value as Child);
-      nodes = extractMetadata(nodes);
+      nodes = extractMetadata(collectNodes(value as Child));
+      const target = marker === null ? parent : marker.parentNode ?? parent;
       for (const node of nodes) {
-        place(node);
+        place(target, node);
       }
     },
   };
 }
 
-export function template(html: string): () => Node {
-  let cached = templateCache.get(html);
-  if (cached === undefined) {
-    const element = document.createElement("template");
-    element.innerHTML = html;
-    templateCache.set(html, element);
-    cached = element;
+function readTemplate(html: string): TemplateParse {
+  const cached = parseCache.get(html);
+  if (cached !== undefined) {
+    return cached;
   }
-  const content = cached.content;
-  const roots = Array.from(content.childNodes);
-  const singleRoot: Node | null = roots.length === 1 ? roots[0] ?? null : null;
+  const element = document.createElement("template");
+  element.innerHTML = html;
+  const content = element.content;
+  const rootCount = content.childNodes.length;
   const metadata = METADATA_PATTERN.test(html);
+  const parsed: TemplateParse = {
+    content,
+    rootCount,
+    singleRoot: rootCount === 1 ? content.firstChild : null,
+    metadata,
+    simple: !metadata && !html.includes("silent-insert"),
+    parts: null,
+  };
+  parseCache.set(html, parsed);
+  return parsed;
+}
+
+export function template(html: string): () => Node {
+  let factory: (() => Node) | null = null;
+  return () => {
+    factory ??= createTemplateFactory(html);
+    return factory();
+  };
+}
+
+function createTemplateFactory(html: string): () => Node {
+  const { content, rootCount, singleRoot, metadata, simple } = readTemplate(html);
   const mark = (node: Node): Node => {
     if (!metadata) {
       if (node instanceof DocumentFragment) {
@@ -291,18 +369,24 @@ export function template(html: string): () => Node {
     if (singleRoot !== null) {
       return mark(singleRoot.cloneNode(true));
     }
-    if (roots.length === 0) {
+    if (rootCount === 0) {
       return mark(content.cloneNode(false));
     }
-    const fragment = document.createDocumentFragment();
-    for (const root of roots) {
-      fragment.appendChild(root.cloneNode(true));
-    }
-    return mark(fragment);
+    return mark(content.cloneNode(true));
   };
   return () => {
     if (!isHydrating()) {
       return create();
+    }
+    if (!metadata) {
+      if (rootCount !== 1 || singleRoot === null) {
+        return mismatch("многослойный шаблон не поддерживается при гидрации");
+      }
+      const node = claimNext();
+      if (node === null || !shapeMatches(singleRoot, node, true, simple)) {
+        return mismatch("шаблон не совпал с серверной разметкой");
+      }
+      return node;
     }
     const fresh = create();
     if (fresh instanceof DocumentFragment) {
@@ -326,113 +410,300 @@ export interface TemplateClone {
   readonly attrs: readonly Element[];
 }
 
-function collectPartsMany(nodes: readonly Node[]): { holes: Comment[]; attrs: Element[] } {
-  const holesByIndex = new Map<number, Comment>();
-  const attrsByIndex = new Map<number, Element>();
+function markerIndex(value: string, prefix: string): number | null {
+  if (!value.startsWith(prefix)) {
+    return null;
+  }
+  const digits = value.slice(prefix.length);
+  if (digits.length === 0) {
+    return null;
+  }
+  let index = 0;
+  for (let position = 0; position < digits.length; position += 1) {
+    const digit = digits.charCodeAt(position) - 48;
+    if (digit < 0 || digit > 9) {
+      return null;
+    }
+    index = index * 10 + digit;
+  }
+  return index;
+}
 
-  const scanAttributes = (element: Element): void => {
-    for (const attribute of Array.from(element.attributes)) {
-      if (attribute.name === "data-silent-text") {
-        if (!isServerMode()) {
-          element.removeAttribute(attribute.name);
-        }
-        continue;
-      }
-      const match = /^data-silent-a-(\d+)$/.exec(attribute.name);
-      if (match === null) {
-        continue;
-      }
-      const index = Number(match[1]);
-      if (Number.isInteger(index)) {
-        attrsByIndex.set(index, element);
-      }
-      if (!isServerMode()) {
-        element.removeAttribute(attribute.name);
+function forEachPartChild(node: Node, visit: (child: Node, index: number) => void): void {
+  let depth = 0;
+  let child = node.firstChild;
+  let index = 0;
+  while (child !== null) {
+    const next = child.nextSibling;
+    let marker = false;
+    if (child.nodeType === Node.COMMENT_NODE) {
+      const data = (child as Comment).data;
+      if (data === INSERT_START) {
+        depth += 1;
+        marker = true;
+      } else if (data === INSERT_END) {
+        depth = depth > 0 ? depth - 1 : 0;
+        marker = true;
       }
     }
-  };
+    if (!marker && depth === 0) {
+      visit(child, index);
+      index += 1;
+    }
+    child = next;
+  }
+}
+
+function denseParts<T>(sparse: readonly (T | undefined)[]): T[] {
+  const result: T[] = [];
+  for (const item of sparse) {
+    if (item === undefined) {
+      break;
+    }
+    result.push(item);
+  }
+  return result;
+}
+
+function collectPartsMany(nodes: readonly Node[]): { holes: Comment[]; attrs: Element[] } {
+  const holesByIndex: (Comment | undefined)[] = [];
+  const attrsByIndex: (Element | undefined)[] = [];
+  const strip = !isServerMode();
 
   const visit = (current: Node): void => {
-    if (current.nodeType === Node.COMMENT_NODE) {
-      const match = /^silent-hole-(\d+)$/.exec((current as Comment).data);
-      if (match !== null) {
-        const index = Number(match[1]);
-        if (Number.isInteger(index)) {
-          holesByIndex.set(index, current as Comment);
-        }
+    const nodeType = current.nodeType;
+    if (nodeType === Node.COMMENT_NODE) {
+      const index = markerIndex((current as Comment).data, HOLE_MARKER);
+      if (index !== null) {
+        holesByIndex[index] = current as Comment;
       }
-    } else if (current.nodeType === Node.ELEMENT_NODE) {
-      scanAttributes(current as Element);
-    }
-    let depth = 0;
-    let child = current.firstChild;
-    while (child !== null) {
-      if (child.nodeType === Node.COMMENT_NODE) {
-        const data = (child as Comment).data;
-        if (data === INSERT_START) {
-          depth += 1;
-          child = child.nextSibling;
+    } else if (nodeType === Node.ELEMENT_NODE) {
+      const element = current as Element;
+      const attributes = element.attributes;
+      for (let position = attributes.length - 1; position >= 0; position -= 1) {
+        const attribute = attributes.item(position);
+        if (attribute === null) {
           continue;
         }
-        if (data === INSERT_END) {
-          depth = Math.max(0, depth - 1);
-          child = child.nextSibling;
+        const name = attribute.name;
+        if (name === TEXT_MARKER) {
+          if (strip) {
+            element.removeAttribute(name);
+          }
           continue;
         }
+        const index = markerIndex(name, ATTR_MARKER);
+        if (index === null) {
+          continue;
+        }
+        attrsByIndex[index] = element;
+        if (strip) {
+          element.removeAttribute(name);
+        }
       }
-      if (depth === 0) {
-        visit(child);
-      }
-      child = child.nextSibling;
     }
+    forEachPartChild(current, visit);
   };
 
   for (const node of nodes) {
     visit(node);
   }
 
-  const holes: Comment[] = [];
-  for (let index = 0; index < holesByIndex.size; index += 1) {
-    const hole = holesByIndex.get(index);
-    if (hole === undefined) {
-      break;
+  return { holes: denseParts(holesByIndex), attrs: denseParts(attrsByIndex) };
+}
+
+function collectPartsPlan(content: DocumentFragment): PartsPlan {
+  const holesByIndex: (number[] | undefined)[] = [];
+  const attrsByIndex: (number[] | undefined)[] = [];
+  const strips: { readonly path: readonly number[]; readonly names: readonly string[] }[] = [];
+  const path: number[] = [];
+
+  const visit = (node: Node): void => {
+    const nodeType = node.nodeType;
+    if (nodeType === Node.COMMENT_NODE) {
+      const index = markerIndex((node as Comment).data, HOLE_MARKER);
+      if (index !== null) {
+        holesByIndex[index] = path.slice();
+      }
+    } else if (nodeType === Node.ELEMENT_NODE) {
+      const element = node as Element;
+      const names: string[] = [];
+      const attributes = element.attributes;
+      for (let position = attributes.length - 1; position >= 0; position -= 1) {
+        const attribute = attributes.item(position);
+        if (attribute === null) {
+          continue;
+        }
+        const name = attribute.name;
+        if (name === TEXT_MARKER) {
+          names.push(name);
+          continue;
+        }
+        const index = markerIndex(name, ATTR_MARKER);
+        if (index !== null) {
+          attrsByIndex[index] = path.slice();
+          names.push(name);
+        }
+      }
+      if (names.length > 0) {
+        strips.push({ path: path.slice(), names });
+      }
     }
-    holes.push(hole);
+    forEachPartChild(node, visitChild);
+  };
+
+  const visitChild = (child: Node, index: number): void => {
+    path.push(index);
+    visit(child);
+    path.pop();
+  };
+
+  if (content.childNodes.length === 1) {
+    const root = content.firstChild;
+    if (root !== null) {
+      visitChild(root, 0);
+    }
+  } else if (content.childNodes.length > 1) {
+    forEachPartChild(content, visitChild);
+  }
+
+  return {
+    holes: denseParts(holesByIndex).map((entry) => measurePath(content, entry)),
+    attrs: denseParts(attrsByIndex).map((entry) => measurePath(content, entry)),
+    strips: strips.map((entry) => ({
+      ...measurePath(content, entry.path),
+      names: entry.names,
+    })),
+  };
+}
+
+function measurePath(root: Node, path: readonly number[]): PartPath {
+  const counts: number[] = [];
+  let node: Node | null;
+  if (root instanceof DocumentFragment) {
+    counts.push(countSignificantChildren(root));
+    const first = path[0];
+    node = first === undefined ? null : significantChildren(root, first);
+  } else {
+    counts.push(0);
+    node = path[0] === 0 ? root : null;
+  }
+  for (let index = 1; index < path.length; index += 1) {
+    if (node === null) {
+      counts.push(0);
+      continue;
+    }
+    counts.push(countSignificantChildren(node));
+    const childIndex = path[index];
+    node = childIndex === undefined ? null : significantChildren(node, childIndex);
+  }
+  return { path, counts };
+}
+
+function pickSignificantChild(
+  parent: Node,
+  index: number,
+  size: number | undefined,
+): Node | null {
+  if (size === undefined || size <= 0) {
+    return significantChildren(parent, index);
+  }
+  const last = size - 1;
+  if (index >= last - index) {
+    return significantChildrenFromEnd(parent, last - index);
+  }
+  return significantChildren(parent, index);
+}
+
+function resolvePath(
+  root: Node,
+  entry: PartPath,
+  significant: boolean,
+): Node | null {
+  const path = entry.path;
+  const first = path[0];
+  if (first === undefined) {
+    return null;
+  }
+  let node: Node | null;
+  if (root instanceof DocumentFragment) {
+    node = significant
+      ? pickSignificantChild(root, first, entry.counts[0])
+      : root.childNodes[first] ?? null;
+  } else {
+    node = first === 0 ? root : null;
+  }
+  for (let index = 1; node !== null && index < path.length; index += 1) {
+    const childIndex = path[index];
+    if (childIndex === undefined) {
+      return null;
+    }
+    node = significant
+      ? pickSignificantChild(node, childIndex, entry.counts[index])
+      : node.childNodes[childIndex] ?? null;
+  }
+  return node;
+}
+
+function applyPartsPlan(
+  root: Node,
+  plan: PartsPlan,
+  strip: boolean,
+  significant: boolean,
+): { holes: Comment[]; attrs: Element[] } {
+  const holes: Comment[] = [];
+  for (const entry of plan.holes) {
+    const node = resolvePath(root, entry, significant);
+    if (node !== null) {
+      holes.push(node as Comment);
+    }
+  }
+  if (strip) {
+    for (const entry of plan.strips) {
+      const node = resolvePath(root, entry, significant);
+      if (node === null) {
+        continue;
+      }
+      const element = node as Element;
+      for (const name of entry.names) {
+        element.removeAttribute(name);
+      }
+    }
   }
   const attrs: Element[] = [];
-  for (let index = 0; index < attrsByIndex.size; index += 1) {
-    const element = attrsByIndex.get(index);
-    if (element === undefined) {
-      break;
+  for (const entry of plan.attrs) {
+    const node = resolvePath(root, entry, significant);
+    if (node !== null) {
+      attrs.push(node as Element);
     }
-    attrs.push(element);
   }
   return { holes, attrs };
 }
 
-function collectParts(node: Node): { holes: Comment[]; attrs: Element[] } {
-  return collectPartsMany([node]);
-}
-
 export function templateHoles(html: string): () => TemplateClone {
-  if (isServerMode()) {
-    const backend = getServerBackend();
-    if (backend !== null) {
-      const template = backend.createTemplate(html);
-      if (template !== null) {
-        return () => template as unknown as TemplateClone;
+  let clientFactory: (() => TemplateClone) | null = null;
+  return () => {
+    if (isServerMode()) {
+      const backend = getServerBackend();
+      if (backend !== null) {
+        const template = backend.createTemplate(html);
+        if (template !== null) {
+          markMetadataFree(template.node as Node);
+          return template as unknown as TemplateClone;
+        }
       }
     }
-  }
-  let cached = templateCache.get(html);
-  if (cached === undefined) {
-    const element = document.createElement("template");
-    element.innerHTML = html;
-    templateCache.set(html, element);
-    cached = element;
-  }
-  const template = cached;
-  const metadata = METADATA_PATTERN.test(html);
+    clientFactory ??= createClientTemplateHoles(html);
+    return clientFactory();
+  };
+}
+
+function createClientTemplateHoles(html: string): () => TemplateClone {
+  const parsed = readTemplate(html);
+  const content = parsed.content;
+  const metadata = parsed.metadata;
+  const simple = parsed.simple;
+  const rootCount = parsed.rootCount;
   const mark = (node: Node): Node => {
     if (!metadata) {
       if (node instanceof DocumentFragment) {
@@ -445,19 +716,56 @@ export function templateHoles(html: string): () => TemplateClone {
     return node;
   };
   const cloneNode = (): Node => {
-    const content = template.content.cloneNode(true) as DocumentFragment;
-    const rootNodes = Array.from(content.childNodes);
-    return rootNodes.length === 1 && rootNodes[0] !== undefined
-      ? rootNodes[0]
-      : content;
+    const clone = content.cloneNode(true) as DocumentFragment;
+    return clone.childNodes.length === 1 ? clone.firstChild ?? clone : clone;
+  };
+  const plan = (): PartsPlan => {
+    if (parsed.parts === null) {
+      parsed.parts = collectPartsPlan(content);
+    }
+    return parsed.parts;
   };
   const create = (): TemplateClone => {
     const node = mark(cloneNode());
-    return { node, ...collectParts(node) };
+    return { node, ...applyPartsPlan(node, plan(), !isServerMode(), true) };
   };
   return () => {
     if (!isHydrating()) {
       return create();
+    }
+    const strip = !isServerMode();
+    if (!metadata) {
+      if (rootCount === 0) {
+        const empty = document.createDocumentFragment();
+        markMetadataFree(empty);
+        return { node: empty, holes: [], attrs: [] };
+      }
+      if (rootCount === 1) {
+        const root = content.firstChild;
+        if (root === null) {
+          return mismatch("шаблон не совпал с серверной разметкой");
+        }
+        const node = claimNext();
+        if (node === null || !shapeMatches(root, node, true, simple)) {
+          return mismatch("шаблон не совпал с серверной разметкой");
+        }
+        markMetadataFree(node);
+        return { node, ...applyPartsPlan(node, plan(), strip, true) };
+      }
+      const container = document.createDocumentFragment();
+      let current = content.firstChild;
+      while (current !== null) {
+        const next = current.nextSibling;
+        const node = claimNext();
+        if (node === null || !shapeMatches(current, node, true, simple)) {
+          return mismatch("шаблон не совпал с серверной разметкой");
+        }
+        markMetadataFree(node);
+        container.appendChild(node);
+        current = next;
+      }
+      markMetadataFree(container);
+      return { node: container, ...applyPartsPlan(container, plan(), strip, true) };
     }
     const fresh = cloneNode();
     const roots =
@@ -473,18 +781,13 @@ export function templateHoles(html: string): () => TemplateClone {
         continue;
       }
       const node = claimNext();
-      if (node === null || !shapeMatches(root, node, true)) {
+      if (node === null || !shapeMatches(root, node, true, simple)) {
         return mismatch("шаблон не совпал с серверной разметкой");
       }
       mergeTopLevelMetadata(root, node);
       claimed.push(node);
     }
     const parts = collectPartsMany(claimed);
-    if (!metadata) {
-      for (const node of claimed) {
-        markMetadataFree(node);
-      }
-    }
     if (claimed.length === 1 && !(fresh instanceof DocumentFragment)) {
       return { node: claimed[0]!, ...parts };
     }
@@ -492,56 +795,10 @@ export function templateHoles(html: string): () => TemplateClone {
     for (const node of claimed) {
       container.appendChild(node);
     }
-    if (!metadata) {
-      markMetadataFree(container);
-    }
     return { node: container, ...parts };
   };
 }
 
-export function settleNodes(end: Node | null, value: unknown): void {
-  if (end === null || !(value instanceof Node)) {
-    return;
-  }
-  const parent = end.parentNode;
-  if (parent === null) {
-    return;
-  }
-  for (const node of collectNodes(value as Children)) {
-    if (node.parentNode !== parent) {
-      parent.insertBefore(node, end);
-    }
-  }
-}
-
-export function writeRegion(start: Node, end: Node, value: unknown): void {
-  const parent = end.parentNode;
-  if (parent === null) {
-    return;
-  }
-  const existing = collectBetween(start, end);
-  if (
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "bigint"
-  ) {
-    const next = stringOf(value);
-    if (existing.length === 1 && existing[0] instanceof Text) {
-      const text = existing[0];
-      if (text.data !== next) {
-        text.data = next;
-      }
-      return;
-    }
-  }
-  for (const node of existing) {
-    disposeNode(node);
-    parent.removeChild(node);
-  }
-  for (const node of extractMetadata(collectNodes(value as Children))) {
-    parent.insertBefore(node, end);
-  }
-}
 
 function insertServer(
   parent: Node,
@@ -563,37 +820,6 @@ function insertServer(
   });
 }
 
-function insertHydrated(
-  parent: Node,
-  accessor: () => unknown,
-  marker: Node | null,
-): void {
-  const window = findInsertWindow(marker, parent);
-  let initialized = false;
-  createRenderEffect(() => {
-    if (!initialized) {
-      initialized = true;
-      const value = withWindow(window, () => accessor());
-      settleNodes(window.end, value);
-      const nodes = collectBetween(window.start, window.end);
-      if (
-        (typeof value === "string" ||
-          typeof value === "number" ||
-          typeof value === "bigint") &&
-        nodes.length === 1 &&
-        nodes[0] instanceof Text
-      ) {
-        const text = nodes[0];
-        const next = stringOf(value);
-        if (text.data !== next) {
-          text.data = next;
-        }
-      }
-      return;
-    }
-    writeRegion(window.start, window.end, accessor());
-  });
-}
 
 export function insert(
   parent: Node,
@@ -601,9 +827,12 @@ export function insert(
   marker?: Node | ServerHole,
 ): void {
   if (isServerHole(marker)) {
-    marker.set(
-      `<!--${INSERT_START}-->${serializeServerValue(accessor())}<!--${INSERT_END}-->`,
-    );
+    const value = accessor();
+    if (!setServerHoleValue(marker, value)) {
+      marker.set(
+        `<!--${INSERT_START}-->${serializeServerValue(value)}<!--${INSERT_END}-->`,
+      );
+    }
     return;
   }
   if (isServerMode()) {
@@ -746,7 +975,8 @@ export function spread(el: Element, accessor: () => unknown): void {
         applyAttr(el, key, undefined, svg);
       }
     }
-    for (const [key, next] of Object.entries(props)) {
+    for (const key of Object.keys(props)) {
+      const next = props[key];
       if (prev !== null && valuesEqual(prev[key], next)) {
         continue;
       }
@@ -829,14 +1059,22 @@ function applyStyle(el: Element, value: unknown, snapshot: Set<string>): void {
       style.cssText = value;
     }
     const keep = new Set<string>();
-    for (const entry of value.split(";")) {
-      const separator = entry.indexOf(":");
-      const key = separator === -1 ? entry.trim() : entry.slice(0, separator).trim();
+    let cursor = 0;
+    while (cursor <= value.length) {
+      const limit = value.indexOf(";", cursor);
+      const entryEnd = limit === -1 ? value.length : limit;
+      const separator = value.indexOf(":", cursor);
+      const keyEnd = separator !== -1 && separator < entryEnd ? separator : entryEnd;
+      const key = value.slice(cursor, keyEnd).trim();
       if (key !== "") {
         keep.add(key);
       }
+      if (limit === -1) {
+        break;
+      }
+      cursor = limit + 1;
     }
-    for (const key of Array.from(snapshot)) {
+    for (const key of snapshot) {
       if (!keep.has(key)) {
         style.removeProperty(key);
         snapshot.delete(key);
@@ -852,7 +1090,8 @@ function applyStyle(el: Element, value: unknown, snapshot: Set<string>): void {
   }
   const props = value as Record<string, string | number | null | undefined>;
   const keys = new Set<string>();
-  for (const [raw, next] of Object.entries(props)) {
+  for (const raw of Object.keys(props)) {
+    const next = props[raw];
     const key = hyphen(raw);
     const target = next === null || next === undefined ? "" : String(next);
     keys.add(key);
@@ -868,7 +1107,7 @@ function applyStyle(el: Element, value: unknown, snapshot: Set<string>): void {
     }
     snapshot.add(key);
   }
-  for (const key of Array.from(snapshot)) {
+  for (const key of snapshot) {
     if (!keys.has(key)) {
       style.removeProperty(key);
       snapshot.delete(key);
@@ -877,16 +1116,25 @@ function applyStyle(el: Element, value: unknown, snapshot: Set<string>): void {
 }
 
 export function hyphen(raw: string): string {
-  if (raw.includes("-")) {
-    return raw.toLowerCase();
+  const cached = hyphenCache.get(raw);
+  if (cached !== undefined) {
+    return cached;
   }
-  let result = "";
-  for (const char of raw) {
-    if (char >= "A" && char <= "Z") {
-      result += "-" + char.toLowerCase();
-      continue;
+  let result: string;
+  if (raw.includes("-")) {
+    result = raw.toLowerCase();
+  } else {
+    result = "";
+    for (const char of raw) {
+      if (char >= "A" && char <= "Z") {
+        result += "-" + char.toLowerCase();
+        continue;
+      }
+      result += char;
     }
-    result += char;
+  }
+  if (hyphenCache.size < AUX_CACHE_LIMIT) {
+    hyphenCache.set(raw, result);
   }
   return result;
 }
@@ -905,25 +1153,40 @@ function isEventName(name: string): boolean {
 }
 
 export function parseEventName(name: string): { event: string; capture: boolean } {
+  const parsed = resolveEventName(name);
+  return { event: parsed.event, capture: parsed.capture };
+}
+
+function resolveEventName(name: string): ParsedEvent {
+  const cached = eventNameCache.get(name);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const parsed = buildEventName(name);
+  if (eventNameCache.size < AUX_CACHE_LIMIT) {
+    eventNameCache.set(name, parsed);
+  }
+  return parsed;
+}
+
+function buildEventName(name: string): ParsedEvent {
   if (name.startsWith("on:")) {
-    return { event: name.slice(3), capture: false };
+    const event = name.slice(3);
+    return { event, capture: false, key: "e:" + event };
   }
   let event = name.slice(2);
-  if (event.endsWith("Capture")) {
+  const capture = event.endsWith("Capture");
+  if (capture) {
     event = event.slice(0, -7);
-    const first = event.charAt(0);
-    event = first === "" ? event : first.toLowerCase() + event.slice(1);
-    return { event, capture: true };
   }
   const first = event.charAt(0);
   event = first === "" ? event : first.toLowerCase() + event.slice(1);
-  return { event, capture: false };
+  return { event, capture, key: (capture ? "c:" : "e:") + event };
 }
 
 export function addListener(el: Element, name: string, handler: EventListener | null): void {
-  const { event, capture } = parseEventName(name);
+  const { event, capture, key } = resolveEventName(name);
   const holders = getHolders(el);
-  const key = (capture ? "c:" : "e:") + event;
   const registered = holders.get(key);
   if (registered !== undefined) {
     registered.current = typeof handler === "function" ? handler : null;
@@ -945,12 +1208,11 @@ export function addListener(el: Element, name: string, handler: EventListener | 
 }
 
 export function removeListener(el: Element, name: string): void {
-  const { event, capture } = parseEventName(name);
+  const { event, capture, key } = resolveEventName(name);
   const holders = listenerRegistry.get(el);
   if (holders === undefined) {
     return;
   }
-  const key = (capture ? "c:" : "e:") + event;
   const registered = holders.get(key);
   if (registered === undefined) {
     return;
@@ -1055,7 +1317,8 @@ export function applyProps(el: Element, props: Record<string, unknown> | undefin
   }
   const svg = isSvgElement(el);
   const children = props["children"];
-  for (const [key, value] of Object.entries(props)) {
+  for (const key of Object.keys(props)) {
+    const value = props[key];
     if (key === "children" || key === "key") {
       continue;
     }

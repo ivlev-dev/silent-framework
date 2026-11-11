@@ -10,7 +10,7 @@ import {
 import { For, Show } from "../src/control-flow.js";
 import { Suspense, lazy } from "../src/suspense.js";
 import { attr, insert, on, setServerMode, templateHoles } from "../src/dom.js";
-import { hydrate } from "../src/mount.js";
+import { hydrate } from "../src/hydrate.js";
 import { HydrationMismatchError } from "../src/hydration.js";
 
 const VIEW = Symbol.for("silent.view");

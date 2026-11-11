@@ -1,3 +1,6 @@
+import { setServerHoleValue } from "./server-hole.js";
+import { registerServerRuntime } from "./server-state.js";
+
 export interface ServerHole {
   readonly parentNode: unknown;
   set(value: string): void;
@@ -28,11 +31,18 @@ export function isServerHole(value: unknown): value is ServerHole {
   return (
     typeof value === "object" &&
     value !== null &&
-    !(value instanceof Node) &&
-    typeof (value as ServerHole).set === "function"
+    typeof (value as ServerHole).set === "function" &&
+    !(value instanceof Node)
   );
 }
 
 export function serializeServerValue(value: unknown): string {
   return backend === null ? "" : backend.serialize(value);
 }
+
+registerServerRuntime({
+  getServerBackend,
+  isServerHole,
+  serializeServerValue,
+  setServerHoleValue,
+});
