@@ -26,7 +26,81 @@ import {
 import { extractMetadata } from "./metadata.js";
 import type { Children } from "./jsx.js";
 
-function tryAdoptPartsPlan(
+
+interface TrieNode {
+  children: Map<number, TrieNode> | null;
+  hole: number;
+  attrs: number[] | null;
+  maxIndex: number;
+}
+
+const trieCache = new WeakMap<TemplatePlan, TrieNode>();
+
+function createTrieNode(): TrieNode {
+  return { children: null, hole: -1, attrs: null, maxIndex: -1 };
+}
+
+function trieChild(parent: TrieNode, index: number): TrieNode {
+  let children = parent.children;
+  if (children === null) {
+    children = new Map<number, TrieNode>();
+    parent.children = children;
+  }
+  let child = children.get(index);
+  if (child === undefined) {
+    child = createTrieNode();
+    children.set(index, child);
+  }
+  if (index > parent.maxIndex) {
+    parent.maxIndex = index;
+  }
+  return child;
+}
+
+function insertTriePath(root: TrieNode, path: readonly number[]): TrieNode {
+  let node = root;
+  for (const index of path) {
+    node = trieChild(node, index);
+  }
+  return node;
+}
+
+function buildTrie(plan: TemplatePlan): TrieNode {
+  const root = createTrieNode();
+  for (let index = 0; index < plan.holes.length; index += 1) {
+    const entry = plan.holes[index];
+    if (entry === undefined) {
+      continue;
+    }
+    insertTriePath(root, entry.path).hole = index;
+  }
+  for (let index = 0; index < plan.attrs.length; index += 1) {
+    const entry = plan.attrs[index];
+    if (entry === undefined) {
+      continue;
+    }
+    const node = insertTriePath(root, entry.path);
+    const attrs = node.attrs;
+    if (attrs === null) {
+      node.attrs = [index];
+    } else {
+      attrs.push(index);
+    }
+  }
+  return root;
+}
+
+function trieFor(plan: TemplatePlan): TrieNode {
+  const cached = trieCache.get(plan);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const trie = buildTrie(plan);
+  trieCache.set(plan, trie);
+  return trie;
+}
+
+function tryAdoptPartsPlanByPath(
   root: Node,
   plan: TemplatePlan,
 ): { holes: Comment[]; attrs: Element[] } | null {
@@ -37,14 +111,22 @@ function tryAdoptPartsPlan(
       return null;
     }
     const node = resolvePath(root, entry, true);
-    if (node instanceof Comment && markerIndex(node.data, HOLE_MARKER) === index) {
-      holes.push(node);
+    if (
+      node !== null &&
+      node.nodeType === Node.COMMENT_NODE &&
+      markerIndex((node as Comment).data, HOLE_MARKER) === index
+    ) {
+      holes.push(node as Comment);
       continue;
     }
-    if (node instanceof Text) {
+    if (node !== null && node.nodeType === Node.TEXT_NODE) {
       const next = node.nextSibling;
-      if (next instanceof Comment && markerIndex(next.data, HOLE_MARKER) === index) {
-        holes.push(next);
+      if (
+        next !== null &&
+        next.nodeType === Node.COMMENT_NODE &&
+        markerIndex((next as Comment).data, HOLE_MARKER) === index
+      ) {
+        holes.push(next as Comment);
         continue;
       }
     }
@@ -75,6 +157,159 @@ function tryAdoptPartsPlan(
   }
   return { holes, attrs };
 }
+
+function tryAdoptPartsPlanByTrie(
+  root: Node,
+  plan: TemplatePlan,
+): { holes: Comment[]; attrs: Element[] } | null {
+  const trie = trieFor(plan);
+  const holes: (Comment | undefined)[] = [];
+  const attrs: (Element | undefined)[] = [];
+
+  function adoptNode(node: Node, nodeTrie: TrieNode): number {
+    if (nodeTrie.hole >= 0) {
+      const index = nodeTrie.hole;
+      if (
+        node.nodeType === Node.COMMENT_NODE &&
+        markerIndex((node as Comment).data, HOLE_MARKER) === index
+      ) {
+        holes[index] = node as Comment;
+        return 1;
+      }
+      if (node.nodeType === Node.TEXT_NODE) {
+        const next = node.nextSibling;
+        if (
+          next !== null &&
+          next.nodeType === Node.COMMENT_NODE &&
+          markerIndex((next as Comment).data, HOLE_MARKER) === index
+        ) {
+          holes[index] = next as Comment;
+          return 2;
+        }
+      }
+      return -1;
+    }
+    if (nodeTrie.attrs !== null) {
+      if (node.nodeType !== Node.ELEMENT_NODE) {
+        return -1;
+      }
+      const element = node as Element;
+      for (const index of nodeTrie.attrs) {
+        if (!element.hasAttribute(ATTR_MARKER + index)) {
+          return -1;
+        }
+      }
+      for (const index of nodeTrie.attrs) {
+        attrs[index] = element;
+      }
+    }
+    if (nodeTrie.children !== null && !walk(node, nodeTrie)) {
+      return -1;
+    }
+    return 1;
+  }
+
+  function walk(parent: Node, nodeTrie: TrieNode): boolean {
+    const children = nodeTrie.children;
+    if (children === null) {
+      return true;
+    }
+    let child = parent.firstChild;
+    let depth = 0;
+    let templateIndex = 0;
+    let skipNext = false;
+    while (child !== null) {
+      const next = child.nextSibling;
+      let skip = depth > 0;
+      if (child.nodeType === Node.COMMENT_NODE) {
+        const data = (child as Comment).data;
+        if (data === INSERT_START) {
+          depth += 1;
+          skip = true;
+        } else if (data === INSERT_END) {
+          depth = depth > 0 ? depth - 1 : 0;
+          skip = true;
+        }
+      }
+      if (!skip) {
+        if (skipNext) {
+          skipNext = false;
+        } else {
+          const childTrie = children.get(templateIndex);
+          if (childTrie !== undefined) {
+            const consumed = adoptNode(child, childTrie);
+            if (consumed < 0) {
+              return false;
+            }
+            if (consumed === 2) {
+              skipNext = true;
+            }
+          }
+          templateIndex += 1;
+        }
+      }
+      child = next;
+    }
+    return templateIndex > nodeTrie.maxIndex;
+  }
+
+  if (plan.roots === 0) {
+    return plan.holes.length === 0 && plan.attrs.length === 0
+      ? { holes: [], attrs: [] }
+      : null;
+  }
+  if (plan.roots === 1) {
+    const first = trie.children?.get(0);
+    if (first === undefined) {
+      if (plan.holes.length === 0 && plan.attrs.length === 0) {
+        return { holes: [], attrs: [] };
+      }
+      return null;
+    }
+    if (adoptNode(root, first) < 0) {
+      return null;
+    }
+  } else if (!walk(root, trie)) {
+    return null;
+  }
+
+  const adoptedHoles: Comment[] = [];
+  for (let index = 0; index < plan.holes.length; index += 1) {
+    const hole = holes[index];
+    if (hole === undefined) {
+      return null;
+    }
+    adoptedHoles.push(hole);
+  }
+  const adoptedAttrs: Element[] = [];
+  for (let index = 0; index < plan.attrs.length; index += 1) {
+    const element = attrs[index];
+    if (element === undefined) {
+      return null;
+    }
+    adoptedAttrs.push(element);
+  }
+  for (let index = 0; index < adoptedAttrs.length; index += 1) {
+    const element = adoptedAttrs[index]!;
+    element.removeAttribute(ATTR_MARKER + index);
+    if (element.hasAttribute(TEXT_MARKER)) {
+      element.removeAttribute(TEXT_MARKER);
+    }
+  }
+  return { holes: adoptedHoles, attrs: adoptedAttrs };
+}
+
+function tryAdoptPartsPlan(
+  root: Node,
+  plan: TemplatePlan,
+): { holes: Comment[]; attrs: Element[] } | null {
+  const byPath = tryAdoptPartsPlanByPath(root, plan);
+  if (byPath !== null) {
+    return byPath;
+  }
+  return tryAdoptPartsPlanByTrie(root, plan);
+}
+
 
 export function adoptPartsPlan(
   root: Node,

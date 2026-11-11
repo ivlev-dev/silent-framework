@@ -748,7 +748,7 @@ describe("гидрация с сохранением узлов", () => {
     handle.dispose();
   });
 
-  it("откатывается на обход при разъехавшихся путях bare-дыр", async () => {
+  it("адоптирует разъехавшиеся пути bare-дыр по плану", async () => {
     const left = createSignal("x");
     const right = createSignal("y");
     class PairVM {}
@@ -776,6 +776,7 @@ describe("гидрация с сохранением узлов", () => {
     expect(html).toContain("x<!--silent-hole-0-->y<!--silent-hole-1--><i>a</i>");
     const target = host(html);
     const serverPair = target.querySelector("div.pair");
+    target.querySelector("div.pair > i")?.appendChild(document.createComment("silent-hole-2"));
     const serverTexts = Array.from(serverPair?.childNodes ?? []).filter(
       (node) => node.nodeType === 3,
     );
@@ -799,7 +800,7 @@ describe("гидрация с сохранением узлов", () => {
     handle.dispose();
   });
 
-  it("откатывается на обход при attr после bare-дыры", async () => {
+  it("адоптирует attr после bare-дыры по плану", async () => {
     const value = createSignal("v");
     class ShiftVM {}
     function ShiftView(this: { vm: ShiftVM }): Node {
@@ -840,6 +841,68 @@ describe("гидрация с сохранением узлов", () => {
     flushSync();
     expect(target.textContent).toBe("nextx");
     expect(serverSpan?.getAttribute("title")).toBe("next");
+    handle.dispose();
+  });
+
+  it("адоптирует несколько bare-дыр и attr в одном родителе", async () => {
+    const first = createSignal("a");
+    const second = createSignal("b");
+    class MixVM {}
+    function MixView(this: { vm: MixVM }): Node {
+      void this.vm;
+      const template = templateHoles(
+        '<div class="mix"><!--silent-hole-0--><!--silent-hole-1--><span data-silent-a-0="" class="s">tail</span></div>',
+        {
+          roots: 1,
+          holes: [
+            { path: [0, 0], counts: [1, 3] },
+            { path: [0, 1], counts: [1, 3] },
+          ],
+          attrs: [{ path: [0, 2], counts: [1, 3] }],
+          strips: [{ path: [0, 2], counts: [1, 3], names: ["data-silent-a-0"] }],
+        },
+      )();
+      insert(holeParent(template, 0), () => first[0](), template.holes[0]);
+      insert(holeParent(template, 1), () => second[0](), template.holes[1]);
+      attr(template.attrs[0]!, "title", () => first[0]() + second[0]());
+      return template.node;
+    }
+    attachMeta(MixView, MixVM);
+
+    const html = await renderServer(MixView as unknown as AnyComponent);
+    expect(html).toContain('data-silent-a-0=""');
+    expect(html).toContain("a<!--silent-hole-0-->b<!--silent-hole-1-->");
+    const target = host(html);
+    const serverSpan = target.querySelector("div.mix > span.s");
+    const serverTexts = Array.from(target.querySelector("div.mix")?.childNodes ?? []).filter(
+      (node) => node.nodeType === 3,
+    );
+    const mismatches: HydrationMismatchError[] = [];
+    const handle = await hydrate(target, MixView as unknown as AnyComponent, {
+      onMismatch: (error) => mismatches.push(error),
+    });
+
+    expect(mismatches).toEqual([]);
+    expect(target.querySelector("div.mix > span.s")).toBe(serverSpan);
+    expect(target.innerHTML.includes("data-silent-")).toBe(false);
+    expect(serverSpan?.getAttribute("title")).toBe("ab");
+    expect(target.textContent).toBe("abtail");
+    expect(
+      Array.from(target.querySelector("div.mix")?.childNodes ?? []).filter(
+        (node) => node.nodeType === 3,
+      ),
+    ).toEqual(serverTexts);
+
+    first[1]("x");
+    second[1]("y");
+    flushSync();
+    expect(target.textContent).toBe("xytail");
+    expect(serverSpan?.getAttribute("title")).toBe("xy");
+    expect(
+      Array.from(target.querySelector("div.mix")?.childNodes ?? []).filter(
+        (node) => node.nodeType === 3,
+      ),
+    ).toEqual(serverTexts);
     handle.dispose();
   });
 });
