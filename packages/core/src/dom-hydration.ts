@@ -13,6 +13,7 @@ import {
   type TemplatePlan,
 } from "./dom.js";
 import { registerDomHydrationRuntime } from "./dom-hydration-state.js";
+import { createLazyRenderEffect, renderEffectUnlessStatic } from "./lazy-effect.js";
 import {
   INSERT_END,
   INSERT_START,
@@ -403,7 +404,7 @@ function textHydrated(
 ): void {
   let textNode = initial;
   let region: HydrationWindow | null = null;
-  createRenderEffect(() => {
+  renderEffectUnlessStatic(() => {
     const value = accessor();
     if (region !== null) {
       writeRegion(region.start, region.end, value);

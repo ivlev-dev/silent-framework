@@ -1,5 +1,6 @@
 import type { Child, Children } from "./jsx.js";
 import { createRenderEffect, onCleanup } from "@ivlev-dev/silent-reactivity";
+import { createLazyRenderEffect, renderEffectUnlessStatic } from "./lazy-effect.js";
 import { extractMetadata, isMetadataElement, markMetadataFree } from "./metadata.js";
 import type { ServerHole } from "./server-backend.js";
 import {
@@ -981,7 +982,7 @@ export function insert(
 }
 
 export function text(node: Text, accessor: () => unknown): void {
-  createRenderEffect(() => {
+  renderEffectUnlessStatic(() => {
     const value = accessor();
     const next = stringOf(value);
     if (node.data !== next) {
@@ -1006,7 +1007,7 @@ export function attr(el: Element, name: string, accessor: () => unknown): void {
   const svg = isSvgElement(el);
   let prev: unknown = accessor();
   applyAttr(el, name, prev, svg);
-  createRenderEffect(() => {
+  renderEffectUnlessStatic(() => {
     const value = accessor();
     if (valuesEqual(value, prev)) {
       return;
