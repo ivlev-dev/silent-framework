@@ -8,6 +8,15 @@ fn run(source: &str, filename: &str, index: Index) -> String {
     value["code"].as_str().unwrap().to_string()
 }
 
+fn template_holes_call(code: &str) -> &str {
+    let start = code
+        .find("_$templateHoles(")
+        .expect("no templateHoles call");
+    let rest = &code[start..];
+    let end = rest.find(')').expect("unterminated templateHoles call");
+    &rest[..end]
+}
+
 #[test]
 fn compiles_jsx_template_and_dynamic_text() {
     let code = run(
@@ -29,7 +38,23 @@ fn hoists_templates_to_module_scope_and_deduplicates() {
     );
     assert!(code.contains("const _tmpl$0 = _$templateHoles("));
     assert_eq!(code.matches("const _tmpl$").count(), 1);
+    assert_eq!(code.matches("_$templateHoles(").count(), 1);
+    assert_eq!(code.matches("roots:").count(), 1);
     assert!(code.contains("_tmpl$0()"));
+}
+
+#[test]
+fn passes_adoption_plan_to_template_holes() {
+    let code = run(
+        "const el = <div><span>{name}</span></div>;",
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    let call = template_holes_call(&code);
+    assert!(call.contains("\", {"), "missing plan argument: {call}");
+    assert!(call.contains("roots: 1"), "missing roots: {call}");
+    assert!(call.contains("path: ["), "missing path: {call}");
+    assert!(call.contains("counts: ["), "missing counts: {call}");
 }
 
 #[test]

@@ -1,4 +1,5 @@
 use super::transform::{rewrite_this, string_expr, SilentPass};
+use crate::template_plan::TemplatePlan;
 use swc_core::common::{SyntaxContext, DUMMY_SP};
 use swc_core::ecma::ast::{
     ArrayLit, ArrowExpr, ArrowFunctionBody, BinExpr, BinaryOp, BindingIdent, CallExpr, Callee,
@@ -15,6 +16,7 @@ struct TemplateParts {
     html: String,
     holes: Vec<Expr>,
     attrs: Vec<DynamicAttr>,
+    plan: TemplatePlan,
 }
 
 struct DynamicAttr {
@@ -76,6 +78,7 @@ impl SilentPass {
 
     fn build_element_html(&mut self, element: &JSXElement, parts: &mut TemplateParts) {
         let tag = element_name_string(&element.opening.name);
+        parts.plan.open_element(&tag);
         parts.html.push('<');
         parts.html.push_str(&tag);
 
@@ -99,6 +102,7 @@ impl SilentPass {
                 parts.html.push_str(&tag);
                 parts.html.push('>');
             }
+            parts.plan.close_element();
             return;
         }
 
@@ -116,12 +120,14 @@ impl SilentPass {
             parts.html.push_str("</");
             parts.html.push_str(&tag);
             parts.html.push('>');
+            parts.plan.close_element();
             return;
         }
         self.build_children_html(&element.children, parts);
         parts.html.push_str("</");
         parts.html.push_str(&tag);
         parts.html.push('>');
+        parts.plan.close_element();
     }
 
     fn build_rcdata_children(
@@ -186,6 +192,7 @@ impl SilentPass {
                     text.push_str(&value);
                 }
             }
+            parts.plan.add_text(&text);
             return Some(RcdataChildren {
                 attrs: String::new(),
                 text: if text.is_empty() {
@@ -221,6 +228,8 @@ impl SilentPass {
         };
         let index = parts.attrs.len();
         let attrs = format!(" data-silent-a-{index}=\"\" data-silent-text=\"\"");
+        parts.plan.mark_attr(&format!("data-silent-a-{index}"));
+        parts.plan.mark_attr("data-silent-text");
         parts.attrs.push(DynamicAttr { kind, expr });
         Some(RcdataChildren {
             attrs,
@@ -278,6 +287,7 @@ impl SilentPass {
     ) {
         let index = parts.attrs.len();
         parts.html.push_str(&format!(" data-silent-a-{index}=\"\""));
+        parts.plan.mark_attr(&format!("data-silent-a-{index}"));
         parts.attrs.push(DynamicAttr {
             kind: match kind {
                 DynamicAttrKind::Attr(_) => DynamicAttrKind::Attr(name.to_string()),
@@ -294,6 +304,7 @@ impl SilentPass {
                     let value = process_text(&text.value.to_string_lossy());
                     if !value.is_empty() {
                         parts.html.push_str(&escape_html(&value));
+                        parts.plan.add_text(&value);
                     }
                 }
                 JSXElementChild::JSXElement(element) => {
@@ -335,12 +346,14 @@ impl SilentPass {
                 self.build_children_html(&fragment.children, parts);
             }
             Expr::Lit(Lit::Str(value)) => {
-                parts
-                    .html
-                    .push_str(&escape_html(&value.value.to_string_lossy()));
+                let value = value.value.to_string_lossy();
+                parts.html.push_str(&escape_html(&value));
+                parts.plan.add_text(&value);
             }
             Expr::Lit(Lit::Num(value)) => {
-                parts.html.push_str(&format_number(value.value));
+                let value = format_number(value.value);
+                parts.html.push_str(&value);
+                parts.plan.add_text(&value);
             }
             Expr::Lit(Lit::Bool(_)) | Expr::Lit(Lit::Null(_)) => {}
             _ => {
@@ -354,12 +367,22 @@ impl SilentPass {
         let index = parts.holes.len();
         parts.html.push_str(&format!("<!--silent-hole-{index}-->"));
         parts.holes.push(expr);
+        parts.plan.add_hole(index);
     }
 
     fn finish_template(&mut self, parts: TemplateParts) -> Expr {
+        let TemplateParts {
+            html,
+            holes,
+            attrs,
+            plan,
+        } = parts;
         let runtime = Expr::Ident(self.helper("templateHoles"));
-        let init = call_expr(runtime, vec![string_expr(&parts.html)]);
-        let name = self.hoisted_template(&parts.html, init);
+        let init = match plan.finish() {
+            Some(plan) => call_expr(runtime, vec![string_expr(&html), plan]),
+            None => call_expr(runtime, vec![string_expr(&html)]),
+        };
+        let name = self.hoisted_template(&html, init);
         let clone_call = call_expr(Expr::Ident(name), Vec::new());
         let result = ident_expr("_r$");
 
@@ -381,7 +404,7 @@ impl SilentPass {
             },
         )))];
 
-        for (index, attr) in parts.attrs.into_iter().enumerate() {
+        for (index, attr) in attrs.into_iter().enumerate() {
             let element = computed_member(member_expr(result.clone(), "attrs"), index);
             let call = match attr.kind {
                 DynamicAttrKind::Attr(name) => call_expr(
@@ -426,7 +449,7 @@ impl SilentPass {
             }));
         }
 
-        for (index, expr) in parts.holes.into_iter().enumerate() {
+        for (index, expr) in holes.into_iter().enumerate() {
             let hole = computed_member(member_expr(result.clone(), "holes"), index);
             let parent = member_expr(hole.clone(), "parentNode");
             let node = member_expr(result.clone(), "node");

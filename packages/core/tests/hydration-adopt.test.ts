@@ -9,7 +9,7 @@ import {
 } from "../src/component.js";
 import { For, Show } from "../src/control-flow.js";
 import { Suspense, lazy } from "../src/suspense.js";
-import { attr, insert, on, setServerMode, templateHoles } from "../src/dom.js";
+import { attr, insert, on, prop, setServerMode, templateHoles } from "../src/dom.js";
 import { hydrate } from "../src/hydrate.js";
 import { HydrationMismatchError } from "../src/hydration.js";
 
@@ -415,5 +415,132 @@ describe("гидрация с сохранением узлов", () => {
     expect(target.querySelector("h1")?.textContent).toBe("Title");
     expect(target.querySelector("strong.value")?.textContent).toBe("0");
     expect(target.querySelectorAll("main.app").length).toBe(1);
+  });
+
+  it("адоптирует узлы по переданному плану и обновляет текст", async () => {
+    count[1](0);
+    class PlanVM {}
+    function PlanView(this: { vm: PlanVM }): Node {
+      void this.vm;
+      const template = templateHoles(
+        '<strong class="value"><!--silent-hole-0--></strong>',
+        {
+          roots: 1,
+          holes: [{ path: [0, 0], counts: [1, 1] }],
+          attrs: [],
+          strips: [],
+        },
+      )();
+      insert(holeParent(template, 0), () => count[0](), template.holes[0]);
+      return template.node;
+    }
+    attachMeta(PlanView, PlanVM);
+
+    const target = host(await renderServer(PlanView as unknown as AnyComponent));
+    const serverStrong = target.querySelector("strong.value");
+    const serverText = Array.from(serverStrong?.childNodes ?? []).find(
+      (node) => node.nodeType === 3,
+    );
+    const mismatches: HydrationMismatchError[] = [];
+    const handle = await hydrate(target, PlanView as unknown as AnyComponent, {
+      onMismatch: (error) => mismatches.push(error),
+    });
+
+    expect(mismatches).toEqual([]);
+    expect(target.querySelector("strong.value")).toBe(serverStrong);
+    expect(
+      Array.from(target.querySelector("strong.value")?.childNodes ?? []).find(
+        (node) => node.nodeType === 3,
+      ),
+    ).toBe(serverText);
+    expect(target.textContent).toBe("0");
+
+    count[1](4);
+    flushSync();
+    expect(target.querySelector("strong.value")?.textContent).toBe("4");
+    handle.dispose();
+  });
+
+  it("отклоняет план с неверным путём до маркера", async () => {
+    function BrokenPath(): Node {
+      const template = templateHoles('<p class="broken"><!--silent-hole-0--></p>', {
+        roots: 1,
+        holes: [{ path: [0, 1], counts: [1, 1] }],
+        attrs: [],
+        strips: [],
+      })();
+      insert(holeParent(template, 0), () => "value", template.holes[0]);
+      return template.node;
+    }
+
+    const target = host(await renderServer(BrokenPath as unknown as AnyComponent));
+    const mismatches: HydrationMismatchError[] = [];
+    const handle = await hydrate(target, BrokenPath as unknown as AnyComponent, {
+      onMismatch: (error) => mismatches.push(error),
+    });
+
+    expect(mismatches.length).toBeGreaterThan(0);
+    expect(mismatches[0]).toBeInstanceOf(HydrationMismatchError);
+    handle.dispose();
+  });
+
+  it("отклоняет план с неверным индексом маркера", async () => {
+    function BrokenIndex(): Node {
+      const template = templateHoles('<p class="broken"><!--silent-hole-1--></p>', {
+        roots: 1,
+        holes: [{ path: [0, 0], counts: [1, 1] }],
+        attrs: [],
+        strips: [],
+      })();
+      insert(holeParent(template, 0), () => "value", template.holes[0]);
+      return template.node;
+    }
+
+    const target = host(await renderServer(BrokenIndex as unknown as AnyComponent));
+    const mismatches: HydrationMismatchError[] = [];
+    const handle = await hydrate(target, BrokenIndex as unknown as AnyComponent, {
+      onMismatch: (error) => mismatches.push(error),
+    });
+
+    expect(mismatches.length).toBeGreaterThan(0);
+    expect(mismatches[0]).toBeInstanceOf(HydrationMismatchError);
+    handle.dispose();
+  });
+
+  it("снимает метки с RCDATA-элемента при адопции по плану", async () => {
+    function Textarea(): Node {
+      const template = templateHoles(
+        '<textarea class="note" data-silent-a-0="" data-silent-text=""></textarea>',
+        {
+          roots: 1,
+          holes: [],
+          attrs: [{ path: [0], counts: [1] }],
+          strips: [
+            {
+              path: [0],
+              counts: [1],
+              names: ["data-silent-a-0", "data-silent-text"],
+            },
+          ],
+        },
+      )();
+      prop(template.attrs[0]!, "value", () => "hello");
+      return template.node;
+    }
+
+    const target = host(await renderServer(Textarea as unknown as AnyComponent));
+    const serverTextarea = target.querySelector("textarea");
+    const mismatches: HydrationMismatchError[] = [];
+    const handle = await hydrate(target, Textarea as unknown as AnyComponent, {
+      onMismatch: (error) => mismatches.push(error),
+    });
+
+    expect(mismatches).toEqual([]);
+    expect(target.querySelector("textarea")).toBe(serverTextarea);
+    expect(target.innerHTML.includes("data-silent-")).toBe(false);
+    expect((target.querySelector("textarea") as HTMLTextAreaElement | null)?.value).toBe(
+      "hello",
+    );
+    handle.dispose();
   });
 });

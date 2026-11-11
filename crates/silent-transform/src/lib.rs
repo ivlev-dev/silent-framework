@@ -3,6 +3,8 @@ pub mod index;
 pub mod jsx;
 pub mod paths;
 pub mod scan;
+#[path = "template-plan.rs"]
+mod template_plan;
 pub mod transform;
 
 pub use index::Index;

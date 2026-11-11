@@ -768,6 +768,40 @@ describe("templateHoles", () => {
       clientButton.querySelector("span")?.hasAttribute("data-silent-text"),
     ).toBe(false);
   });
+
+  it("использует переданный план в клиентском режиме", () => {
+    const html =
+      '<div class="box" data-silent-a-0=""><!--silent-hole-0--><span data-silent-text=""><!--silent-hole-1--></span></div>';
+    const planned = templateHoles(html, {
+      roots: 1,
+      holes: [
+        { path: [0, 0], counts: [1, 2] },
+        { path: [0, 1, 0], counts: [1, 2, 1] },
+      ],
+      attrs: [{ path: [0], counts: [1] }],
+      strips: [
+        { path: [0], counts: [1], names: ["data-silent-a-0"] },
+        { path: [0, 1], counts: [1, 2], names: ["data-silent-text"] },
+      ],
+    })();
+    const reference = templateHoles(html)();
+    const markers = (clone: typeof planned): (string | null)[] =>
+      clone.holes.map((hole) => (hole instanceof Comment ? hole.data : null));
+
+    expect(markers(planned)).toEqual(["silent-hole-0", "silent-hole-1"]);
+    expect(markers(planned)).toEqual(markers(reference));
+    expect(planned.holes[0]?.parentNode).toBe(planned.node);
+    expect(planned.holes[1]?.parentNode).toBe(
+      (planned.node as Element).querySelector("span"),
+    );
+    expect(planned.attrs.length).toBe(reference.attrs.length);
+    expect(planned.attrs[0]).toBe(planned.node);
+    expect((planned.node as Element).hasAttribute("data-silent-a-0")).toBe(false);
+    expect(
+      (planned.node as Element).querySelector("span")?.hasAttribute("data-silent-text"),
+    ).toBe(false);
+    expect((planned.node as Element).outerHTML).toBe((reference.node as Element).outerHTML);
+  });
 });
 
 describe("writeRegion", () => {

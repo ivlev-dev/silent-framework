@@ -62,6 +62,13 @@ interface PartsPlan {
   readonly strips: readonly StripPlan[];
 }
 
+interface TemplatePlan {
+  readonly roots: number;
+  readonly holes: readonly PartPath[];
+  readonly attrs: readonly PartPath[];
+  readonly strips: readonly StripPlan[];
+}
+
 interface TemplateParse {
   readonly content: DocumentFragment;
   readonly rootCount: number;
@@ -645,6 +652,46 @@ function resolvePath(
   return node;
 }
 
+function adoptPartsPlan(
+  root: Node,
+  plan: TemplatePlan,
+): { holes: Comment[]; attrs: Element[] } {
+  const holes: Comment[] = [];
+  plan.holes.forEach((entry, index) => {
+    const node = resolvePath(root, entry, true);
+    if (!(node instanceof Comment) || node.data !== HOLE_MARKER + index) {
+      mismatch("шаблон не совпал с серверной разметкой");
+    }
+    holes.push(node);
+  });
+  const attrs: Element[] = [];
+  plan.attrs.forEach((entry, index) => {
+    const node = resolvePath(root, entry, true);
+    if (
+      node === null ||
+      node.nodeType !== Node.ELEMENT_NODE ||
+      !(node as Element).hasAttribute(ATTR_MARKER + index)
+    ) {
+      mismatch("шаблон не совпал с серверной разметкой");
+    }
+    attrs.push(node as Element);
+  });
+  const strips: { readonly element: Element; readonly names: readonly string[] }[] = [];
+  for (const entry of plan.strips) {
+    const node = resolvePath(root, entry, true);
+    if (node === null || node.nodeType !== Node.ELEMENT_NODE) {
+      mismatch("шаблон не совпал с серверной разметкой");
+    }
+    strips.push({ element: node as Element, names: entry.names });
+  }
+  for (const entry of strips) {
+    for (const name of entry.names) {
+      entry.element.removeAttribute(name);
+    }
+  }
+  return { holes, attrs };
+}
+
 function applyPartsPlan(
   root: Node,
   plan: PartsPlan,
@@ -680,7 +727,7 @@ function applyPartsPlan(
   return { holes, attrs };
 }
 
-export function templateHoles(html: string): () => TemplateClone {
+export function templateHoles(html: string, plan?: TemplatePlan): () => TemplateClone {
   let clientFactory: (() => TemplateClone) | null = null;
   return () => {
     if (isServerMode()) {
@@ -693,19 +740,22 @@ export function templateHoles(html: string): () => TemplateClone {
         }
       }
     }
-    clientFactory ??= createClientTemplateHoles(html);
+    clientFactory ??= createClientTemplateHoles(html, plan);
     return clientFactory();
   };
 }
 
-function createClientTemplateHoles(html: string): () => TemplateClone {
-  const parsed = readTemplate(html);
-  const content = parsed.content;
-  const metadata = parsed.metadata;
-  const simple = parsed.simple;
-  const rootCount = parsed.rootCount;
+function createClientTemplateHoles(
+  html: string,
+  providedPlan?: TemplatePlan,
+): () => TemplateClone {
+  let parsed: TemplateParse | null = null;
+  const parse = (): TemplateParse => {
+    parsed ??= readTemplate(html);
+    return parsed;
+  };
   const mark = (node: Node): Node => {
-    if (!metadata) {
+    if (!parse().metadata) {
       if (node instanceof DocumentFragment) {
         for (const child of node.childNodes) {
           markMetadataFree(child);
@@ -716,23 +766,56 @@ function createClientTemplateHoles(html: string): () => TemplateClone {
     return node;
   };
   const cloneNode = (): Node => {
-    const clone = content.cloneNode(true) as DocumentFragment;
+    const clone = parse().content.cloneNode(true) as DocumentFragment;
     return clone.childNodes.length === 1 ? clone.firstChild ?? clone : clone;
   };
-  const plan = (): PartsPlan => {
-    if (parsed.parts === null) {
-      parsed.parts = collectPartsPlan(content);
+  const parts = (): PartsPlan => {
+    const current = parse();
+    if (current.parts === null) {
+      current.parts = collectPartsPlan(current.content);
     }
-    return parsed.parts;
+    return current.parts;
   };
   const create = (): TemplateClone => {
     const node = mark(cloneNode());
-    return { node, ...applyPartsPlan(node, plan(), !isServerMode(), true) };
+    return {
+      node,
+      ...applyPartsPlan(node, providedPlan ?? parts(), !isServerMode(), true),
+    };
+  };
+  const claimRoots = (plan: TemplatePlan): Node => {
+    const claimed: Node[] = [];
+    for (let index = 0; index < plan.roots; index += 1) {
+      const next = claimNext();
+      if (next === null) {
+        return mismatch("шаблон не совпал с серверной разметкой");
+      }
+      markMetadataFree(next);
+      claimed.push(next);
+    }
+    if (claimed.length === 1) {
+      return claimed[0]!;
+    }
+    const container = document.createDocumentFragment();
+    for (const node of claimed) {
+      container.appendChild(node);
+    }
+    markMetadataFree(container);
+    return container;
   };
   return () => {
     if (!isHydrating()) {
       return create();
     }
+    if (providedPlan !== undefined) {
+      const node = claimRoots(providedPlan);
+      return { node, ...adoptPartsPlan(node, providedPlan) };
+    }
+    const current = parse();
+    const content = current.content;
+    const metadata = current.metadata;
+    const simple = current.simple;
+    const rootCount = current.rootCount;
     const strip = !isServerMode();
     if (!metadata) {
       if (rootCount === 0) {
@@ -750,7 +833,7 @@ function createClientTemplateHoles(html: string): () => TemplateClone {
           return mismatch("шаблон не совпал с серверной разметкой");
         }
         markMetadataFree(node);
-        return { node, ...applyPartsPlan(node, plan(), strip, true) };
+        return { node, ...applyPartsPlan(node, parts(), strip, true) };
       }
       const container = document.createDocumentFragment();
       let current = content.firstChild;
@@ -765,7 +848,7 @@ function createClientTemplateHoles(html: string): () => TemplateClone {
         current = next;
       }
       markMetadataFree(container);
-      return { node: container, ...applyPartsPlan(container, plan(), strip, true) };
+      return { node: container, ...applyPartsPlan(container, parts(), strip, true) };
     }
     const fresh = cloneNode();
     const roots =
@@ -787,15 +870,15 @@ function createClientTemplateHoles(html: string): () => TemplateClone {
       mergeTopLevelMetadata(root, node);
       claimed.push(node);
     }
-    const parts = collectPartsMany(claimed);
+    const collected = collectPartsMany(claimed);
     if (claimed.length === 1 && !(fresh instanceof DocumentFragment)) {
-      return { node: claimed[0]!, ...parts };
+      return { node: claimed[0]!, ...collected };
     }
     const container = document.createDocumentFragment();
     for (const node of claimed) {
       container.appendChild(node);
     }
-    return { node: container, ...parts };
+    return { node: container, ...collected };
   };
 }
 
