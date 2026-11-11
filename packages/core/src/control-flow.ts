@@ -30,6 +30,11 @@ import {
   withWindow,
 } from "./hydration-proxy.js";
 
+const SCOPED_EFFECT = Symbol.for("silent.scopedRenderEffect");
+const scoped = (createRoot as unknown as Record<symbol, unknown>)[SCOPED_EFFECT];
+const createScopedEffect: ((fn: () => void) => () => void) | null =
+  typeof scoped === "function" ? (scoped as (fn: () => void) => () => void) : null;
+
 interface ItemState<T> {
   item: T;
   index: Accessor<number>;
@@ -255,27 +260,31 @@ export function For<T>(props: ForProps<T>): Node {
     };
 
     let seeded = itemEnd !== null;
-    state.cleanup = createRoot((dispose) => {
-      createRenderEffect(() => {
-        if (seeded) {
-          seeded = false;
-          const window = {
-            start: anchor,
-            end: itemEnd as Node,
-            cursor: anchor.nextSibling,
-          };
-          const value = withWindow(window, () => props.children(item, index));
-          settleNodes(itemEnd, value);
-          if (window.cursor !== itemEnd) {
-            mismatch("содержимое элемента списка не совпало");
-          }
-          return;
+    const run = (): void => {
+      if (seeded) {
+        seeded = false;
+        const window = {
+          start: anchor,
+          end: itemEnd as Node,
+          cursor: anchor.nextSibling,
+        };
+        const value = withWindow(window, () => props.children(item, index));
+        settleNodes(itemEnd, value);
+        if (window.cursor !== itemEnd) {
+          mismatch("содержимое элемента списка не совпало");
         }
-        renderItem(state, props.children(item, index), initialMount);
-        initialMount = null;
-      });
-      return dispose;
-    });
+        return;
+      }
+      renderItem(state, props.children(item, index), initialMount);
+      initialMount = null;
+    };
+    state.cleanup =
+      createScopedEffect !== null
+        ? createScopedEffect(run)
+        : createRoot((dispose) => {
+            createRenderEffect(run);
+            return dispose;
+          });
 
     attachDisposer(anchor, () => removeState(state));
     return state;

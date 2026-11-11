@@ -542,6 +542,17 @@ export function createRenderEffect(fn: () => void): void {
   runEffect(node);
 }
 
+function createScopedRenderEffect(fn: () => void): () => void {
+  const node = createEffectNode("renderEffect", fn);
+  try {
+    runEffect(node);
+  } catch (error) {
+    disposeComputation(node);
+    throw error;
+  }
+  return () => disposeComputation(node);
+}
+
 export function createRoot<T>(fn: (dispose: () => void) => T): T {
   const owner = createOwnerNode(currentOwner);
   const previousOwner = currentOwner;
@@ -608,3 +619,6 @@ export function flushSync(): void {
   flushInitialEffects();
   flushEffects();
 }
+
+const SCOPED_EFFECT = Symbol.for("silent.scopedRenderEffect");
+(createRoot as unknown as Record<symbol, unknown>)[SCOPED_EFFECT] = createScopedRenderEffect;

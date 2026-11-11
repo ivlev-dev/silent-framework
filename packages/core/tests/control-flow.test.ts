@@ -234,6 +234,31 @@ describe("For", () => {
     expect(disposed).toEqual(["b", "a", "c"]);
   });
 
+  it("cleanup удалённого элемента не повторяется при dispose владельца", () => {
+    const disposed: string[] = [];
+    const a = item("a");
+    const b = item("b");
+    const [items, setItems] = createSignal<Item[]>([a, b]);
+    let stop: () => void = () => {};
+    createRoot((dispose) => {
+      stop = dispose;
+      install(
+        For({
+          each: items,
+          children: (entry) => {
+            onCleanup(() => disposed.push(entry.id));
+            return row(entry);
+          },
+        }),
+      );
+    });
+    setItems([a]);
+    flushSync();
+    expect(disposed).toEqual(["b"]);
+    stop();
+    expect(disposed).toEqual(["b", "a"]);
+  });
+
   it("реактивный индекс после перестановки", () => {
     const [items, setItems] = createSignal<Item[]>([item("a"), item("b"), item("c")]);
     const container = For({
