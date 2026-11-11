@@ -32,6 +32,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: pnpm install --frozen-lockfile
+      - run: pnpm version:check
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm test
