@@ -5,19 +5,28 @@
   "type": "module",
   "scripts": {
     "bench": "tsx --conditions=browser src/index.ts",
-    "bench:ssr": "tsx src/ssr-server.ts && tsx --conditions=browser src/ssr-hydrate.ts"
+    "bench:ssr": "tsx src/ssr-server.ts && tsx --conditions=browser src/ssr-hydrate.ts",
+    "bench:browser": "tsx src/browser-bench.ts"
   },
   "dependencies": {
     "@ivlev-dev/silent-core": "workspace:*",
     "@ivlev-dev/silent-reactivity": "workspace:*"
   },
   "devDependencies": {
+    "@babel/core": "^7.29.13",
+    "@babel/preset-typescript": "^7.29.7",
+    "@ivlev-dev/silent-vite": "workspace:*",
+    "@types/babel__core": "^7.20.5",
     "@types/jsdom": "^27.0.0",
+    "babel-preset-solid": "^1.9.16",
     "jsdom": "^31.0.0",
+    "playwright-core": "^1.65.0",
     "solid-js": "1.9.18",
     "tinybench": "^6.2.3",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2",
+    "vite": "^8.3.6",
+    "vite-plugin-solid": "^2.11.15",
     "vitest": "^5.1.0"
   }
 }
