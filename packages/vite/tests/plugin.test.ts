@@ -17,6 +17,7 @@ vi.mock("@ivlev-dev/silent-swc", () => ({
 }));
 
 interface CallableHooks {
+  config?: () => { define?: Record<string, string> } | undefined;
   buildStart?: () => Promise<void> | void;
   transform?: (code: string, id: string) => Promise<unknown> | unknown;
   watchChange?: (id: string, change: { event: string }) => void;
@@ -57,6 +58,17 @@ beforeEach(() => {
 });
 
 describe("silent()", () => {
+  it("view: false отключает view-рантайм через define", () => {
+    expect(createPlugin({ view: false }).config?.()).toEqual({
+      define: { __SILENT_VIEW__: "false" },
+    });
+  });
+
+  it("по умолчанию не задаёт define для view", () => {
+    expect(createPlugin().config?.()).toBeUndefined();
+    expect(createPlugin({ view: true }).config?.()).toBeUndefined();
+  });
+
   it("возвращает плагин с enforce: pre и именем silent", () => {
     const plugin: Plugin = silent();
     expect(plugin.name).toBe("silent");

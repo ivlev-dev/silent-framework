@@ -9,6 +9,7 @@ export interface SilentOptions {
   runtime?: string;
   hmr?: boolean;
   index?: boolean;
+  view?: boolean;
 }
 
 export interface ResolvedOptions {
@@ -20,6 +21,7 @@ export interface ResolvedOptions {
   runtime: string;
   hmr: boolean;
   index: boolean;
+  view: boolean;
 }
 
 export const DEFAULT_INCLUDE = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
@@ -36,6 +38,7 @@ export function resolveOptions(options: SilentOptions = {}): ResolvedOptions {
     runtime: options.runtime ?? DEFAULT_RUNTIME,
     hmr: options.hmr ?? true,
     index: options.index ?? true,
+    view: options.view ?? true,
   };
 }
 
