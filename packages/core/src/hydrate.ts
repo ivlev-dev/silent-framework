@@ -11,6 +11,7 @@ import {
 import {
   ViewRuntimeUnavailableError,
   getComponentCreator,
+  hasPendingWork,
   whenIdle,
   setDefaultPreloader,
   setErrorHandler,
@@ -29,6 +30,14 @@ import type { MountHandle, MountOptions } from "./mount.js";
 import type { AnyComponent } from "./types.js";
 
 let runtimes: Promise<void> | null = null;
+
+async function settle(): Promise<void> {
+  flushSync();
+  while (hasPendingWork()) {
+    await whenIdle();
+    flushSync();
+  }
+}
 
 function needsMarkup(): boolean {
   return viewEnabled && getComponentCreator() === null;
@@ -71,10 +80,7 @@ async function hydrateWith(
           () => createRootResult(app, options, runtimeOptions, create),
         );
         await adopted.result.ready;
-        await whenIdle();
-        flushSync();
-        await whenIdle();
-        flushSync();
+        await settle();
       } catch (error) {
         if (!(error instanceof HydrationMismatchError)) {
           throw error;
@@ -94,10 +100,7 @@ async function hydrateWith(
         createRootResult(app, options, runtimeOptions, create),
       );
       await fresh.result.ready;
-      await whenIdle();
-      flushSync();
-      await whenIdle();
-      flushSync();
+      await settle();
       element.replaceChildren(fresh.result.node);
       return handleFor(fresh.result, fresh.dispose);
     }

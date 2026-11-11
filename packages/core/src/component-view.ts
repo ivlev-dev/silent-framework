@@ -102,13 +102,31 @@ function assertSyncPreloader(preloader: Preloader, owner: AnyComponent): void {
 }
 
 function removeBetween(start: Comment, end: Comment): void {
-  let current = start.nextSibling;
+  const parent = end.parentNode;
+  if (parent === null) {
+    return;
+  }
+  let current: Node | null = start.nextSibling;
+  if (current === null || current === end) {
+    return;
+  }
+  const range =
+    typeof document !== "undefined" && typeof document.createRange === "function"
+      ? document.createRange()
+      : null;
+  if (range !== null) {
+    range.setStartAfter(start);
+    range.setEndBefore(end);
+  }
   while (current !== null && current !== end) {
-    const next = current.nextSibling;
+    const next: Node | null = current.nextSibling;
     disposeNode(current);
-    current.remove();
+    if (range === null) {
+      parent.removeChild(current);
+    }
     current = next;
   }
+  range?.deleteContents();
 }
 
 function insertBetween(end: Node, nodes: readonly Node[]): void {
