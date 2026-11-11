@@ -13,7 +13,7 @@ import {
   type TemplatePlan,
 } from "./dom.js";
 import { registerDomHydrationRuntime } from "./dom-hydration-state.js";
-import { createLazyRenderEffect, renderEffectUnlessStatic } from "./lazy-effect.js";
+import { renderEffectUnlessStatic } from "./static-effect.js";
 import {
   INSERT_END,
   INSERT_START,

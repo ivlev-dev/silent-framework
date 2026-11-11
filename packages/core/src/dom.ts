@@ -1,6 +1,6 @@
 import type { Child, Children } from "./jsx.js";
 import { createRenderEffect, onCleanup } from "@ivlev-dev/silent-reactivity";
-import { createLazyRenderEffect, renderEffectUnlessStatic } from "./lazy-effect.js";
+import { renderEffectUnlessStatic } from "./static-effect.js";
 import { extractMetadata, isMetadataElement, markMetadataFree } from "./metadata.js";
 import type { ServerHole } from "./server-backend.js";
 import {

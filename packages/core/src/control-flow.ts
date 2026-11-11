@@ -1,6 +1,7 @@
 import type { Accessor, Setter } from "@ivlev-dev/silent-reactivity";
 import {
   createRenderEffect,
+  createRoot,
   createSignal,
   getOwner,
   onCleanup,
@@ -15,7 +16,6 @@ import {
   disposeNode,
 } from "./dom.js";
 import { settleNodes } from "./dom-hydration-state.js";
-import { createLazyRenderEffect } from "./lazy-effect.js";
 import { extractMetadata, isMetadataFree } from "./metadata.js";
 import {
   ITEM,
@@ -30,7 +30,18 @@ import {
   withWindow,
 } from "./hydration-proxy.js";
 
-const noopCleanup = (): void => {};
+const SCOPED_EFFECT = Symbol.for("silent.scopedRenderEffect");
+const scoped = (createRoot as unknown as Record<symbol, unknown>)[SCOPED_EFFECT];
+const createScopedEffect: ((fn: () => void) => () => void) | null =
+  typeof scoped === "function" ? (scoped as (fn: () => void) => () => void) : null;
+
+const runWithScopedEffect = (fn: () => void): (() => void) =>
+  createScopedEffect !== null
+    ? createScopedEffect(fn)
+    : createRoot((dispose) => {
+        createRenderEffect(fn);
+        return dispose;
+      });
 
 interface ItemState<T> {
   item: T;
@@ -275,7 +286,7 @@ export function For<T>(props: ForProps<T>): Node {
       renderItem(state, props.children(item, index), initialMount);
       initialMount = null;
     };
-    state.cleanup = createLazyRenderEffect(run) ?? noopCleanup;
+    state.cleanup = runWithScopedEffect(run);
 
     attachDisposer(anchor, () => removeState(state));
     return state;
