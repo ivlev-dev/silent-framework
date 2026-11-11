@@ -16,12 +16,17 @@
     "build:example": "pnpm --filter @ivlev-dev/silent-example-counter build",
     "bench": "pnpm --filter @ivlev-dev/silent-bench bench",
     "bench:ssr": "pnpm --filter @ivlev-dev/silent-bench bench:ssr",
+    "bench:build": "pnpm --filter @ivlev-dev/silent-bench exec tsx src/build-bench.ts",
+    "bench:hydrate": "pnpm --filter @ivlev-dev/silent-bench exec tsx --conditions=browser src/hydrate-bench.ts",
+    "bench:browser": "pnpm --filter @ivlev-dev/silent-bench exec tsx src/browser-bench.ts",
     "test:e2e": "node scripts/e2e.mjs",
     "test:ssr": "node scripts/ssr-e2e.mjs",
     "install:check": "node scripts/install-check.mjs",
     "pack:check": "node scripts/pack-check.mjs",
     "api:check": "node scripts/api-check.mjs",
-    "deprecate:legacy": "node scripts/deprecate-legacy.mjs"
+    "deprecate:legacy": "node scripts/deprecate-legacy.mjs",
+    "version:bump": "node scripts/version.mjs",
+    "version:check": "node scripts/verify-versions.mjs"
   },
   "devDependencies": {
     "@napi-rs/cli": "^3.10.12",
