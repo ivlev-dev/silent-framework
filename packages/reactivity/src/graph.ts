@@ -27,10 +27,10 @@ interface MemoNode {
   initialized: boolean;
   running: boolean;
   readonly observers: Set<ComputationNode>;
-  deps: Set<SourceNode> | null;
-  depVersions: Map<SourceNode, number> | null;
-  nextDeps: Set<SourceNode> | null;
-  nextDepVersions: Map<SourceNode, number> | null;
+  deps: SourceNode[] | null;
+  depVersions: number[] | null;
+  nextDeps: SourceNode[] | null;
+  nextDepVersions: number[] | null;
   readonly owner: OwnerNode;
 }
 
@@ -41,10 +41,10 @@ interface EffectNode {
   disposed: boolean;
   initialized: boolean;
   running: boolean;
-  deps: Set<SourceNode> | null;
-  depVersions: Map<SourceNode, number> | null;
-  nextDeps: Set<SourceNode> | null;
-  nextDepVersions: Map<SourceNode, number> | null;
+  deps: SourceNode[] | null;
+  depVersions: number[] | null;
+  nextDeps: SourceNode[] | null;
+  nextDepVersions: number[] | null;
   readonly owner: OwnerNode;
 }
 
@@ -99,13 +99,18 @@ function readSource(node: SourceNode): unknown {
     let nextDeps = listener.nextDeps;
     let nextVersions = listener.nextDepVersions;
     if (nextDeps === null || nextVersions === null) {
-      nextDeps = new Set<SourceNode>();
-      nextVersions = new Map<SourceNode, number>();
+      nextDeps = [];
+      nextVersions = [];
       listener.nextDeps = nextDeps;
       listener.nextDepVersions = nextVersions;
     }
-    nextDeps.add(node);
-    nextVersions.set(node, node.version);
+    const existing = nextDeps.indexOf(node);
+    if (existing === -1) {
+      nextDeps.push(node);
+      nextVersions.push(node.version);
+    } else {
+      nextVersions[existing] = node.version;
+    }
   }
   return node.value;
 }
@@ -150,11 +155,17 @@ function markCheck(node: ComputationNode): void {
 }
 
 function depsChanged(node: ComputationNode): boolean {
+  const deps = node.deps;
   const depVersions = node.depVersions;
-  if (depVersions === null) {
+  if (deps === null || depVersions === null) {
     return false;
   }
-  for (const [dep, version] of depVersions) {
+  for (let index = 0; index < deps.length; index += 1) {
+    const dep = deps[index];
+    const version = depVersions[index];
+    if (dep === undefined || version === undefined) {
+      continue;
+    }
     if (dep.type === "memo") {
       if (dep.disposed) {
         return true;
@@ -201,41 +212,50 @@ function runWithTracking<T>(node: ComputationNode, fn: () => T): T {
 
 function reconcileDependencies(node: ComputationNode): void {
   const nextDeps = node.nextDeps;
+  const nextVersions = node.nextDepVersions;
   if (nextDeps === null) {
     const previousDeps = node.deps;
+    const previousVersions = node.depVersions;
     if (previousDeps !== null) {
       for (const dep of previousDeps) {
         dep.observers.delete(node);
       }
-      previousDeps.clear();
+      previousDeps.length = 0;
+    }
+    if (previousVersions !== null) {
+      previousVersions.length = 0;
     }
     node.deps = null;
     node.depVersions = null;
+    node.nextDeps = null;
     node.nextDepVersions = null;
     return;
   }
-  const nextVersions = node.nextDepVersions;
   if (nextVersions === null) {
     node.nextDeps = null;
     return;
   }
   const previousDeps = node.deps;
+  const previousVersions = node.depVersions;
   if (previousDeps === null) {
     for (const dep of nextDeps) {
       dep.observers.add(node);
     }
   } else {
     for (const dep of previousDeps) {
-      if (!nextDeps.has(dep)) {
+      if (nextDeps.indexOf(dep) === -1) {
         dep.observers.delete(node);
       }
     }
     for (const dep of nextDeps) {
-      if (!previousDeps.has(dep)) {
+      if (previousDeps.indexOf(dep) === -1) {
         dep.observers.add(node);
       }
     }
-    previousDeps.clear();
+    previousDeps.length = 0;
+  }
+  if (previousVersions !== null) {
+    previousVersions.length = 0;
   }
   node.deps = nextDeps;
   node.depVersions = nextVersions;
@@ -406,14 +426,18 @@ function disposeComputation(node: ComputationNode): void {
     effectQueue.delete(node);
     pendingInitial.delete(node);
   }
-  if (node.deps !== null) {
-    for (const dep of node.deps) {
+  const deps = node.deps;
+  if (deps !== null) {
+    for (const dep of deps) {
       dep.observers.delete(node);
     }
-    node.deps.clear();
+    deps.length = 0;
+  }
+  const depVersions = node.depVersions;
+  if (depVersions !== null) {
+    depVersions.length = 0;
   }
   node.deps = null;
-  node.depVersions?.clear();
   node.depVersions = null;
   node.nextDeps = null;
   node.nextDepVersions = null;
