@@ -577,6 +577,57 @@ function createScopedRenderEffect(fn: () => void): () => void {
   return () => disposeComputation(node);
 }
 
+function createLazyRenderEffect(fn: () => void): (() => void) | null {
+  const node = createEffectNode("renderEffect", fn);
+  try {
+    runEffect(node);
+  } catch (error) {
+    disposeComputation(node);
+    throw error;
+  }
+  const owner = node.owner;
+  if (node.deps === null && owner.children === null && owner.cleanups === null) {
+    disposeComputation(node);
+    return null;
+  }
+  return () => disposeComputation(node);
+}
+
+interface ProbeTracker {
+  nextDeps: SourceNode[] | null;
+  nextDepVersions: number[] | null;
+  disposed: boolean;
+}
+
+function createRenderEffectUnlessStatic(fn: () => void): boolean {
+  const tracker: ProbeTracker = {
+    nextDeps: null,
+    nextDepVersions: null,
+    disposed: false,
+  };
+  const previous = currentListener;
+  currentListener = tracker as unknown as ComputationNode;
+  try {
+    fn();
+  } finally {
+    currentListener = previous;
+  }
+  const deps = tracker.nextDeps;
+  const versions = tracker.nextDepVersions;
+  if (deps === null || deps.length === 0 || versions === null) {
+    return false;
+  }
+  const node = createEffectNode("renderEffect", fn);
+  node.initialized = true;
+  node.state = CLEAN;
+  node.deps = deps;
+  node.depVersions = versions;
+  for (const dep of deps) {
+    dep.observers.add(node);
+  }
+  return true;
+}
+
 export function createRoot<T>(fn: (dispose: () => void) => T): T {
   const owner = createOwnerNode(currentOwner);
   const previousOwner = currentOwner;
@@ -646,3 +697,7 @@ export function flushSync(): void {
 
 const SCOPED_EFFECT = Symbol.for("silent.scopedRenderEffect");
 (createRoot as unknown as Record<symbol, unknown>)[SCOPED_EFFECT] = createScopedRenderEffect;
+const LAZY_EFFECT = Symbol.for("silent.lazyRenderEffect");
+(createRoot as unknown as Record<symbol, unknown>)[LAZY_EFFECT] = createLazyRenderEffect;
+const PROBE = Symbol.for("silent.renderEffectUnlessStatic");
+(createRoot as unknown as Record<symbol, unknown>)[PROBE] = createRenderEffectUnlessStatic;
