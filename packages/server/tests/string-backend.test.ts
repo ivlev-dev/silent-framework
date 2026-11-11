@@ -91,6 +91,42 @@ describe("createServerBackend", () => {
       '<ul class="x"><!--silent-insert-->a&amp;b1<!--silent-insert-end--><!--silent-hole-0--></ul>',
     );
   });
+
+  it("вставляет примитив текстом без региона в bare-позиции", () => {
+    const backend = createServerBackend();
+    const template = requireTemplate(
+      backend.createTemplate('<ul class="x"><!--silent-hole-0--></ul>'),
+    );
+    const hole = template.holes[0] as
+      | (ServerHole & { __silentServerHoleSetValue(value: unknown): boolean })
+      | undefined;
+    if (hole === undefined) {
+      throw new Error("Ожидался слот");
+    }
+
+    expect(hole.__silentServerHoleSetValue("a&b")).toBe(true);
+    expect(serializeNode(template.node as DomNode)).toBe(
+      '<ul class="x">a&amp;b<!--silent-hole-0--></ul>',
+    );
+  });
+
+  it("оставляет регион, если перед дырой есть статический текст", () => {
+    const backend = createServerBackend();
+    const template = requireTemplate(
+      backend.createTemplate("<p>Hello <!--silent-hole-0--></p>"),
+    );
+    const hole = template.holes[0] as
+      | (ServerHole & { __silentServerHoleSetValue(value: unknown): boolean })
+      | undefined;
+    if (hole === undefined) {
+      throw new Error("Ожидался слот");
+    }
+
+    expect(hole.__silentServerHoleSetValue("world")).toBe(true);
+    expect(serializeNode(template.node as DomNode)).toBe(
+      "<p>Hello <!--silent-insert-->world<!--silent-insert-end--><!--silent-hole-0--></p>",
+    );
+  });
 });
 
 describe("повторный рендер", () => {

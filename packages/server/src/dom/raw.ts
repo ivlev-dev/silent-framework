@@ -1,5 +1,6 @@
 import { NODE_TEXT } from "./types.js";
 import { NodeImpl } from "./node.js";
+import { escapeText } from "./serializer.js";
 import { pushValue } from "./serialize-value.js";
 
 export interface RawHole {
@@ -10,6 +11,26 @@ export interface RawHole {
 
 const INSERT_START = "<!--silent-insert-->";
 const INSERT_END = "<!--silent-insert-end-->";
+
+function isTextValue(
+  value: unknown,
+): value is string | number | bigint | boolean | null | undefined {
+  if (value === null || value === undefined) {
+    return true;
+  }
+  const type = typeof value;
+  return type === "string" || type === "number" || type === "bigint" || type === "boolean";
+}
+
+function serializeText(value: string | number | bigint | boolean | null | undefined): string {
+  if (typeof value === "string") {
+    return escapeText(value);
+  }
+  if (typeof value === "number" || typeof value === "bigint") {
+    return String(value);
+  }
+  return "";
+}
 
 class RawSlot {
   readonly value: unknown;
@@ -23,15 +44,18 @@ class RawHoleImpl implements RawHole {
   readonly parentNode: RawNode;
   readonly index: number;
   private readonly slots: Array<string | RawSlot | undefined>;
+  private readonly bare: boolean;
 
   constructor(
     parentNode: RawNode,
     index: number,
     slots: Array<string | RawSlot | undefined>,
+    bare: boolean,
   ) {
     this.parentNode = parentNode;
     this.index = index;
     this.slots = slots;
+    this.bare = bare;
   }
 
   set(value: string): void {
@@ -39,6 +63,10 @@ class RawHoleImpl implements RawHole {
   }
 
   __silentServerHoleSetValue(value: unknown): boolean {
+    if (this.bare && isTextValue(value)) {
+      this.slots[this.index] = serializeText(value);
+      return true;
+    }
     this.slots[this.index] = new RawSlot(value);
     return true;
   }
@@ -49,6 +77,7 @@ export class RawNode extends NodeImpl {
   private readonly indexes: readonly number[];
   private readonly markers: readonly string[];
   private readonly tails: readonly string[] | undefined;
+  private readonly bare: readonly boolean[] | undefined;
   private readonly slots: Array<string | RawSlot | undefined>;
   private readonly holeList: RawHole[];
 
@@ -57,17 +86,24 @@ export class RawNode extends NodeImpl {
     indexes: readonly number[],
     markers: readonly string[],
     tails?: readonly string[],
+    bare?: readonly boolean[],
   ) {
     super(NODE_TEXT);
     this.parts = parts;
     this.indexes = indexes;
     this.markers = markers;
     this.tails = tails;
+    this.bare = bare;
     const count = indexes.length;
     this.slots = new Array<string | RawSlot | undefined>(count);
     const holes = new Array<RawHole>(count);
     for (let position = 0; position < count; position += 1) {
-      holes[position] = new RawHoleImpl(this, position, this.slots);
+      holes[position] = new RawHoleImpl(
+        this,
+        position,
+        this.slots,
+        bare?.[position] ?? false,
+      );
     }
     this.holeList = holes;
   }
@@ -137,7 +173,13 @@ export class RawNode extends NodeImpl {
   override set textContent(_value: string | null) {}
 
   protected override createShallowClone(): RawNode {
-    const clone = new RawNode(this.parts, this.indexes, this.markers, this.tails);
+    const clone = new RawNode(
+      this.parts,
+      this.indexes,
+      this.markers,
+      this.tails,
+      this.bare,
+    );
     for (let position = 0; position < this.slots.length; position += 1) {
       const value = this.slots[position];
       if (value !== undefined) {

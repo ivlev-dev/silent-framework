@@ -3,6 +3,7 @@ export interface ParsedTemplate {
   readonly indexes: readonly number[];
   readonly markers: readonly string[];
   readonly tails?: readonly string[] | undefined;
+  readonly bare?: readonly boolean[] | undefined;
 }
 
 export const TEMPLATE_CACHE_LIMIT = 768;

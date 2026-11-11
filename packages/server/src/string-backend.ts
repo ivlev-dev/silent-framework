@@ -50,10 +50,13 @@ function parseTemplate(html: string): ParsedTemplate | null {
   }
   const markers = indexes.map((index) => `<!--silent-hole-${index}-->`);
   const tails = new Array<string>(indexes.length);
+  const bare = new Array<boolean>(indexes.length);
   for (let position = 0; position < indexes.length; position += 1) {
+    const before = parts[position] ?? "";
+    bare[position] = before.length === 0 || before.charCodeAt(before.length - 1) === 62;
     tails[position] = (markers[position] ?? "") + (parts[position + 1] ?? "");
   }
-  return { parts, indexes, markers, tails };
+  return { parts, indexes, markers, tails, bare };
 }
 
 export function createServerBackend(): ServerBackend {
@@ -67,7 +70,13 @@ export function createServerBackend(): ServerBackend {
       if (parsed === null) {
         return null;
       }
-      const node = new RawNode(parsed.parts, parsed.indexes, parsed.markers, parsed.tails);
+      const node = new RawNode(
+        parsed.parts,
+        parsed.indexes,
+        parsed.markers,
+        parsed.tails,
+        parsed.bare,
+      );
       return { node, holes: node.holes, attrs: [] };
     },
     serialize: serializeValue,

@@ -461,8 +461,8 @@ describe("гидрация с сохранением узлов", () => {
     handle.dispose();
   });
 
-  it("отклоняет план с неверным путём до маркера", async () => {
-    function BrokenPath(): Node {
+  it("игнорирует устаревший путь, если маркер на месте", async () => {
+    function StalePath(): Node {
       const template = templateHoles('<p class="broken"><!--silent-hole-0--></p>', {
         roots: 1,
         holes: [{ path: [0, 1], counts: [1, 1] }],
@@ -473,9 +473,31 @@ describe("гидрация с сохранением узлов", () => {
       return template.node;
     }
 
-    const target = host(await renderServer(BrokenPath as unknown as AnyComponent));
+    const target = host('<p class="broken">value<!--silent-hole-0--></p>');
     const mismatches: HydrationMismatchError[] = [];
-    const handle = await hydrate(target, BrokenPath as unknown as AnyComponent, {
+    const handle = await hydrate(target, StalePath as unknown as AnyComponent, {
+      onMismatch: (error) => mismatches.push(error),
+    });
+
+    expect(mismatches).toEqual([]);
+    expect(target.textContent).toBe("value");
+    handle.dispose();
+  });
+
+  it("отклоняет план, если маркера не хватает", async () => {
+    function MissingHole(): Node {
+      const template = templateHoles('<p class="broken"></p>', {
+        roots: 1,
+        holes: [{ path: [0, 0], counts: [1] }],
+        attrs: [],
+        strips: [],
+      })();
+      return template.node;
+    }
+
+    const target = host(await renderServer(MissingHole as unknown as AnyComponent));
+    const mismatches: HydrationMismatchError[] = [];
+    const handle = await hydrate(target, MissingHole as unknown as AnyComponent, {
       onMismatch: (error) => mismatches.push(error),
     });
 
@@ -541,6 +563,136 @@ describe("гидрация с сохранением узлов", () => {
     expect((target.querySelector("textarea") as HTMLTextAreaElement | null)?.value).toBe(
       "hello",
     );
+    handle.dispose();
+  });
+
+  it("адоптирует текст без региона и переиспользует серверный текстовый узел", async () => {
+    count[1](0);
+    const html = await renderServer(CounterView as unknown as AnyComponent);
+    expect(html).not.toContain("silent-insert");
+    expect(html).toContain("0<!--silent-hole-0-->");
+
+    const target = host(html);
+    const serverStrong = target.querySelector("strong.value");
+    const serverText = Array.from(serverStrong?.childNodes ?? []).find(
+      (node) => node.nodeType === 3,
+    );
+    const mismatches: HydrationMismatchError[] = [];
+    const handle = await hydrate(target, CounterView as unknown as AnyComponent, {
+      onMismatch: (error) => mismatches.push(error),
+    });
+
+    expect(mismatches).toEqual([]);
+    expect(target.querySelector("strong.value")).toBe(serverStrong);
+    expect(
+      Array.from(target.querySelector("strong.value")?.childNodes ?? []).find(
+        (node) => node.nodeType === 3,
+      ),
+    ).toBe(serverText);
+
+    count[1](5);
+    flushSync();
+    expect(target.querySelector("strong.value")?.textContent).toBe("5");
+    expect(
+      Array.from(target.querySelector("strong.value")?.childNodes ?? []).find(
+        (node) => node.nodeType === 3,
+      ),
+    ).toBe(serverText);
+    handle.dispose();
+  });
+
+  it("не трогает статический текст перед дырой", async () => {
+    const value = createSignal("world");
+    function PrefixView(): Node {
+      const template = templateHoles(
+        '<p class="prefix">Hello <!--silent-hole-0--></p>',
+      )();
+      insert(holeParent(template, 0), () => value[0](), template.holes[0]);
+      return template.node;
+    }
+
+    const html = await renderServer(PrefixView as unknown as AnyComponent);
+    expect(html).toContain("silent-insert");
+
+    const target = host(html);
+    const mismatches: HydrationMismatchError[] = [];
+    const handle = await hydrate(target, PrefixView as unknown as AnyComponent, {
+      onMismatch: (error) => mismatches.push(error),
+    });
+
+    expect(mismatches).toEqual([]);
+    expect(target.textContent).toBe("Hello world");
+
+    value[1]("there");
+    flushSync();
+    expect(target.textContent).toBe("Hello there");
+    handle.dispose();
+  });
+
+  it("переключает текстовую дыру на узел и обратно", async () => {
+    const value = createSignal<unknown>("text");
+    function SwitchView(): Node {
+      const template = templateHoles('<div class="target"><!--silent-hole-0--></div>')();
+      insert(holeParent(template, 0), () => value[0](), template.holes[0]);
+      return template.node;
+    }
+
+    const target = host(await renderServer(SwitchView as unknown as AnyComponent));
+    const mismatches: HydrationMismatchError[] = [];
+    const handle = await hydrate(target, SwitchView as unknown as AnyComponent, {
+      onMismatch: (error) => mismatches.push(error),
+    });
+
+    expect(mismatches).toEqual([]);
+    expect(target.textContent).toBe("text");
+
+    const span = document.createElement("span");
+    span.textContent = "node";
+    value[1](span);
+    flushSync();
+    expect(target.querySelector(".target > span")).toBe(span);
+    expect(target.textContent).toBe("node");
+
+    value[1]("again");
+    flushSync();
+    expect(target.querySelector(".target > span")).toBe(null);
+    expect(target.textContent).toBe("again");
+    handle.dispose();
+  });
+
+  it("адоптирует старую разметку с регионом вокруг текста", async () => {
+    count[1](0);
+    function PlainCounter(): Node {
+      const template = templateHoles(
+        '<div class="counter"><strong class="value"><!--silent-hole-0--></strong></div>',
+      )();
+      insert(holeParent(template, 0), () => count[0](), template.holes[0]);
+      return template.node;
+    }
+
+    const target = host(
+      '<div class="counter"><strong class="value"><!--silent-insert-->0<!--silent-insert-end--><!--silent-hole-0--></strong></div>',
+    );
+    const serverStrong = target.querySelector("strong.value");
+    const serverText = Array.from(serverStrong?.childNodes ?? []).find(
+      (node) => node.nodeType === 3,
+    );
+    const mismatches: HydrationMismatchError[] = [];
+    const handle = await hydrate(target, PlainCounter as unknown as AnyComponent, {
+      onMismatch: (error) => mismatches.push(error),
+    });
+
+    expect(mismatches).toEqual([]);
+    expect(target.querySelector("strong.value")).toBe(serverStrong);
+    expect(
+      Array.from(target.querySelector("strong.value")?.childNodes ?? []).find(
+        (node) => node.nodeType === 3,
+      ),
+    ).toBe(serverText);
+
+    count[1](7);
+    flushSync();
+    expect(target.querySelector("strong.value")?.textContent).toBe("7");
     handle.dispose();
   });
 });

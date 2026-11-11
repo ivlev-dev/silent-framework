@@ -24,6 +24,13 @@ function buildNode(tails?: readonly string[]): RawNode {
   return new RawNode(parts, indexes, markers, tails);
 }
 
+function buildBareNode(): RawNode {
+  const parts: readonly string[] = ["<ul>", "</ul>"];
+  const markers: readonly string[] = ["<!--silent-hole-0-->"];
+  const indexes: readonly number[] = [0];
+  return new RawNode(parts, indexes, markers, undefined, [true]);
+}
+
 describe("RawNode", () => {
   it("пишет части в общий буфер без промежуточной строки", () => {
     const node = buildNode();
@@ -81,6 +88,23 @@ describe("RawNode", () => {
 });
 
 describe("сырые слоты RawNode", () => {
+  it("вставляет примитив текстом без региона в bare-слоте", () => {
+    const node = buildBareNode();
+    const hole = rawHole(node.holes[0]);
+
+    expect(hole.__silentServerHoleSetValue("a&b")).toBe(true);
+    expect(node.render()).toBe("<ul>a&amp;b<!--silent-hole-0--></ul>");
+  });
+
+  it("оставляет регион для не-примитива в bare-слоте", () => {
+    const node = buildBareNode();
+    rawHole(node.holes[0]).__silentServerHoleSetValue(["a&b"]);
+
+    expect(node.render()).toBe(
+      "<ul><!--silent-insert-->a&amp;b<!--silent-insert-end--><!--silent-hole-0--></ul>",
+    );
+  });
+
   it("сохраняет сырое значение и сообщает об успехе", () => {
     const node = buildNode();
     const hole = rawHole(node.holes[0]);

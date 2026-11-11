@@ -93,7 +93,17 @@ interface ShapeCursor {
   ignoreTopMetadata: boolean;
 }
 
-function nextShapeChild(cursor: ShapeCursor): Node | null {
+const HOLE_PREFIX = "silent-hole-";
+
+function isHoleText(node: Node, next: Node | null): boolean {
+  return (
+    node.nodeType === Node.TEXT_NODE &&
+    next instanceof Comment &&
+    next.data.startsWith(HOLE_PREFIX)
+  );
+}
+
+function nextShapeChild(cursor: ShapeCursor, skipHoleText = false): Node | null {
   let child = cursor.node;
   while (child !== null) {
     const next = child.nextSibling;
@@ -109,6 +119,8 @@ function nextShapeChild(cursor: ShapeCursor): Node | null {
         }
         skip = true;
       }
+    } else if (skipHoleText && isHoleText(child, next)) {
+      skip = true;
     }
     cursor.node = next;
     if (!skip && !(cursor.ignoreTopMetadata && isMetadataElement(child))) {
@@ -209,6 +221,8 @@ export function shapeMatches(
               }
               skip = true;
             }
+          } else if (isHoleText(candidate, next)) {
+            skip = true;
           }
           claimedChild = next;
           if (!skip) {
@@ -236,6 +250,8 @@ export function shapeMatches(
             }
             skip = true;
           }
+        } else if (isHoleText(candidate, next)) {
+          skip = true;
         }
         claimedChild = next;
         if (!skip) {
@@ -255,7 +271,7 @@ export function shapeMatches(
       ignoreTopMetadata,
     };
     let x = nextShapeChild(leftCursor);
-    let y = nextShapeChild(rightCursor);
+    let y = nextShapeChild(rightCursor, true);
     while (x !== null && y !== null) {
       if (!shapeMatches(x, y)) {
         return false;

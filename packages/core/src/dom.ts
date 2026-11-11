@@ -163,6 +163,14 @@ export function stringOf(value: unknown): string {
   return String(current);
 }
 
+function isTextValue(value: unknown): boolean {
+  if (value === null || value === undefined) {
+    return true;
+  }
+  const type = typeof value;
+  return type === "string" || type === "number" || type === "bigint" || type === "boolean";
+}
+
 function valuesEqual(a: unknown, b: unknown): boolean {
   if (a === b) {
     return true;
@@ -656,40 +664,14 @@ function adoptPartsPlan(
   root: Node,
   plan: TemplatePlan,
 ): { holes: Comment[]; attrs: Element[] } {
-  const holes: Comment[] = [];
-  plan.holes.forEach((entry, index) => {
-    const node = resolvePath(root, entry, true);
-    if (!(node instanceof Comment) || node.data !== HOLE_MARKER + index) {
-      mismatch("шаблон не совпал с серверной разметкой");
-    }
-    holes.push(node);
-  });
-  const attrs: Element[] = [];
-  plan.attrs.forEach((entry, index) => {
-    const node = resolvePath(root, entry, true);
-    if (
-      node === null ||
-      node.nodeType !== Node.ELEMENT_NODE ||
-      !(node as Element).hasAttribute(ATTR_MARKER + index)
-    ) {
-      mismatch("шаблон не совпал с серверной разметкой");
-    }
-    attrs.push(node as Element);
-  });
-  const strips: { readonly element: Element; readonly names: readonly string[] }[] = [];
-  for (const entry of plan.strips) {
-    const node = resolvePath(root, entry, true);
-    if (node === null || node.nodeType !== Node.ELEMENT_NODE) {
-      mismatch("шаблон не совпал с серверной разметкой");
-    }
-    strips.push({ element: node as Element, names: entry.names });
+  const collected = collectPartsMany([root]);
+  if (
+    collected.holes.length !== plan.holes.length ||
+    collected.attrs.length !== plan.attrs.length
+  ) {
+    return mismatch("шаблон не совпал с серверной разметкой");
   }
-  for (const entry of strips) {
-    for (const name of entry.names) {
-      entry.element.removeAttribute(name);
-    }
-  }
-  return { holes, attrs };
+  return collected;
 }
 
 function applyPartsPlan(
@@ -816,39 +798,53 @@ function createClientTemplateHoles(
     const metadata = current.metadata;
     const simple = current.simple;
     const rootCount = current.rootCount;
-    const strip = !isServerMode();
     if (!metadata) {
       if (rootCount === 0) {
         const empty = document.createDocumentFragment();
         markMetadataFree(empty);
         return { node: empty, holes: [], attrs: [] };
       }
+      const expected = parts();
       if (rootCount === 1) {
-        const root = content.firstChild;
-        if (root === null) {
-          return mismatch("шаблон не совпал с серверной разметкой");
-        }
         const node = claimNext();
-        if (node === null || !shapeMatches(root, node, true, simple)) {
+        if (node === null) {
           return mismatch("шаблон не совпал с серверной разметкой");
         }
         markMetadataFree(node);
-        return { node, ...applyPartsPlan(node, parts(), strip, true) };
+        const collected = collectPartsMany([node]);
+        if (
+          collected.holes.length !== expected.holes.length ||
+          collected.attrs.length !== expected.attrs.length
+        ) {
+          return mismatch("шаблон не совпал с серверной разметкой");
+        }
+        return { node, ...collected };
+      }
+      const claimed: Node[] = [];
+      let cursor = content.firstChild;
+      while (cursor !== null) {
+        const next = cursor.nextSibling;
+        const node = claimNext();
+        if (node === null) {
+          return mismatch("шаблон не совпал с серверной разметкой");
+        }
+        markMetadataFree(node);
+        claimed.push(node);
+        cursor = next;
+      }
+      const collected = collectPartsMany(claimed);
+      if (
+        collected.holes.length !== expected.holes.length ||
+        collected.attrs.length !== expected.attrs.length
+      ) {
+        return mismatch("шаблон не совпал с серверной разметкой");
       }
       const container = document.createDocumentFragment();
-      let current = content.firstChild;
-      while (current !== null) {
-        const next = current.nextSibling;
-        const node = claimNext();
-        if (node === null || !shapeMatches(current, node, true, simple)) {
-          return mismatch("шаблон не совпал с серверной разметкой");
-        }
-        markMetadataFree(node);
+      for (const node of claimed) {
         container.appendChild(node);
-        current = next;
       }
       markMetadataFree(container);
-      return { node: container, ...applyPartsPlan(container, parts(), strip, true) };
+      return { node: container, ...collected };
     }
     const fresh = cloneNode();
     const roots =
@@ -888,18 +884,67 @@ function insertServer(
   accessor: () => unknown,
   marker: Node | null,
 ): void {
-  const start = document.createComment(INSERT_START);
-  const end = document.createComment(INSERT_END);
-  if (marker === null) {
-    parent.appendChild(start);
-    parent.appendChild(end);
-  } else {
-    parent.insertBefore(start, marker);
-    parent.insertBefore(end, marker);
-  }
-  const mount = createMountPoint(parent, end);
+  const previous = marker === null ? parent.lastChild : marker.previousSibling;
+  let textNode: Text | null = null;
+  let mount: MountPoint | null = null;
+  let initialized = false;
+  const writeText = (value: unknown): void => {
+    const text = stringOf(value);
+    if (textNode === null) {
+      if (text === "") {
+        return;
+      }
+      textNode = document.createTextNode(text);
+      if (marker === null) {
+        parent.appendChild(textNode);
+      } else {
+        parent.insertBefore(textNode, marker);
+      }
+      return;
+    }
+    if (textNode.data !== text) {
+      textNode.data = text;
+    }
+  };
+  const openRegion = (): MountPoint => {
+    const start = document.createComment(INSERT_START);
+    const end = document.createComment(INSERT_END);
+    if (marker === null) {
+      parent.appendChild(start);
+      parent.appendChild(end);
+    } else {
+      parent.insertBefore(start, marker);
+      parent.insertBefore(end, marker);
+    }
+    mount = createMountPoint(parent, end);
+    return mount;
+  };
   createRenderEffect(() => {
-    mount.render(accessor());
+    const value = accessor();
+    if (!initialized) {
+      initialized = true;
+      if (isTextValue(value) && !(previous instanceof Text)) {
+        writeText(value);
+        return;
+      }
+      openRegion().render(value);
+      return;
+    }
+    if (mount !== null) {
+      mount.render(value);
+      return;
+    }
+    if (isTextValue(value)) {
+      writeText(value);
+      return;
+    }
+    const stale = textNode;
+    const created = openRegion();
+    if (stale !== null && stale.parentNode !== null) {
+      stale.parentNode.removeChild(stale);
+    }
+    textNode = null;
+    created.render(value);
   });
 }
 
