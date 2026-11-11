@@ -64,11 +64,7 @@ function getFieldSignal(
   return signal;
 }
 
-export function createReactiveStore(): ReactiveStore {
-  return new ReactiveStoreImpl();
-}
-
-export function storeFor(instance: object): ReactiveStore {
+function getStore(instance: object): ReactiveStoreImpl {
   const existing = stores.get(instance);
   if (existing !== undefined) {
     return existing;
@@ -78,12 +74,20 @@ export function storeFor(instance: object): ReactiveStore {
   return store;
 }
 
+export function createReactiveStore(): ReactiveStore {
+  return new ReactiveStoreImpl();
+}
+
+export function storeFor(instance: object): ReactiveStore {
+  return getStore(instance);
+}
+
 export function readField<T>(
   instance: object,
   key: PropertyKey,
   getRaw: () => T,
 ): T {
-  const store = toImpl(storeFor(instance));
+  const store = getStore(instance);
   if (store.disposed) {
     return deepReactive(getRaw());
   }
@@ -97,7 +101,7 @@ export function writeField<T>(
   value: T,
   setRaw: (value: T) => void,
 ): T {
-  const store = toImpl(storeFor(instance));
+  const store = getStore(instance);
   const raw = unwrap(value);
   if (store.disposed) {
     setRaw(raw);
@@ -140,7 +144,7 @@ export function getComputed<T>(
   key: PropertyKey,
   compute: () => T,
 ): T {
-  const store = toImpl(storeFor(instance));
+  const store = getStore(instance);
   if (store.disposed) {
     return untrack(compute);
   }

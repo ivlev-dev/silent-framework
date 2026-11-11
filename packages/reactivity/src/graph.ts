@@ -98,10 +98,12 @@ function readSource(node: SourceNode): unknown {
   const listener = currentListener;
   if (listener !== null && !listener.disposed) {
     const nextDeps = listener.nextDeps;
-    const nextVersions = listener.nextDepVersions;
-    if (nextDeps !== null && nextVersions !== null) {
-      nextDeps.add(node);
-      nextVersions.set(node, node.version);
+    if (nextDeps !== null) {
+      const nextVersions = listener.nextDepVersions;
+      if (nextVersions !== null) {
+        nextDeps.add(node);
+        nextVersions.set(node, node.version);
+      }
     }
   }
   return node.value;
@@ -113,8 +115,7 @@ function writeSource(node: SignalNode, value: unknown): void {
   }
   node.value = value;
   node.version += 1;
-  const observers = Array.from(node.observers);
-  for (const observer of observers) {
+  for (const observer of node.observers) {
     markDirty(observer);
   }
 }
@@ -125,8 +126,7 @@ function markDirty(node: ComputationNode): void {
   }
   node.state = DIRTY;
   if (node.type === "memo") {
-    const observers = Array.from(node.observers);
-    for (const observer of observers) {
+    for (const observer of node.observers) {
       markCheck(observer);
     }
   } else {
@@ -140,8 +140,7 @@ function markCheck(node: ComputationNode): void {
   }
   node.state = CHECK;
   if (node.type === "memo") {
-    const observers = Array.from(node.observers);
-    for (const observer of observers) {
+    for (const observer of node.observers) {
       markCheck(observer);
     }
   } else {
@@ -203,13 +202,14 @@ function reconcileDependencies(node: ComputationNode): void {
   if (nextDeps === null || nextVersions === null) {
     return;
   }
-  for (const dep of node.deps) {
+  const previousDeps = node.deps;
+  for (const dep of previousDeps) {
     if (!nextDeps.has(dep)) {
       dep.observers.delete(node);
     }
   }
   for (const dep of nextDeps) {
-    if (!node.deps.has(dep)) {
+    if (!previousDeps.has(dep)) {
       dep.observers.add(node);
     }
   }
@@ -232,8 +232,7 @@ function recomputeMemo(node: MemoNode): void {
   if (!wasInitialized || !node.equals(previous, next)) {
     node.value = next;
     node.version += 1;
-    const observers = Array.from(node.observers);
-    for (const observer of observers) {
+    for (const observer of node.observers) {
       markCheck(observer);
     }
   }
@@ -432,9 +431,7 @@ export function createSignalHandle<T>(
   equals?: (a: T, b: T) => boolean,
 ): SignalHandle<T> {
   const equality: EqualityFn<unknown> =
-    equals === undefined
-      ? (a, b) => Object.is(a, b)
-      : (a, b) => equals(a as T, b as T);
+    equals === undefined ? Object.is : (a, b) => equals(a as T, b as T);
   const node = createSignalNode(value, equality);
   return {
     read(): T {
@@ -454,12 +451,18 @@ export function createSignal<T>(
   value: T,
   options?: SignalOptions<T>,
 ): [Accessor<T>, Setter<T>] {
-  const handle = createSignalHandle(value, options?.equals);
-  const accessor: Accessor<T> = () => handle.read();
+  const equals = options?.equals;
+  const equality: EqualityFn<unknown> =
+    equals === undefined ? Object.is : (a, b) => equals(a as T, b as T);
+  const node = createSignalNode(value, equality);
+  const accessor: Accessor<T> = () => readSource(node) as T;
   const setter: Setter<T> = (next) => {
     const resolved: T =
-      typeof next === "function" ? (next as (prev: T) => T)(handle.peek()) : next;
-    return handle.write(resolved);
+      typeof next === "function"
+        ? (next as (prev: T) => T)(node.value as T)
+        : next;
+    writeSource(node, resolved);
+    return resolved;
   };
   return [accessor, setter];
 }
@@ -468,7 +471,7 @@ export function createMemo<T>(fn: () => T, options?: MemoOptions<T>): Accessor<T
   const equalsOption = options?.equals;
   const equality: EqualityFn<unknown> =
     equalsOption === undefined
-      ? (a, b) => Object.is(a, b)
+      ? Object.is
       : (a, b) => equalsOption(a as T, b as T);
   const owner = createOwnerNode(currentOwner);
   const node: MemoNode = {

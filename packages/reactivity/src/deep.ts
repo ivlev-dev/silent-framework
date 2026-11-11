@@ -35,11 +35,11 @@ function toArrayIndex(key: string): number | null {
   return index;
 }
 
-function getPropertyDescriptor(
+function findInheritedDescriptor(
   target: object,
   key: PropertyKey,
 ): PropertyDescriptor | undefined {
-  let current: object | null = target;
+  let current: object | null = Object.getPrototypeOf(target) as object | null;
   while (current !== null) {
     const descriptor = Reflect.getOwnPropertyDescriptor(current, key);
     if (descriptor !== undefined) {
@@ -69,8 +69,9 @@ function getField(record: ReactiveRecord, key: PropertyKey): SignalHandle<unknow
   if (existing !== undefined) {
     return existing;
   }
-  const initial = Reflect.get(record.raw, key, record.raw);
-  return ensureField(record, key, initial);
+  const field = createSignalHandle<unknown>(Reflect.get(record.raw, key, record.raw));
+  record.fields.set(key, field);
+  return field;
 }
 
 function bumpKeys(record: ReactiveRecord): void {
@@ -100,6 +101,9 @@ function notifyChangedIndices(
 ): void {
   const array = record.raw as unknown[];
   const length = Math.max(previous.length, array.length);
+  if (length === 0) {
+    return;
+  }
   for (let index = 0; index < length; index += 1) {
     const before = previous[index];
     const after = array[index];
@@ -116,7 +120,10 @@ function unwrapValue(value: unknown): unknown {
 function arrayPush(record: ReactiveRecord, items: unknown[]): number {
   const array = record.raw as unknown[];
   const start = array.length;
-  const values = items.map(unwrapValue);
+  const values: unknown[] = [];
+  for (let index = 0; index < items.length; index += 1) {
+    values.push(unwrapValue(items[index]));
+  }
   const result = array.push(...values);
   for (let offset = 0; offset < values.length; offset += 1) {
     writeIndex(record, start + offset, undefined, values[offset]);
@@ -317,16 +324,15 @@ function setObjectField(
   record: ReactiveRecord,
   key: PropertyKey,
   value: unknown,
+  hadOwn: boolean,
 ): boolean {
   const raw = record.raw;
-  const hadOwn = hasOwn(raw, key);
   const previous = Reflect.get(raw, key, raw);
   const success = Reflect.set(raw, key, value, raw);
   if (!success) {
     return false;
   }
-  const next = Reflect.get(raw, key, raw);
-  ensureField(record, key, previous).write(next);
+  ensureField(record, key, previous).write(Reflect.get(raw, key, raw));
   if (!hadOwn) {
     bumpKeys(record);
   }
@@ -406,11 +412,7 @@ function hasReactivePrototype(value: object): boolean {
   return false;
 }
 
-function isNonReactiveObject(value: object): boolean {
-  if (isDomNode(value)) {
-    return true;
-  }
-  const tag = Object.prototype.toString.call(value);
+function isNonReactiveTag(tag: string): boolean {
   switch (tag) {
     case "[object Date]":
     case "[object Map]":
@@ -443,10 +445,14 @@ function shouldWrap(value: object): boolean {
   if (Array.isArray(value)) {
     return true;
   }
-  if (isNonReactiveObject(value)) {
+  if (isDomNode(value)) {
     return false;
   }
-  return Object.prototype.toString.call(value) === "[object Object]";
+  const tag = Object.prototype.toString.call(value);
+  if (isNonReactiveTag(tag)) {
+    return false;
+  }
+  return tag === "[object Object]";
 }
 
 function createHandler(record: ReactiveRecord): ProxyHandler<object> {
@@ -461,31 +467,45 @@ function createHandler(record: ReactiveRecord): ProxyHandler<object> {
           }
         }
         if (typeof key === "string") {
-          const methods = record.arrayMethods;
-          if (methods !== null && !hasOwn(raw, key)) {
-            const method = methods.get(key);
-            if (method !== undefined) {
-              return method;
-            }
-          }
           const index = toArrayIndex(key);
           if (index !== null) {
             return deepReactive(getField(record, index).read());
           }
+          const methods = record.arrayMethods;
+          if (methods !== null) {
+            const method = methods.get(key);
+            if (method !== undefined && !hasOwn(raw, key)) {
+              return method;
+            }
+          }
         }
       }
-      const descriptor = getPropertyDescriptor(raw, key);
-      if (descriptor !== undefined && descriptor.get !== undefined) {
-        return deepReactive(Reflect.get(raw, key, record.proxy));
+      const own = Reflect.getOwnPropertyDescriptor(raw, key);
+      if (own !== undefined) {
+        if (own.get !== undefined) {
+          return deepReactive(Reflect.get(raw, key, record.proxy));
+        }
+        if (
+          own.configurable === false &&
+          own.writable === false &&
+          own.set === undefined
+        ) {
+          return own.value;
+        }
+        return deepReactive(getField(record, key).read());
       }
-      if (
-        descriptor !== undefined &&
-        descriptor.configurable === false &&
-        descriptor.get === undefined &&
-        descriptor.set === undefined &&
-        descriptor.writable === false
-      ) {
-        return descriptor.value;
+      const inherited = findInheritedDescriptor(raw, key);
+      if (inherited !== undefined) {
+        if (inherited.get !== undefined) {
+          return deepReactive(Reflect.get(raw, key, record.proxy));
+        }
+        if (
+          inherited.configurable === false &&
+          inherited.writable === false &&
+          inherited.set === undefined
+        ) {
+          return inherited.value;
+        }
       }
       return deepReactive(getField(record, key).read());
     },
@@ -494,9 +514,16 @@ function createHandler(record: ReactiveRecord): ProxyHandler<object> {
       if (receiver !== record.proxy) {
         return Reflect.set(target, key, value, receiver);
       }
-      const descriptor = getPropertyDescriptor(raw, key);
-      if (descriptor !== undefined && descriptor.set !== undefined) {
-        return Reflect.set(raw, key, value, record.proxy);
+      const own = Reflect.getOwnPropertyDescriptor(raw, key);
+      if (own !== undefined) {
+        if (own.set !== undefined) {
+          return Reflect.set(raw, key, value, record.proxy);
+        }
+      } else {
+        const inherited = findInheritedDescriptor(raw, key);
+        if (inherited !== undefined && inherited.set !== undefined) {
+          return Reflect.set(raw, key, value, record.proxy);
+        }
       }
       const rawValue = unwrapValue(value);
       if (record.isArray) {
@@ -510,7 +537,7 @@ function createHandler(record: ReactiveRecord): ProxyHandler<object> {
           }
         }
       }
-      return setObjectField(record, key, rawValue);
+      return setObjectField(record, key, rawValue, own !== undefined);
     },
     has(target, key): boolean {
       record.keysSignal.read();
@@ -525,10 +552,14 @@ function createHandler(record: ReactiveRecord): ProxyHandler<object> {
       return Reflect.getOwnPropertyDescriptor(target, key);
     },
     deleteProperty(target, key): boolean {
-      const hadOwn = hasOwn(target, key);
-      const previous = hadOwn ? Reflect.get(target, key, target) : undefined;
+      const own = Reflect.getOwnPropertyDescriptor(target, key);
+      if (own === undefined) {
+        return Reflect.deleteProperty(target, key);
+      }
+      const previous =
+        own.get !== undefined ? Reflect.get(target, key, target) : own.value;
       const deleted = Reflect.deleteProperty(target, key);
-      if (deleted && hadOwn) {
+      if (deleted) {
         let fieldKey: PropertyKey = key;
         if (record.isArray && typeof key === "string") {
           const index = toArrayIndex(key);
