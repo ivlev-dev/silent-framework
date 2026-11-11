@@ -256,11 +256,13 @@ export function createViewResult(
     viewRootDispose = null;
     fallbackRootDispose?.();
     fallbackRootDispose = null;
-    removeBetween(start, end);
     for (const node of currentNodes) {
-      disposeNode(node);
+      if (node.parentNode === null) {
+        disposeNode(node);
+      }
     }
     currentNodes = [];
+    removeBetween(start, end);
   };
 
   const renderFallback = (): void => {

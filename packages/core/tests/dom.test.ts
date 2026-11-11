@@ -821,6 +821,38 @@ describe("writeRegion", () => {
     expect(start.nextSibling).toBe(element);
     expect(element.nextSibling).toBe(end);
   });
+
+  it("не пересобирает регион при повторной записи того же узла", () => {
+    const parent = document.createElement("div");
+    const start = document.createComment("start");
+    const end = document.createComment("end");
+    const before = document.createTextNode("before");
+    const element = document.createElement("span");
+    parent.append(before, start, element, end);
+    document.body.appendChild(parent);
+
+    writeRegion(start, end, element);
+    expect(parent.firstChild).toBe(before);
+    expect(start.nextSibling).toBe(element);
+    expect(element.nextSibling).toBe(end);
+  });
+
+  it("переиспользует массив узлов при повторной записи", () => {
+    const parent = document.createElement("div");
+    const start = document.createComment("start");
+    const end = document.createComment("end");
+    parent.append(start, end);
+    document.body.appendChild(parent);
+    const first = document.createElement("b");
+    const second = document.createElement("i");
+
+    writeRegion(start, end, [first, second]);
+    writeRegion(start, end, [first, second]);
+
+    expect(start.nextSibling).toBe(first);
+    expect(first.nextSibling).toBe(second);
+    expect(second.nextSibling).toBe(end);
+  });
 });
 
 describe("hyphen", () => {

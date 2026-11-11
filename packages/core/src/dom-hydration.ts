@@ -107,33 +107,103 @@ export function settleNodes(end: Node | null, value: unknown): void {
   }
 }
 
+interface RegionState {
+  readonly end: Node;
+  text: Text | null;
+  nodes: Node[];
+}
+
+const regionStates = new WeakMap<Node, RegionState>();
+
+function readRegion(start: Node, end: Node): RegionState {
+  const existing = regionStates.get(start);
+  if (existing !== undefined && existing.end === end) {
+    return existing;
+  }
+  const nodes = collectBetween(start, end);
+  const state: RegionState = {
+    end,
+    text: nodes.length === 1 && nodes[0] instanceof Text ? nodes[0] : null,
+    nodes,
+  };
+  regionStates.set(start, state);
+  return state;
+}
+
+function detach(node: Node): void {
+  node.parentNode?.removeChild(node);
+}
+
+function disposeRegion(state: RegionState): void {
+  for (const node of state.nodes) {
+    disposeNode(node);
+    detach(node);
+  }
+  state.nodes = [];
+  state.text = null;
+}
+
+function sameNodes(left: readonly Node[], right: readonly Node[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function writeNodes(state: RegionState, value: unknown): void {
+  const next = extractMetadata(collectNodes(value as Children));
+  if (sameNodes(state.nodes, next)) {
+    state.text = next.length === 1 && next[0] instanceof Text ? next[0] : null;
+    return;
+  }
+  const parent = state.end.parentNode;
+  if (parent === null) {
+    return;
+  }
+  const nextSet = new Set(next);
+  for (const node of state.nodes) {
+    if (nextSet.has(node)) {
+      continue;
+    }
+    disposeNode(node);
+    detach(node);
+  }
+  state.nodes = [];
+  for (const node of next) {
+    parent.insertBefore(node, state.end);
+  }
+  state.nodes = next;
+  state.text = next.length === 1 && next[0] instanceof Text ? next[0] : null;
+}
+
 export function writeRegion(start: Node, end: Node, value: unknown): void {
   const parent = end.parentNode;
   if (parent === null) {
     return;
   }
-  if (
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "bigint"
-  ) {
-    const first = start.nextSibling;
-    if (first !== null && first !== end && first.nextSibling === end && first instanceof Text) {
-      const next = stringOf(value);
-      if (first.data !== next) {
-        first.data = next;
+  const state = readRegion(start, end);
+  const type = typeof value;
+  if (type === "string" || type === "number" || type === "bigint") {
+    const next = stringOf(value);
+    if (state.text !== null) {
+      if (state.text.data !== next) {
+        state.text.data = next;
       }
       return;
     }
+    disposeRegion(state);
+    const text = document.createTextNode(next);
+    state.text = text;
+    state.nodes = [text];
+    parent.insertBefore(text, end);
+    return;
   }
-  const existing = collectBetween(start, end);
-  for (const node of existing) {
-    disposeNode(node);
-    parent.removeChild(node);
-  }
-  for (const node of extractMetadata(collectNodes(value as Children))) {
-    parent.insertBefore(node, end);
-  }
+  writeNodes(state, value);
 }
 
 export function insertHydrated(
