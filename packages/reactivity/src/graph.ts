@@ -27,8 +27,8 @@ interface MemoNode {
   initialized: boolean;
   running: boolean;
   readonly observers: Set<ComputationNode>;
-  deps: Set<SourceNode>;
-  depVersions: Map<SourceNode, number>;
+  deps: Set<SourceNode> | null;
+  depVersions: Map<SourceNode, number> | null;
   nextDeps: Set<SourceNode> | null;
   nextDepVersions: Map<SourceNode, number> | null;
   readonly owner: OwnerNode;
@@ -41,9 +41,8 @@ interface EffectNode {
   disposed: boolean;
   initialized: boolean;
   running: boolean;
-  readonly observers: Set<ComputationNode>;
-  deps: Set<SourceNode>;
-  depVersions: Map<SourceNode, number>;
+  deps: Set<SourceNode> | null;
+  depVersions: Map<SourceNode, number> | null;
   nextDeps: Set<SourceNode> | null;
   nextDepVersions: Map<SourceNode, number> | null;
   readonly owner: OwnerNode;
@@ -55,8 +54,8 @@ type ComputationNode = MemoNode | EffectNode;
 interface OwnerNode {
   disposed: boolean;
   readonly parent: OwnerNode | null;
-  children: Set<OwnerNode>;
-  readonly cleanups: (() => void)[];
+  children: Set<OwnerNode> | null;
+  cleanups: (() => void)[] | null;
   computation: ComputationNode | null;
 }
 
@@ -97,14 +96,16 @@ function readSource(node: SourceNode): unknown {
   }
   const listener = currentListener;
   if (listener !== null && !listener.disposed) {
-    const nextDeps = listener.nextDeps;
-    if (nextDeps !== null) {
-      const nextVersions = listener.nextDepVersions;
-      if (nextVersions !== null) {
-        nextDeps.add(node);
-        nextVersions.set(node, node.version);
-      }
+    let nextDeps = listener.nextDeps;
+    let nextVersions = listener.nextDepVersions;
+    if (nextDeps === null || nextVersions === null) {
+      nextDeps = new Set<SourceNode>();
+      nextVersions = new Map<SourceNode, number>();
+      listener.nextDeps = nextDeps;
+      listener.nextDepVersions = nextVersions;
     }
+    nextDeps.add(node);
+    nextVersions.set(node, node.version);
   }
   return node.value;
 }
@@ -149,7 +150,11 @@ function markCheck(node: ComputationNode): void {
 }
 
 function depsChanged(node: ComputationNode): boolean {
-  for (const [dep, version] of node.depVersions) {
+  const depVersions = node.depVersions;
+  if (depVersions === null) {
+    return false;
+  }
+  for (const [dep, version] of depVersions) {
     if (dep.type === "memo") {
       if (dep.disposed) {
         return true;
@@ -181,8 +186,6 @@ function updateIfNecessary(node: ComputationNode): void {
 function runWithTracking<T>(node: ComputationNode, fn: () => T): T {
   const previousListener = currentListener;
   const previousOwner = currentOwner;
-  node.nextDeps = new Set<SourceNode>();
-  node.nextDepVersions = new Map<SourceNode, number>();
   currentListener = node;
   currentOwner = node.owner;
   node.running = true;
@@ -198,20 +201,41 @@ function runWithTracking<T>(node: ComputationNode, fn: () => T): T {
 
 function reconcileDependencies(node: ComputationNode): void {
   const nextDeps = node.nextDeps;
+  if (nextDeps === null) {
+    const previousDeps = node.deps;
+    if (previousDeps !== null) {
+      for (const dep of previousDeps) {
+        dep.observers.delete(node);
+      }
+      previousDeps.clear();
+    }
+    node.deps = null;
+    node.depVersions = null;
+    node.nextDepVersions = null;
+    return;
+  }
   const nextVersions = node.nextDepVersions;
-  if (nextDeps === null || nextVersions === null) {
+  if (nextVersions === null) {
+    node.nextDeps = null;
     return;
   }
   const previousDeps = node.deps;
-  for (const dep of previousDeps) {
-    if (!nextDeps.has(dep)) {
-      dep.observers.delete(node);
-    }
-  }
-  for (const dep of nextDeps) {
-    if (!previousDeps.has(dep)) {
+  if (previousDeps === null) {
+    for (const dep of nextDeps) {
       dep.observers.add(node);
     }
+  } else {
+    for (const dep of previousDeps) {
+      if (!nextDeps.has(dep)) {
+        dep.observers.delete(node);
+      }
+    }
+    for (const dep of nextDeps) {
+      if (!previousDeps.has(dep)) {
+        dep.observers.add(node);
+      }
+    }
+    previousDeps.clear();
   }
   node.deps = nextDeps;
   node.depVersions = nextVersions;
@@ -315,18 +339,22 @@ function createOwnerNode(parent: OwnerNode | null): OwnerNode {
   const node: OwnerNode = {
     disposed: parent !== null && parent.disposed,
     parent,
-    children: new Set<OwnerNode>(),
-    cleanups: [],
+    children: null,
+    cleanups: null,
     computation: null,
   };
   if (parent !== null && !parent.disposed) {
-    parent.children.add(node);
+    (parent.children ??= new Set<OwnerNode>()).add(node);
   }
   return node;
 }
 
 function runCleanups(owner: OwnerNode): void {
-  const cleanups = owner.cleanups.splice(0);
+  const cleanups = owner.cleanups;
+  if (cleanups === null) {
+    return;
+  }
+  owner.cleanups = null;
   for (let index = cleanups.length - 1; index >= 0; index -= 1) {
     const cleanup = cleanups[index];
     if (cleanup !== undefined) {
@@ -337,7 +365,10 @@ function runCleanups(owner: OwnerNode): void {
 
 function disposeOwnerChildren(owner: OwnerNode): void {
   const children = owner.children;
-  owner.children = new Set<OwnerNode>();
+  if (children === null) {
+    return;
+  }
+  owner.children = null;
   for (const child of children) {
     if (child.computation !== null) {
       disposeComputation(child.computation);
@@ -360,7 +391,7 @@ function disposeOwner(owner: OwnerNode): void {
   runCleanups(owner);
   disposeOwnerChildren(owner);
   if (owner.parent !== null) {
-    owner.parent.children.delete(owner);
+    owner.parent.children?.delete(owner);
   }
 }
 
@@ -375,11 +406,15 @@ function disposeComputation(node: ComputationNode): void {
     effectQueue.delete(node);
     pendingInitial.delete(node);
   }
-  for (const dep of node.deps) {
-    dep.observers.delete(node);
+  if (node.deps !== null) {
+    for (const dep of node.deps) {
+      dep.observers.delete(node);
+    }
+    node.deps.clear();
   }
-  node.deps.clear();
-  node.depVersions.clear();
+  node.deps = null;
+  node.depVersions?.clear();
+  node.depVersions = null;
   node.nextDeps = null;
   node.nextDepVersions = null;
   disposeOwner(node.owner);
@@ -412,9 +447,8 @@ function createEffectNode(type: "effect" | "renderEffect", fn: () => void): Effe
     disposed: false,
     initialized: false,
     running: false,
-    observers: new Set<ComputationNode>(),
-    deps: new Set<SourceNode>(),
-    depVersions: new Map<SourceNode, number>(),
+    deps: null,
+    depVersions: null,
     nextDeps: null,
     nextDepVersions: null,
     owner,
@@ -485,8 +519,8 @@ export function createMemo<T>(fn: () => T, options?: MemoOptions<T>): Accessor<T
     initialized: false,
     running: false,
     observers: new Set<ComputationNode>(),
-    deps: new Set<SourceNode>(),
-    depVersions: new Map<SourceNode, number>(),
+    deps: null,
+    depVersions: null,
     nextDeps: null,
     nextDepVersions: null,
     owner,
@@ -545,7 +579,7 @@ export function onCleanup(fn: () => void): void {
     fn();
     return;
   }
-  currentOwner.cleanups.push(fn);
+  (currentOwner.cleanups ??= []).push(fn);
 }
 
 export function untrack<T>(fn: () => T): T {

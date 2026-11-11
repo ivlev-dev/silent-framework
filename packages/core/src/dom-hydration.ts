@@ -1,5 +1,17 @@
 import { createRenderEffect } from "@ivlev-dev/silent-reactivity";
-import { collectNodes, disposeNode, resolveValue, stringOf } from "./dom.js";
+import {
+  ATTR_MARKER,
+  HOLE_MARKER,
+  TEXT_MARKER,
+  collectNodes,
+  collectPartsMany,
+  disposeNode,
+  markerIndex,
+  resolvePath,
+  resolveValue,
+  stringOf,
+  type TemplatePlan,
+} from "./dom.js";
 import { registerDomHydrationRuntime } from "./dom-hydration-state.js";
 import {
   INSERT_END,
@@ -7,11 +19,80 @@ import {
   collectBetween,
   findInsertWindow,
   isMarker,
+  mismatch,
   withWindow,
   type HydrationWindow,
 } from "./hydration.js";
 import { extractMetadata } from "./metadata.js";
 import type { Children } from "./jsx.js";
+
+function tryAdoptPartsPlan(
+  root: Node,
+  plan: TemplatePlan,
+): { holes: Comment[]; attrs: Element[] } | null {
+  const holes: Comment[] = [];
+  for (let index = 0; index < plan.holes.length; index += 1) {
+    const entry = plan.holes[index];
+    if (entry === undefined) {
+      return null;
+    }
+    const node = resolvePath(root, entry, true);
+    if (node instanceof Comment && markerIndex(node.data, HOLE_MARKER) === index) {
+      holes.push(node);
+      continue;
+    }
+    if (node instanceof Text) {
+      const next = node.nextSibling;
+      if (next instanceof Comment && markerIndex(next.data, HOLE_MARKER) === index) {
+        holes.push(next);
+        continue;
+      }
+    }
+    return null;
+  }
+  const attrs: Element[] = [];
+  for (let index = 0; index < plan.attrs.length; index += 1) {
+    const entry = plan.attrs[index];
+    if (entry === undefined) {
+      return null;
+    }
+    const node = resolvePath(root, entry, true);
+    if (
+      node === null ||
+      node.nodeType !== Node.ELEMENT_NODE ||
+      !(node as Element).hasAttribute(ATTR_MARKER + index)
+    ) {
+      return null;
+    }
+    attrs.push(node as Element);
+  }
+  for (let index = 0; index < attrs.length; index += 1) {
+    const element = attrs[index]!;
+    element.removeAttribute(ATTR_MARKER + index);
+    if (element.hasAttribute(TEXT_MARKER)) {
+      element.removeAttribute(TEXT_MARKER);
+    }
+  }
+  return { holes, attrs };
+}
+
+export function adoptPartsPlan(
+  root: Node,
+  plan: TemplatePlan,
+): { holes: Comment[]; attrs: Element[] } {
+  const adopted = tryAdoptPartsPlan(root, plan);
+  if (adopted !== null) {
+    return adopted;
+  }
+  const collected = collectPartsMany([root]);
+  if (
+    collected.holes.length !== plan.holes.length ||
+    collected.attrs.length !== plan.attrs.length
+  ) {
+    return mismatch("шаблон не совпал с серверной разметкой");
+  }
+  return collected;
+}
 
 function isTextValue(value: unknown): boolean {
   if (value === null || value === undefined) {
@@ -243,7 +324,7 @@ export function insertHydrated(
 }
 
 export function installDomHydrationRuntime(): void {
-  registerDomHydrationRuntime({ settleNodes, writeRegion, insertHydrated });
+  registerDomHydrationRuntime({ settleNodes, writeRegion, insertHydrated, adoptPartsPlan });
 }
 
 installDomHydrationRuntime();

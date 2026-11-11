@@ -25,6 +25,7 @@ import {
   withWindow,
 } from "./hydration-proxy.js";
 import {
+  adoptPartsPlan,
   insertHydrated,
   settleNodes,
   writeRegion,
@@ -45,12 +46,12 @@ export interface MountPoint {
   nodes(): readonly Node[];
 }
 
-interface PartPath {
+export interface PartPath {
   readonly path: readonly number[];
   readonly counts: readonly number[];
 }
 
-interface StripPlan {
+export interface StripPlan {
   readonly path: readonly number[];
   readonly counts: readonly number[];
   readonly names: readonly string[];
@@ -62,7 +63,7 @@ interface PartsPlan {
   readonly strips: readonly StripPlan[];
 }
 
-interface TemplatePlan {
+export interface TemplatePlan {
   readonly roots: number;
   readonly holes: readonly PartPath[];
   readonly attrs: readonly PartPath[];
@@ -91,9 +92,9 @@ const styleSnapshots = new WeakMap<Element, Set<string>>();
 const hyphenCache = new Map<string, string>();
 const eventNameCache = new Map<string, ParsedEvent>();
 
-const HOLE_MARKER = "silent-hole-";
-const ATTR_MARKER = "data-silent-a-";
-const TEXT_MARKER = "data-silent-text";
+export const HOLE_MARKER = "silent-hole-";
+export const ATTR_MARKER = "data-silent-a-";
+export const TEXT_MARKER = "data-silent-text";
 const AUX_CACHE_LIMIT = 1024;
 
 let serverMode = false;
@@ -425,7 +426,7 @@ export interface TemplateClone {
   readonly attrs: readonly Element[];
 }
 
-function markerIndex(value: string, prefix: string): number | null {
+export function markerIndex(value: string, prefix: string): number | null {
   if (!value.startsWith(prefix)) {
     return null;
   }
@@ -480,7 +481,7 @@ function denseParts<T>(sparse: readonly (T | undefined)[]): T[] {
   return result;
 }
 
-function collectPartsMany(nodes: readonly Node[]): { holes: Comment[]; attrs: Element[] } {
+export function collectPartsMany(nodes: readonly Node[]): { holes: Comment[]; attrs: Element[] } {
   const holesByIndex: (Comment | undefined)[] = [];
   const attrsByIndex: (Element | undefined)[] = [];
   const strip = !isServerMode();
@@ -630,7 +631,7 @@ function pickSignificantChild(
   return significantChildren(parent, index);
 }
 
-function resolvePath(
+export function resolvePath(
   root: Node,
   entry: PartPath,
   significant: boolean,
@@ -658,74 +659,6 @@ function resolvePath(
       : node.childNodes[childIndex] ?? null;
   }
   return node;
-}
-
-function tryAdoptPartsPlan(
-  root: Node,
-  plan: TemplatePlan,
-): { holes: Comment[]; attrs: Element[] } | null {
-  const holes: Comment[] = [];
-  for (let index = 0; index < plan.holes.length; index += 1) {
-    const entry = plan.holes[index];
-    if (entry === undefined) {
-      return null;
-    }
-    const node = resolvePath(root, entry, true);
-    if (node instanceof Comment && markerIndex(node.data, HOLE_MARKER) === index) {
-      holes.push(node);
-      continue;
-    }
-    if (node instanceof Text) {
-      const next = node.nextSibling;
-      if (next instanceof Comment && markerIndex(next.data, HOLE_MARKER) === index) {
-        holes.push(next);
-        continue;
-      }
-    }
-    return null;
-  }
-  const attrs: Element[] = [];
-  for (let index = 0; index < plan.attrs.length; index += 1) {
-    const entry = plan.attrs[index];
-    if (entry === undefined) {
-      return null;
-    }
-    const node = resolvePath(root, entry, true);
-    if (
-      node === null ||
-      node.nodeType !== Node.ELEMENT_NODE ||
-      !(node as Element).hasAttribute(ATTR_MARKER + index)
-    ) {
-      return null;
-    }
-    attrs.push(node as Element);
-  }
-  for (let index = 0; index < attrs.length; index += 1) {
-    const element = attrs[index]!;
-    element.removeAttribute(ATTR_MARKER + index);
-    if (element.hasAttribute(TEXT_MARKER)) {
-      element.removeAttribute(TEXT_MARKER);
-    }
-  }
-  return { holes, attrs };
-}
-
-function adoptPartsPlan(
-  root: Node,
-  plan: TemplatePlan,
-): { holes: Comment[]; attrs: Element[] } {
-  const adopted = tryAdoptPartsPlan(root, plan);
-  if (adopted !== null) {
-    return adopted;
-  }
-  const collected = collectPartsMany([root]);
-  if (
-    collected.holes.length !== plan.holes.length ||
-    collected.attrs.length !== plan.attrs.length
-  ) {
-    return mismatch("шаблон не совпал с серверной разметкой");
-  }
-  return collected;
 }
 
 function applyPartsPlan(

@@ -28,21 +28,32 @@ export function claimNext(): Node | null {
 }
 
 export function isMarker(node: Node | null | undefined, data: string): node is Comment {
-  return node instanceof Comment && node.data === data;
+  return (
+    node !== null &&
+    node !== undefined &&
+    node.nodeType === Node.COMMENT_NODE &&
+    (node as Comment).data === data
+  );
 }
 
 export function isItemMarker(node: Node | null | undefined): node is Comment {
-  return node instanceof Comment && node.data === ITEM;
+  return (
+    node !== null &&
+    node !== undefined &&
+    node.nodeType === Node.COMMENT_NODE &&
+    (node as Comment).data === ITEM
+  );
 }
 
 export function findViewEnd(start: Node, limit?: Node | null): Node {
   let depth = 0;
   let cursor: Node | null = start;
   while (cursor !== null && cursor !== (limit ?? null)) {
-    if (cursor instanceof Comment) {
-      if (cursor.data === VIEW_START) {
+    if (cursor.nodeType === Node.COMMENT_NODE) {
+      const data = (cursor as Comment).data;
+      if (data === VIEW_START) {
         depth += 1;
-      } else if (cursor.data === VIEW_END) {
+      } else if (data === VIEW_END) {
         depth -= 1;
         if (depth === 0) {
           return cursor;
@@ -62,10 +73,11 @@ export function findInsertWindow(marker: Node | null, parent: Node): HydrationWi
   let depth = 0;
   let cursor: Node | null = end;
   while (cursor !== null) {
-    if (cursor instanceof Comment) {
-      if (cursor.data === INSERT_END) {
+    if (cursor.nodeType === Node.COMMENT_NODE) {
+      const data = (cursor as Comment).data;
+      if (data === INSERT_END) {
         depth += 1;
-      } else if (cursor.data === INSERT_START) {
+      } else if (data === INSERT_START) {
         depth -= 1;
         if (depth === 0) {
           return { start: cursor, end, cursor: cursor.nextSibling };

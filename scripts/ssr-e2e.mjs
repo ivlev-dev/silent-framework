@@ -140,6 +140,11 @@ async function main() {
       undefined,
       { timeout: 10_000 },
     );
+    await page.waitForFunction(
+      () => !document.body.innerHTML.includes("data-silent-"),
+      undefined,
+      { timeout: 10_000 },
+    );
 
     const renderedValue = await page.textContent("strong.value");
     assert.equal(renderedValue, "0", "гидрация изменила начальное значение счётчика");

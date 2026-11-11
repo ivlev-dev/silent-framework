@@ -1,9 +1,11 @@
 import { isHydrating } from "./hydration-state.js";
+import type { TemplatePlan } from "./dom.js";
 
 export interface DomHydrationRuntime {
   settleNodes(end: Node | null, value: unknown): void;
   writeRegion(start: Node, end: Node, value: unknown): void;
   insertHydrated(parent: Node, accessor: () => unknown, marker: Node | null): void;
+  adoptPartsPlan(root: Node, plan: TemplatePlan): { holes: Comment[]; attrs: Element[] };
 }
 
 let runtime: DomHydrationRuntime | null = null;
@@ -36,4 +38,11 @@ export function insertHydrated(
   marker: Node | null,
 ): void {
   requireRuntime().insertHydrated(parent, accessor, marker);
+}
+
+export function adoptPartsPlan(
+  root: Node,
+  plan: TemplatePlan,
+): { holes: Comment[]; attrs: Element[] } {
+  return requireRuntime().adoptPartsPlan(root, plan);
 }

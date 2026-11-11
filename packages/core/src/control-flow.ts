@@ -330,7 +330,10 @@ export function For<T>(props: ForProps<T>): Node {
         const anchor = cursor;
         const nodes: Node[] = [];
         let node = cursor.nextSibling;
-        while (node !== null && node !== endAnchor && !isItemMarker(node)) {
+        while (node !== null && node !== endAnchor) {
+          if (node.nodeType === Node.COMMENT_NODE && isItemMarker(node)) {
+            break;
+          }
           nodes.push(node);
           node = node.nextSibling;
         }
