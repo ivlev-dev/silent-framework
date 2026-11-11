@@ -14,7 +14,7 @@ import {
 } from "@ivlev-dev/silent-core";
 import { createRoot, flushSync } from "@ivlev-dev/silent-reactivity";
 import { createDocument, installDomGlobals } from "./dom/document.js";
-import { serializeNode } from "./dom/serializer.js";
+import { pushNode, serializeNode } from "./dom/serializer.js";
 import { createServerBackend } from "./string-backend.js";
 import type { DomNode } from "./dom/types.js";
 
@@ -30,27 +30,45 @@ export interface RenderResult {
   readonly head: string;
 }
 
+const SERVER_DOCUMENT = createDocument();
+const SERVER_BACKEND = createServerBackend();
+
 let queue: Promise<void> = Promise.resolve();
 let pendingTasks = 0;
 
-function ignore(): void {}
+function finishTask(): void {
+  pendingTasks -= 1;
+}
+
+function noop(): void {}
+
+function serializeHead(nodes: readonly Element[]): string {
+  if (nodes.length === 0) {
+    return "";
+  }
+  const parts: string[] = [];
+  for (let index = 0; index < nodes.length; index += 1) {
+    const node = nodes[index];
+    if (node !== undefined) {
+      pushNode(node as unknown as DomNode, parts);
+    }
+  }
+  const only = parts[0];
+  if (only === undefined) {
+    return "";
+  }
+  return parts.length === 1 ? only : parts.join("");
+}
 
 function enqueue<T>(task: () => Promise<T>): Promise<T> {
-  if (pendingTasks === 0) {
-    pendingTasks = 1;
+  pendingTasks += 1;
+  if (pendingTasks === 1) {
     const run = task();
-    queue = run.then(ignore, ignore);
-    void run.then(ignore, ignore).finally(() => {
-      pendingTasks -= 1;
-    });
+    queue = run.then(finishTask, finishTask);
     return run;
   }
-  pendingTasks += 1;
   const run = queue.then(task, task);
-  queue = run.then(ignore, ignore);
-  void run.then(ignore, ignore).finally(() => {
-    pendingTasks -= 1;
-  });
+  queue = run.then(finishTask, finishTask);
   return run;
 }
 
@@ -62,13 +80,12 @@ export function renderToString(
 }
 
 async function renderOnce(app: AnyComponent, options: RenderOptions): Promise<RenderResult> {
-  const document = createDocument();
-  const restore = installDomGlobals(document);
+  const document = SERVER_DOCUMENT;
+  const restore = installDomGlobals(document, { keepShape: true });
   setServerMode(true);
-  setServerBackend(createServerBackend());
+  setServerBackend(SERVER_BACKEND);
 
-  const holder: { value: ComponentResult | null } = { value: null };
-  let disposeRoot: () => void = () => {};
+  let disposeRoot: () => void = noop;
   let failure: unknown = null;
   let failed = false;
   const headNodes: Element[] = [];
@@ -94,14 +111,14 @@ async function renderOnce(app: AnyComponent, options: RenderOptions): Promise<Re
     onError: handleError,
   };
 
+  let result: ComponentResult | null = null;
+
   try {
-    createRoot((dispose) => {
+    result = createRoot((dispose) => {
       disposeRoot = dispose;
-      holder.value = createComponent(app, options.props ?? {}, runtimeOptions);
-      return null;
+      return createComponent(app, options.props ?? {}, runtimeOptions);
     });
 
-    const result = holder.value;
     if (result === null) {
       throw new Error("Не удалось создать корневой компонент");
     }
@@ -119,18 +136,14 @@ async function renderOnce(app: AnyComponent, options: RenderOptions): Promise<Re
       throw failure;
     }
 
-    const fragment = document.createDocumentFragment();
-    fragment.appendChild(result.node as unknown as DomNode);
-    const head = headNodes
-      .map((node) => serializeNode(node as unknown as DomNode))
-      .join("");
-    return { html: serializeNode(fragment as unknown as DomNode), head };
+    const head = serializeHead(headNodes);
+    return { html: serializeNode(result.node as unknown as DomNode), head };
   } finally {
     setMetadataCollector(null);
     setServerBackend(null);
     restore();
     setServerMode(false);
-    holder.value?.dispose();
+    result?.dispose();
     disposeRoot();
   }
 }

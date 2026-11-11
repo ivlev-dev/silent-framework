@@ -15,14 +15,11 @@ export class StyleImpl implements DomStyle {
   }
 
   get cssText(): string {
-    let result = "";
+    const parts: string[] = [];
     for (const [name, value] of this.properties) {
-      if (result !== "") {
-        result += " ";
-      }
-      result += `${name}: ${value};`;
+      parts.push(`${name}: ${value};`);
     }
-    return result;
+    return parts.join(" ");
   }
 
   set cssText(value: string) {

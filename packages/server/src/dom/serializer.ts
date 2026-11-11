@@ -21,64 +21,116 @@ const VOID_ELEMENTS: ReadonlySet<string> = new Set([
 
 const ESCAPE_TEXT = /[&<>]/;
 const ESCAPE_ATTRIBUTE = /[&<>"]/;
+const REPLACE_TEXT = /[&<>]/g;
+const REPLACE_ATTRIBUTE = /[&<>"]/g;
 
-function escapeText(value: string): string {
+function replaceText(char: string): string {
+  if (char === "&") {
+    return "&amp;";
+  }
+  return char === "<" ? "&lt;" : "&gt;";
+}
+
+function replaceAttribute(char: string): string {
+  if (char === "&") {
+    return "&amp;";
+  }
+  if (char === "<") {
+    return "&lt;";
+  }
+  return char === ">" ? "&gt;" : "&quot;";
+}
+
+export function escapeText(value: string): string {
   if (!ESCAPE_TEXT.test(value)) {
     return value;
   }
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return value.replace(REPLACE_TEXT, replaceText);
 }
 
 function escapeAttribute(value: string): string {
   if (!ESCAPE_ATTRIBUTE.test(value)) {
     return value;
   }
-  return escapeText(value).replace(/"/g, "&quot;");
+  return value.replace(REPLACE_ATTRIBUTE, replaceAttribute);
 }
 
-function serializeAttributes(element: ElementImpl): string {
+function pushAttributes(element: ElementImpl, parts: string[]): void {
   if (element.attributeCount === 0) {
-    return "";
+    return;
   }
-  let result = "";
   for (const attribute of element.attributes) {
-    result += ` ${attribute.name}="${escapeAttribute(attribute.value)}"`;
+    parts.push(" ", attribute.name, '="', escapeAttribute(attribute.value), '"');
   }
-  return result;
 }
 
-function serializeElement(element: ElementImpl): string {
+function pushElement(element: ElementImpl, parts: string[]): void {
   const tag = element.localName;
-  const opening = `<${tag}${serializeAttributes(element)}>`;
+  parts.push("<", tag);
+  pushAttributes(element, parts);
+  parts.push(">");
   if (element.namespaceURI === HTML_NAMESPACE && VOID_ELEMENTS.has(tag)) {
-    return opening;
+    return;
   }
-  return `${opening}${serializeChildren(element)}</${tag}>`;
+  pushChildren(element, parts);
+  parts.push("</", tag, ">");
 }
 
-export function serializeNode(node: DomNode): string {
-  const raw = node as unknown as { render?: () => string };
-  if (typeof raw.render === "function") {
-    return raw.render();
+interface RenderableNode {
+  renderInto?: (parts: string[]) => void;
+  render?: () => string;
+}
+
+export function pushNode(node: DomNode, parts: string[]): void {
+  const raw = node as unknown as RenderableNode;
+  const renderInto = raw.renderInto;
+  if (typeof renderInto === "function") {
+    renderInto.call(node, parts);
+    return;
+  }
+  const render = raw.render;
+  if (typeof render === "function") {
+    parts.push(render.call(node));
+    return;
   }
   switch (node.nodeType) {
     case NODE_ELEMENT:
-      return node instanceof ElementImpl ? serializeElement(node) : "";
+      if (node instanceof ElementImpl) {
+        pushElement(node, parts);
+      }
+      return;
     case NODE_TEXT:
-      return node instanceof TextImpl ? escapeText(node.data) : "";
+      if (node instanceof TextImpl) {
+        parts.push(escapeText(node.data));
+      }
+      return;
     case NODE_COMMENT:
-      return node instanceof TextImpl ? `<!--${node.data}-->` : "";
+      if (node instanceof TextImpl) {
+        parts.push("<!--", node.data, "-->");
+      }
+      return;
     case NODE_DOCUMENT_FRAGMENT:
-      return serializeChildren(node);
+      pushChildren(node, parts);
+      return;
     default:
-      return "";
+      return;
   }
+}
+
+function pushChildren(node: DomNode, parts: string[]): void {
+  for (const child of node.childNodes) {
+    pushNode(child, parts);
+  }
+}
+
+export function serializeNode(node: DomNode): string {
+  const parts: string[] = [];
+  pushNode(node, parts);
+  return parts.join("");
 }
 
 export function serializeChildren(node: DomNode): string {
   const parts: string[] = [];
-  for (const child of node.childNodes) {
-    parts.push(serializeNode(child));
-  }
+  pushChildren(node, parts);
   return parts.join("");
 }

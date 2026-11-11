@@ -1,76 +1,75 @@
 import type { ServerBackend, ServerTemplate } from "@ivlev-dev/silent-core";
 import { RawNode } from "./dom/raw.js";
-import { serializeNode } from "./dom/serializer.js";
-import type { DomNode } from "./dom/types.js";
+import { pushValue } from "./dom/serialize-value.js";
+import { escapeText } from "./dom/serializer.js";
+import { getTemplate, setTemplate, type ParsedTemplate } from "./template-cache.js";
 
 const METADATA = /<(?:title|meta|link)[\s/>]/i;
-
-function escapeText(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
+const HOLE = /<!--silent-hole-(\d+)-->/;
 
 function serializeValue(value: unknown): string {
-  if (value === null || value === undefined || typeof value === "boolean") {
+  const type = typeof value;
+  if (type === "string") {
+    return escapeText(value as string);
+  }
+  if (value === null || value === undefined) {
     return "";
   }
-  if (typeof value === "string") {
-    return escapeText(value);
+  if (type === "number" || type === "bigint") {
+    return String(value);
   }
-  if (typeof value === "number" || typeof value === "bigint") {
-    return escapeText(String(value));
+  if (type === "boolean") {
+    return "";
   }
-  if (Array.isArray(value)) {
-    let result = "";
-    for (const item of value) {
-      result += serializeValue(item);
+  const parts: string[] = [];
+  pushValue(value, parts);
+  const only = parts[0];
+  if (only === undefined) {
+    return "";
+  }
+  return parts.length === 1 ? only : parts.join("");
+}
+
+function parseTemplate(html: string): ParsedTemplate | null {
+  if (html.includes("data-silent-a-") || METADATA.test(html)) {
+    return null;
+  }
+  const segments = html.split(HOLE);
+  const parts: string[] = [];
+  const indexes: number[] = [];
+  for (let position = 0; position < segments.length; position += 1) {
+    const value = segments[position] ?? "";
+    if (position % 2 === 0) {
+      parts.push(value);
+    } else {
+      indexes.push(Number(value));
     }
-    return result;
   }
-  if (value instanceof RawNode) {
-    return value.render();
+  if (indexes.length === 0) {
+    return null;
   }
-  if (value instanceof Node) {
-    return serializeNode(value as unknown as DomNode);
+  const markers = indexes.map((index) => `<!--silent-hole-${index}-->`);
+  const tails = new Array<string>(indexes.length);
+  for (let position = 0; position < indexes.length; position += 1) {
+    tails[position] = (markers[position] ?? "") + (parts[position + 1] ?? "");
   }
-  if (typeof value === "function") {
-    return serializeValue((value as () => unknown)());
-  }
-  return escapeText(String(value));
+  return { parts, indexes, markers, tails };
 }
 
 export function createServerBackend(): ServerBackend {
-  const cache = new Map<string, { parts: string[]; indexes: number[] } | null>();
   return {
     createTemplate(html: string): ServerTemplate | null {
-      let parsed = cache.get(html);
+      let parsed = getTemplate(html);
       if (parsed === undefined) {
-        if (html.includes("data-silent-a-") || METADATA.test(html)) {
-          cache.set(html, null);
-          parsed = null;
-        } else {
-          const segments = html.split(/<!--silent-hole-(\d+)-->/);
-          const parts: string[] = [];
-          const indexes: number[] = [];
-          for (let position = 0; position < segments.length; position += 1) {
-            const value = segments[position] ?? "";
-            if (position % 2 === 0) {
-              parts.push(value);
-            } else {
-              indexes.push(Number(value));
-            }
-          }
-          parsed = indexes.length === 0 ? null : { parts, indexes };
-          cache.set(html, parsed);
-        }
+        parsed = parseTemplate(html);
+        setTemplate(html, parsed);
       }
       if (parsed === null) {
         return null;
       }
-      const node = new RawNode(parsed.parts, parsed.indexes);
+      const node = new RawNode(parsed.parts, parsed.indexes, parsed.markers, parsed.tails);
       return { node, holes: node.holes, attrs: [] };
     },
-    serialize(value: unknown): string {
-      return serializeValue(value);
-    },
+    serialize: serializeValue,
   };
 }

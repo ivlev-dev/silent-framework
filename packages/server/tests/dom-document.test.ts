@@ -324,6 +324,49 @@ describe("installDomGlobals", () => {
     expect(() => restore()).not.toThrow();
   });
 
+  it("создаёт отсутствующие глобалы присваиванием с полными дескрипторами", () => {
+    const missing = GLOBAL_NAMES.every(
+      (name) => Object.getOwnPropertyDescriptor(globalThis, name) === undefined,
+    );
+    expect(missing).toBe(true);
+
+    const restore = installDomGlobals(createDocument());
+
+    for (const name of GLOBAL_NAMES) {
+      expect(Object.getOwnPropertyDescriptor(globalThis, name)).toMatchObject({
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      });
+    }
+
+    restore();
+
+    for (const name of GLOBAL_NAMES) {
+      expect(Object.getOwnPropertyDescriptor(globalThis, name)).toBeUndefined();
+    }
+  });
+
+  it("сохраняет форму глобалов с keepShape и сбрасывает режим", () => {
+    const document = createDocument();
+    const restore = installDomGlobals(document, { keepShape: true });
+    expect(globalThis.document).toBe(document);
+    restore();
+
+    for (const name of GLOBAL_NAMES) {
+      const descriptor = Object.getOwnPropertyDescriptor(globalThis, name);
+      expect(descriptor).toBeDefined();
+      expect(descriptor?.value).toBeUndefined();
+    }
+
+    const plain = installDomGlobals(document);
+    plain();
+
+    for (const name of GLOBAL_NAMES) {
+      expect(Object.getOwnPropertyDescriptor(globalThis, name)).toBeUndefined();
+    }
+  });
+
   it("создаёт документ по умолчанию", () => {
     const restore = installDomGlobals();
 

@@ -66,6 +66,9 @@ function isValidCodePoint(code: number): boolean {
 }
 
 function decodeEntities(value: string): string {
+  if (value.indexOf("&") === -1) {
+    return value;
+  }
   return value.replace(/&(#x[0-9a-fA-F]+|#[0-9]+|[a-zA-Z][a-zA-Z0-9]*);/g, (match: string, body: string) => {
     if (body.startsWith("#x") || body.startsWith("#X")) {
       const code = Number.parseInt(body.slice(2), 16);

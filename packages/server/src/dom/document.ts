@@ -134,6 +134,8 @@ const NODE_CONSTANTS: ReadonlyArray<readonly [string, number]> = [
   ["DOCUMENT_FRAGMENT_NODE", NODE_DOCUMENT_FRAGMENT],
 ];
 
+const NODE_FILTER = { SHOW_ALL, SHOW_ELEMENT, SHOW_COMMENT };
+
 const GLOBAL_VALUES: ReadonlyArray<readonly [string, unknown]> = [
   ["Element", ElementImpl],
   ["SVGElement", SvgElementImpl],
@@ -141,7 +143,13 @@ const GLOBAL_VALUES: ReadonlyArray<readonly [string, unknown]> = [
   ["Text", TextImpl],
   ["Comment", CommentImpl],
   ["HTMLTemplateElement", TemplateElementImpl],
-  ["NodeFilter", { SHOW_ALL, SHOW_ELEMENT, SHOW_COMMENT }],
+  ["NodeFilter", NODE_FILTER],
+];
+
+const GLOBAL_NAMES: readonly string[] = [
+  "document",
+  "Node",
+  ...GLOBAL_VALUES.map(([name]) => name),
 ];
 
 interface SavedGlobal {
@@ -151,21 +159,35 @@ interface SavedGlobal {
 }
 
 let savedGlobals: SavedGlobal[] | null = null;
+let writableGlobals = false;
+let absentGlobals = false;
+const previousValues: unknown[] = new Array<unknown>(GLOBAL_NAMES.length);
+const hadGlobals: boolean[] = new Array<boolean>(GLOBAL_NAMES.length);
 const GLOBAL_VALUE_LIST: readonly unknown[] = GLOBAL_VALUES.map(([, value]) => value);
 
 function captureGlobals(): SavedGlobal[] {
-  const names = ["document", "Node", ...GLOBAL_VALUES.map(([name]) => name)];
-  return names.map((name) => {
+  const saved = new Array<SavedGlobal>(GLOBAL_NAMES.length);
+  for (let index = 0; index < GLOBAL_NAMES.length; index += 1) {
+    const name = GLOBAL_NAMES[index] ?? "";
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, name);
-    return {
+    previousValues[index] = descriptor === undefined ? undefined : descriptor.value;
+    hadGlobals[index] = descriptor !== undefined;
+    saved[index] = {
       name,
       descriptor,
       writable: descriptor === undefined || descriptor.writable === true,
     };
-  });
+  }
+  return saved;
 }
 
+let nodeConstantsDefined = false;
+
 function defineNodeConstants(): void {
+  if (nodeConstantsDefined) {
+    return;
+  }
+  nodeConstantsDefined = true;
   for (const [name, value] of NODE_CONSTANTS) {
     if (!(name in NodeImpl)) {
       Object.defineProperty(NodeImpl, name, { configurable: true, writable: false, value });
@@ -173,17 +195,35 @@ function defineNodeConstants(): void {
   }
 }
 
-export function installDomGlobals(document: DocumentImpl = createDocument()): () => void {
-  defineNodeConstants();
-  const saved = savedGlobals ?? (savedGlobals = captureGlobals());
-  const values: readonly unknown[] = [document, NodeImpl, ...GLOBAL_VALUE_LIST];
+let restoreArmed = false;
+let keepShape = false;
+
+function installWritable(document: DocumentImpl): void {
+  const target = globalThis as unknown as Record<string, unknown>;
+  target["document"] = document;
+  target["Node"] = NodeImpl;
+  target["Element"] = ElementImpl;
+  target["SVGElement"] = SvgElementImpl;
+  target["DocumentFragment"] = DocumentFragmentImpl;
+  target["Text"] = TextImpl;
+  target["Comment"] = CommentImpl;
+  target["HTMLTemplateElement"] = TemplateElementImpl;
+  target["NodeFilter"] = NODE_FILTER;
+}
+
+function installDefined(document: DocumentImpl): void {
+  const saved = savedGlobals;
+  if (saved === null) {
+    return;
+  }
   const target = globalThis as unknown as Record<string, unknown>;
   for (let index = 0; index < saved.length; index += 1) {
     const entry = saved[index];
     if (entry === undefined) {
       continue;
     }
-    const value = values[index];
+    const value =
+      index === 0 ? document : index === 1 ? NodeImpl : GLOBAL_VALUE_LIST[index - 2];
     if (entry.writable) {
       target[entry.name] = value;
       continue;
@@ -195,22 +235,129 @@ export function installDomGlobals(document: DocumentImpl = createDocument()): ()
       value,
     });
   }
-  let restored = false;
-  return () => {
-    if (restored) {
+}
+
+function restoreWritable(shape: boolean): void {
+  const target = globalThis as unknown as Record<string, unknown>;
+  if (absentGlobals) {
+    if (shape) {
+      for (let index = 0; index < GLOBAL_NAMES.length; index += 1) {
+        target[GLOBAL_NAMES[index] ?? ""] = undefined;
+      }
       return;
     }
-    restored = true;
-    for (const entry of saved) {
-      if (entry.descriptor === undefined) {
-        Reflect.deleteProperty(globalThis, entry.name);
-        continue;
-      }
-      if (entry.writable) {
-        target[entry.name] = entry.descriptor.value;
-        continue;
-      }
-      Object.defineProperty(globalThis, entry.name, entry.descriptor);
+    delete target["document"];
+    delete target["Node"];
+    delete target["Element"];
+    delete target["SVGElement"];
+    delete target["DocumentFragment"];
+    delete target["Text"];
+    delete target["Comment"];
+    delete target["HTMLTemplateElement"];
+    delete target["NodeFilter"];
+    return;
+  }
+  if (hadGlobals[0] === true) {
+    target["document"] = previousValues[0];
+  } else {
+    delete target["document"];
+  }
+  if (hadGlobals[1] === true) {
+    target["Node"] = previousValues[1];
+  } else {
+    delete target["Node"];
+  }
+  if (hadGlobals[2] === true) {
+    target["Element"] = previousValues[2];
+  } else {
+    delete target["Element"];
+  }
+  if (hadGlobals[3] === true) {
+    target["SVGElement"] = previousValues[3];
+  } else {
+    delete target["SVGElement"];
+  }
+  if (hadGlobals[4] === true) {
+    target["DocumentFragment"] = previousValues[4];
+  } else {
+    delete target["DocumentFragment"];
+  }
+  if (hadGlobals[5] === true) {
+    target["Text"] = previousValues[5];
+  } else {
+    delete target["Text"];
+  }
+  if (hadGlobals[6] === true) {
+    target["Comment"] = previousValues[6];
+  } else {
+    delete target["Comment"];
+  }
+  if (hadGlobals[7] === true) {
+    target["HTMLTemplateElement"] = previousValues[7];
+  } else {
+    delete target["HTMLTemplateElement"];
+  }
+  if (hadGlobals[8] === true) {
+    target["NodeFilter"] = previousValues[8];
+  } else {
+    delete target["NodeFilter"];
+  }
+}
+
+function restoreDefined(): void {
+  const saved = savedGlobals;
+  if (saved === null) {
+    return;
+  }
+  const target = globalThis as unknown as Record<string, unknown>;
+  for (const entry of saved) {
+    if (entry.descriptor === undefined) {
+      Reflect.deleteProperty(globalThis, entry.name);
+      continue;
     }
-  };
+    if (entry.writable) {
+      target[entry.name] = entry.descriptor.value;
+      continue;
+    }
+    Object.defineProperty(globalThis, entry.name, entry.descriptor);
+  }
+}
+
+function restoreGlobals(): void {
+  if (!restoreArmed) {
+    return;
+  }
+  restoreArmed = false;
+  const shape = keepShape;
+  keepShape = false;
+  if (writableGlobals) {
+    restoreWritable(shape);
+    return;
+  }
+  restoreDefined();
+}
+
+export interface DomGlobalsOptions {
+  readonly keepShape?: boolean;
+}
+
+export function installDomGlobals(
+  document: DocumentImpl = createDocument(),
+  options: DomGlobalsOptions = {},
+): () => void {
+  defineNodeConstants();
+  if (savedGlobals === null) {
+    const captured = captureGlobals();
+    savedGlobals = captured;
+    writableGlobals = captured.every((entry) => entry.writable);
+    absentGlobals = hadGlobals.every((had) => had === false);
+  }
+  keepShape = options.keepShape === true;
+  if (writableGlobals) {
+    installWritable(document);
+  } else {
+    installDefined(document);
+  }
+  restoreArmed = true;
+  return restoreGlobals;
 }

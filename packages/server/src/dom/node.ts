@@ -55,18 +55,18 @@ export class NodeImpl implements DomNode {
   }
 
   get textContent(): string | null {
-    let result = "";
+    const parts: string[] = [];
     const visit = (node: NodeImpl): void => {
       for (const child of node.childList) {
         if (child.nodeType === NODE_TEXT && child instanceof TextImpl) {
-          result += child.data;
+          parts.push(child.data);
           continue;
         }
         visit(child);
       }
     };
     visit(this);
-    return result;
+    return parts.join("");
   }
 
   set textContent(value: string | null) {
