@@ -621,6 +621,12 @@ function pickSignificantChild(
   index: number,
   size: number | undefined,
 ): Node | null {
+  if (size === 1 && index === 0) {
+    const first = parent.firstChild;
+    if (first !== null && first.nodeType !== Node.COMMENT_NODE) {
+      return first;
+    }
+  }
   if (size === undefined || size <= 0) {
     return significantChildren(parent, index);
   }

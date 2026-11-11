@@ -9,8 +9,8 @@ import {
   withoutHydration,
 } from "./hydration-state.js";
 import {
+  RESOLVED_READY,
   ViewRuntimeUnavailableError,
-  getComponentCreator,
   hasPendingWork,
   whenIdle,
   setDefaultPreloader,
@@ -39,8 +39,15 @@ async function settle(): Promise<void> {
   }
 }
 
-function needsMarkup(): boolean {
-  return viewEnabled && getComponentCreator() === null;
+async function finish(ready: Promise<void>): Promise<void> {
+  if (ready !== RESOLVED_READY) {
+    await ready;
+  }
+  if (hasPendingWork()) {
+    await settle();
+    return;
+  }
+  flushSync();
 }
 
 function ensureRuntimes(): Promise<void> {
@@ -62,6 +69,7 @@ async function hydrateWith(
   runtimeOptions: RuntimeOptions,
   onMismatch: (error: HydrationMismatchError) => void,
   create: ComponentFactory,
+  forceFresh = false,
 ): Promise<MountHandle> {
   const boundaryStart = document.createComment(HYDRATE_START);
   const boundaryEnd = document.createComment(HYDRATE_END);
@@ -69,7 +77,7 @@ async function hydrateWith(
   element.appendChild(boundaryEnd);
 
   let adopted: { readonly result: ReturnType<typeof createRootResult>["result"]; readonly dispose: () => void } | null = null;
-  const hasServerMarkup = boundaryStart.nextSibling !== boundaryEnd;
+  const hasServerMarkup = !forceFresh && boundaryStart.nextSibling !== boundaryEnd;
 
   try {
     if (hasServerMarkup) {
@@ -79,8 +87,7 @@ async function hydrateWith(
           { start: boundaryStart, end: boundaryEnd, cursor: boundaryStart.nextSibling },
           () => createRootResult(app, options, runtimeOptions, create),
         );
-        await adopted.result.ready;
-        await settle();
+        await finish(adopted.result.ready);
       } catch (error) {
         if (!(error instanceof HydrationMismatchError)) {
           throw error;
@@ -99,8 +106,7 @@ async function hydrateWith(
       const fresh = withoutHydration(() =>
         createRootResult(app, options, runtimeOptions, create),
       );
-      await fresh.result.ready;
-      await settle();
+      await finish(fresh.result.ready);
       element.replaceChildren(fresh.result.node);
       return handleFor(fresh.result, fresh.dispose);
     }
@@ -143,7 +149,6 @@ export async function hydrate(
   const factory = componentFactoryFor(app);
   let create: ComponentFactory = factory instanceof Promise ? await factory : factory;
 
-  const originalMarkup = needsMarkup() ? element.innerHTML : "";
   try {
     return await hydrateWith(
       element,
@@ -157,9 +162,6 @@ export async function hydrate(
     if (!viewEnabled || !(error instanceof ViewRuntimeUnavailableError)) {
       throw error;
     }
-    if (originalMarkup !== "") {
-      element.innerHTML = originalMarkup;
-    }
     create = await loadViewFactory();
     return await hydrateWith(
       element,
@@ -168,6 +170,7 @@ export async function hydrate(
       runtimeOptions,
       onMismatch,
       create,
+      true,
     );
   }
 }

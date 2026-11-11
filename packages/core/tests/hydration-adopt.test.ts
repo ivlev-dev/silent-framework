@@ -144,6 +144,48 @@ describe("гидрация с сохранением узлов", () => {
     ).toBe(serverText);
   });
 
+  it("адоптирует список в регионе без маркера", async () => {
+    const items = createSignal(["a", "b"]);
+    class ListVM {}
+    function ListView(this: { vm: ListVM }): Node {
+      void this.vm;
+      const template = templateHoles('<ul class="items"><!--silent-hole-0--></ul>')();
+      insert(
+        holeParent(template, 0),
+        () =>
+          For({
+            each: items[0],
+            children: (item: string) => {
+              const row = templateHoles("<li><!--silent-hole-0--></li>")();
+              insert(holeParent(row, 0), () => item, row.holes[0]);
+              return row.node;
+            },
+          }),
+        template.holes[0],
+      );
+      return template.node;
+    }
+    attachMeta(ListView, ListVM);
+
+    const html = await renderServer(ListView as unknown as AnyComponent);
+    expect(html).toContain("<!--silent-insert-->");
+    const target = host(html);
+    const serverRows = Array.from(target.querySelectorAll("li"));
+
+    const mismatches: HydrationMismatchError[] = [];
+    await hydrate(target, ListView as unknown as AnyComponent, {
+      onMismatch: (error) => mismatches.push(error),
+    });
+
+    expect(mismatches).toEqual([]);
+    expect(Array.from(target.querySelectorAll("li"))).toEqual(serverRows);
+
+    items[1](["a", "b", "c"]);
+    flushSync();
+    expect(target.querySelectorAll("li").length).toBe(3);
+    expect(target.textContent).toBe("abc");
+  });
+
   it("переиспользует элементы списка и обновляет его реактивно", async () => {
     const items = createSignal([{ name: "a" }, { name: "b" }]);
     class ListVM {}

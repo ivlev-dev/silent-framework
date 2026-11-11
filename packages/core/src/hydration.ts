@@ -70,6 +70,10 @@ export function findInsertWindow(marker: Node | null, parent: Node): HydrationWi
   if (!isMarker(end, INSERT_END)) {
     return mismatch("не найден конец региона вставки");
   }
+  const first = parent.firstChild;
+  if (isMarker(first, INSERT_START)) {
+    return { start: first, end, cursor: first.nextSibling };
+  }
   let depth = 0;
   let cursor: Node | null = end;
   while (cursor !== null) {
