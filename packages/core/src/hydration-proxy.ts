@@ -1,5 +1,6 @@
 import {
   getHydrationRuntime,
+  type HydrationRuntime,
   type HydrationWindow,
 } from "./hydration-state.js";
 
@@ -28,32 +29,38 @@ export {
   withoutHydration,
 } from "./hydration-state.js";
 
+let impl: HydrationRuntime | null = null;
+
+function runtime(): HydrationRuntime {
+  return (impl ??= getHydrationRuntime());
+}
+
 export function claimNext(): Node | null {
-  return getHydrationRuntime().claimNext();
+  return runtime().claimNext();
 }
 
 export function isMarker(node: Node | null | undefined, data: string): node is Comment {
-  return getHydrationRuntime().isMarker(node, data);
+  return runtime().isMarker(node, data);
 }
 
 export function isItemMarker(node: Node | null | undefined): node is Comment {
-  return getHydrationRuntime().isItemMarker(node);
+  return runtime().isItemMarker(node);
 }
 
 export function findViewEnd(start: Node, limit?: Node | null): Node {
-  return getHydrationRuntime().findViewEnd(start, limit);
+  return runtime().findViewEnd(start, limit);
 }
 
 export function findInsertWindow(marker: Node | null, parent: Node): HydrationWindow {
-  return getHydrationRuntime().findInsertWindow(marker, parent);
+  return runtime().findInsertWindow(marker, parent);
 }
 
 export function collectBetween(start: Node, end: Node): Node[] {
-  return getHydrationRuntime().collectBetween(start, end);
+  return runtime().collectBetween(start, end);
 }
 
 export function mergeTopLevelMetadata(fresh: Node, claimed: Node): void {
-  getHydrationRuntime().mergeTopLevelMetadata(fresh, claimed);
+  runtime().mergeTopLevelMetadata(fresh, claimed);
 }
 
 export function shapeMatches(
@@ -62,17 +69,17 @@ export function shapeMatches(
   ignoreTopMetadata?: boolean,
   simpleFresh?: boolean,
 ): boolean {
-  return getHydrationRuntime().shapeMatches(fresh, claimed, ignoreTopMetadata, simpleFresh);
+  return runtime().shapeMatches(fresh, claimed, ignoreTopMetadata, simpleFresh);
 }
 
 export function significantChildren(node: Node, index: number): Node | null {
-  return getHydrationRuntime().significantChildren(node, index);
+  return runtime().significantChildren(node, index);
 }
 
 export function significantChildrenFromEnd(node: Node, offset: number): Node | null {
-  return getHydrationRuntime().significantChildrenFromEnd(node, offset);
+  return runtime().significantChildrenFromEnd(node, offset);
 }
 
 export function countSignificantChildren(node: Node): number {
-  return getHydrationRuntime().countSignificantChildren(node);
+  return runtime().countSignificantChildren(node);
 }
