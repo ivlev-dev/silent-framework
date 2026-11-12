@@ -209,6 +209,9 @@ importers:
       '@babel/preset-typescript':
         specifier: ^7.29.7
         version: 7.29.7(@babel/core@7.29.13)
+      '@ivlev-dev/silent-swc':
+        specifier: workspace:*
+        version: link:../packages/swc
       '@ivlev-dev/silent-vite':
         specifier: workspace:*
         version: link:../packages/vite

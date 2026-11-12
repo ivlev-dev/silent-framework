@@ -1,20 +1,14 @@
 import "./env";
-import { execFileSync } from "node:child_process";
 import { Bench } from "tinybench";
 import {
   hydrate as silentHydrate,
   type MountHandle,
 } from "@ivlev-dev/silent-core";
 import { documentRef } from "./env";
-import { ROWS, silentApp } from "./ssr-app";
+import { ROWS, silentApp, silentHtml } from "./silent-app";
 
 const TIME = 500;
 const WARMUP = 100;
-
-const silentHtml = execFileSync("pnpm", ["exec", "tsx", "ssr-html.ts"], {
-  cwd: import.meta.dirname,
-  encoding: "utf8",
-});
 
 async function main(): Promise<void> {
   const bench = new Bench({ time: TIME, warmupTime: WARMUP, throws: true });
@@ -23,7 +17,7 @@ async function main(): Promise<void> {
     const target = documentRef.createElement("div");
     target.innerHTML = silentHtml;
     documentRef.body.appendChild(target);
-    const handle: MountHandle = await silentHydrate(target, silentApp as never, {
+    const handle: MountHandle = await silentHydrate(target, silentApp, {
       onMismatch: () => undefined,
     });
     handle.dispose();

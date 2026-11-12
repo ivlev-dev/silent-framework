@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { chromium, type Browser } from "playwright-core";
 import { build } from "vite";
 import { ROWS, TITLE } from "../browser/shared/app-data";
+import { resolveBenchJsonPath, round2, writeBenchJson } from "./cli";
 
 type AppName = "silent" | "solid";
 
@@ -33,10 +34,19 @@ interface RunOptions {
   readonly batch: number;
 }
 
-interface RunResult {
+interface BrowserRunResult {
   readonly samples: readonly number[];
   readonly baseline: readonly number[];
   readonly checks: number;
+}
+
+interface RunResult extends BrowserRunResult {
+  readonly heapKbPerHydration: number | null;
+}
+
+interface CdpSession {
+  send(method: string, params?: Record<string, unknown>): Promise<unknown>;
+  detach(): Promise<void>;
 }
 
 interface AppMetrics {
@@ -44,11 +54,13 @@ interface AppMetrics {
   readonly samples: readonly number[];
   readonly baseline: readonly number[];
   readonly checks: number;
+  readonly heapKbPerHydration: number | null;
 }
 
 const WARMUP = 20;
 const ITERATIONS = 300;
 const BATCH = 20;
+const MEMORY_ITERATIONS = 100;
 const benchRoot = join(import.meta.dirname, "..");
 const cacheRoot = join(benchRoot, "node_modules", ".silent-bench", "browser");
 
@@ -204,6 +216,13 @@ async function startStaticServer(
   };
 }
 
+async function readHeapUsage(session: CdpSession): Promise<number> {
+  const usage = (await session.send("Runtime.getHeapUsage")) as {
+    usedSize: number;
+  };
+  return usage.usedSize;
+}
+
 async function runInBrowser(
   browser: Browser,
   appName: AppName,
@@ -233,7 +252,7 @@ async function runInBrowser(
     );
 
     const result = await page.evaluate(
-      async (payload: RunOptions): Promise<RunResult> => {
+      async (payload: RunOptions): Promise<BrowserRunResult> => {
         interface BrowserHydrationApi {
           prepare?(): void;
           hydrate(container: Element): Promise<() => void>;
@@ -399,7 +418,49 @@ async function runInBrowser(
     );
 
     assert.deepEqual(errors, []);
-    return result;
+
+    const session = (await page
+      .context()
+      .newCDPSession(page)) as unknown as CdpSession;
+    let heapKbPerHydration: number | null = null;
+    try {
+      await session.send("HeapProfiler.enable");
+      await session.send("HeapProfiler.collectGarbage");
+      const before = await readHeapUsage(session);
+      await page.evaluate(
+        async (payload: { ssrHtml: string; iterations: number }) => {
+          const api = (
+            window as unknown as {
+              __hydrateBench?: {
+                prepare?(): void;
+                hydrate(container: Element): Promise<() => void>;
+              };
+            }
+          ).__hydrateBench;
+          if (api === undefined) {
+            throw new Error("hydrate API не зарегистрирован");
+          }
+          api.prepare?.();
+          for (let index = 0; index < payload.iterations; index += 1) {
+            const container = document.createElement("div");
+            container.innerHTML = payload.ssrHtml;
+            document.body.appendChild(container);
+            const dispose = await api.hydrate(container);
+            dispose();
+            container.remove();
+          }
+        },
+        { ssrHtml: options.ssrHtml, iterations: MEMORY_ITERATIONS },
+      );
+      await session.send("HeapProfiler.collectGarbage");
+      const after = await readHeapUsage(session);
+      heapKbPerHydration = (after - before) / 1024 / MEMORY_ITERATIONS;
+    } finally {
+      await session.detach();
+    }
+
+    assert.deepEqual(errors, []);
+    return { ...result, heapKbPerHydration };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`${appName}: ${message}`, { cause: error });
@@ -428,6 +489,13 @@ function format(value: number, digits: number): string {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   });
+}
+
+function requireHeap(entry: AppMetrics): number {
+  if (entry.heapKbPerHydration === null) {
+    throw new Error(`heap не измерен для ${entry.app.name}`);
+  }
+  return entry.heapKbPerHydration;
 }
 
 async function main(): Promise<void> {
@@ -489,6 +557,7 @@ async function main(): Promise<void> {
           samples: result.samples,
           baseline: result.baseline,
           checks: result.checks,
+          heapKbPerHydration: result.heapKbPerHydration,
         });
       } finally {
         await server.close();
@@ -503,8 +572,9 @@ async function main(): Promise<void> {
 
     const silentOps = (1000 * BATCH) / mean(silent.samples);
     const solidOps = (1000 * BATCH) / mean(solid.samples);
+    const ratioValue = solidOps === 0 ? 0 : silentOps / solidOps;
     const ratio =
-      solidOps === 0 ? "n/a" : `${format(silentOps / solidOps, 2)}x`;
+      solidOps === 0 ? "n/a" : `${format(ratioValue, 2)}x`;
 
     const rows = metrics.map((entry) => {
       const average = mean(entry.samples) / BATCH;
@@ -515,8 +585,27 @@ async function main(): Promise<void> {
         "p50, ms": format(median(entry.samples) / BATCH, 4),
         "ops/s": format(1000 / average, 1),
         "разбор, ms": format(parse, 4),
+        "heap, KB/гидр.":
+          entry.heapKbPerHydration === null
+            ? "n/a"
+            : format(entry.heapKbPerHydration, 2),
         "к solid": entry.app.name === "solid" ? "1.00x" : ratio,
       };
+    });
+
+    writeBenchJson(resolveBenchJsonPath(), {
+      app: "browser",
+      silent: {
+        ops: round2(silentOps),
+        p50Ms: round2(median(silent.samples) / BATCH),
+        heapKbPerHydration: round2(requireHeap(silent)),
+      },
+      solid: {
+        ops: round2(solidOps),
+        p50Ms: round2(median(solid.samples) / BATCH),
+        heapKbPerHydration: round2(requireHeap(solid)),
+      },
+      ratio: round2(ratioValue),
     });
 
     console.log(
@@ -528,6 +617,9 @@ async function main(): Promise<void> {
     console.table(rows);
     console.log(
       `Корректность: ${String(silent.checks)} гидраций silent и ${String(solid.checks)} гидраций solid — узлы переиспользованы, значения и обработчик счётчика совпали.`,
+    );
+    console.log(
+      `Память: ${String(MEMORY_ITERATIONS)} гидраций после принудительного GC, heap — прирост в KB на гидрацию.`,
     );
     console.log(
       "«гидрация» — время без подготовки контейнера; «разбор» — создание контейнера и innerHTML, в ops/s не входит.",

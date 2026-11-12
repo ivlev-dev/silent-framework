@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "bench": "tsx --conditions=browser src/index.ts",
-    "bench:ssr": "tsx src/ssr-server.ts && tsx --conditions=browser src/ssr-hydrate.ts",
+    "bench:ssr": "tsx src/ssr-runner.ts",
     "bench:browser": "tsx src/browser-bench.ts",
     "bench:profile": "tsx src/browser-profile.ts"
   },
@@ -16,6 +16,7 @@
   "devDependencies": {
     "@babel/core": "^7.29.13",
     "@babel/preset-typescript": "^7.29.7",
+    "@ivlev-dev/silent-swc": "workspace:*",
     "@ivlev-dev/silent-vite": "workspace:*",
     "@types/babel__core": "^7.20.5",
     "@types/jsdom": "^27.0.0",

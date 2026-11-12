@@ -3,6 +3,7 @@ import { cpus } from "node:os";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { build } from "vite";
+import { resolveBenchJsonPath, round2, writeBenchJson } from "./cli";
 
 interface BuildApp {
   readonly name: string;
@@ -15,6 +16,14 @@ interface AppTimings {
   readonly app: BuildApp;
   readonly cold: readonly number[];
   readonly warm: readonly number[];
+}
+
+interface BuildMetrics {
+  readonly coldMs: number;
+  readonly warmMs: number;
+  readonly startJsKb: number;
+  readonly startGzipKb: number;
+  readonly allJsKb: number;
 }
 
 const RUNS = 3;
@@ -100,6 +109,31 @@ function collectInitialSize(root: string, outDir: string): { js: number; gzip: n
   return { js, gzip };
 }
 
+function metricKey(name: string): string {
+  return name === "silent+vm" ? "silentVm" : name;
+}
+
+function readMetric(
+  metrics: ReadonlyMap<string, BuildMetrics>,
+  key: string,
+): BuildMetrics {
+  const value = metrics.get(key);
+  if (value === undefined) {
+    throw new Error(`Нет метрик сборки для ${key}`);
+  }
+  return value;
+}
+
+function jsonMetric(value: BuildMetrics): BuildMetrics {
+  return {
+    coldMs: round2(value.coldMs),
+    warmMs: round2(value.warmMs),
+    startJsKb: round2(value.startJsKb),
+    startGzipKb: round2(value.startGzipKb),
+    allJsKb: round2(value.allJsKb),
+  };
+}
+
 async function main(): Promise<void> {
   const results: AppTimings[] = [];
 
@@ -119,21 +153,39 @@ async function main(): Promise<void> {
     results.push({ app, cold, warm });
   }
 
+  const metrics = new Map<string, BuildMetrics>();
   const rows = results.map((result) => {
     const initial = collectInitialSize(result.app.root, result.app.outDir);
+    const allJs = collectSize(
+      join(result.app.root, result.app.outDir),
+      ".js",
+    );
+    const values: BuildMetrics = {
+      coldMs: mean(result.cold),
+      warmMs: mean(result.warm),
+      startJsKb: initial.js / 1024,
+      startGzipKb: initial.gzip / 1024,
+      allJsKb: allJs / 1024,
+    };
+    metrics.set(metricKey(result.app.name), values);
     return {
       app: result.app.name,
-      "cold, ms": Math.round(mean(result.cold)).toLocaleString("ru-RU"),
-      "warm, ms": Math.round(mean(result.warm)).toLocaleString("ru-RU"),
-      "start JS, KB": (initial.js / 1024).toFixed(1),
-      "start gzip, KB": (initial.gzip / 1024).toFixed(1),
-      "all JS, KB": (
-        collectSize(join(result.app.root, result.app.outDir), ".js") / 1024
-      ).toFixed(1),
+      "cold, ms": Math.round(values.coldMs).toLocaleString("ru-RU"),
+      "warm, ms": Math.round(values.warmMs).toLocaleString("ru-RU"),
+      "start JS, KB": values.startJsKb.toFixed(1),
+      "start gzip, KB": values.startGzipKb.toFixed(1),
+      "all JS, KB": values.allJsKb.toFixed(1),
       "CSS, KB": (
         collectSize(join(result.app.root, result.app.outDir), ".css") / 1024
       ).toFixed(1),
     };
+  });
+
+  writeBenchJson(resolveBenchJsonPath(), {
+    app: "build",
+    silent: jsonMetric(readMetric(metrics, "silent")),
+    silentVm: jsonMetric(readMetric(metrics, "silentVm")),
+    solid: jsonMetric(readMetric(metrics, "solid")),
   });
 
   console.log(
