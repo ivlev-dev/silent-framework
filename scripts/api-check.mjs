@@ -16,6 +16,84 @@ const PACKAGES = [
   { name: "@ivlev-dev/silent-server", entry: "packages/server/dist/index.d.ts", doc: "docs/api/core.md" },
 ];
 
+const SNAPSHOT_FILE = path.resolve(root, "scripts/api-snapshot.json");
+
+function normalizeExports(names) {
+  return [...new Set(names)].sort((left, right) => left.localeCompare(right, "en"));
+}
+
+function readSnapshot() {
+  if (!fs.existsSync(SNAPSHOT_FILE)) return null;
+  const parsed = JSON.parse(fs.readFileSync(SNAPSHOT_FILE, "utf8"));
+  const packages = parsed !== null && typeof parsed === "object" && parsed.packages !== null && typeof parsed.packages === "object"
+    ? parsed.packages
+    : {};
+  const snapshot = new Map();
+  for (const [name, value] of Object.entries(packages)) {
+    if (!Array.isArray(value)) continue;
+    snapshot.set(name, normalizeExports(value.filter((item) => typeof item === "string")));
+  }
+  return snapshot;
+}
+
+function writeSnapshot(reports, merge) {
+  const packages = new Map();
+  if (merge) {
+    const existing = readSnapshot();
+    if (existing !== null) {
+      for (const [name, value] of existing) packages.set(name, value);
+    }
+  }
+  for (const report of reports) {
+    if (report.skipped) continue;
+    packages.set(report.package, normalizeExports(report.exports));
+  }
+  const payload = { version: 1, packages: {} };
+  for (const name of [...packages.keys()].sort((left, right) => left.localeCompare(right, "en"))) {
+    payload.packages[name] = packages.get(name);
+  }
+  fs.writeFileSync(SNAPSHOT_FILE, `${JSON.stringify(payload, null, 2)}\n`);
+  return packages.size;
+}
+
+function compareSnapshot(reports, warnings) {
+  const snapshot = readSnapshot();
+  if (snapshot === null) {
+    warn(`warn: снимок API не найден: ${path.relative(root, SNAPSHOT_FILE)} (обновите: node scripts/api-check.mjs --snapshot)`, warnings);
+    return { ok: false, file: path.relative(root, SNAPSHOT_FILE), mismatches: [], missing: true };
+  }
+  const mismatches = [];
+  for (const report of reports) {
+    if (report.skipped) continue;
+    const actual = normalizeExports(report.exports);
+    const expected = snapshot.get(report.package);
+    if (expected === undefined) {
+      mismatches.push({ package: report.package, missing: true, added: actual, removed: [] });
+      continue;
+    }
+    const expectedSet = new Set(expected);
+    const actualSet = new Set(actual);
+    const added = actual.filter((name) => !expectedSet.has(name));
+    const removed = expected.filter((name) => !actualSet.has(name));
+    if (added.length > 0 || removed.length > 0) {
+      mismatches.push({ package: report.package, missing: false, added, removed });
+    }
+  }
+  for (const mismatch of mismatches) {
+    const details = [];
+    if (mismatch.missing) details.push("пакет отсутствует в снимке");
+    if (mismatch.added.length > 0) details.push(`добавлено: ${mismatch.added.join(", ")}`);
+    if (mismatch.removed.length > 0) details.push(`удалено: ${mismatch.removed.join(", ")}`);
+    warn(`warn: ${mismatch.package}: снимок API расходится (${details.join("; ")})`, warnings);
+  }
+  return {
+    ok: mismatches.length === 0,
+    file: path.relative(root, SNAPSHOT_FILE),
+    mismatches,
+    missing: false,
+  };
+}
+
 function compilerOptions() {
   return {
     moduleResolution: ts.ModuleResolutionKind.Bundler,
@@ -39,7 +117,7 @@ function escapeRegExp(value) {
 }
 
 function parseArgs(argv) {
-  const result = { packages: [], entry: null, doc: null, json: false, help: false };
+  const result = { packages: [], entry: null, doc: null, json: false, snapshot: false, help: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--package") {
@@ -59,6 +137,8 @@ function parseArgs(argv) {
       i += 1;
     } else if (arg === "--json") {
       result.json = true;
+    } else if (arg === "--snapshot") {
+      result.snapshot = true;
     } else if (arg === "--help" || arg === "-h") {
       result.help = true;
     } else {
@@ -71,16 +151,18 @@ function parseArgs(argv) {
 function printHelp() {
   console.log(`Использование: node scripts/api-check.mjs [опции]
 
-Проверка полноты API-документации: экспорты .d.ts против markdown-документа.
+Проверка полноты API-документации: экспорты .d.ts против markdown-документа
+и сверка с сохранённым снимком публичного API.
 
 Опции:
   --package <name>  Проверить только указанный пакет (можно повторять)
   --entry <path>    Разовый режим: произвольный .d.ts (--doc обязателен)
   --doc <path>      Документ для --entry
+  --snapshot        Обновить снимок scripts/api-snapshot.json
   --json            Отчёт в JSON (stdout, предупреждения в stderr)
   --help, -h        Показать эту справку
 
-Коды выхода: 0 — успех, 1 — проблемы документации, 2 — ошибка запуска.
+Коды выхода: 0 — успех, 1 — проблемы документации или снимка, 2 — ошибка запуска.
 
 Без флагов проверяются все пакеты из встроенной карты.
 Назначение символов: typeof symbol.getName === "function" ? symbol.getName() : symbol.name`);
@@ -288,6 +370,9 @@ async function main() {
     process.exitCode = 0;
     return;
   }
+  if (args.snapshot && (args.entry !== null || args.doc !== null)) {
+    throw new Error("--snapshot несовместим с --entry/--doc");
+  }
 
   const warnings = [];
   const filtered = args.packages.length > 0;
@@ -355,12 +440,28 @@ async function main() {
     reports.push(report);
   }
 
-  const hasProblems = reports.some((report) => report.problem);
+  if (args.snapshot) {
+    const count = writeSnapshot(reports, args.packages.length > 0);
+    const snapshot = { updated: true, file: path.relative(root, SNAPSHOT_FILE), packages: count };
+    if (args.json) {
+      console.log(JSON.stringify({ ok: true, snapshot }, null, 2));
+    } else {
+      console.log(`api-snapshot: обновлён ${snapshot.file} (пакетов: ${count})`);
+    }
+    process.exitCode = 0;
+    return;
+  }
+
+  const customMode = args.entry !== null || args.doc !== null;
+  const snapshot = customMode ? null : compareSnapshot(reports, warnings);
+  const hasProblems = reports.some((report) => report.problem)
+    || (snapshot !== null && !snapshot.ok);
 
   if (args.json) {
     console.log(JSON.stringify({
       ok: !hasProblems,
       warnings,
+      ...(snapshot === null ? {} : { snapshot }),
       packages: reports.map((report) => ({
         package: report.package,
         entry: report.entry,
