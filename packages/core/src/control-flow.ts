@@ -129,7 +129,6 @@ export function For<T>(props: ForProps<T>): Node {
   let container: DocumentFragment | null = null;
   const fallback = props.fallback;
   const hasFallback = fallback !== undefined;
-  const parentOwner = getOwner();
   let states: ItemState<T>[] = [];
   let spare: ItemState<T>[] = [];
   const createdBuffer: ItemState<T>[] = [];
@@ -354,6 +353,8 @@ export function For<T>(props: ForProps<T>): Node {
     }
     return container;
   }
+
+  const parentOwner = getOwner();
 
   if (hydrating) {
     if (outer === null) {
