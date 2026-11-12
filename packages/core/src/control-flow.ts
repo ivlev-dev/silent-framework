@@ -17,7 +17,7 @@ import {
   isServerMode,
 } from "./dom.js";
 import { hydratedEffect, settleNodes } from "./dom-hydration-state.js";
-import { getServerBackend } from "./server-proxy.js";
+import { getServerBackend, serializeServerValue } from "./server-proxy.js";
 import { extractMetadata, isMetadataFree } from "./metadata.js";
 import {
   ITEM,
@@ -137,6 +137,28 @@ function renderForServer<T>(props: ForProps<T>): Node {
   const items: readonly T[] =
     typeof props.each === "function" ? props.each() : props.each;
   const backend = getServerBackend();
+  if (backend?.createRaw !== undefined) {
+    if (items.length === 0) {
+      const out = hasFallback
+        ? serializeServerValue(resolve(fallback)) + LIST_END_MARKER
+        : LIST_END_MARKER;
+      return backend.createRaw(out) as Node;
+    }
+    let out = "";
+    let currentIndex = 0;
+    const indexOf = (): number => currentIndex;
+    for (let position = 0; position < items.length; position += 1) {
+      const item = items[position];
+      if (item === undefined) {
+        break;
+      }
+      currentIndex = position;
+      out += ITEM_MARKER;
+      out += serializeServerValue(props.children(item, indexOf));
+    }
+    out += LIST_END_MARKER;
+    return backend.createRaw(out) as Node;
+  }
   if (backend?.createFragment !== undefined) {
     const total = items.length;
     const values: unknown[] = new Array(total);

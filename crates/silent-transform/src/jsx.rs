@@ -518,12 +518,39 @@ impl SilentPass {
             .map(|segment| segment.is_empty() || segment.ends_with('>'))
             .collect();
 
-        let init = ssr_template_expr(segments, bare);
-        let name = self.hoisted_template(&html, init);
-        call_expr(
-            Expr::Ident(self.helper("ssr")),
-            vec![Expr::Ident(name), expr_array_expr(holes)],
-        )
+        let name = self.hoisted_template(&html, string_array_expr(segments));
+        if holes.is_empty() {
+            return call_expr(
+                Expr::Ident(self.helper("ssrRaw")),
+                vec![computed_member(Expr::Ident(name), 0)],
+            );
+        }
+        let mut parts_expr = computed_member(Expr::Ident(name.clone()), 0);
+        for (index, hole) in holes.into_iter().enumerate() {
+            let value = call_expr(
+                Expr::Ident(self.helper("ssrValue")),
+                vec![
+                    hole,
+                    Expr::Lit(Lit::Bool(Bool {
+                        span: DUMMY_SP,
+                        value: bare.get(index).copied().unwrap_or(false),
+                    })),
+                ],
+            );
+            parts_expr = Expr::Bin(BinExpr {
+                span: DUMMY_SP,
+                op: BinaryOp::Add,
+                left: Box::new(parts_expr),
+                right: Box::new(value),
+            });
+            parts_expr = Expr::Bin(BinExpr {
+                span: DUMMY_SP,
+                op: BinaryOp::Add,
+                left: Box::new(parts_expr),
+                right: Box::new(computed_member(Expr::Ident(name.clone()), index + 1)),
+            });
+        }
+        call_expr(Expr::Ident(self.helper("ssrRaw")), vec![parts_expr])
     }
 
     fn make_getter(&mut self, key: PropName, mut value: Expr) -> GetterProp {
@@ -690,55 +717,6 @@ fn string_array_expr(items: Vec<String>) -> Expr {
                 Some(ExprOrSpread {
                     spread: None,
                     expr: Box::new(string_expr(&item)),
-                })
-            })
-            .collect(),
-    })
-}
-
-fn ssr_template_expr(parts: Vec<String>, bare: Vec<bool>) -> Expr {
-    Expr::Object(ObjectLit {
-        span: DUMMY_SP,
-        props: vec![
-            PropOrSpread::Prop(Box::new(Prop::KeyValue(KeyValueProp {
-                key: PropName::Ident(IdentName::new("parts".into(), DUMMY_SP)),
-                value: Box::new(string_array_expr(parts)),
-            }))),
-            PropOrSpread::Prop(Box::new(Prop::KeyValue(KeyValueProp {
-                key: PropName::Ident(IdentName::new("bare".into(), DUMMY_SP)),
-                value: Box::new(bool_array_expr(bare)),
-            }))),
-        ],
-    })
-}
-
-fn bool_array_expr(items: Vec<bool>) -> Expr {
-    Expr::Array(ArrayLit {
-        span: DUMMY_SP,
-        elems: items
-            .into_iter()
-            .map(|item| {
-                Some(ExprOrSpread {
-                    spread: None,
-                    expr: Box::new(Expr::Lit(Lit::Bool(Bool {
-                        span: DUMMY_SP,
-                        value: item,
-                    }))),
-                })
-            })
-            .collect(),
-    })
-}
-
-fn expr_array_expr(items: Vec<Expr>) -> Expr {
-    Expr::Array(ArrayLit {
-        span: DUMMY_SP,
-        elems: items
-            .into_iter()
-            .map(|item| {
-                Some(ExprOrSpread {
-                    spread: None,
-                    expr: Box::new(item),
                 })
             })
             .collect(),

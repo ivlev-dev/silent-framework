@@ -1,5 +1,5 @@
 import type { ServerBackend, ServerTemplate } from "@ivlev-dev/silent-core";
-import { RawAttr, RawNode, type RawHole } from "./dom/raw.js";
+import { RawAttr, RawNode, RawText, type RawHole } from "./dom/raw.js";
 import { pushValue } from "./dom/serialize-value.js";
 import { escapeText } from "./dom/serializer.js";
 import { getTemplate, setTemplate, type ParsedTemplate } from "./template-cache.js";
@@ -257,7 +257,7 @@ export function createServerBackend(): ServerBackend {
       return { node, holes, attrs };
     },
     createRaw(html: string) {
-      return new RawNode([html], [], []);
+      return new RawText(html);
     },
     createFragment(parts: readonly string[], values: readonly unknown[]) {
       const count = values.length;

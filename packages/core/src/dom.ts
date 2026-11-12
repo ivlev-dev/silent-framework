@@ -959,36 +959,20 @@ function insertServer(
 }
 
 
-export interface SsrTemplate {
-  readonly parts: readonly string[];
-  readonly bare: readonly boolean[];
+export function ssrValue(value: unknown, bare: boolean): string {
+  if (bare && isTextValue(value)) {
+    return serializeServerValue(value);
+  }
+  return `<!--${INSERT_START}-->${serializeServerValue(value)}<!--${INSERT_END}-->`;
 }
 
-export function ssr(template: SsrTemplate, values: readonly unknown[]): Node {
+export function ssrRaw(text: string): Node {
   const backend = getServerBackend();
   if (backend === null) {
-    throw new Error("ssr() доступен только при серверном рендеринге");
+    throw new Error("ssrRaw() доступен только при серверном рендеринге");
   }
-  const parts = template.parts;
-  const bare = template.bare;
-  let out = parts[0] ?? "";
-  const count = values.length;
-  for (let index = 0; index < count; index += 1) {
-    const value = values[index];
-    if (bare[index] === true && isTextValue(value)) {
-      out += serializeServerValue(value);
-    } else {
-      out += `<!--${INSERT_START}-->`;
-      out += serializeServerValue(value);
-      out += `<!--${INSERT_END}-->`;
-    }
-    const part = parts[index + 1];
-    if (part !== undefined) {
-      out += part;
-    }
-  }
-  const created = backend.createRaw?.(out);
-  const node = created ?? backend.createTemplate(out)?.node;
+  const created = backend.createRaw?.(text);
+  const node = created ?? backend.createTemplate(text)?.node;
   if (node === null || node === undefined) {
     throw new Error("Серверный backend не поддерживает строковые узлы");
   }

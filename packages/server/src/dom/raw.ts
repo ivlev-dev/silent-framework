@@ -119,6 +119,33 @@ class RawHoleImpl implements RawHole {
   }
 }
 
+export class RawText extends NodeImpl {
+  private readonly text: string;
+
+  constructor(text: string) {
+    super(NODE_TEXT);
+    this.text = text;
+  }
+
+  render(): string {
+    return this.text;
+  }
+
+  renderInto(parts: string[]): void {
+    parts.push(this.text);
+  }
+
+  override get textContent(): string {
+    return this.text;
+  }
+
+  override set textContent(_value: string | null) {}
+
+  protected override createShallowClone(): RawText {
+    return new RawText(this.text);
+  }
+}
+
 export class RawAttr {
   private readonly hole: RawHole;
   private readonly content: RawHole | undefined;

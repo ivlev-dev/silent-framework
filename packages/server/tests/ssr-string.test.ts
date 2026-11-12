@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { isServerMode, templateHoles, type AnyComponent } from "@ivlev-dev/silent-core";
-import { ssr } from "@ivlev-dev/silent-core/jsx-runtime";
+import { ssrRaw, ssrValue } from "@ivlev-dev/silent-core/jsx-runtime";
 import { renderToString } from "../src/render.js";
 import { clearTemplateCache } from "../src/template-cache.js";
 
@@ -11,12 +11,10 @@ afterEach(() => {
 describe("строковый шаблон компилятора", () => {
   it("склеивает части и экранирует значения", async () => {
     function View(): Node {
-      return ssr(
-        {
-          parts: ['<div class="x"><span>', "<!--silent-hole-0--></span></div>"],
-          bare: [true],
-        },
-        ["a&b"],
+      return ssrRaw(
+        '<div class="x"><span>' +
+          ssrValue("a&b", true) +
+          "<!--silent-hole-0--></span></div>",
       );
     }
 
@@ -29,13 +27,7 @@ describe("строковый шаблон компилятора", () => {
   it("оборачивает нестроковые значения регионом", async () => {
     function View(): Node {
       const inner = templateHoles("<b>bold</b>")();
-      return ssr(
-        {
-          parts: ["<p>", "<!--silent-hole-0--></p>"],
-          bare: [true],
-        },
-        [inner.node],
-      );
+      return ssrRaw("<p>" + ssrValue(inner.node, true) + "<!--silent-hole-0--></p>");
     }
 
     const { html } = await renderToString(View as unknown as AnyComponent, {});
@@ -47,13 +39,7 @@ describe("строковый шаблон компилятора", () => {
 
   it("оставляет регион для текста в не-bare позиции", async () => {
     function View(): Node {
-      return ssr(
-        {
-          parts: ["<p>Hello ", "<!--silent-hole-0--></p>"],
-          bare: [false],
-        },
-        ["world"],
-      );
+      return ssrRaw("<p>Hello " + ssrValue("world", false) + "<!--silent-hole-0--></p>");
     }
 
     const { html } = await renderToString(View as unknown as AnyComponent, {});
@@ -65,7 +51,7 @@ describe("строковый шаблон компилятора", () => {
 
   it("не оставляет пробелов при пустых значениях", async () => {
     function View(): Node {
-      return ssr({ parts: ["<i>", "</i>"], bare: [true] }, [null]);
+      return ssrRaw("<i>" + ssrValue(null, true) + "</i>");
     }
 
     const { html } = await renderToString(View as unknown as AnyComponent, {});
