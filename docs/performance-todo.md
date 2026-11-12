@@ -90,11 +90,11 @@
 - [x] Пропуск `napi build` при свежих артефактах (`scripts/build-native.mjs`).
 - [x] Кэш JSON опций и загрузки SWC в Vite-плагине.
 - [x] Инкрементальный TypeScript.
-- [ ] `tsc -b`/project references, если даст заметный выигрыш без риска для `dist`.
-- [ ] Персистентный кэш transform по хэшу содержимого (dev + build).
-- [ ] Пропуск пересборки неизменившихся пакетов на уровне pnpm.
-- [ ] Кэш нативных артефактов по хэшу содержимого, а не только mtime.
-- [ ] Сравнение cold/warm build с Solid в CI (`pnpm bench:build`).
+- [x] `tsc -b` с project references: `composite: true` и `references` в tsconfig пакетов, root `build` = `build:native` + один `tsc -b`. Warm `pnpm build` 417 → 200 мс, cold 414 мс.
+- [x] Персистентный кэш transform по хэшу содержимого: ключ = версия нативного addon + модуль + JSON опций + хэш индекса + код, файлы в `config.cacheDir/silent-transform`, очистка старых записей при `buildStart`, отключение через `SILENT_TRANSFORM_CACHE=off`.
+- [x] Отклонено: пропуск пересборки неизменившихся пакетов на уровне pnpm — pnpm не умеет, а фильтры по git меняют семантику root `build`.
+- [x] Кэш нативных артефактов по content hash: sha256 исходников в `packages/swc/native/.build-hash-<triple>`, `touch` без изменения содержимого больше не пересобирает.
+- [x] Сравнение cold/warm build с Solid в CI (`pnpm bench:build`): guard считает `coldRatio`/`warmRatio` из того же прогона (порог +40%, без `--strict` — предупреждение).
 
 ## M7. Размер бандла
 

@@ -1,6 +1,8 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import * as path from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Plugin } from "vite";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+import type { Plugin, ResolvedConfig } from "vite";
 import { silent } from "../src/index.js";
 import type { SilentOptions } from "../src/index.js";
 import { transform as nativeTransform, scan as nativeScan } from "@ivlev-dev/silent-swc";
@@ -19,6 +21,7 @@ vi.mock("@ivlev-dev/silent-swc", () => ({
 interface CallableHooks {
   config?: () => { define?: Record<string, string> } | undefined;
   buildStart?: () => Promise<void> | void;
+  configResolved?: (config: ResolvedConfig) => void;
   transform?: (code: string, id: string) => Promise<unknown> | unknown;
   watchChange?: (id: string, change: { event: string }) => void;
   handleHotUpdate?: (context: { file: string }) => void;
@@ -29,6 +32,14 @@ const createPlugin = (options?: SilentOptions): CallableHooks =>
 
 const fileFor = (...segments: string[]): string =>
   path.resolve(process.cwd(), ...segments);
+
+const cacheDirectories: string[] = [];
+
+afterEach(() => {
+  for (const directory of cacheDirectories.splice(0)) {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 type TransformOutput = {
   code?: string;
@@ -146,6 +157,23 @@ describe("silent()", () => {
     await plugin.transform?.("two", fileFor("src", "b.ts"));
 
     expect(scanMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("кеширует результат transform по содержимому в cacheDir", async () => {
+    const cacheDir = mkdtempSync(path.join(tmpdir(), "silent-vite-cache-"));
+    cacheDirectories.push(cacheDir);
+    const plugin = createPlugin();
+    plugin.configResolved?.({ cacheDir } as ResolvedConfig);
+    await plugin.buildStart?.();
+
+    const file = fileFor("src", "cached.ts");
+    const first = await plugin.transform?.("const x = 1;", file);
+    const second = await plugin.transform?.("const x = 1;", file);
+    expect(transformMock).toHaveBeenCalledTimes(1);
+    expect(second).toEqual(first);
+
+    await plugin.transform?.("const x = 2;", file);
+    expect(transformMock).toHaveBeenCalledTimes(2);
   });
 
   it("первый transform сканирует индекс, если buildStart не вызывался", async () => {

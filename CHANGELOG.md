@@ -15,6 +15,12 @@
 - SSR: компилятор в режиме `ssr: true` (включается Vite-плагином для SSR-сборок и `vite.ssrLoadModule`) генерирует строковую сборку без `templateHoles`/`insert` и мини-DOM: статические части выносятся в модульный массив, кодогенерация — прямая конкатенация `_$ssrRaw(... + _$ssrValue(expr, bare) + ...)`. `ssrValue` экранирует и оборачивает нестроковые значения регионами вставки, маркеры `silent-hole-*`/`data-silent-a-*` остаются; разметка совпадает с шаблонным путём байт-в-байт, гидрация не меняется. Результат — `RawText` вместо `RawNode`; серверные `For`/`Index` собирают строку напрямую. Для динамических атрибутов, `style`/spread, `dangerouslySetInnerHTML`, RCDATA-значений и metadata-тегов — откат на `templateHoles`. `renderToString` 105 000–115 000 ops/s, отношение к Solid 0.93–1.15.
 - SSR: статические шаблоны, `Show`/`Switch`/`Index`/`ErrorBoundary` и серверный `For` больше не создают мини-DOM узлы и эффекты; `For`/`Index` не заводят замыкание индекса на элемент и переиспользуют строки маркеров, списки детей мини-DOM-узлов и восстановление глобалов стали дешевле. Разметка собирается конкатенацией строк в `RawNode.render`, вложенные узлы вставляются одной строкой. Отношение к Solid в A/B: 0.60 → 0.70–0.76, `renderToString` 100 000–104 000 ops/s.
 
+### Сборка
+
+- `pnpm build`: `tsc -b` с project references (`composite: true`) вместо `pnpm -r build` — warm 417 → 200 мс, cold 414 мс. Нативный addon пропускается по sha256 исходников, а не по mtime, поэтому `touch`/checkout без изменений не пересобирает.
+- Vite-плагин: персистентный кэш transform в `config.cacheDir/silent-transform`, ключ = версия addon + модуль + JSON опций + хэш индекса + код; старые записи чистятся на `buildStart`, кэш отключается через `SILENT_TRANSFORM_CACHE=off`.
+- `bench:guard --only=build` сравнивает `coldRatio`/`warmRatio` с Solid из того же прогона (без `--strict` — предупреждение).
+
 ### Бенчмарки
 
 - SSR и гидрация измеряют скомпилированные приложения (`bench/fixtures/silent-app.tsx`), а не ручные вызовы `templateHoles`/`insert`.

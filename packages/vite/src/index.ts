@@ -1,8 +1,16 @@
-import type { ConfigEnv, Plugin, UserConfig } from "vite";
+import type { ConfigEnv, Plugin, ResolvedConfig, UserConfig } from "vite";
+import { join } from "node:path";
 import { loadSwc, nativeScan, nativeTransform } from "./native.js";
 import type { SilentIndex } from "./native.js";
 import { cleanModuleId, isInsideRoot, isSourceModule, isVirtualModule, matchesPattern, resolveOptions } from "./options.js";
 import type { SilentOptions } from "./options.js";
+import {
+  hashContent,
+  pruneTransformCache,
+  readTransformCache,
+  transformCacheKey,
+  writeTransformCache,
+} from "./cache.js";
 
 const EMPTY_INDEX_JSON = JSON.stringify({ interfaces: {}, values: {} });
 
@@ -25,8 +33,11 @@ export function silent(options: SilentOptions = {}): Plugin {
   const ssrOptionsJson = buildOptionsJson(true);
 
   let cachedIndexJson: string | null = null;
+  let cachedIndexHash: string | null = null;
   let indexPromise: Promise<string> | null = null;
   let swcPromise: ReturnType<typeof loadSwc> | null = null;
+  let cacheDirectory: string | null = null;
+  let transformVersion: string | null = null;
 
   const getSwc = (): ReturnType<typeof loadSwc> => {
     if (!swcPromise) {
@@ -59,7 +70,13 @@ export function silent(options: SilentOptions = {}): Plugin {
 
   const invalidateIndex = (): void => {
     cachedIndexJson = null;
+    cachedIndexHash = null;
     indexPromise = null;
+  };
+
+  const indexHashOf = (indexJson: string): string => {
+    cachedIndexHash ??= hashContent(indexJson);
+    return cachedIndexHash;
   };
 
   return {
@@ -84,6 +101,12 @@ export function silent(options: SilentOptions = {}): Plugin {
     },
     async buildStart() {
       await ensureIndex();
+      if (cacheDirectory !== null) {
+        pruneTransformCache(cacheDirectory);
+      }
+    },
+    configResolved(config: ResolvedConfig) {
+      cacheDirectory = join(config.cacheDir, "silent-transform");
     },
     watchChange(id) {
       if (isSourceModule(id) && !isVirtualModule(id)) {
@@ -104,14 +127,37 @@ export function silent(options: SilentOptions = {}): Plugin {
 
       const swc = await getSwc();
       const indexJson = await ensureIndex();
-      const result = nativeTransform(
-        swc,
-        code,
+      const callOptionsJson =
+        transformOptions?.ssr === true ? ssrOptionsJson : optionsJson;
+      const cacheEnabled =
+        cacheDirectory !== null && process.env.SILENT_TRANSFORM_CACHE !== "off";
+      const directory = cacheEnabled ? cacheDirectory : null;
+      if (directory === null) {
+        const result = nativeTransform(swc, code, moduleId, callOptionsJson, indexJson);
+        return {
+          code: result.code,
+          map: result.map,
+          warnings: result.diagnostics,
+        };
+      }
+      transformVersion ??= swc.version();
+      const key = transformCacheKey([
+        transformVersion,
         moduleId,
-        transformOptions?.ssr === true ? ssrOptionsJson : optionsJson,
-        indexJson,
-      );
-
+        callOptionsJson,
+        indexHashOf(indexJson),
+        code,
+      ]);
+      const cached = readTransformCache(directory, key);
+      if (cached !== null) {
+        return {
+          code: cached.code,
+          map: cached.map,
+          warnings: cached.diagnostics,
+        };
+      }
+      const result = nativeTransform(swc, code, moduleId, callOptionsJson, indexJson);
+      writeTransformCache(directory, key, result);
       return {
         code: result.code,
         map: result.map,

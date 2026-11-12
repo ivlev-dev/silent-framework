@@ -61,6 +61,8 @@ function collect() {
         warmMs: data.silent.warmMs,
         coldMs: data.silent.coldMs,
         vmStartGzipKb: data.silentVm.startGzipKb,
+        solidColdMs: data.solid?.coldMs,
+        solidWarmMs: data.solid?.warmMs,
       };
     }
     if (only.has("browser")) {
@@ -103,6 +105,28 @@ function buildChecks(metrics, baseline) {
         name: "build.warmMs",
         base: baseBuild.warmMs,
         current: build.warmMs,
+        limit: LIMITS.warmMs,
+        kind: "growth",
+      });
+    }
+    const solidPairs = [
+      ["coldRatio", build.coldMs, build.solidColdMs],
+      ["warmRatio", build.warmMs, build.solidWarmMs],
+    ];
+    for (const [key, silentMs, solidMs] of solidPairs) {
+      const baseRatio = baseBuild[key];
+      if (
+        typeof silentMs !== "number"
+        || typeof solidMs !== "number"
+        || solidMs <= 0
+        || typeof baseRatio !== "number"
+      ) {
+        continue;
+      }
+      checks.push({
+        name: `build.${key}`,
+        base: baseRatio,
+        current: silentMs / solidMs,
         limit: LIMITS.warmMs,
         kind: "growth",
       });
@@ -197,7 +221,13 @@ for (const check of checks) {
   if (!isFailed) {
     continue;
   }
-  if (check.name.includes("Ops") || check.name === "browser.ratio" || check.name === "hydrate.ratio") {
+  if (
+    check.name.includes("Ops")
+    || check.name === "browser.ratio"
+    || check.name === "hydrate.ratio"
+    || check.name === "build.coldRatio"
+    || check.name === "build.warmRatio"
+  ) {
     if (strict) {
       failed += 1;
       continue;

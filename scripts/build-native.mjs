@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -58,22 +59,21 @@ function sourceFiles() {
   return files.filter((path) => existsSync(path));
 }
 
-function newestMtime(paths) {
-  let newest = 0;
-  for (const path of paths) {
+function sourceHash(paths) {
+  const hash = createHash("sha256");
+  for (const path of [...paths].sort()) {
     if (!existsSync(path)) continue;
-    newest = Math.max(newest, statSync(path).mtimeMs);
+    hash.update(path.slice(repositoryRoot.length));
+    hash.update("\0");
+    hash.update(readFileSync(path));
+    hash.update("\0");
   }
-  return newest;
+  return hash.digest("hex");
 }
 
-function oldestMtime(paths) {
-  let oldest = Number.POSITIVE_INFINITY;
-  for (const path of paths) {
-    if (!existsSync(path)) continue;
-    oldest = Math.min(oldest, statSync(path).mtimeMs);
-  }
-  return oldest;
+function recordedHash(hashPath) {
+  if (!existsSync(hashPath)) return "";
+  return readFileSync(hashPath, "utf8").trim();
 }
 
 function artifactState(triple) {
@@ -116,7 +116,9 @@ const force = process.argv.slice(2).some((argument) => argument === "--force" ||
 const triple = platformTriple();
 const state = artifactState(triple);
 const sources = sourceFiles();
-const stale = state.missing.length > 0 || oldestMtime(state.artifacts) < newestMtime(sources);
+const hashPath = join(nativeDirectory, `.build-hash-${triple}`);
+const hash = sourceHash(sources);
+const stale = state.missing.length > 0 || recordedHash(hashPath) !== hash;
 
 if (!force && !stale) {
   console.log(`[build-native] ${triple} artifacts are up to date, skipping napi build`);
@@ -127,7 +129,7 @@ const reason = force
   ? "forced"
   : state.missing.length > 0
     ? `missing ${state.missing.join(", ")}`
-    : "sources are newer than artifacts";
+    : "sources changed";
 console.log(`[build-native] building ${triple}: ${reason}`);
 
 const result = spawnSync(
@@ -160,4 +162,5 @@ if (built.missing.length > 0) {
   process.exit(1);
 }
 
+writeFileSync(hashPath, `${hash}\n`);
 process.exit(0);
