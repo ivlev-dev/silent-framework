@@ -91,6 +91,9 @@ interface ParsedEvent {
 const parseCache = new Map<string, TemplateParse>();
 const METADATA_PATTERN = /<(?:title|meta|link)[\s/>]/i;
 const listenerRegistry = new WeakMap<Element, ListenerHolder | Map<string, ListenerHolder>>();
+const delegatedInstalled = new Set<string>();
+const DELEGATED_EVENTS =
+  /^(?:beforeinput|change|click|contextmenu|dblclick|input|keydown|keypress|keyup|mousedown|mousemove|mouseout|mouseover|mouseup|pointerdown|pointermove|pointerout|pointerover|pointerup|submit|touchend|touchmove|touchstart)$/;
 const styleSnapshots = new WeakMap<Element, Set<string>>();
 const styleValues = new WeakMap<Element, Map<string, string>>();
 const hyphenCache = new Map<string, string>();
@@ -1426,13 +1429,52 @@ function buildEventName(name: string): ParsedEvent {
   return { event, capture, key: (capture ? "c:" : "e:") + event };
 }
 
+function ensureDelegated(event: string, key: string): void {
+  if (delegatedInstalled.has(key)) {
+    return;
+  }
+  delegatedInstalled.add(key);
+  document.addEventListener(event, (nativeEvent: Event) => dispatchDelegated(nativeEvent, key));
+}
+
+function dispatchDelegated(event: Event, key: string): void {
+  let node = event.target as Node | null;
+  while (node !== null) {
+    if (node instanceof Element) {
+      const entry = listenerRegistry.get(node);
+      const holder =
+        entry instanceof Map ? entry.get(key) : entry !== undefined && entry.key === key ? entry : undefined;
+      if (holder !== undefined) {
+        const handler = holder.current;
+        if (typeof handler === "function") {
+          handler(event);
+        }
+        if (event.cancelBubble) {
+          return;
+        }
+      }
+    }
+    node = node.parentNode;
+  }
+}
+
 export function addListener(el: Element, name: string, handler: EventListener | null): void {
   const { event, capture, key } = resolveEventName(name);
+  const delegated =
+    !capture
+    && typeof document !== "undefined"
+    && !isServerMode()
+    && DELEGATED_EVENTS.test(event)
+    && (el.ownerDocument === document || el.ownerDocument.defaultView === null);
   const existing = listenerRegistry.get(el);
   if (existing === undefined) {
     const holder = createHolder(key, handler);
     listenerRegistry.set(el, holder);
-    el.addEventListener(event, holder.wrapper, capture);
+    if (delegated) {
+      ensureDelegated(event, key);
+    } else {
+      el.addEventListener(event, holder.wrapper, capture);
+    }
     return;
   }
   if (existing instanceof Map) {
@@ -1443,7 +1485,11 @@ export function addListener(el: Element, name: string, handler: EventListener | 
     }
     const holder = createHolder(key, handler);
     existing.set(key, holder);
-    el.addEventListener(event, holder.wrapper, capture);
+    if (delegated) {
+      ensureDelegated(event, key);
+    } else {
+      el.addEventListener(event, holder.wrapper, capture);
+    }
     return;
   }
   if (existing.key === key) {
@@ -1455,7 +1501,11 @@ export function addListener(el: Element, name: string, handler: EventListener | 
   holders.set(existing.key, existing);
   holders.set(key, holder);
   listenerRegistry.set(el, holders);
-  el.addEventListener(event, holder.wrapper, capture);
+  if (delegated) {
+    ensureDelegated(event, key);
+  } else {
+    el.addEventListener(event, holder.wrapper, capture);
+  }
 }
 
 export function removeListener(el: Element, name: string): void {

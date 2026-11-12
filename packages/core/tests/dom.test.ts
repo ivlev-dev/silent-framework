@@ -531,6 +531,64 @@ describe("on", () => {
     element.dispatchEvent(new FocusEvent("focus"));
     expect(calls).toEqual(["focus"]);
   });
+
+  it("срабатывает для элемента, смонтированного после регистрации", () => {
+    const fragment = document.createDocumentFragment();
+    const element = document.createElement("button");
+    fragment.appendChild(element);
+    const calls: string[] = [];
+    on(element, "onClick", () => () => calls.push("click"));
+    document.body.appendChild(fragment);
+    click(element);
+    expect(calls).toEqual(["click"]);
+  });
+
+  it("делегирует событие вверх от цели к корню ровно один раз", () => {
+    const outer = document.createElement("div");
+    const inner = document.createElement("button");
+    outer.appendChild(inner);
+    document.body.appendChild(outer);
+    const order: string[] = [];
+    on(outer, "onClick", () => () => order.push("outer"));
+    on(inner, "onClick", () => () => order.push("inner"));
+    click(inner);
+    expect(order).toEqual(["inner", "outer"]);
+  });
+
+  it("останавливает всплытие после stopPropagation", () => {
+    const outer = document.createElement("div");
+    const inner = document.createElement("button");
+    outer.appendChild(inner);
+    document.body.appendChild(outer);
+    const calls: string[] = [];
+    on(outer, "onClick", () => () => calls.push("outer"));
+    on(inner, "onClick", () => (event) => {
+      calls.push("inner");
+      event.stopPropagation();
+    });
+    click(inner);
+    expect(calls).toEqual(["inner"]);
+  });
+
+  it("не делегирует пользовательские события и focus", () => {
+    const element = document.createElement("button");
+    document.body.appendChild(element);
+    const calls: string[] = [];
+    on(element, "on:custom", () => () => calls.push("custom"));
+    on(element, "onFocus", () => () => calls.push("focus"));
+    element.dispatchEvent(new CustomEvent("custom", { bubbles: true }));
+    element.dispatchEvent(new FocusEvent("focus"));
+    expect(calls).toEqual(["custom", "focus"]);
+  });
+
+  it("делегирует события у элементов из template", () => {
+    const element = template("<button>go</button>")() as Element;
+    const calls: string[] = [];
+    on(element, "onClick", () => () => calls.push("click"));
+    document.body.appendChild(element);
+    click(element);
+    expect(calls).toEqual(["click"]);
+  });
 });
 
 describe("ref", () => {
