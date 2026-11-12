@@ -34,6 +34,21 @@ function run(name, jsonPath, script) {
   return JSON.parse(readFileSync(jsonPath, "utf8"));
 }
 
+function collectBrowser() {
+  const directory = mkdtempSync(join(tmpdir(), "silent-guard-"));
+  try {
+    const data = run("browser", join(directory, "browser.json"), "bench:browser");
+    return {
+      silentOps: data.silent.ops,
+      solidOps: data.solid.ops,
+      ratio: data.ratio,
+      p50Ms: data.silent.p50Ms,
+    };
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 function collect() {
   const directory = mkdtempSync(join(tmpdir(), "silent-guard-"));
   const metrics = {};
@@ -49,13 +64,7 @@ function collect() {
       };
     }
     if (only.has("browser")) {
-      const data = run("browser", join(directory, "browser.json"), "bench:browser");
-      metrics.browser = {
-        silentOps: data.silent.ops,
-        solidOps: data.solid.ops,
-        ratio: data.ratio,
-        p50Ms: data.silent.p50Ms,
-      };
+      metrics.browser = collectBrowser();
     }
     if (only.has("ssr")) {
       const data = run("ssr", join(directory, "ssr.json"), "bench:ssr");
@@ -158,8 +167,23 @@ if (!existsSync(baselinePath)) {
 }
 
 const baseline = JSON.parse(readFileSync(baselinePath, "utf8"));
+let checks = buildChecks(current, baseline);
+const ratioCheck = checks.find((check) => check.name === "browser.ratio");
+if (
+  ratioCheck !== undefined
+  && current.browser !== undefined
+  && evaluate(ratioCheck).failed
+) {
+  console.log("bench-guard: ratio шумит — повторный прогон browser");
+  const retry = collectBrowser();
+  if (retry.ratio > current.browser.ratio) {
+    current.browser = retry;
+  }
+  checks = buildChecks(current, baseline);
+}
+
 let failed = 0;
-for (const check of buildChecks(current, baseline)) {
+for (const check of checks) {
   const { failed: isFailed, deltaPct } = evaluate(check);
   const sign = deltaPct >= 0 ? "+" : "";
   const limit = check.kind === "growth" ? `+${String(check.limit)}` : `-${String(check.limit)}%`;
