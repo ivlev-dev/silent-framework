@@ -93,7 +93,7 @@ const METADATA_PATTERN = /<(?:title|meta|link)[\s/>]/i;
 const listenerRegistry = new WeakMap<Element, ListenerHolder | Map<string, ListenerHolder>>();
 const delegatedInstalled = new Set<string>();
 const DELEGATED_EVENTS =
-  /^(?:beforeinput|change|click|contextmenu|dblclick|input|keydown|keypress|keyup|mousedown|mousemove|mouseout|mouseover|mouseup|pointerdown|pointermove|pointerout|pointerover|pointerup|submit|touchend|touchmove|touchstart)$/;
+  /^(?:change|click|contextmenu|dblclick|input|keydown|keyup|mousedown|mouseup|pointerdown|pointerup|submit|touchend|touchstart)$/;
 const styleSnapshots = new WeakMap<Element, Set<string>>();
 const styleValues = new WeakMap<Element, Map<string, string>>();
 const hyphenCache = new Map<string, string>();
