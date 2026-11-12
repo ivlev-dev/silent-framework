@@ -14,7 +14,9 @@ import {
   collectNodes,
   createMountPoint,
   disposeNode,
+  isServerMode,
 } from "./dom.js";
+import { getServerBackend } from "./server-proxy.js";
 import { settleNodes } from "./dom-hydration-state.js";
 import { extractMetadata, isMetadataFree } from "./metadata.js";
 import {
@@ -28,6 +30,13 @@ import {
   mismatch,
   withWindow,
 } from "./hydration-proxy.js";
+
+declare const __SILENT_SERVER__: boolean | undefined;
+
+const SERVER = typeof __SILENT_SERVER__ === "undefined" || __SILENT_SERVER__;
+
+const ITEM_MARKER = `<!--${ITEM}-->`;
+const LIST_END_MARKER = `<!--${LIST_END}-->`;
 
 interface IndexState<T> {
   item: Accessor<T>;
@@ -54,7 +63,87 @@ function resolve(value: unknown): unknown {
   return current;
 }
 
+function renderIndexServer<T>(props: IndexProps<T>): Node {
+  const fallback = props.fallback;
+  const hasFallback = fallback !== undefined;
+  const items: readonly T[] =
+    typeof props.each === "function" ? props.each() : props.each;
+  const backend = getServerBackend();
+  if (backend?.createFragment !== undefined) {
+    const total = items.length;
+    const values: unknown[] = new Array(total);
+    let currentIndex = 0;
+    const indexOf = (): number => currentIndex;
+    let count = 0;
+    for (let position = 0; position < total; position += 1) {
+      const item = items[position];
+      if (item === undefined) {
+        break;
+      }
+      currentIndex = position;
+      values[position] = props.children(() => item, indexOf);
+      count = position + 1;
+    }
+    values.length = count;
+    let parts: string[];
+    if (total === 0) {
+      if (hasFallback) {
+        values.push(resolve(fallback));
+        parts = ["", LIST_END_MARKER];
+      } else {
+        parts = [LIST_END_MARKER];
+      }
+    } else if (count === 0) {
+      parts = [ITEM_MARKER];
+    } else {
+      parts = new Array<string>(count + 1);
+      parts[0] = ITEM_MARKER;
+      if (count > 1) {
+        parts.fill(ITEM_MARKER, 1, count);
+      }
+      parts[count] = LIST_END_MARKER;
+    }
+    const fragment = backend.createFragment(parts, values);
+    if (fragment !== null) {
+      return fragment.node as Node;
+    }
+  }
+  const endAnchor = document.createComment(LIST_END);
+  const sink = document.createDocumentFragment();
+  sink.appendChild(endAnchor);
+  let fallbackIndex = 0;
+  const indexOf = (): number => fallbackIndex;
+  for (let position = 0; position < items.length; position += 1) {
+    const item = items[position];
+    if (item === undefined) {
+      break;
+    }
+    const anchor = document.createComment(ITEM);
+    sink.insertBefore(anchor, endAnchor);
+    fallbackIndex = position;
+    const value = props.children(() => item, indexOf);
+    if (value instanceof Node && !(value instanceof DocumentFragment) && isMetadataFree(value)) {
+      sink.insertBefore(value, endAnchor);
+      continue;
+    }
+    const nodes = extractMetadata(collectNodes(value as Children));
+    for (const node of nodes) {
+      sink.insertBefore(node, endAnchor);
+    }
+  }
+  if (items.length === 0 && hasFallback) {
+    const nodes = extractMetadata(collectNodes(resolve(fallback) as Children));
+    for (const node of nodes) {
+      sink.insertBefore(node, endAnchor);
+    }
+  }
+  return sink;
+}
+
 export function Index<T>(props: IndexProps<T>): Node {
+  if (SERVER && isServerMode()) {
+    return renderIndexServer(props);
+  }
   const hydrating = isHydrating();
   const outer = hydrating ? currentWindow() : null;
   const container = document.createDocumentFragment();
