@@ -34,8 +34,10 @@ import {
 } from "./dom-hydration-state.js";
 
 export const NODE_DISPOSER = Symbol("silent.disposer");
+const ITEM_DISPOSER = Symbol("silent.itemDisposer");
 
 type DisposerHost = Node & { [NODE_DISPOSER]?: () => void };
+type ItemDisposerHost = Node & { [ITEM_DISPOSER]?: () => void };
 
 interface ListenerHolder {
   current: EventListener | null;
@@ -200,6 +202,14 @@ export function attachDisposer(node: Node, dispose: () => void): void {
   (node as DisposerHost)[NODE_DISPOSER] = dispose;
 }
 
+export function attachItemDisposer(node: Node, dispose: () => void): void {
+  (node as ItemDisposerHost)[ITEM_DISPOSER] = dispose;
+}
+
+export function clearItemDisposer(node: Node): void {
+  delete (node as ItemDisposerHost)[ITEM_DISPOSER];
+}
+
 function readDisposer(node: Node): (() => void) | undefined {
   const dispose = (node as DisposerHost)[NODE_DISPOSER];
   return typeof dispose === "function" ? dispose : undefined;
@@ -255,6 +265,11 @@ export function collectNodes(value: Children): Node[] {
 }
 
 export function disposeNode(node: Node): void {
+  const itemDispose = (node as ItemDisposerHost)[ITEM_DISPOSER];
+  if (typeof itemDispose === "function") {
+    itemDispose();
+    return;
+  }
   const dispose = readDisposer(node);
   if (dispose !== undefined) {
     dispose();

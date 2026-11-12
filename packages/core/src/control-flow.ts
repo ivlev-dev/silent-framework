@@ -11,6 +11,8 @@ import { createEffectUnlessStatic } from "./static-effect.js";
 import type { Children } from "./jsx.js";
 import {
   attachDisposer,
+  attachItemDisposer,
+  clearItemDisposer,
   collectNodes,
   createMountPoint,
   disposeNode,
@@ -41,7 +43,7 @@ interface ItemState<T> {
   item: T;
   index: Accessor<number>;
   setIndex: Setter<number>;
-  anchor: Comment;
+  anchor: Comment | null;
   nodes: Node[];
   nodesEnd: Node | null;
   cleanup: () => void;
@@ -279,7 +281,7 @@ export function For<T>(props: ForProps<T>): Node {
       return nodes;
     }
     const collected: Node[] = [];
-    let cursor: Node | null = state.anchor.nextSibling;
+    let cursor: Node | null = state.anchor === null ? null : state.anchor.nextSibling;
     while (cursor !== null && cursor !== state.nodesEnd) {
       collected.push(cursor);
       cursor = cursor.nextSibling;
@@ -288,22 +290,33 @@ export function For<T>(props: ForProps<T>): Node {
     return collected;
   };
 
+  const applyItemDisposer = (state: ItemState<T>, node: Node): void => {
+    attachItemDisposer(node, () => removeState(state));
+  };
+
   const renderItem = (
     state: ItemState<T>,
     value: unknown,
     mountParent: Node | null = null,
   ): void => {
     const nodes = materializeNodes(state);
+    let tail: Node | null = null;
+    let parent: Node | null = mountParent;
     if (nodes.length > 0) {
+      tail = nodes[nodes.length - 1]!.nextSibling;
+      parent ??= nodes[0]!.parentNode;
+      clearItemDisposer(nodes[0]!);
       for (let index = 0; index < nodes.length; index += 1) {
         const node = nodes[index]!;
         disposeNode(node);
         detachNode(node);
       }
-      state.nodes = [];
-      state.nodesEnd = null;
+    } else if (state.anchor !== null) {
+      tail = state.anchor.nextSibling;
+      parent ??= state.anchor.parentNode;
     }
-    const parent = mountParent ?? state.anchor.parentNode;
+    state.nodes = [];
+    state.nodesEnd = null;
     if (parent === null) {
       return;
     }
@@ -314,12 +327,24 @@ export function For<T>(props: ForProps<T>): Node {
     } else {
       placed = extractMetadata(collectNodes(value as Children));
     }
-    const reference = state.anchor.nextSibling;
+    if (placed.length === 0) {
+      if (state.anchor === null) {
+        const anchor = document.createComment(ITEM);
+        if (tail === null) {
+          parent.appendChild(anchor);
+        } else {
+          parent.insertBefore(anchor, tail);
+        }
+        state.anchor = anchor;
+        applyItemDisposer(state, anchor);
+      }
+      return;
+    }
     for (let index = 0; index < placed.length; index += 1) {
-      parent.insertBefore(placed[index]!, reference);
+      parent.insertBefore(placed[index]!, tail);
     }
     state.nodes = placed;
-    state.nodesEnd = null;
+    applyItemDisposer(state, placed[0]!);
   };
 
   const removeState = (state: ItemState<T>): void => {
@@ -335,7 +360,9 @@ export function For<T>(props: ForProps<T>): Node {
     }
     state.nodes = [];
     state.nodesEnd = null;
-    detachNode(state.anchor);
+    if (state.anchor !== null) {
+      detachNode(state.anchor);
+    }
     state.cleanup();
   };
 
@@ -349,9 +376,29 @@ export function For<T>(props: ForProps<T>): Node {
     fallbackMount.clear();
   };
 
+  const ensureAnchors = (list: readonly ItemState<T>[]): void => {
+    for (const state of list) {
+      if (state.anchor !== null) {
+        continue;
+      }
+      const first = state.nodes[0];
+      if (first === undefined) {
+        continue;
+      }
+      const parent = first.parentNode;
+      if (parent === null) {
+        continue;
+      }
+      const anchor = document.createComment(ITEM);
+      parent.insertBefore(anchor, first);
+      state.anchor = anchor;
+      applyItemDisposer(state, anchor);
+    }
+  };
+
   const makeState = (
     item: T,
-    anchor: Comment,
+    anchor: Comment | null,
     itemEnd: Node | null,
     position: number,
     mountParent: Node | null = null,
@@ -391,10 +438,11 @@ export function For<T>(props: ForProps<T>): Node {
     const run = (): void => {
       if (seeded) {
         seeded = false;
+        const start = anchor as Comment;
         const window = {
-          start: anchor,
+          start,
           end: itemEnd as Node,
-          cursor: anchor.nextSibling,
+          cursor: start.nextSibling,
         };
         const value = withWindow(window, () => props.children(item, index));
         settleNodes(itemEnd, value);
@@ -410,7 +458,9 @@ export function For<T>(props: ForProps<T>): Node {
       ? hydratedEffect(run) ?? noopCleanup
       : createEffectUnlessStatic(run) ?? noopCleanup;
 
-    attachDisposer(anchor, () => removeState(state));
+    if (anchor !== null) {
+      attachDisposer(anchor, () => removeState(state));
+    }
     return state;
   };
 
@@ -418,11 +468,7 @@ export function For<T>(props: ForProps<T>): Node {
     item: T,
     position: number,
     sink: DocumentFragment,
-  ): ItemState<T> => {
-    const anchor = document.createComment(ITEM);
-    sink.appendChild(anchor);
-    return makeState(item, anchor, null, position, sink);
-  };
+  ): ItemState<T> => makeState(item, null, null, position, sink);
 
   let fallbackSeed: Node[] = [];
   let skipFirst = hydrating;
@@ -641,6 +687,7 @@ export function For<T>(props: ForProps<T>): Node {
     }
 
     if (!inOrder) {
+      ensureAnchors(next);
       let reused = 0;
       for (let position = 0; position < nextLength; position += 1) {
         if (next[position]!.previousIndex >= 0) {
@@ -663,19 +710,23 @@ export function For<T>(props: ForProps<T>): Node {
       let reference: Node = endAnchor;
       for (let position = nextLength - 1; position >= 0; position -= 1) {
         const state = next[position]!;
+        const anchor = state.anchor;
+        if (anchor === null) {
+          continue;
+        }
         const holder = reference.parentNode;
         if (
           holder !== null &&
           orderStable[position] === 0 &&
-          !precedesBlock(materializeNodes(state), state.anchor, reference)
+          !precedesBlock(materializeNodes(state), anchor, reference)
         ) {
-          holder.insertBefore(state.anchor, reference);
+          holder.insertBefore(anchor, reference);
           const nodes = materializeNodes(state);
           for (let index = 0; index < nodes.length; index += 1) {
             holder.insertBefore(nodes[index]!, reference);
           }
         }
-        reference = state.anchor;
+        reference = anchor;
       }
     }
 

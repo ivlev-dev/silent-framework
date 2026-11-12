@@ -45,6 +45,33 @@ describe("For", () => {
     expect(idsOf(host)).toEqual(["a", "b", "c"]);
   });
 
+  it("не создаёт маркеры элементов для непустых блоков", () => {
+    const [items] = createSignal<Item[]>([item("a"), item("b")]);
+    const container = For({ each: items, children: row });
+    const host = install(container);
+    const markers = Array.from(host.childNodes).filter(
+      (node) => node.nodeType === Node.COMMENT_NODE && (node as Comment).data === "silent-item",
+    );
+    expect(markers.length).toBe(0);
+  });
+
+  it("сохраняет позицию пустого блока при обновлениях", () => {
+    const [items, setItems] = createSignal<Item[]>([item("a"), item("empty"), item("b")]);
+    const container = For({
+      each: items,
+      children: (value) =>
+        value.id === "empty" ? (null as unknown as Node) : row(value),
+    });
+    const host = install(container);
+    expect(idsOf(host)).toEqual(["a", "b"]);
+    setItems([item("a"), item("empty"), item("b"), item("c")]);
+    flushSync();
+    expect(idsOf(host)).toEqual(["a", "b", "c"]);
+    setItems([item("c"), item("empty"), item("a")]);
+    flushSync();
+    expect(idsOf(host)).toEqual(["c", "a"]);
+  });
+
   it("принимает each как массив-значение", () => {
     const container = For({ each: [item("x"), item("y")], children: row });
     const host = install(container);
