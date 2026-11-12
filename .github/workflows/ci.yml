@@ -44,3 +44,5 @@ jobs:
       - run: pnpm test:e2e
       - run: pnpm test:ssr
       - run: pnpm pack:check
+      - run: pnpm bench:guard --only=build
+      - run: pnpm bench:guard --only=browser

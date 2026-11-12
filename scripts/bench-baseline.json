@@ -1,0 +1,15 @@
+{
+  "build": {
+    "startJsKb": 25.64,
+    "startGzipKb": 8.63,
+    "warmMs": 34.38,
+    "coldMs": 66.47,
+    "vmStartGzipKb": 10.13
+  },
+  "browser": {
+    "silentOps": 14833.13,
+    "solidOps": 16685.21,
+    "ratio": 0.89,
+    "p50Ms": 0.06
+  }
+}
