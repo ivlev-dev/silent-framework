@@ -4,6 +4,9 @@ export interface ParsedTemplate {
   readonly markers: readonly string[];
   readonly tails?: readonly string[] | undefined;
   readonly bare?: readonly boolean[] | undefined;
+  readonly holes?: readonly number[] | undefined;
+  readonly attrs?: readonly number[] | undefined;
+  readonly attrTexts?: readonly number[] | undefined;
 }
 
 export const TEMPLATE_CACHE_LIMIT = 768;

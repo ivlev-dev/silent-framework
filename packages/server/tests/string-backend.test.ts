@@ -55,10 +55,11 @@ describe("createServerBackend", () => {
     );
   });
 
-  it("возвращает null для шаблонов с серверными атрибутами и метаданными", () => {
+  it("разбирает шаблон с серверными атрибутами и отдаёт null для метаданных", () => {
     const backend = createServerBackend();
 
-    expect(backend.createTemplate('<div data-silent-a-0=""></div>')).toBeNull();
+    const template = requireTemplate(backend.createTemplate('<div data-silent-a-0=""></div>'));
+    expect(template.attrs.length).toBe(1);
     expect(backend.createTemplate("<title>t</title>")).toBeNull();
     expect(templateCacheSize()).toBe(2);
   });
@@ -125,6 +126,88 @@ describe("createServerBackend", () => {
     expect(hole.__silentServerHoleSetValue("world")).toBe(true);
     expect(serializeNode(template.node as DomNode)).toBe(
       "<p>Hello <!--silent-insert-->world<!--silent-insert-end--><!--silent-hole-0--></p>",
+    );
+  });
+});
+
+describe("серверные атрибуты", () => {
+  interface ServerAttributeLike {
+    setAttribute(name: string, value: unknown): void;
+  }
+
+  function attributeOf(template: ServerTemplate, index: number): ServerAttributeLike {
+    const attribute = template.attrs[index];
+    if (attribute === undefined) {
+      throw new Error("Ожидался серверный атрибут");
+    }
+    return attribute as ServerAttributeLike;
+  }
+
+  function htmlOf(template: ServerTemplate): string {
+    return serializeNode(template.node as DomNode);
+  }
+
+  it("дописывает динамические атрибуты после статических", () => {
+    const template = requireTemplate(
+      createServerBackend().createTemplate(
+        '<div data-silent-a-0="" class="card"><span>body</span></div>',
+      ),
+    );
+    attributeOf(template, 0).setAttribute("data-state", "ready");
+
+    expect(htmlOf(template)).toBe(
+      '<div data-silent-a-0="" class="card" data-state="ready"><span>body</span></div>',
+    );
+  });
+
+  it("не обрывает тег на > внутри значения статического атрибута", () => {
+    const template = requireTemplate(
+      createServerBackend().createTemplate('<div title="a>b" data-silent-a-0=""></div>'),
+    );
+    attributeOf(template, 0).setAttribute("data-state", "ready");
+
+    expect(htmlOf(template)).toBe('<div title="a>b" data-silent-a-0="" data-state="ready"></div>');
+  });
+
+  it("дописывает несколько атрибутов в порядке id", () => {
+    const template = requireTemplate(
+      createServerBackend().createTemplate('<div data-silent-a-0="" data-silent-a-1=""></div>'),
+    );
+    attributeOf(template, 1).setAttribute("b", "2");
+    attributeOf(template, 0).setAttribute("a", "1");
+
+    expect(htmlOf(template)).toBe(
+      '<div data-silent-a-0="" data-silent-a-1="" a="1" b="2"></div>',
+    );
+  });
+
+  it("дописывает атрибут в самозакрывающийся тег", () => {
+    const template = requireTemplate(
+      createServerBackend().createTemplate('<input data-silent-a-0=""/>'),
+    );
+    attributeOf(template, 0).setAttribute("type", "text");
+
+    expect(htmlOf(template)).toBe('<input data-silent-a-0="" type="text"/>');
+  });
+
+  it("рендерит value и textContent RCDATA-элемента как экранированный текст", () => {
+    const backend = createServerBackend();
+    const byValue = requireTemplate(
+      backend.createTemplate('<textarea data-silent-a-0="" data-silent-text=""></textarea>'),
+    );
+    attributeOf(byValue, 0).setAttribute("value", "<b>&");
+
+    expect(htmlOf(byValue)).toBe(
+      '<textarea data-silent-a-0="" data-silent-text="">&lt;b&gt;&amp;</textarea>',
+    );
+
+    const byContent = requireTemplate(
+      backend.createTemplate('<textarea data-silent-a-0="" data-silent-text=""></textarea>'),
+    );
+    attributeOf(byContent, 0).setAttribute("textContent", "plain");
+
+    expect(htmlOf(byContent)).toBe(
+      '<textarea data-silent-a-0="" data-silent-text="">plain</textarea>',
     );
   });
 });

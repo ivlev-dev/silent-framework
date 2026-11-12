@@ -1016,7 +1016,22 @@ function setClass(el: Element, value: unknown): void {
   el.setAttribute("class", stringOf(value));
 }
 
+interface ServerAttribute {
+  setAttribute(name: string, value: unknown): void;
+}
+
+function serverAttribute(el: Element): ServerAttribute | null {
+  return el instanceof Element ? null : (el as unknown as ServerAttribute);
+}
+
 export function attr(el: Element, name: string, accessor: () => unknown): void {
+  const server = serverAttribute(el);
+  if (server !== null) {
+    createEffectUnlessStatic(() => {
+      server.setAttribute(name, accessor());
+    });
+    return;
+  }
   const svg = isSvgElement(el);
   let prev: unknown = accessor();
   applyAttr(el, name, prev, svg);
@@ -1087,6 +1102,22 @@ function applyProperty(el: Element, name: string, value: unknown): void {
 }
 
 export function spread(el: Element, accessor: () => unknown): void {
+  const server = serverAttribute(el);
+  if (server !== null) {
+    createEffectUnlessStatic(() => {
+      const value = accessor();
+      if (typeof value !== "object" || value === null) {
+        return;
+      }
+      for (const [key, item] of Object.entries(value)) {
+        if (key === "ref" || key === "children") {
+          continue;
+        }
+        server.setAttribute(key, item);
+      }
+    });
+    return;
+  }
   const svg = isSvgElement(el);
   let prev: Record<string, unknown> | null = null;
   let currentRef: ((node: Element | null) => void) | null = null;
@@ -1166,6 +1197,13 @@ export function spread(el: Element, accessor: () => unknown): void {
 }
 
 export function prop(el: Element, name: string, accessor: () => unknown): void {
+  const server = serverAttribute(el);
+  if (server !== null) {
+    createEffectUnlessStatic(() => {
+      server.setAttribute(name, accessor());
+    });
+    return;
+  }
   let prev: unknown;
   let initialized = false;
   createRenderEffect(() => {
@@ -1180,6 +1218,13 @@ export function prop(el: Element, name: string, accessor: () => unknown): void {
 }
 
 export function style(el: Element, accessor: () => unknown): void {
+  const server = serverAttribute(el);
+  if (server !== null) {
+    createEffectUnlessStatic(() => {
+      server.setAttribute("style", accessor());
+    });
+    return;
+  }
   const snapshot = ensureSnapshot(el);
   createRenderEffect(() => {
     applyStyle(el, accessor(), snapshot);
@@ -1398,6 +1443,9 @@ export function removeListener(el: Element, name: string): void {
 }
 
 export function on(el: Element, name: string, accessor: () => unknown): void {
+  if (!(el instanceof Element)) {
+    return;
+  }
   createRenderEffect(() => {
     const value = accessor();
     addListener(el, name, typeof value === "function" ? (value as EventListener) : null);

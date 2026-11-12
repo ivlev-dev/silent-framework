@@ -10,6 +10,7 @@
 - Размер: probe-код вынесен в гидрационный чанк, `__SILENT_SERVER__: false` в production-клиенте вырезает `insertServer`/`serializeServerValue`, при `view: false` отключается полифилл `modulepreload`. Стартовый JS 28.1 → **25.4–25.6 KB** (9.5 → 8.6 KB gzip).
 - Нативный компилятор: проверен `lto = "fat"`; оставлен `thin` (fat: +64% времени сборки, −3.9% размера).
 - SSR: серверный `For` собирает список синхронно, без owner/эффектов на элемент; `insertServer` не создаёт эффект для статических значений; `For` рендерит в строковый `RawNode` через `ServerBackend.createFragment`. `renderToString` 21 400 → 71 000–78 000 ops/s, соотношение к Solid 0.17 → 0.60.
+- SSR: динамические атрибуты (`attr`/`prop`/`style`/`spread`) рендерятся строкой через `RawAttr` без мини-DOM; значения дописываются после статических атрибутов с сохранением маркеров `data-silent-a-*`, `textarea`/`title` получают `value`/`textContent` как экранированный текст.
 
 ### Бенчмарки
 

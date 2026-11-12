@@ -15,7 +15,7 @@
 ## M2. Строковый SSR
 
 - [ ] SSR-режим компилятора: JSX → строковая конкатенация без `templateHoles`/`insert` и мини-DOM.
-- [ ] Строковые дыры для динамических атрибутов (`class`, `style`, spread).
+- [x] Строковые дыры для динамических атрибутов (`class`, `style`, spread). `createTemplate` отдаёт `RawAttr`, который пересобирает строку атрибутов из `Map`/`Set` и дописывает их после статических (как мини-DOM), сохраняя маркер `data-silent-a-*` для гидрации; для `textarea`/`title` `value`/`textContent` уходят в содержимое элемента экранированным текстом. Шаблоны с атрибутами больше не откатываются на разбор мини-DOM.
 - [ ] Внутренний `ssr-runtime` с `escape`/`escapeAttr`/`serializeValue` без объектов-узлов.
 - [ ] `renderToString` fast-path для строкового результата без `installDomGlobals`.
 - [ ] Скомпилированный SSR-бенчмарк Silent vs Solid.

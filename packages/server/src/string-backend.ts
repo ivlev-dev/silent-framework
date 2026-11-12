@@ -1,11 +1,103 @@
 import type { ServerBackend, ServerTemplate } from "@ivlev-dev/silent-core";
-import { RawNode } from "./dom/raw.js";
+import { RawAttr, RawNode, type RawHole } from "./dom/raw.js";
 import { pushValue } from "./dom/serialize-value.js";
 import { escapeText } from "./dom/serializer.js";
 import { getTemplate, setTemplate, type ParsedTemplate } from "./template-cache.js";
 
 const METADATA = /<(?:title|meta|link)[\s/>]/i;
-const HOLE = /<!--silent-hole-(\d+)-->/;
+const MARKER = /<!--silent-hole-(\d+)-->|<!--silent-attr-text-(\d+)-->|<!--silent-attr-(\d+)-->/g;
+const ATTR_MARKER = /data-silent-a-(\d+)=""/g;
+const RCDATA_TAGS: ReadonlySet<string> = new Set(["textarea", "title"]);
+
+function isLetter(code: number): boolean {
+  return (code >= 97 && code <= 122) || (code >= 65 && code <= 90);
+}
+
+function findTagEnd(source: string, start: number): number {
+  let quote = 0;
+  for (let index = start; index < source.length; index += 1) {
+    const code = source.charCodeAt(index);
+    if (quote !== 0) {
+      if (code === quote) {
+        quote = 0;
+      }
+      continue;
+    }
+    if (code === 34 || code === 39) {
+      quote = code;
+      continue;
+    }
+    if (code === 62) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function tagNameOf(tag: string): string {
+  let start = 1;
+  while (start < tag.length) {
+    const code = tag.charCodeAt(start);
+    if (!isLetter(code) && !(code >= 48 && code <= 57) && code !== 45 && code !== 58) {
+      break;
+    }
+    start += 1;
+  }
+  return tag.slice(1, start).toLowerCase();
+}
+
+interface RewrittenTemplate {
+  readonly prepared: string;
+}
+
+function rewriteTagMarkers(html: string): RewrittenTemplate {
+  let prepared = "";
+  let index = 0;
+  while (index < html.length) {
+    const open = html.indexOf("<", index);
+    if (open === -1) {
+      prepared += html.slice(index);
+      break;
+    }
+    prepared += html.slice(index, open);
+    if (!isLetter(html.charCodeAt(open + 1))) {
+      prepared += "<";
+      index = open + 1;
+      continue;
+    }
+    const end = findTagEnd(html, open + 1);
+    if (end === -1) {
+      prepared += html.slice(open);
+      break;
+    }
+    const tag = html.slice(open, end + 1);
+    const ids: number[] = [];
+    ATTR_MARKER.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = ATTR_MARKER.exec(tag)) !== null) {
+      ids.push(Number(match[1]));
+    }
+    index = end + 1;
+    if (ids.length === 0) {
+      prepared += tag;
+      continue;
+    }
+    const name = tagNameOf(tag);
+    const selfClosing = tag.charCodeAt(tag.length - 2) === 47;
+    const cut = selfClosing ? 2 : 1;
+    prepared += tag.slice(0, tag.length - cut);
+    for (const id of ids) {
+      prepared += `<!--silent-attr-${id}-->`;
+    }
+    prepared += selfClosing ? "/>" : ">";
+    if (!selfClosing && RCDATA_TAGS.has(name)) {
+      for (const id of ids) {
+        prepared += `<!--silent-attr-text-${id}-->`;
+      }
+    }
+  }
+  return { prepared };
+}
 
 function serializeValue(value: unknown): string {
   const type = typeof value;
@@ -31,32 +123,76 @@ function serializeValue(value: unknown): string {
 }
 
 function parseTemplate(html: string): ParsedTemplate | null {
-  if (html.includes("data-silent-a-") || METADATA.test(html)) {
+  if (METADATA.test(html)) {
     return null;
   }
-  const segments = html.split(HOLE);
+  const prepared = html.includes("data-silent-a-")
+    ? rewriteTagMarkers(html).prepared
+    : html;
   const parts: string[] = [];
-  const indexes: number[] = [];
-  for (let position = 0; position < segments.length; position += 1) {
-    const value = segments[position] ?? "";
-    if (position % 2 === 0) {
-      parts.push(value);
+  const kinds: number[] = [];
+  const ids: number[] = [];
+  let last = 0;
+  MARKER.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = MARKER.exec(prepared)) !== null) {
+    parts.push(prepared.slice(last, match.index));
+    if (match[1] !== undefined) {
+      kinds.push(0);
+      ids.push(Number(match[1]));
+    } else if (match[2] !== undefined) {
+      kinds.push(2);
+      ids.push(Number(match[2]));
     } else {
-      indexes.push(Number(value));
+      kinds.push(1);
+      ids.push(Number(match[3]));
+    }
+    last = MARKER.lastIndex;
+  }
+  parts.push(prepared.slice(last));
+  const count = kinds.length;
+  if (count === 0) {
+    return null;
+  }
+  const indexes = new Array<number>(count);
+  const markers = new Array<string>(count);
+  const tails = new Array<string>(count);
+  const bare = new Array<boolean>(count);
+  const holes = new Array<number>(count);
+  const attrs: number[] = [];
+  const attrTexts: number[] = [];
+  for (let position = 0; position < count; position += 1) {
+    const id = ids[position] ?? 0;
+    const before = parts[position] ?? "";
+    const kind = kinds[position] ?? 0;
+    indexes[position] = position;
+    if (kind === 0) {
+      holes[position] = id;
+      markers[position] = `<!--silent-hole-${id}-->`;
+      tails[position] = markers[position] + (parts[position + 1] ?? "");
+      bare[position] = before.length === 0 || before.charCodeAt(before.length - 1) === 62;
+    } else {
+      holes[position] = -1;
+      markers[position] = "";
+      tails[position] = parts[position + 1] ?? "";
+      bare[position] = false;
+      if (kind === 1) {
+        attrs[id] = position;
+      } else {
+        attrTexts[id] = position;
+      }
     }
   }
-  if (indexes.length === 0) {
-    return null;
-  }
-  const markers = indexes.map((index) => `<!--silent-hole-${index}-->`);
-  const tails = new Array<string>(indexes.length);
-  const bare = new Array<boolean>(indexes.length);
-  for (let position = 0; position < indexes.length; position += 1) {
-    const before = parts[position] ?? "";
-    bare[position] = before.length === 0 || before.charCodeAt(before.length - 1) === 62;
-    tails[position] = (markers[position] ?? "") + (parts[position + 1] ?? "");
-  }
-  return { parts, indexes, markers, tails, bare };
+  return {
+    parts,
+    indexes,
+    markers,
+    tails,
+    bare,
+    holes,
+    attrs,
+    attrTexts,
+  };
 }
 
 export function createServerBackend(): ServerBackend {
@@ -77,7 +213,31 @@ export function createServerBackend(): ServerBackend {
         parsed.tails,
         parsed.bare,
       );
-      return { node, holes: node.holes, attrs: [] };
+      const holes: RawHole[] = [];
+      const holeIds = parsed.holes;
+      if (holeIds !== undefined) {
+        for (let position = 0; position < holeIds.length; position += 1) {
+          const id = holeIds[position];
+          if (id !== undefined && id >= 0) {
+            const hole = node.holeAt(position);
+            if (hole !== undefined) {
+              holes[id] = hole;
+            }
+          }
+        }
+      }
+      const attrs = (parsed.attrs ?? []).map((position, id) => {
+        const hole = node.holeAt(position);
+        if (hole === undefined) {
+          return undefined;
+        }
+        const textPosition = parsed.attrTexts?.[id];
+        return new RawAttr(
+          hole,
+          textPosition === undefined ? undefined : node.holeAt(textPosition),
+        );
+      });
+      return { node, holes, attrs };
     },
     createFragment(parts: readonly string[], values: readonly unknown[]) {
       const count = values.length;

@@ -1,6 +1,6 @@
 import { NODE_TEXT } from "./types.js";
 import { NodeImpl } from "./node.js";
-import { escapeText } from "./serializer.js";
+import { escapeAttribute, escapeText } from "./serializer.js";
 import { pushValue } from "./serialize-value.js";
 
 export interface RawHole {
@@ -31,6 +31,48 @@ function serializeText(value: string | number | bigint | boolean | null | undefi
     return String(value);
   }
   return "";
+}
+
+const BOOLEAN_ATTRIBUTES: ReadonlySet<string> = new Set([
+  "checked",
+  "selected",
+  "disabled",
+  "readonly",
+  "multiple",
+  "required",
+  "autofocus",
+  "hidden",
+]);
+
+function attributeText(value: unknown): string {
+  if (value === null || value === undefined || value === false) {
+    return "";
+  }
+  return escapeAttribute(String(value));
+}
+
+function serializeAttribute(name: string, value: unknown): string | true | null {
+  if (value === null || value === undefined || value === false) {
+    return null;
+  }
+  if (value === true) {
+    return BOOLEAN_ATTRIBUTES.has(name) ? true : `${name}="true"`;
+  }
+  if (name === "class" || name === "className") {
+    const text = attributeText(value);
+    return text === "" ? null : `class="${text}"`;
+  }
+  if (name === "style" && typeof value === "object") {
+    const parts: string[] = [];
+    for (const [key, item] of Object.entries(value)) {
+      if (item === null || item === undefined || item === false || item === "") {
+        continue;
+      }
+      parts.push(`${key.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`)}:${String(item)}`);
+    }
+    return parts.length === 0 ? null : `style="${escapeAttribute(parts.join(";"))}"`;
+  }
+  return `${name}="${attributeText(value)}"`;
 }
 
 class RawSlot {
@@ -77,6 +119,60 @@ class RawHoleImpl implements RawHole {
   }
 }
 
+export class RawAttr {
+  private readonly hole: RawHole;
+  private readonly content: RawHole | undefined;
+  private readonly values: Map<string, string>;
+  private readonly boolean: Set<string>;
+
+  constructor(hole: RawHole, content?: RawHole) {
+    this.hole = hole;
+    this.content = content;
+    this.values = new Map<string, string>();
+    this.boolean = new Set<string>();
+  }
+
+  setAttribute(name: string, value: unknown): void {
+    if (this.content !== undefined && (name === "value" || name === "textContent")) {
+      this.setContent(value);
+      return;
+    }
+    this.setRawAttribute(name, value);
+  }
+
+  private setContent(value: unknown): void {
+    const text =
+      value === null || value === undefined
+        ? ""
+        : typeof value === "string"
+          ? escapeText(value)
+          : escapeText(String(value));
+    this.content?.set(text);
+  }
+
+  private setRawAttribute(name: string, value: unknown): void {
+    const serialized = serializeAttribute(name, value);
+    if (serialized === null) {
+      this.values.delete(name);
+      this.boolean.delete(name);
+    } else if (serialized === true) {
+      this.values.delete(name);
+      this.boolean.add(name);
+    } else {
+      this.boolean.delete(name);
+      this.values.set(name, serialized);
+    }
+    let out = "";
+    for (const part of this.boolean) {
+      out += " " + part;
+    }
+    for (const part of this.values.values()) {
+      out += " " + part;
+    }
+    this.hole.set(out);
+  }
+}
+
 export class RawNode extends NodeImpl {
   private readonly parts: readonly string[];
   private readonly indexes: readonly number[];
@@ -118,6 +214,10 @@ export class RawNode extends NodeImpl {
 
   get holes(): readonly RawHole[] {
     return this.holeList;
+  }
+
+  holeAt(position: number): RawHole | undefined {
+    return this.holeList[position];
   }
 
   renderInto(parts: string[]): void {

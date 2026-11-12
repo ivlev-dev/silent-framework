@@ -48,7 +48,7 @@ export function escapeText(value: string): string {
   return value.replace(REPLACE_TEXT, replaceText);
 }
 
-function escapeAttribute(value: string): string {
+export function escapeAttribute(value: string): string {
   if (!ESCAPE_ATTRIBUTE.test(value)) {
     return value;
   }
