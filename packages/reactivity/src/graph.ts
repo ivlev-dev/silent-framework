@@ -444,19 +444,24 @@ function disposeComputation(node: ComputationNode): void {
   disposeOwner(node.owner);
 }
 
+class OwnerRef implements Owner {
+  constructor(private readonly node: OwnerNode) {}
+
+  get disposed(): boolean {
+    return this.node.disposed;
+  }
+
+  dispose(): void {
+    disposeOwner(this.node);
+  }
+}
+
 function toOwner(node: OwnerNode): Owner {
   const existing = ownerRefs.get(node);
   if (existing !== undefined) {
     return existing;
   }
-  const ref: Owner = {
-    get disposed(): boolean {
-      return node.disposed;
-    },
-    dispose(): void {
-      disposeOwner(node);
-    },
-  };
+  const ref: Owner = new OwnerRef(node);
   ownerRefs.set(node, ref);
   ownerNodes.set(ref, node);
   return ref;
