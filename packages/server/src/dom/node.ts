@@ -19,9 +19,11 @@ export function setInnerHtmlParser(parser: InnerHtmlParser): void {
   innerHtmlParser = parser;
 }
 
+const NO_CHILDREN: NodeImpl[] = [];
+
 export class NodeImpl implements DomNode {
   readonly nodeType: number;
-  protected readonly childList: NodeImpl[] = [];
+  protected childList: NodeImpl[] = NO_CHILDREN;
   protected parent: NodeImpl | null = null;
   protected next: NodeImpl | null = null;
   protected previous: NodeImpl | null = null;
@@ -157,6 +159,9 @@ export class NodeImpl implements DomNode {
     }
     const previous = index > 0 ? this.childList[index - 1] ?? null : null;
     const next = this.childList[index] ?? null;
+    if (this.childList === NO_CHILDREN) {
+      this.childList = [];
+    }
     this.childList.splice(index, 0, child);
     child.parent = this;
     child.previous = previous;

@@ -7,6 +7,7 @@ export interface ParsedTemplate {
   readonly holes?: readonly number[] | undefined;
   readonly attrs?: readonly number[] | undefined;
   readonly attrTexts?: readonly number[] | undefined;
+  readonly holesOrdered?: boolean | undefined;
 }
 
 export const TEMPLATE_CACHE_LIMIT = 768;

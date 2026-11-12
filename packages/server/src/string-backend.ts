@@ -151,9 +151,6 @@ function parseTemplate(html: string): ParsedTemplate | null {
   }
   parts.push(prepared.slice(last));
   const count = kinds.length;
-  if (count === 0) {
-    return null;
-  }
   const indexes = new Array<number>(count);
   const markers = new Array<string>(count);
   const tails = new Array<string>(count);
@@ -161,6 +158,8 @@ function parseTemplate(html: string): ParsedTemplate | null {
   const holes = new Array<number>(count);
   const attrs: number[] = [];
   const attrTexts: number[] = [];
+  let holesOrdered = true;
+  let holeIndex = 0;
   for (let position = 0; position < count; position += 1) {
     const id = ids[position] ?? 0;
     const before = parts[position] ?? "";
@@ -178,10 +177,16 @@ function parseTemplate(html: string): ParsedTemplate | null {
       bare[position] = false;
       if (kind === 1) {
         attrs[id] = position;
+        holesOrdered = false;
       } else {
         attrTexts[id] = position;
+        holesOrdered = false;
       }
     }
+    if (kind !== 0 || id !== holeIndex) {
+      holesOrdered = false;
+    }
+    holeIndex += 1;
   }
   return {
     parts,
@@ -192,7 +197,27 @@ function parseTemplate(html: string): ParsedTemplate | null {
     holes,
     attrs,
     attrTexts,
+    holesOrdered,
   };
+}
+
+const NO_ATTRS: readonly unknown[] = [];
+
+function collectHoles(node: RawNode, holeIds: readonly number[] | undefined): readonly RawHole[] {
+  if (holeIds === undefined) {
+    return [];
+  }
+  const holes: RawHole[] = [];
+  for (let position = 0; position < holeIds.length; position += 1) {
+    const id = holeIds[position];
+    if (id !== undefined && id >= 0) {
+      const hole = node.holeAt(position);
+      if (hole !== undefined) {
+        holes[id] = hole;
+      }
+    }
+  }
+  return holes;
 }
 
 export function createServerBackend(): ServerBackend {
@@ -213,20 +238,12 @@ export function createServerBackend(): ServerBackend {
         parsed.tails,
         parsed.bare,
       );
-      const holes: RawHole[] = [];
-      const holeIds = parsed.holes;
-      if (holeIds !== undefined) {
-        for (let position = 0; position < holeIds.length; position += 1) {
-          const id = holeIds[position];
-          if (id !== undefined && id >= 0) {
-            const hole = node.holeAt(position);
-            if (hole !== undefined) {
-              holes[id] = hole;
-            }
-          }
-        }
+      const holes = parsed.holesOrdered === true ? node.holes : collectHoles(node, parsed.holes);
+      const attrPositions = parsed.attrs;
+      if (attrPositions === undefined || attrPositions.length === 0) {
+        return { node, holes, attrs: NO_ATTRS };
       }
-      const attrs = (parsed.attrs ?? []).map((position, id) => {
+      const attrs = attrPositions.map((position, id) => {
         const hole = node.holeAt(position);
         if (hole === undefined) {
           return undefined;

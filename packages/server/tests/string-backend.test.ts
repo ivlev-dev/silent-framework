@@ -64,8 +64,14 @@ describe("createServerBackend", () => {
     expect(templateCacheSize()).toBe(2);
   });
 
-  it("возвращает null для шаблона без дыр", () => {
-    expect(createServerBackend().createTemplate("<div>static</div>")).toBeNull();
+  it("отдаёт статичный шаблон без дыр", () => {
+    const template = requireTemplate(
+      createServerBackend().createTemplate("<div>static</div>"),
+    );
+
+    expect(template.holes.length).toBe(0);
+    expect(template.attrs.length).toBe(0);
+    expect(serializeNode(template.node as DomNode)).toBe("<div>static</div>");
   });
 
   it("экранирует значения и разворачивает массивы", () => {

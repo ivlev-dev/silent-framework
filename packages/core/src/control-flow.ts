@@ -128,7 +128,90 @@ function markStableSlots(
   }
 }
 
+const ITEM_MARKER = `<!--${ITEM}-->`;
+const LIST_END_MARKER = `<!--${LIST_END}-->`;
+
+function renderForServer<T>(props: ForProps<T>): Node {
+  const fallback = props.fallback;
+  const hasFallback = fallback !== undefined;
+  const items: readonly T[] =
+    typeof props.each === "function" ? props.each() : props.each;
+  const backend = getServerBackend();
+  if (backend?.createFragment !== undefined) {
+    const total = items.length;
+    const values: unknown[] = new Array(total);
+    let currentIndex = 0;
+    const indexOf = (): number => currentIndex;
+    let count = 0;
+    for (let position = 0; position < total; position += 1) {
+      const item = items[position];
+      if (item === undefined) {
+        break;
+      }
+      currentIndex = position;
+      values[position] = props.children(item, indexOf);
+      count = position + 1;
+    }
+    values.length = count;
+    let parts: string[];
+    if (total === 0) {
+      if (hasFallback) {
+        values.push(resolve(fallback));
+        parts = ["", LIST_END_MARKER];
+      } else {
+        parts = [LIST_END_MARKER];
+      }
+    } else if (count === 0) {
+      parts = [ITEM_MARKER];
+    } else {
+      parts = new Array<string>(count + 1);
+      parts[0] = ITEM_MARKER;
+      if (count > 1) {
+        parts.fill(ITEM_MARKER, 1, count);
+      }
+      parts[count] = LIST_END_MARKER;
+    }
+    const fragment = backend.createFragment(parts, values);
+    if (fragment !== null) {
+      return fragment.node as Node;
+    }
+  }
+  const endAnchor = document.createComment(LIST_END);
+  const sink = document.createDocumentFragment();
+  sink.appendChild(endAnchor);
+  let fallbackIndex = 0;
+  const indexOf = (): number => fallbackIndex;
+  for (let position = 0; position < items.length; position += 1) {
+    const item = items[position];
+    if (item === undefined) {
+      break;
+    }
+    const anchor = document.createComment(ITEM);
+    sink.insertBefore(anchor, endAnchor);
+    fallbackIndex = position;
+    const value = props.children(item, indexOf);
+    if (value instanceof Node && !(value instanceof DocumentFragment) && isMetadataFree(value)) {
+      sink.insertBefore(value, endAnchor);
+      continue;
+    }
+    const nodes = extractMetadata(collectNodes(value as Children));
+    for (const node of nodes) {
+      sink.insertBefore(node, endAnchor);
+    }
+  }
+  if (items.length === 0 && hasFallback) {
+    const nodes = extractMetadata(collectNodes(resolve(fallback) as Children));
+    for (const node of nodes) {
+      sink.insertBefore(node, endAnchor);
+    }
+  }
+  return sink;
+}
+
 export function For<T>(props: ForProps<T>): Node {
+  if (SERVER && isServerMode()) {
+    return renderForServer(props);
+  }
   const hydrating = isHydrating();
   const outer = hydrating ? currentWindow() : null;
   let container: DocumentFragment | null = null;
@@ -326,70 +409,6 @@ export function For<T>(props: ForProps<T>): Node {
 
   let fallbackSeed: Node[] = [];
   let skipFirst = hydrating;
-
-  if (SERVER && isServerMode()) {
-    const backend = getServerBackend();
-    if (backend?.createFragment !== undefined) {
-      const items: readonly T[] =
-        typeof props.each === "function" ? props.each() : props.each;
-      const parts: string[] = [];
-      const values: unknown[] = [];
-      if (items.length === 0) {
-        if (hasFallback) {
-          parts.push("");
-          values.push(resolve(fallback));
-          parts.push(`<!--${LIST_END}-->`);
-        } else {
-          parts.push(`<!--${LIST_END}-->`);
-        }
-      } else {
-        parts.push(`<!--${ITEM}-->`);
-        for (let position = 0; position < items.length; position += 1) {
-          const item = items[position];
-          if (item === undefined) {
-            break;
-          }
-          values.push(props.children(item, () => position));
-          parts.push(
-            position === items.length - 1 ? `<!--${LIST_END}-->` : `<!--${ITEM}-->`,
-          );
-        }
-      }
-      const fragment = backend.createFragment(parts, values);
-      if (fragment !== null) {
-        return fragment.node as Node;
-      }
-    }
-    endAnchor = document.createComment(LIST_END);
-    const sink = container ?? (container = document.createDocumentFragment());
-    sink.appendChild(endAnchor);
-    const items: readonly T[] =
-      typeof props.each === "function" ? props.each() : props.each;
-    for (let position = 0; position < items.length; position += 1) {
-      const item = items[position];
-      if (item === undefined) {
-        break;
-      }
-      const anchor = document.createComment(ITEM);
-      sink.insertBefore(anchor, endAnchor);
-      const value = props.children(item, () => position);
-      if (value instanceof Node && !(value instanceof DocumentFragment) && isMetadataFree(value)) {
-        sink.insertBefore(value, endAnchor);
-        continue;
-      }
-      const nodes = extractMetadata(collectNodes(value as Children));
-      for (const node of nodes) {
-        sink.insertBefore(node, endAnchor);
-      }
-    }
-    if (items.length === 0 && hasFallback) {
-      const nodes = extractMetadata(collectNodes(resolve(fallback) as Children));
-      for (const node of nodes) {
-        sink.insertBefore(node, endAnchor);
-      }
-    }
-    return container;
-  }
 
   const parentOwner = getOwner();
 
@@ -659,6 +678,17 @@ export function For<T>(props: ForProps<T>): Node {
 }
 
 export function Show(props: ShowProps): Node {
+  if (SERVER && isServerMode()) {
+    const active = truthy(resolve(props.when));
+    const value = resolve(active ? props.children : props.fallback);
+    const container = document.createDocumentFragment();
+    const nodes = extractMetadata(collectNodes(value as Children));
+    for (const node of nodes) {
+      container.appendChild(node);
+    }
+    container.appendChild(document.createComment(SHOW));
+    return container;
+  }
   if (isHydrating()) {
     const outer = currentWindow();
     if (outer === null) {

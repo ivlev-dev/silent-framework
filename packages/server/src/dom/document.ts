@@ -241,9 +241,15 @@ function restoreWritable(shape: boolean): void {
   const target = globalThis as unknown as Record<string, unknown>;
   if (absentGlobals) {
     if (shape) {
-      for (let index = 0; index < GLOBAL_NAMES.length; index += 1) {
-        target[GLOBAL_NAMES[index] ?? ""] = undefined;
-      }
+      target["document"] = undefined;
+      target["Node"] = undefined;
+      target["Element"] = undefined;
+      target["SVGElement"] = undefined;
+      target["DocumentFragment"] = undefined;
+      target["Text"] = undefined;
+      target["Comment"] = undefined;
+      target["HTMLTemplateElement"] = undefined;
+      target["NodeFilter"] = undefined;
       return;
     }
     delete target["document"];

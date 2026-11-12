@@ -1,6 +1,8 @@
 import { createRenderEffect, onCleanup } from "@ivlev-dev/silent-reactivity";
+import type { Children } from "./jsx.js";
 import { MATCH_DESCRIPTOR, attachMatch, isMatchNode } from "./match-node.js";
-import { createMountPoint } from "./dom.js";
+import { collectNodes, createMountPoint, isServerMode } from "./dom.js";
+import { extractMetadata } from "./metadata.js";
 import { settleNodes } from "./dom-hydration-state.js";
 import {
   SWITCH,
@@ -11,6 +13,10 @@ import {
   mismatch,
   withWindow,
 } from "./hydration-proxy.js";
+
+declare const __SILENT_SERVER__: boolean | undefined;
+
+const SERVER = typeof __SILENT_SERVER__ === "undefined" || __SILENT_SERVER__;
 
 export interface MatchProps {
   readonly when: unknown | (() => unknown);
@@ -76,6 +82,15 @@ export function Match(props: MatchProps): Node {
 }
 
 export function Switch(props: SwitchProps): Node {
+  if (SERVER && isServerMode()) {
+    const container = document.createDocumentFragment();
+    const nodes = extractMetadata(collectNodes(select(props) as Children));
+    for (const node of nodes) {
+      container.appendChild(node);
+    }
+    container.appendChild(document.createComment(SWITCH));
+    return container;
+  }
   if (isHydrating()) {
     const outer = currentWindow();
     if (outer === null) {
