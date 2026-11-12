@@ -53,7 +53,7 @@ type ComputationNode = MemoNode | EffectNode;
 
 interface OwnerNode {
   disposed: boolean;
-  readonly parent: OwnerNode | null;
+  parent: OwnerNode | null;
   children: Set<OwnerNode> | null;
   cleanups: (() => void)[] | null;
   computation: ComputationNode | null;
@@ -628,6 +628,69 @@ function createRenderEffectUnlessStatic(fn: () => void): boolean {
   return true;
 }
 
+function createEffectUnlessStatic(fn: () => void): (() => void) | null {
+  const parentOwner = currentOwner;
+  if (parentOwner !== null && parentOwner.disposed) {
+    return null;
+  }
+  const holder: OwnerNode = {
+    disposed: false,
+    parent: null,
+    children: null,
+    cleanups: null,
+    computation: null,
+  };
+  const tracker: ProbeTracker = {
+    nextDeps: null,
+    nextDepVersions: null,
+    disposed: false,
+  };
+  const previousListener = currentListener;
+  currentListener = tracker as unknown as ComputationNode;
+  currentOwner = holder;
+  try {
+    fn();
+  } catch (error) {
+    currentListener = previousListener;
+    currentOwner = parentOwner;
+    disposeOwner(holder);
+    throw error;
+  }
+  currentListener = previousListener;
+  currentOwner = parentOwner;
+  const deps = tracker.nextDeps;
+  const versions = tracker.nextDepVersions;
+  const tracked = deps !== null && deps.length > 0 && versions !== null;
+  if (!tracked && holder.children === null && holder.cleanups === null) {
+    return null;
+  }
+  const node = createEffectNode("renderEffect", fn);
+  node.initialized = true;
+  node.state = CLEAN;
+  if (deps !== null && versions !== null) {
+    node.deps = deps;
+    node.depVersions = versions;
+    for (const dep of deps) {
+      dep.observers.add(node);
+    }
+  }
+  const owner = node.owner;
+  const children = holder.children;
+  if (children !== null) {
+    const target = (owner.children ??= new Set<OwnerNode>());
+    for (const child of children) {
+      child.parent = owner;
+      target.add(child);
+    }
+    holder.children = null;
+  }
+  if (holder.cleanups !== null) {
+    owner.cleanups = holder.cleanups;
+    holder.cleanups = null;
+  }
+  return () => disposeComputation(node);
+}
+
 export function createRoot<T>(fn: (dispose: () => void) => T): T {
   const owner = createOwnerNode(currentOwner);
   const previousOwner = currentOwner;
@@ -699,5 +762,7 @@ const SCOPED_EFFECT = Symbol.for("silent.scopedRenderEffect");
 (createRoot as unknown as Record<symbol, unknown>)[SCOPED_EFFECT] = createScopedRenderEffect;
 const LAZY_EFFECT = Symbol.for("silent.lazyRenderEffect");
 (createRoot as unknown as Record<symbol, unknown>)[LAZY_EFFECT] = createLazyRenderEffect;
+const UNLESS_STATIC_EFFECT = Symbol.for("silent.effectUnlessStatic");
+(createRoot as unknown as Record<symbol, unknown>)[UNLESS_STATIC_EFFECT] = createEffectUnlessStatic;
 const PROBE = Symbol.for("silent.renderEffectUnlessStatic");
 (createRoot as unknown as Record<symbol, unknown>)[PROBE] = createRenderEffectUnlessStatic;

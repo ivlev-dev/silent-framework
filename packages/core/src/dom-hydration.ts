@@ -107,6 +107,28 @@ function tryAdoptPartsPlanByPath(
   holes: (Comment | undefined)[],
   attrs: (Element | undefined)[],
 ): boolean {
+  if (plan.roots === 1 && plan.holes.length === 1 && plan.attrs.length === 0) {
+    const entry = plan.holes[0];
+    if (
+      entry !== undefined &&
+      entry.path.length === 2 &&
+      entry.path[0] === 0 &&
+      entry.path[1] === 0
+    ) {
+      const first = root.firstChild;
+      if (first !== null && first.nodeType === Node.TEXT_NODE) {
+        const next = first.nextSibling;
+        if (
+          next !== null &&
+          next.nodeType === Node.COMMENT_NODE &&
+          markerIndex((next as Comment).data, HOLE_MARKER) === 0
+        ) {
+          holes[0] = next as Comment;
+          return true;
+        }
+      }
+    }
+  }
   for (let index = 0; index < plan.holes.length; index += 1) {
     const entry = plan.holes[index];
     if (entry === undefined) {

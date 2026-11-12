@@ -16,6 +16,7 @@ import {
   disposeNode,
 } from "./dom.js";
 import { settleNodes } from "./dom-hydration-state.js";
+import { effectUnlessStatic } from "./static-effect.js";
 import { extractMetadata, isMetadataFree } from "./metadata.js";
 import {
   ITEM,
@@ -35,13 +36,7 @@ const scoped = (createRoot as unknown as Record<symbol, unknown>)[SCOPED_EFFECT]
 const createScopedEffect: ((fn: () => void) => () => void) | null =
   typeof scoped === "function" ? (scoped as (fn: () => void) => () => void) : null;
 
-const runWithScopedEffect = (fn: () => void): (() => void) =>
-  createScopedEffect !== null
-    ? createScopedEffect(fn)
-    : createRoot((dispose) => {
-        createRenderEffect(fn);
-        return dispose;
-      });
+const noopCleanup = (): void => {};
 
 interface ItemState<T> {
   item: T;
@@ -286,7 +281,7 @@ export function For<T>(props: ForProps<T>): Node {
       renderItem(state, props.children(item, index), initialMount);
       initialMount = null;
     };
-    state.cleanup = runWithScopedEffect(run);
+    state.cleanup = effectUnlessStatic(run) ?? noopCleanup;
 
     attachDisposer(anchor, () => removeState(state));
     return state;

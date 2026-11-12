@@ -1,7 +1,57 @@
 import { describe, expect, it } from "vitest";
 import { createSignal, flushSync } from "@ivlev-dev/silent-reactivity";
-import { renderEffectUnlessStatic } from "../src/static-effect.js";
+import {
+  effectUnlessStatic,
+  renderEffectUnlessStatic,
+} from "../src/static-effect.js";
 import { text } from "../src/dom.js";
+
+describe("effectUnlessStatic", () => {
+  it("не создаёт эффект для статического выражения", () => {
+    let calls = 0;
+    const dispose = effectUnlessStatic(() => {
+      calls += 1;
+    });
+    expect(dispose).toBeNull();
+    expect(calls).toBe(1);
+  });
+
+  it("создаёт эффект для реактивного выражения", () => {
+    const [value, setValue] = createSignal(0);
+    let calls = 0;
+    const dispose = effectUnlessStatic(() => {
+      value();
+      calls += 1;
+    });
+    expect(dispose).not.toBeNull();
+    expect(calls).toBe(1);
+    setValue(1);
+    flushSync();
+    expect(calls).toBe(2);
+    dispose?.();
+    setValue(2);
+    flushSync();
+    expect(calls).toBe(2);
+  });
+
+  it("переносит вложенную реактивную подписку в владельца эффекта", () => {
+    const [value, setValue] = createSignal("a");
+    const node = document.createTextNode("a");
+    const dispose = effectUnlessStatic(() => {
+      renderEffectUnlessStatic(() => {
+        node.data = value();
+      });
+    });
+    expect(dispose).not.toBeNull();
+    setValue("b");
+    flushSync();
+    expect(node.data).toBe("b");
+    dispose?.();
+    setValue("c");
+    flushSync();
+    expect(node.data).toBe("b");
+  });
+});
 
 describe("renderEffectUnlessStatic", () => {
   it("не создаёт подписку для статического выражения", () => {
