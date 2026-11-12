@@ -1,6 +1,6 @@
 # План производительности
 
-Текущее состояние (`0.6.2`): `renderToString` 99 900 ops/s (Solid 206 300), гидрация 1 990 ops/s в jsdom (0.96x) и 17 400–23 500 ops/s в Chromium против 21 000–27 200 у Solid (типично 0.78–0.87x, p50 0.035 мс), warm `pnpm build` 0.46–0.54 с, Vite build приложения Silent 60/29 мс против Solid 132/41 мс, стартовый JS **25.6 KB / 8.6 KB gzip** с `view: false` и 29.5 KB / 10.1 KB gzip в default-режиме с lazy view-чанком (+8.98 KB для VM) против 12.6 KB у Solid.
+Текущее состояние (`0.6.2`): `renderToString` 21 400 ops/s (Solid 124 000) на скомпилированном приложении с `For`, гидрация 715 ops/s в jsdom (0.57x) и 15 300–22 100 ops/s в Chromium (p50 0.035–0.060 мс; на свободной машине ~0.76×, разброс из-за фоновой нагрузки), warm `pnpm build` 0.46–0.54 с, Vite build приложения Silent 60/29 мс против Solid 132/41 мс, стартовый JS **25.6 KB / 8.6 KB gzip** с `view: false` и 29.5 KB / 10.1 KB gzip в default-режиме с lazy view-чанком (+8.98 KB для VM) против 12.6 KB у Solid. Бенчмарки ограничены четырьмя CPU через `scripts/bench-cpus.mjs` и, начиная с M8, измеряют код после компилятора, а не ручные вызовы `templateHoles`/`insert`.
 
 История шагов: 8 746 ops/s (0.32x) → дескриптор 9 772 → текстовые дыры 10 209 → гибридная адопция 11 820–12 104 → owner/реактивность 13 762–15 151 → scoped-эффект и plan-first 14 228 → fast path регионов 16 269–16 863 → массивы зависимостей 17 590 → пропуск статических выражений 18 293 → адопция списка без эффекта 18 490 → ленивые узлы элементов списка 22 531 → пул пробных проходов 23 456. Наклон `ROWS=1`→`ROWS=20`: теперь 1.1–1.5 µs/строка у Silent против 1.4 у Solid (построчная часть сравнялась), но фиксированная часть ~18–21 µs против ~11 µs — весь остающийся разрыв там.
 
@@ -139,22 +139,23 @@
 - [x] Гидрация Silent vs Solid (`pnpm bench:hydrate`).
 - [x] Сборка одинаковых приложений (`pnpm bench:build`).
 - [x] Браузерные бенчмарки через Playwright (`pnpm bench:browser`).
-- [ ] Скомпилированные приложения вместо ручных runtime-хелперов (для SSR и runtime).
-- [ ] Память/GC и размер HTML.
-- [ ] CI-порог регрессии по ops/s и времени сборки.
+- [x] Скомпилированные приложения вместо ручных runtime-хелперов: `bench/fixtures/silent-app.tsx` компилируется через `nativeTransform` (`bench/src/silent-compile.ts`) и используется в SSR, jsdom- и браузерной гидрации; Solid SSR тоже идёт через `solid-app.tsx`. После перехода честные цифры: SSR 21 400 ops/s против 124 000 у Solid, jsdom-гидрация 715 против 1 254 (0.57x) — прежние 99 900/1 968 были завышены ручными вызовами без компилятора и без `For`.
+- [x] Память/GC и размер HTML: `bench:ssr` печатает размер разметки (байты, KB, gzip), `bench:hydrate` — прирост `heapUsed` и число GC на 500 гидраций, `bench:browser` — прирост heap через CDP `Runtime.getHeapUsage` после `HeapProfiler.collectGarbage`.
+- [x] CI-порог регрессии: `scripts/bench-guard.mjs` (npm `bench:guard`) запускает выбранные наборы с `--json`, сравнивает с `scripts/bench-baseline.json` и падает при росте `start gzip` > 0.3 KB, `start JS` > 2%, warm build > 40%, падении `silent/solid` ratio > 15%; падение ops/s — предупреждение без `--strict`. Baseline обновляется `pnpm bench:guard --update`. В CI добавлены шаги `--only=build` и `--only=browser`.
+- [x] Все бенчмарки ограничены четырьмя CPU через `scripts/bench-cpus.mjs` (`SILENT_BENCH_CPUS`, по умолчанию `0-3`, отключается `SILENT_BENCH_CPUS=off`).
 - [x] Скрипт CPU-профиля с топом функций.
 
-Профиль Chromium (`pnpm bench:profile silent`) по 200 гидрациям: `(program)` 33.9%, GC 7.8%, `removeChild` 5.1%, а остальное размазано по минифицированным функциям `index`/`hydration`/`hydration-state` чанков. Вывод: узкого места в нашей логике нет — стоимость распределена между аллокациями, GC и DOM-операциями; одним из самых заметных остаётся `removeChild` при `dispose()` и очистке регионов.
+Профиль Chromium (`pnpm bench:profile silent`): на одну строку приходится ~16 µs, GC 14–15%, дальше идут `significantChildren*` (~8%), `tryAdoptPartsPlanByPath` (~5%), `hydrateWith` (~5%), `removeAttribute` и обработчики событий. После переноса probe-эффектов в гидрационный чанк и быстрых путей обхода фиксированная часть сократилась с 18.4 до 16.1 µs.
 
-## M9. Нативный компилятор (отложено)
+## M9. Нативный компилятор (закрыто)
 
-- [ ] LTO: уже `thin`; оценить `fat` отдельным профилем.
-- [ ] AVX2: runtime-dispatch baseline + AVX2.
-- [ ] Аллокатор: mimalloc отсутствует; при необходимости сравнить jemalloc.
+- [x] LTO: `fat` — 162.4 с сборки `silent-node` против 99.2 с у `thin` (+64%), размер `libsilent_node.so` 19.07 MB против 19.85 MB (−3.9%). Оставлен `thin`: время пересборки важнее, выигрыш в скорости в пределах шума (основное время — SWC-парсинг/кодогенерация).
+- [x] AVX2/AVX512 — отклонено. В крейтах нет числовых/SIMD-циклов (только обход AST и файловой системы), AVX512-интринсики недоступны на stable Rust, а `#[target_feature(enable = "avx2")]` без подходящей горячей функции даёт только усложнение сборки.
+- [x] Аллокатор — отклонено: mimalloc/jemalloc не добавляем без измеренного выигрыша и лишней нативной зависимости.
 
 ## M10. Надёжность
 
-- [ ] Golden-тесты SSR-разметки (маркеры, атрибуты, порядок).
-- [ ] Fuzz/негативные тесты гидрации.
-- [ ] Снимок публичного API в CI.
-- [ ] Проверка, что bench-зависимости не попадают в npm-пакеты.
+- [x] Golden-тесты SSR-разметки: `packages/server/tests/golden/*.html` (9 сценариев: text-hole, attr, For, Show true/false, вложенный компонент, VM, пустой фрагмент, onClick) и побайтное сравнение; обновление через `SILENT_UPDATE_GOLDEN=1`.
+- [x] Fuzz/негативные тесты гидрации: `packages/core/tests/hydration-fuzz.test.ts`, seeded PRNG, 150 итераций с повреждением маркеров/узлов/атрибутов; проверяется отсутствие необработанных исключений, корректный откат на клиентский рендер и отсутствие `data-silent-` после dispose.
+- [x] Снимок публичного API в CI: `scripts/api-snapshot.json` + `--snapshot` в `scripts/api-check.mjs`, сверка при обычном прогоне.
+- [x] bench-зависимости не попадают в npm-пакеты: `scripts/pack-check.mjs` запрещает `bench/`, `crates/`, тесты и фикстуры в tarball и проверяет `files`; добавлен self-test предиката.
