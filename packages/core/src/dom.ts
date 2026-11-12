@@ -92,6 +92,7 @@ const parseCache = new Map<string, TemplateParse>();
 const METADATA_PATTERN = /<(?:title|meta|link)[\s/>]/i;
 const listenerRegistry = new WeakMap<Element, ListenerHolder | Map<string, ListenerHolder>>();
 const styleSnapshots = new WeakMap<Element, Set<string>>();
+const styleValues = new WeakMap<Element, Map<string, string>>();
 const hyphenCache = new Map<string, string>();
 const eventNameCache = new Map<string, ParsedEvent>();
 
@@ -1141,6 +1142,7 @@ export function spread(el: Element, accessor: () => unknown): void {
   }
   const svg = isSvgElement(el);
   let prev: Record<string, unknown> | null = null;
+  let prevKeys: readonly string[] | null = null;
   let currentRef: ((node: Element | null) => void) | null = null;
 
   const releaseRef = (): void => {
@@ -1157,8 +1159,9 @@ export function spread(el: Element, accessor: () => unknown): void {
       return;
     }
     const props = value as Record<string, unknown>;
-    if (prev !== null) {
-      for (const key of Object.keys(prev)) {
+    const keys = Object.keys(props);
+    if (prev !== null && prevKeys !== null) {
+      for (const key of prevKeys) {
         if (key in props) {
           continue;
         }
@@ -1177,7 +1180,7 @@ export function spread(el: Element, accessor: () => unknown): void {
         applyAttr(el, key, undefined, svg);
       }
     }
-    for (const key of Object.keys(props)) {
+    for (const key of keys) {
       const next = props[key];
       if (prev !== null && valuesEqual(prev[key], next)) {
         continue;
@@ -1212,6 +1215,7 @@ export function spread(el: Element, accessor: () => unknown): void {
       applyAttr(el, key, next, svg);
     }
     prev = props;
+    prevKeys = keys;
   });
 
   onCleanup(releaseRef);
@@ -1261,19 +1265,31 @@ function ensureSnapshot(el: Element): Set<string> {
   return snapshot;
 }
 
+function ensureAppliedStyle(el: Element): Map<string, string> {
+  let applied = styleValues.get(el);
+  if (applied === undefined) {
+    applied = new Map<string, string>();
+    styleValues.set(el, applied);
+  }
+  return applied;
+}
+
 function applyStyle(el: Element, value: unknown, snapshot: Set<string>): void {
   const style = (el as HTMLElement).style;
+  const applied = ensureAppliedStyle(el);
   if (value === null || value === undefined) {
     for (const key of snapshot) {
       style.removeProperty(key);
     }
     snapshot.clear();
+    applied.clear();
     return;
   }
   if (typeof value === "string") {
     if (style.cssText !== value) {
       style.cssText = value;
     }
+    applied.clear();
     const keep = new Set<string>();
     let cursor = 0;
     while (cursor <= value.length) {
@@ -1312,14 +1328,16 @@ function applyStyle(el: Element, value: unknown, snapshot: Set<string>): void {
     const target = next === null || next === undefined ? "" : String(next);
     keys.add(key);
     if (target === "") {
-      if (style.getPropertyValue(key) !== "") {
+      if (applied.get(key) !== "") {
         style.removeProperty(key);
+        applied.delete(key);
       }
       snapshot.delete(key);
       continue;
     }
-    if (style.getPropertyValue(key) !== target) {
+    if (applied.get(key) !== target) {
       style.setProperty(key, target);
+      applied.set(key, target);
     }
     snapshot.add(key);
   }
@@ -1327,6 +1345,7 @@ function applyStyle(el: Element, value: unknown, snapshot: Set<string>): void {
     if (!keys.has(key)) {
       style.removeProperty(key);
       snapshot.delete(key);
+      applied.delete(key);
     }
   }
 }

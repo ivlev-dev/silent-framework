@@ -47,6 +47,8 @@ const STORE_WRITES = 10_000;
 const TEXT_WRITES = 10_000;
 const LIST_SIZE = 1_000;
 const APPEND_SIZE = 100;
+const BIG_LIST_SIZE = 10_000;
+const BIG_APPEND_SIZE = 1_000;
 
 const signalWrites: BenchTask = {
   name: "signal: 10k writes",
@@ -187,6 +189,32 @@ const appendTask: BenchTask = {
   },
 };
 
+const createBigList: BenchTask = {
+  name: "keyed list: create 10k rows",
+  fn: () => {
+    const host = createHost();
+    const [items] = createSignal<readonly Row[]>(createRows(BIG_LIST_SIZE));
+    const dispose = createRoot((disposeRoot) => {
+      host.appendChild(For({ each: items, children: renderRow }));
+      return disposeRoot;
+    });
+    flushSync();
+    dispose();
+  },
+};
+
+const appendBigList = setupKeyedList(createRows(BIG_LIST_SIZE));
+const appendBigRows = createRows(BIG_APPEND_SIZE);
+const appendBigTask: BenchTask = {
+  name: "keyed list: append 1k rows",
+  fn: () => {
+    appendBigList.setItems((previous) => [...previous, ...appendBigRows]);
+    flushSync();
+    appendBigList.setItems((previous) => previous.slice(0, BIG_LIST_SIZE));
+    flushSync();
+  },
+};
+
 const reorderBase = createRows(LIST_SIZE);
 const reorderList = setupKeyedList(reorderBase);
 let reorderOffset = 0;
@@ -215,6 +243,8 @@ export const silentSuite: BenchSuite = {
     textUpdates,
     createList,
     appendTask,
+    createBigList,
+    appendBigTask,
     reorderTask,
   ],
 };

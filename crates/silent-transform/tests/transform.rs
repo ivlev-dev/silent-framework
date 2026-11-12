@@ -44,6 +44,28 @@ fn hoists_templates_to_module_scope_and_deduplicates() {
 }
 
 #[test]
+fn hoists_templates_across_components_in_one_module() {
+    let code = run(
+        "function A({ x }: { x: string }) { return <li>{x}</li>; } function B({ y }: { y: string }) { return <li>{y}</li>; }",
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert_eq!(code.matches("const _tmpl$").count(), 1, "{code}");
+    assert_eq!(code.matches("silent-hole-0").count(), 1, "{code}");
+}
+
+#[test]
+fn merges_adjacent_static_text_children() {
+    let code = run(
+        "const el = <p>a{\"b\"}c{d}e</p>;",
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(code.contains("<p>abc<!--silent-hole-0-->e</p>"), "{code}");
+    assert_eq!(code.matches("_$insert(").count(), 1, "{code}");
+}
+
+#[test]
 fn passes_adoption_plan_to_template_holes() {
     let code = run(
         "const el = <div><span>{name}</span></div>;",

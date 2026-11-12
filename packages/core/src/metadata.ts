@@ -57,6 +57,18 @@ export function extractMetadata(nodes: readonly Node[]): Node[] {
   return kept.length === nodes.length ? (nodes as Node[]) : kept;
 }
 
+export function extractMetadataNode(node: Node): Node | null {
+  if (isMetadataFree(node)) {
+    return node;
+  }
+  if (isMetadataElement(node)) {
+    hoist(node);
+    return null;
+  }
+  collectNested(node);
+  return node;
+}
+
 function collectNested(node: Node): void {
   if (node.nodeType !== 1) {
     return;

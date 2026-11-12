@@ -1,13 +1,13 @@
 import type { Accessor, Setter } from "@ivlev-dev/silent-reactivity";
 import {
   createRenderEffect,
-  createRoot,
   createSignal,
   getOwner,
   onCleanup,
   runWithOwner,
   untrack,
 } from "@ivlev-dev/silent-reactivity";
+import { createEffectUnlessStatic } from "./static-effect.js";
 import type { Children } from "./jsx.js";
 import {
   attachDisposer,
@@ -18,7 +18,7 @@ import {
 } from "./dom.js";
 import { hydratedEffect, settleNodes } from "./dom-hydration-state.js";
 import { getServerBackend, serializeServerValue } from "./server-proxy.js";
-import { extractMetadata, isMetadataFree } from "./metadata.js";
+import { extractMetadata, extractMetadataNode, isMetadataFree } from "./metadata.js";
 import {
   ITEM,
   LIST_END,
@@ -36,12 +36,6 @@ declare const __SILENT_SERVER__: boolean | undefined;
 const SERVER = typeof __SILENT_SERVER__ === "undefined" || __SILENT_SERVER__;
 
 const noopCleanup = (): void => {};
-
-const scopedCleanup = (fn: () => void): (() => void) =>
-  createRoot((dispose) => {
-    createRenderEffect(fn);
-    return dispose;
-  });
 
 interface ItemState<T> {
   item: T;
@@ -315,7 +309,8 @@ export function For<T>(props: ForProps<T>): Node {
     }
     let placed: Node[];
     if (value instanceof Node && !(value instanceof DocumentFragment)) {
-      placed = isMetadataFree(value) ? [value] : extractMetadata([value]);
+      const kept = extractMetadataNode(value);
+      placed = kept === null ? [] : [kept];
     } else {
       placed = extractMetadata(collectNodes(value as Children));
     }
@@ -413,7 +408,7 @@ export function For<T>(props: ForProps<T>): Node {
     };
     state.cleanup = hydrating
       ? hydratedEffect(run) ?? noopCleanup
-      : scopedCleanup(run);
+      : createEffectUnlessStatic(run) ?? noopCleanup;
 
     attachDisposer(anchor, () => removeState(state));
     return state;

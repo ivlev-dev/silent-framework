@@ -1,13 +1,13 @@
 import type { Accessor, Setter } from "@ivlev-dev/silent-reactivity";
 import {
   createRenderEffect,
-  createRoot,
   createSignal,
   getOwner,
   onCleanup,
   runWithOwner,
   untrack,
 } from "@ivlev-dev/silent-reactivity";
+import { createEffectUnlessStatic } from "./static-effect.js";
 import type { Children } from "./jsx.js";
 import {
   attachDisposer,
@@ -18,7 +18,7 @@ import {
 } from "./dom.js";
 import { getServerBackend, serializeServerValue } from "./server-proxy.js";
 import { settleNodes } from "./dom-hydration-state.js";
-import { extractMetadata, isMetadataFree } from "./metadata.js";
+import { extractMetadata, extractMetadataNode, isMetadataFree } from "./metadata.js";
 import {
   ITEM,
   LIST_END,
@@ -37,6 +37,8 @@ const SERVER = typeof __SILENT_SERVER__ === "undefined" || __SILENT_SERVER__;
 
 const ITEM_MARKER = `<!--${ITEM}-->`;
 const LIST_END_MARKER = `<!--${LIST_END}-->`;
+
+const noopCleanup = (): void => {};
 
 interface IndexState<T> {
   item: Accessor<T>;
@@ -261,7 +263,7 @@ export function Index<T>(props: IndexProps<T>): Node {
       disposed: false,
     };
 
-    state.cleanup = createRoot((dispose) => {
+    state.cleanup = createEffectUnlessStatic(() => {
       if (itemEnd !== null) {
         const window = {
           start: anchor,
@@ -276,16 +278,17 @@ export function Index<T>(props: IndexProps<T>): Node {
         if (window.cursor !== itemEnd) {
           mismatch("содержимое элемента списка не совпало");
         }
-        return dispose;
+        return;
       }
       const parent = anchor.parentNode;
       if (parent === null) {
-        return dispose;
+        return;
       }
       const rendered = props.children(item, index);
       let placed: Node[];
       if (rendered instanceof Node && !(rendered instanceof DocumentFragment)) {
-        placed = isMetadataFree(rendered) ? [rendered] : extractMetadata([rendered]);
+        const kept = extractMetadataNode(rendered);
+        placed = kept === null ? [] : [kept];
       } else {
         placed = extractMetadata(collectNodes(rendered as Children));
       }
@@ -294,8 +297,7 @@ export function Index<T>(props: IndexProps<T>): Node {
         parent.insertBefore(placed[index]!, reference);
       }
       state.nodes = placed;
-      return dispose;
-    });
+    }) ?? noopCleanup;
 
     attachDisposer(anchor, () => removeState(state));
     return state;
