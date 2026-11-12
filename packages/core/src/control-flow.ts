@@ -14,6 +14,7 @@ import {
   collectNodes,
   createMountPoint,
   disposeNode,
+  isServerMode,
 } from "./dom.js";
 import { hydratedEffect, settleNodes } from "./dom-hydration-state.js";
 import { extractMetadata, isMetadataFree } from "./metadata.js";
@@ -321,6 +322,38 @@ export function For<T>(props: ForProps<T>): Node {
 
   let fallbackSeed: Node[] = [];
   let skipFirst = hydrating;
+
+  if (isServerMode()) {
+    endAnchor = document.createComment(LIST_END);
+    const sink = container ?? (container = document.createDocumentFragment());
+    sink.appendChild(endAnchor);
+    const items: readonly T[] =
+      typeof props.each === "function" ? props.each() : props.each;
+    for (let position = 0; position < items.length; position += 1) {
+      const item = items[position];
+      if (item === undefined) {
+        break;
+      }
+      const anchor = document.createComment(ITEM);
+      sink.insertBefore(anchor, endAnchor);
+      const value = props.children(item, () => position);
+      if (value instanceof Node && !(value instanceof DocumentFragment) && isMetadataFree(value)) {
+        sink.insertBefore(value, endAnchor);
+        continue;
+      }
+      const nodes = extractMetadata(collectNodes(value as Children));
+      for (const node of nodes) {
+        sink.insertBefore(node, endAnchor);
+      }
+    }
+    if (items.length === 0 && hasFallback) {
+      const nodes = extractMetadata(collectNodes(resolve(fallback) as Children));
+      for (const node of nodes) {
+        sink.insertBefore(node, endAnchor);
+      }
+    }
+    return container;
+  }
 
   if (hydrating) {
     if (outer === null) {

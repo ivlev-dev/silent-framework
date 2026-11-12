@@ -1,5 +1,6 @@
 import type { Child, Children } from "./jsx.js";
 import { createRenderEffect, onCleanup } from "@ivlev-dev/silent-reactivity";
+import { createEffectUnlessStatic } from "./static-effect.js";
 import { extractMetadata, isMetadataElement, markMetadataFree } from "./metadata.js";
 import type { ServerHole } from "./server-backend.js";
 import {
@@ -928,7 +929,7 @@ function insertServer(
     mount = createMountPoint(parent, end);
     return mount;
   };
-  createRenderEffect(() => {
+  createEffectUnlessStatic(() => {
     const value = accessor();
     if (!initialized) {
       initialized = true;
