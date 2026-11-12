@@ -44,11 +44,14 @@ interface ItemState<T> {
   setIndex: Setter<number>;
   anchor: Comment;
   nodes: Node[];
+  nodesEnd: Node | null;
   cleanup: () => void;
   disposed: boolean;
   previousIndex: number;
   generation: number;
 }
+
+const NO_NODES: Node[] = [];
 
 export interface ForProps<T> {
   each: readonly T[] | (() => readonly T[]);
@@ -167,12 +170,27 @@ export function For<T>(props: ForProps<T>): Node {
     }
   };
 
+  const materializeNodes = (state: ItemState<T>): Node[] => {
+    const nodes = state.nodes;
+    if (nodes !== NO_NODES || state.nodesEnd === null) {
+      return nodes;
+    }
+    const collected: Node[] = [];
+    let cursor: Node | null = state.anchor.nextSibling;
+    while (cursor !== null && cursor !== state.nodesEnd) {
+      collected.push(cursor);
+      cursor = cursor.nextSibling;
+    }
+    state.nodes = collected;
+    return collected;
+  };
+
   const renderItem = (
     state: ItemState<T>,
     value: unknown,
     mountParent: Node | null = null,
   ): void => {
-    const nodes = state.nodes;
+    const nodes = materializeNodes(state);
     if (nodes.length > 0) {
       for (let index = 0; index < nodes.length; index += 1) {
         const node = nodes[index]!;
@@ -180,6 +198,7 @@ export function For<T>(props: ForProps<T>): Node {
         detachNode(node);
       }
       state.nodes = [];
+      state.nodesEnd = null;
     }
     const parent = mountParent ?? state.anchor.parentNode;
     if (parent === null) {
@@ -196,6 +215,7 @@ export function For<T>(props: ForProps<T>): Node {
       parent.insertBefore(placed[index]!, reference);
     }
     state.nodes = placed;
+    state.nodesEnd = null;
   };
 
   const removeState = (state: ItemState<T>): void => {
@@ -203,13 +223,14 @@ export function For<T>(props: ForProps<T>): Node {
       return;
     }
     state.disposed = true;
-    const nodes = state.nodes;
+    const nodes = materializeNodes(state);
     for (let index = 0; index < nodes.length; index += 1) {
       const node = nodes[index]!;
       disposeNode(node);
       detachNode(node);
     }
     state.nodes = [];
+    state.nodesEnd = null;
     detachNode(state.anchor);
     state.cleanup();
   };
@@ -227,7 +248,6 @@ export function For<T>(props: ForProps<T>): Node {
   const makeState = (
     item: T,
     anchor: Comment,
-    nodes: Node[],
     itemEnd: Node | null,
     position: number,
     mountParent: Node | null = null,
@@ -255,7 +275,8 @@ export function For<T>(props: ForProps<T>): Node {
       index,
       setIndex,
       anchor,
-      nodes,
+      nodes: itemEnd === null ? [] : NO_NODES,
+      nodesEnd: itemEnd,
       cleanup: () => {},
       disposed: false,
       previousIndex: -1,
@@ -294,7 +315,7 @@ export function For<T>(props: ForProps<T>): Node {
   ): ItemState<T> => {
     const anchor = document.createComment(ITEM);
     sink.appendChild(anchor);
-    return makeState(item, anchor, [], null, position, sink);
+    return makeState(item, anchor, null, position, sink);
   };
 
   let fallbackSeed: Node[] = [];
@@ -334,20 +355,18 @@ export function For<T>(props: ForProps<T>): Node {
           return mismatch("ожидался маркер элемента списка");
         }
         const anchor = cursor;
-        const nodes: Node[] = [];
         let node = cursor.nextSibling;
         while (node !== null && node !== endAnchor) {
           if (node.nodeType === Node.COMMENT_NODE && isItemMarker(node)) {
             break;
           }
-          nodes.push(node);
           node = node.nextSibling;
         }
         const item = items[position];
         if (item === undefined) {
           return mismatch("лишний элемент списка");
         }
-        states.push(makeState(item, anchor, nodes, node ?? endAnchor, position));
+        states.push(makeState(item, anchor, node ?? endAnchor, position));
         position += 1;
         cursor = node;
       }
@@ -540,10 +559,10 @@ export function For<T>(props: ForProps<T>): Node {
         if (
           holder !== null &&
           orderStable[position] === 0 &&
-          !precedesBlock(state.nodes, state.anchor, reference)
+          !precedesBlock(materializeNodes(state), state.anchor, reference)
         ) {
           holder.insertBefore(state.anchor, reference);
-          const nodes = state.nodes;
+          const nodes = materializeNodes(state);
           for (let index = 0; index < nodes.length; index += 1) {
             holder.insertBefore(nodes[index]!, reference);
           }

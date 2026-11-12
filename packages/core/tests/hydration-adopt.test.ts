@@ -243,6 +243,52 @@ describe("гидрация с сохранением узлов", () => {
     expect(rows[2]?.textContent).toBe("c");
   });
 
+  it("удаляет и переставляет элементы гидратированного списка", async () => {
+    const items = createSignal(["a", "b", "c"]);
+    class ListVM {}
+    function ListView(this: { vm: ListVM }): Node {
+      void this.vm;
+      const template = templateHoles('<ul class="items"><!--silent-hole-0--></ul>')();
+      insert(
+        holeParent(template, 0),
+        () =>
+          For({
+            each: items[0],
+            children: (item: string) => {
+              const row = templateHoles("<li><!--silent-hole-0--></li>")();
+              insert(holeParent(row, 0), () => item, row.holes[0]);
+              return row.node;
+            },
+          }),
+        template.holes[0],
+      );
+      return template.node;
+    }
+    attachMeta(ListView, ListVM);
+
+    const html = await renderServer(ListView as unknown as AnyComponent);
+    const target = host(html);
+    const serverRows = Array.from(target.querySelectorAll("li"));
+    const mismatches: HydrationMismatchError[] = [];
+    await hydrate(target, ListView as unknown as AnyComponent, {
+      onMismatch: (error) => mismatches.push(error),
+    });
+    expect(mismatches).toEqual([]);
+
+    items[1](["a", "c"]);
+    flushSync();
+    expect(target.querySelectorAll("li").length).toBe(2);
+    expect(target.textContent).toBe("ac");
+    expect(target.querySelectorAll("li")[1]).toBe(serverRows[2]);
+
+    items[1](["c", "a"]);
+    flushSync();
+    const rows = Array.from(target.querySelectorAll("li"));
+    expect(rows[0]).toBe(serverRows[2]);
+    expect(rows[1]).toBe(serverRows[0]);
+    expect(target.textContent).toBe("ca");
+  });
+
   it("переключает Show без потери исходного узла", async () => {
     const visible = createSignal(true);
     class ShowVM {}
