@@ -1,6 +1,8 @@
 import { createRenderEffect, onCleanup } from "@ivlev-dev/silent-reactivity";
 import { getRuntimeOptions, withRuntimeOptions } from "./component.js";
-import { createMountPoint } from "./dom.js";
+import type { Children } from "./jsx.js";
+import { collectNodes, createMountPoint, isServerMode } from "./dom.js";
+import { extractMetadata } from "./metadata.js";
 import { settleNodes } from "./dom-hydration-state.js";
 import {
   ERROR_BOUNDARY,
@@ -17,6 +19,10 @@ export interface ErrorBoundaryProps {
   readonly children: unknown | (() => unknown);
 }
 
+declare const __SILENT_SERVER__: boolean | undefined;
+
+const SERVER = typeof __SILENT_SERVER__ === "undefined" || __SILENT_SERVER__;
+
 function resolve(value: unknown): unknown {
   let current = value;
   while (typeof current === "function") {
@@ -28,6 +34,9 @@ function resolve(value: unknown): unknown {
 export function ErrorBoundary(props: ErrorBoundaryProps): Node {
   if (isHydrating()) {
     return hydrateErrorBoundary(props);
+  }
+  if (SERVER && isServerMode()) {
+    return renderErrorBoundaryServer(props);
   }
 
   const container = document.createDocumentFragment();
@@ -78,6 +87,54 @@ export function ErrorBoundary(props: ErrorBoundaryProps): Node {
     disposed = true;
     mount.clear();
   });
+  return container;
+}
+
+function renderErrorBoundaryServer(props: ErrorBoundaryProps): Node {
+  const container = document.createDocumentFragment();
+  const anchor = document.createComment(ERROR_BOUNDARY);
+  container.appendChild(anchor);
+  const options = getRuntimeOptions();
+  let rendered: Node[] = [];
+  let failed = false;
+
+  const clear = (): void => {
+    for (const node of rendered) {
+      container.removeChild(node);
+    }
+    rendered = [];
+  };
+
+  const append = (value: unknown): void => {
+    const nodes = extractMetadata(collectNodes(value as Children));
+    for (const node of nodes) {
+      container.insertBefore(node, anchor);
+      rendered.push(node);
+    }
+  };
+
+  const showFallback = (error: unknown): void => {
+    if (failed) {
+      return;
+    }
+    failed = true;
+    clear();
+    append(
+      withRuntimeOptions(options, () => resolve(props.fallback(error, () => {}))),
+    );
+  };
+
+  const guardedOptions = { ...options, onError: showFallback };
+
+  try {
+    const value = withRuntimeOptions(guardedOptions, () => resolve(props.children));
+    if (!failed) {
+      append(value);
+    }
+  } catch (error) {
+    showFallback(error);
+  }
+
   return container;
 }
 

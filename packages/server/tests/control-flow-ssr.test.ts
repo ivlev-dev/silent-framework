@@ -70,6 +70,20 @@ describe("SSR управляющих конструкций", () => {
     expect(html).toContain("<span>none</span>");
   });
 
+  it("рендерит содержимое ErrorBoundary без ошибки", async () => {
+    function View(): Node {
+      return ErrorBoundary({
+        fallback: () => text("none"),
+        children: () => text("child"),
+      });
+    }
+
+    const { html } = await renderToString(View as unknown as AnyComponent, {});
+    expect(html).toContain("<span>child</span>");
+    expect(html).not.toContain("<span>none</span>");
+    expect(html).toContain("silent-error");
+  });
+
   it("рендерит fallback ErrorBoundary при ошибке", async () => {
     function View(): Node {
       return ErrorBoundary({
