@@ -11,6 +11,8 @@ import { createEffectUnlessStatic } from "./static-effect.js";
 import type { Children } from "./jsx.js";
 import {
   attachDisposer,
+  attachItemDisposer,
+  clearItemDisposer,
   collectNodes,
   createMountPoint,
   disposeNode,
@@ -45,7 +47,7 @@ interface IndexState<T> {
   setItem: Setter<T>;
   index: Accessor<number>;
   setIndex: Setter<number>;
-  anchor: Comment;
+  anchor: Comment | null;
   nodes: Node[];
   cleanup: () => void;
   disposed: boolean;
@@ -197,7 +199,9 @@ export function Index<T>(props: IndexProps<T>): Node {
       detachNode(node);
     }
     state.nodes = [];
-    detachNode(state.anchor);
+    if (state.anchor !== null) {
+      detachNode(state.anchor);
+    }
     state.cleanup();
   };
 
@@ -211,10 +215,11 @@ export function Index<T>(props: IndexProps<T>): Node {
 
   const makeState = (
     value: T,
-    anchor: Comment,
+    anchor: Comment | null,
     nodes: Node[],
     itemEnd: Node | null,
     position: number,
+    mountParent: Node | null = null,
   ): IndexState<T> => {
     let itemHandle: [Accessor<T>, Setter<T>] | null = null;
     let currentItem = value;
@@ -263,12 +268,14 @@ export function Index<T>(props: IndexProps<T>): Node {
       disposed: false,
     };
 
+    let initialMount = mountParent;
     state.cleanup = createEffectUnlessStatic(() => {
       if (itemEnd !== null) {
+        const start = anchor as Comment;
         const window = {
-          start: anchor,
+          start,
           end: itemEnd,
-          cursor: anchor.nextSibling,
+          cursor: start.nextSibling,
         };
         const rendered = withWindow(window, () => props.children(item, index));
         if (outer !== null) {
@@ -280,7 +287,24 @@ export function Index<T>(props: IndexProps<T>): Node {
         }
         return;
       }
-      const parent = anchor.parentNode;
+      const current = state.nodes;
+      let tail: Node | null = null;
+      let parent: Node | null = initialMount;
+      initialMount = null;
+      if (current.length > 0) {
+        tail = current[current.length - 1]!.nextSibling;
+        parent ??= current[0]!.parentNode;
+        clearItemDisposer(current[0]!);
+        for (let position = 0; position < current.length; position += 1) {
+          const node = current[position]!;
+          disposeNode(node);
+          detachNode(node);
+        }
+      } else if (anchor !== null) {
+        tail = anchor.nextSibling;
+        parent ??= anchor.parentNode;
+      }
+      state.nodes = [];
       if (parent === null) {
         return;
       }
@@ -292,14 +316,29 @@ export function Index<T>(props: IndexProps<T>): Node {
       } else {
         placed = extractMetadata(collectNodes(rendered as Children));
       }
-      const reference = anchor.nextSibling;
+      if (placed.length === 0) {
+        if (state.anchor === null) {
+          const marker = document.createComment(ITEM);
+          if (tail === null) {
+            parent.appendChild(marker);
+          } else {
+            parent.insertBefore(marker, tail);
+          }
+          state.anchor = marker;
+          attachItemDisposer(marker, () => removeState(state));
+        }
+        return;
+      }
       for (let index = 0; index < placed.length; index += 1) {
-        parent.insertBefore(placed[index]!, reference);
+        parent.insertBefore(placed[index]!, tail);
       }
       state.nodes = placed;
+      attachItemDisposer(placed[0]!, () => removeState(state));
     }) ?? noopCleanup;
 
-    attachDisposer(anchor, () => removeState(state));
+    if (anchor !== null) {
+      attachDisposer(anchor, () => removeState(state));
+    }
     return state;
   };
 
@@ -307,11 +346,7 @@ export function Index<T>(props: IndexProps<T>): Node {
     value: T,
     sink: DocumentFragment,
     position: number,
-  ): IndexState<T> => {
-    const anchor = document.createComment(ITEM);
-    sink.appendChild(anchor);
-    return makeState(value, anchor, [], null, position);
-  };
+  ): IndexState<T> => makeState(value, null, [], null, position, sink);
 
   if (hydrating) {
     if (outer === null) {

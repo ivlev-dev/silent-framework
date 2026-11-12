@@ -8,7 +8,7 @@ import {
   flushSync,
   type Setter,
 } from "@ivlev-dev/silent-reactivity";
-import { For, text } from "@ivlev-dev/silent-core";
+import { For, Index, text } from "@ivlev-dev/silent-core";
 import { createHost, documentRef } from "./env";
 import type { BenchSuite, BenchTask } from "./suite";
 
@@ -177,6 +177,27 @@ const createList: BenchTask = {
   },
 };
 
+function renderIndexRow(item: () => number): Node {
+  const element = documentRef.createElement("div");
+  element.textContent = String(item());
+  return element;
+}
+
+const indexItems: readonly number[] = Array.from({ length: LIST_SIZE }, (_, id) => id);
+
+const createIndexList: BenchTask = {
+  name: "index list: create 1000 rows",
+  fn: () => {
+    const host = createHost();
+    const dispose = createRoot((disposeRoot) => {
+      host.appendChild(Index({ each: indexItems, children: renderIndexRow }));
+      return disposeRoot;
+    });
+    flushSync();
+    dispose();
+  },
+};
+
 const appendList = setupKeyedList(createRows(LIST_SIZE));
 const appendRows = createRows(APPEND_SIZE);
 const appendTask: BenchTask = {
@@ -242,6 +263,7 @@ export const silentSuite: BenchSuite = {
     deepStore,
     textUpdates,
     createList,
+    createIndexList,
     appendTask,
     createBigList,
     appendBigTask,

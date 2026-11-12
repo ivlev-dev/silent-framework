@@ -33,6 +33,31 @@ describe("Index", () => {
     expect(cells(host)).toEqual(["a", "b", "c"]);
   });
 
+  it("не создаёт маркеры элементов в non-hydration", () => {
+    const host = install(Index({ each: ["a", "b"], children: row }));
+    const markers = Array.from(host.childNodes).filter(
+      (node) => node.nodeType === Node.COMMENT_NODE && (node as Comment).data === "silent-item",
+    );
+    expect(markers.length).toBe(0);
+  });
+
+  it("сохраняет позицию пустого блока при обновлениях", () => {
+    const [items, setItems] = createSignal(["a", "empty", "b"]);
+    const host = install(
+      Index({
+        each: items,
+        children: (item) => (item() === "empty" ? (null as unknown as Node) : row(item)),
+      }),
+    );
+    expect(cells(host)).toEqual(["a", "b"]);
+    setItems(["x", "empty", "y"]);
+    flushSync();
+    expect(cells(host)).toEqual(["x", "y"]);
+    setItems(["x", "empty"]);
+    flushSync();
+    expect(cells(host)).toEqual(["x"]);
+  });
+
   it("принимает each как массив-значение", () => {
     const host = install(Index({ each: ["x", "y"], children: row }));
     expect(cells(host)).toEqual(["x", "y"]);
