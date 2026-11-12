@@ -72,6 +72,29 @@ describe("RawNode", () => {
     );
   });
 
+  it("рендерит вложенный RawNode одной строкой", () => {
+    const inner = buildBareNode();
+    inner.holes[0]?.set("x");
+    const outer = buildNode();
+    rawHole(outer.holes[1]).__silentServerHoleSetValue(inner);
+
+    expect(outer.render()).toBe(
+      "<ul><!--silent-hole-0--><li><!--silent-insert--><ul>x<!--silent-hole-0--></ul><!--silent-insert-end--><!--silent-hole-1--></li></ul>",
+    );
+
+    const bare = new RawNode(
+      ["<div>", "</div>"],
+      [0],
+      ["<!--silent-hole-0-->"],
+      undefined,
+      [true],
+      false,
+    );
+    rawHole(bare.holes[0]).__silentServerHoleSetValue(inner);
+
+    expect(bare.render()).toBe("<div><ul>x<!--silent-hole-0--></ul><!--silent-hole-0--></div>");
+  });
+
   it("клонирует слоты и не делит их с оригиналом", () => {
     const node = buildNode();
     node.holes[0]?.set("original");

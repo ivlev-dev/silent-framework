@@ -273,9 +273,49 @@ export class RawNode extends NodeImpl {
   }
 
   render(): string {
-    const result: string[] = [];
-    this.renderInto(result);
-    return result.join("");
+    const source = this.parts;
+    const count = this.indexes.length;
+    let out = source[0] ?? "";
+    const tails = this.tails;
+    if (tails !== undefined) {
+      for (let position = 0; position < count; position += 1) {
+        out += this.slotText(position);
+        out += tails[position] ?? "";
+      }
+      return out;
+    }
+    const markers = this.markers;
+    for (let position = 0; position < count; position += 1) {
+      out += this.slotText(position);
+      out += markers[position] ?? "";
+      out += source[position + 1] ?? "";
+    }
+    return out;
+  }
+
+  private slotText(position: number): string {
+    const slot = this.slots[position];
+    if (slot === undefined) {
+      return "";
+    }
+    if (typeof slot === "string") {
+      return slot;
+    }
+    const value = slot.value;
+    const nested = value as { render?: () => string } | null;
+    if (nested !== null && typeof nested === "object" && typeof nested.render === "function") {
+      const text = nested.render();
+      return this.wrap ? INSERT_START + text + INSERT_END : text;
+    }
+    const parts: string[] = [];
+    if (this.wrap) {
+      parts.push(INSERT_START);
+    }
+    pushValue(value, parts);
+    if (this.wrap) {
+      parts.push(INSERT_END);
+    }
+    return parts.length === 0 ? "" : parts.join("");
   }
 
   override get textContent(): string {

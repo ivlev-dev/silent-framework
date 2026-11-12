@@ -83,14 +83,14 @@ interface RenderableNode {
 
 export function pushNode(node: DomNode, parts: string[]): void {
   const raw = node as unknown as RenderableNode;
-  const renderInto = raw.renderInto;
-  if (typeof renderInto === "function") {
-    renderInto.call(node, parts);
-    return;
-  }
   const render = raw.render;
   if (typeof render === "function") {
     parts.push(render.call(node));
+    return;
+  }
+  const renderInto = raw.renderInto;
+  if (typeof renderInto === "function") {
+    renderInto.call(node, parts);
     return;
   }
   switch (node.nodeType) {
@@ -124,6 +124,11 @@ function pushChildren(node: DomNode, parts: string[]): void {
 }
 
 export function serializeNode(node: DomNode): string {
+  const raw = node as unknown as RenderableNode;
+  const render = raw.render;
+  if (typeof render === "function") {
+    return render.call(node);
+  }
   const parts: string[] = [];
   pushNode(node, parts);
   return parts.join("");

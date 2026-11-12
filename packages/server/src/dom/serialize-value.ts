@@ -2,7 +2,8 @@ import { escapeText, pushNode } from "./serializer.js";
 import type { DomNode } from "./types.js";
 
 interface RenderableValue {
-  renderInto(parts: string[]): void;
+  readonly render?: () => string;
+  readonly renderInto?: (parts: string[]) => void;
 }
 
 export function pushValue(value: unknown, parts: string[]): void {
@@ -31,8 +32,16 @@ export function pushValue(value: unknown, parts: string[]): void {
     }
     return;
   }
-  if (typeof (value as Partial<RenderableValue>).renderInto === "function") {
-    (value as RenderableValue).renderInto(parts);
+  const renderable = value as RenderableValue;
+  if (typeof renderable.render === "function") {
+    const text = renderable.render();
+    if (text !== "") {
+      parts.push(text);
+    }
+    return;
+  }
+  if (typeof renderable.renderInto === "function") {
+    renderable.renderInto(parts);
     return;
   }
   if (typeof Node !== "undefined" && value instanceof Node) {
