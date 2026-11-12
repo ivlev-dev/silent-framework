@@ -12,9 +12,14 @@ export interface ServerTemplate {
   readonly attrs: readonly unknown[];
 }
 
+export interface ServerFragment {
+  readonly node: unknown;
+}
+
 export interface ServerBackend {
   createTemplate(html: string): ServerTemplate | null;
   serialize(value: unknown): string;
+  createFragment?(parts: readonly string[], values: readonly unknown[]): ServerFragment | null;
 }
 
 let backend: ServerBackend | null = null;

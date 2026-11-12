@@ -79,6 +79,23 @@ export function createServerBackend(): ServerBackend {
       );
       return { node, holes: node.holes, attrs: [] };
     },
+    createFragment(parts: readonly string[], values: readonly unknown[]) {
+      const count = values.length;
+      if (count === 0) {
+        return { node: new RawNode([parts[0] ?? ""], [], [], undefined, undefined, false) };
+      }
+      const indexes = new Array<number>(count);
+      const tails = new Array<string>(count);
+      for (let position = 0; position < count; position += 1) {
+        indexes[position] = position;
+        tails[position] = parts[position + 1] ?? "";
+      }
+      const node = new RawNode(parts, indexes, [], tails, undefined, false);
+      for (let position = 0; position < count; position += 1) {
+        node.holes[position]?.setValue(values[position]);
+      }
+      return { node };
+    },
     serialize: serializeValue,
   };
 }

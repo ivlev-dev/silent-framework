@@ -17,6 +17,7 @@ import {
   isServerMode,
 } from "./dom.js";
 import { hydratedEffect, settleNodes } from "./dom-hydration-state.js";
+import { getServerBackend } from "./server-proxy.js";
 import { extractMetadata, isMetadataFree } from "./metadata.js";
 import {
   ITEM,
@@ -29,6 +30,10 @@ import {
   mismatch,
   withWindow,
 } from "./hydration-proxy.js";
+
+declare const __SILENT_SERVER__: boolean | undefined;
+
+const SERVER = typeof __SILENT_SERVER__ === "undefined" || __SILENT_SERVER__;
 
 const noopCleanup = (): void => {};
 
@@ -322,7 +327,39 @@ export function For<T>(props: ForProps<T>): Node {
   let fallbackSeed: Node[] = [];
   let skipFirst = hydrating;
 
-  if (isServerMode()) {
+  if (SERVER && isServerMode()) {
+    const backend = getServerBackend();
+    if (backend?.createFragment !== undefined) {
+      const items: readonly T[] =
+        typeof props.each === "function" ? props.each() : props.each;
+      const parts: string[] = [];
+      const values: unknown[] = [];
+      if (items.length === 0) {
+        if (hasFallback) {
+          parts.push("");
+          values.push(resolve(fallback));
+          parts.push(`<!--${LIST_END}-->`);
+        } else {
+          parts.push(`<!--${LIST_END}-->`);
+        }
+      } else {
+        parts.push(`<!--${ITEM}-->`);
+        for (let position = 0; position < items.length; position += 1) {
+          const item = items[position];
+          if (item === undefined) {
+            break;
+          }
+          values.push(props.children(item, () => position));
+          parts.push(
+            position === items.length - 1 ? `<!--${LIST_END}-->` : `<!--${ITEM}-->`,
+          );
+        }
+      }
+      const fragment = backend.createFragment(parts, values);
+      if (fragment !== null) {
+        return fragment.node as Node;
+      }
+    }
     endAnchor = document.createComment(LIST_END);
     const sink = container ?? (container = document.createDocumentFragment());
     sink.appendChild(endAnchor);

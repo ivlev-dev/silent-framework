@@ -7,6 +7,7 @@ export interface RawHole {
   readonly parentNode: RawNode;
   readonly index: number;
   set(value: string): void;
+  setValue(value: unknown): void;
 }
 
 const INSERT_START = "<!--silent-insert-->";
@@ -62,6 +63,10 @@ class RawHoleImpl implements RawHole {
     this.slots[this.index] = value;
   }
 
+  setValue(value: unknown): void {
+    this.__silentServerHoleSetValue(value);
+  }
+
   __silentServerHoleSetValue(value: unknown): boolean {
     if (this.bare && isTextValue(value)) {
       this.slots[this.index] = serializeText(value);
@@ -78,6 +83,7 @@ export class RawNode extends NodeImpl {
   private readonly markers: readonly string[];
   private readonly tails: readonly string[] | undefined;
   private readonly bare: readonly boolean[] | undefined;
+  private readonly wrap: boolean;
   private readonly slots: Array<string | RawSlot | undefined>;
   private readonly holeList: RawHole[];
 
@@ -87,6 +93,7 @@ export class RawNode extends NodeImpl {
     markers: readonly string[],
     tails?: readonly string[],
     bare?: readonly boolean[],
+    wrap = true,
   ) {
     super(NODE_TEXT);
     this.parts = parts;
@@ -94,6 +101,7 @@ export class RawNode extends NodeImpl {
     this.markers = markers;
     this.tails = tails;
     this.bare = bare;
+    this.wrap = wrap;
     const count = indexes.length;
     this.slots = new Array<string | RawSlot | undefined>(count);
     const holes = new Array<RawHole>(count);
@@ -155,6 +163,10 @@ export class RawNode extends NodeImpl {
       }
       return;
     }
+    if (!this.wrap) {
+      pushValue(slot.value, parts);
+      return;
+    }
     parts.push(INSERT_START);
     pushValue(slot.value, parts);
     parts.push(INSERT_END);
@@ -179,6 +191,7 @@ export class RawNode extends NodeImpl {
       this.markers,
       this.tails,
       this.bare,
+      this.wrap,
     );
     for (let position = 0; position < this.slots.length; position += 1) {
       const value = this.slots[position];
