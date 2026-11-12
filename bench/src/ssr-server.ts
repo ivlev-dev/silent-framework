@@ -7,7 +7,7 @@ import type { JSX } from "solid-js";
 import { renderToString as solidRender } from "solid-js/web";
 import { Bench } from "tinybench";
 import { renderToString as silentRender } from "@ivlev-dev/silent-server";
-import { ROWS, silentApp } from "./silent-app";
+import { ROWS, silentSsrApp } from "./silent-app";
 import { compileSolid } from "./solid-compile";
 import { resolveBenchJsonPath, round2, writeBenchJson } from "./cli";
 
@@ -69,7 +69,7 @@ function readSize(
 }
 
 async function main(): Promise<void> {
-  const silentHtml = (await silentRender(silentApp, {})).html;
+  const silentHtml = (await silentRender(silentSsrApp, {})).html;
   const solidHtml = await solidRender(solidApp);
   const sizes = new Map<string, HtmlSize>([
     ["silent renderToString", measureHtml(silentHtml)],
@@ -78,7 +78,7 @@ async function main(): Promise<void> {
 
   const bench = new Bench({ time: TIME, warmupTime: WARMUP, throws: true });
   bench.add("silent renderToString", async () => {
-    const result = await silentRender(silentApp, {});
+    const result = await silentRender(silentSsrApp, {});
     if (!result.html.includes("<li>")) {
       throw new Error("silent: пустой результат");
     }

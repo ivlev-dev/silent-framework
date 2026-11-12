@@ -18,6 +18,7 @@ export interface ServerFragment {
 
 export interface ServerBackend {
   createTemplate(html: string): ServerTemplate | null;
+  createRaw?(html: string): unknown;
   serialize(value: unknown): string;
   createFragment?(parts: readonly string[], values: readonly unknown[]): ServerFragment | null;
 }

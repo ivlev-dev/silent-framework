@@ -256,6 +256,9 @@ export function createServerBackend(): ServerBackend {
       });
       return { node, holes, attrs };
     },
+    createRaw(html: string) {
+      return new RawNode([html], [], []);
+    },
     createFragment(parts: readonly string[], values: readonly unknown[]) {
       const count = values.length;
       if (count === 0) {

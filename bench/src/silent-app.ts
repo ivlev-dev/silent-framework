@@ -12,22 +12,25 @@ interface SilentModule {
 const TITLE = "Title";
 const benchRoot = join(import.meta.dirname, "..");
 const cacheDirectory = join(benchRoot, "node_modules", ".silent-bench");
-const outputPath = join(cacheDirectory, "silent-app.mjs");
+const clientPath = join(cacheDirectory, "silent-app.mjs");
+const ssrPath = join(cacheDirectory, "silent-app-ssr.mjs");
+const fixture = join(benchRoot, "fixtures", "silent-app.tsx");
 
 mkdirSync(cacheDirectory, { recursive: true });
-writeFileSync(
-  outputPath,
-  compileSilent(join(benchRoot, "fixtures", "silent-app.tsx")),
-);
+writeFileSync(clientPath, compileSilent(fixture, false));
+writeFileSync(ssrPath, compileSilent(fixture, true));
 
-const silentModule = (await import(
-  pathToFileURL(outputPath).href
-)) as SilentModule;
+const clientModule = (await import(pathToFileURL(clientPath).href)) as SilentModule;
+const ssrModule = (await import(pathToFileURL(ssrPath).href)) as SilentModule;
 
-export const ROWS: number = silentModule.ROWS;
+export const ROWS: number = clientModule.ROWS;
 
 export function silentApp(): Node {
-  return silentModule.App({ title: TITLE });
+  return clientModule.App({ title: TITLE });
 }
 
-export const silentHtml: string = (await renderToString(silentApp, {})).html;
+export function silentSsrApp(): Node {
+  return ssrModule.App({ title: TITLE });
+}
+
+export const silentHtml: string = (await renderToString(silentSsrApp, {})).html;

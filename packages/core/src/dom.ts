@@ -959,6 +959,43 @@ function insertServer(
 }
 
 
+export interface SsrTemplate {
+  readonly parts: readonly string[];
+  readonly bare: readonly boolean[];
+}
+
+export function ssr(template: SsrTemplate, values: readonly unknown[]): Node {
+  const backend = getServerBackend();
+  if (backend === null) {
+    throw new Error("ssr() доступен только при серверном рендеринге");
+  }
+  const parts = template.parts;
+  const bare = template.bare;
+  let out = parts[0] ?? "";
+  const count = values.length;
+  for (let index = 0; index < count; index += 1) {
+    const value = values[index];
+    if (bare[index] === true && isTextValue(value)) {
+      out += serializeServerValue(value);
+    } else {
+      out += `<!--${INSERT_START}-->`;
+      out += serializeServerValue(value);
+      out += `<!--${INSERT_END}-->`;
+    }
+    const part = parts[index + 1];
+    if (part !== undefined) {
+      out += part;
+    }
+  }
+  const created = backend.createRaw?.(out);
+  const node = created ?? backend.createTemplate(out)?.node;
+  if (node === null || node === undefined) {
+    throw new Error("Серверный backend не поддерживает строковые узлы");
+  }
+  markMetadataFree(node as Node);
+  return node as Node;
+}
+
 export function insert(
   parent: Node,
   accessor: () => unknown,

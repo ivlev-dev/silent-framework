@@ -36,6 +36,8 @@ pub struct SilentOptions {
     pub runtime: Option<String>,
     #[serde(default)]
     pub hmr: bool,
+    #[serde(default)]
+    pub ssr: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -64,6 +66,7 @@ pub(crate) struct SilentPass {
     pub(crate) metadata: Vec<ModuleItem>,
     pub(crate) view_stack: Vec<bool>,
     pub(crate) hmr: bool,
+    pub(crate) ssr: bool,
     pub(crate) hmr_deps: Vec<String>,
     pub(crate) hoisted_templates: Vec<(Ident, Expr)>,
     pub(crate) hoisted_template_names: HashMap<String, Ident>,
@@ -94,6 +97,7 @@ impl SilentPass {
             metadata: Vec::new(),
             view_stack: Vec::new(),
             hmr: options.hmr,
+            ssr: options.ssr,
             hmr_deps: Vec::new(),
             hoisted_templates: Vec::new(),
             hoisted_template_names: HashMap::new(),

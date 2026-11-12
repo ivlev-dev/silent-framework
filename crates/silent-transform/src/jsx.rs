@@ -2,9 +2,9 @@ use super::transform::{rewrite_this, string_expr, SilentPass};
 use crate::template_plan::TemplatePlan;
 use swc_core::common::{SyntaxContext, DUMMY_SP};
 use swc_core::ecma::ast::{
-    ArrayLit, ArrowExpr, ArrowFunctionBody, BinExpr, BinaryOp, BindingIdent, CallExpr, Callee,
-    ComputedPropName, Expr, ExprOrSpread, Function, FunctionBody, GetterProp, Ident, IdentName,
-    JSXAttr, JSXAttrName, JSXAttrOrSpread, JSXAttrValue, JSXElement, JSXElementChild,
+    ArrayLit, ArrowExpr, ArrowFunctionBody, BinExpr, BinaryOp, BindingIdent, Bool, CallExpr,
+    Callee, ComputedPropName, Expr, ExprOrSpread, Function, FunctionBody, GetterProp, Ident,
+    IdentName, JSXAttr, JSXAttrName, JSXAttrOrSpread, JSXAttrValue, JSXElement, JSXElementChild,
     JSXElementName, JSXExpr, JSXExprContainer, JSXFragment, JSXObject, KeyValueProp, Lit,
     MemberExpr, MemberProp, ObjectLit, ParenExpr, Pat, Prop, PropName, PropOrSpread, ReturnStmt,
     SpreadElement, Stmt, Str, VarDecl, VarDeclKind, VarDeclarator,
@@ -371,6 +371,9 @@ impl SilentPass {
     }
 
     fn finish_template(&mut self, parts: TemplateParts) -> Expr {
+        if self.ssr && ssr_compatible(&parts) {
+            return self.finish_ssr_template(parts);
+        }
         let TemplateParts {
             html,
             holes,
@@ -493,6 +496,33 @@ impl SilentPass {
                 expr: Box::new(arrow),
             }),
             Vec::new(),
+        )
+    }
+
+    fn finish_ssr_template(&mut self, parts: TemplateParts) -> Expr {
+        let TemplateParts { html, holes, .. } = parts;
+        let count = holes.len();
+        let mut segments: Vec<String> = Vec::with_capacity(count + 1);
+        let mut rest = html.as_str();
+        for index in 0..count {
+            let marker = format!("<!--silent-hole-{index}-->");
+            let position = rest
+                .find(&marker)
+                .expect("маркер дыры должен присутствовать в шаблоне");
+            segments.push(rest[..position].to_string());
+            rest = &rest[position..];
+        }
+        segments.push(rest.to_string());
+        let bare: Vec<bool> = segments[..count]
+            .iter()
+            .map(|segment| segment.is_empty() || segment.ends_with('>'))
+            .collect();
+
+        let init = ssr_template_expr(segments, bare);
+        let name = self.hoisted_template(&html, init);
+        call_expr(
+            Expr::Ident(self.helper("ssr")),
+            vec![Expr::Ident(name), expr_array_expr(holes)],
         )
     }
 
@@ -649,6 +679,91 @@ impl SilentPass {
             )),
         }
     }
+}
+
+fn string_array_expr(items: Vec<String>) -> Expr {
+    Expr::Array(ArrayLit {
+        span: DUMMY_SP,
+        elems: items
+            .into_iter()
+            .map(|item| {
+                Some(ExprOrSpread {
+                    spread: None,
+                    expr: Box::new(string_expr(&item)),
+                })
+            })
+            .collect(),
+    })
+}
+
+fn ssr_template_expr(parts: Vec<String>, bare: Vec<bool>) -> Expr {
+    Expr::Object(ObjectLit {
+        span: DUMMY_SP,
+        props: vec![
+            PropOrSpread::Prop(Box::new(Prop::KeyValue(KeyValueProp {
+                key: PropName::Ident(IdentName::new("parts".into(), DUMMY_SP)),
+                value: Box::new(string_array_expr(parts)),
+            }))),
+            PropOrSpread::Prop(Box::new(Prop::KeyValue(KeyValueProp {
+                key: PropName::Ident(IdentName::new("bare".into(), DUMMY_SP)),
+                value: Box::new(bool_array_expr(bare)),
+            }))),
+        ],
+    })
+}
+
+fn bool_array_expr(items: Vec<bool>) -> Expr {
+    Expr::Array(ArrayLit {
+        span: DUMMY_SP,
+        elems: items
+            .into_iter()
+            .map(|item| {
+                Some(ExprOrSpread {
+                    spread: None,
+                    expr: Box::new(Expr::Lit(Lit::Bool(Bool {
+                        span: DUMMY_SP,
+                        value: item,
+                    }))),
+                })
+            })
+            .collect(),
+    })
+}
+
+fn expr_array_expr(items: Vec<Expr>) -> Expr {
+    Expr::Array(ArrayLit {
+        span: DUMMY_SP,
+        elems: items
+            .into_iter()
+            .map(|item| {
+                Some(ExprOrSpread {
+                    spread: None,
+                    expr: Box::new(item),
+                })
+            })
+            .collect(),
+    })
+}
+
+fn ssr_compatible(parts: &TemplateParts) -> bool {
+    for attr in &parts.attrs {
+        if !matches!(attr.kind, DynamicAttrKind::Event(_) | DynamicAttrKind::Ref) {
+            return false;
+        }
+    }
+    let lower = parts.html.to_ascii_lowercase();
+    if lower.contains("<title") || lower.contains("<meta") || lower.contains("<link") {
+        return false;
+    }
+    let mut rest = parts.html.as_str();
+    for index in 0..parts.holes.len() {
+        let marker = format!("<!--silent-hole-{index}-->");
+        let Some(position) = rest.find(&marker) else {
+            return false;
+        };
+        rest = &rest[position..];
+    }
+    true
 }
 
 fn jsx_object_expr(object: &JSXObject, property: &IdentName) -> Expr {

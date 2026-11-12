@@ -5,6 +5,7 @@ export {
   effect,
   fragment,
   insert,
+  ssr,
   text,
   attr,
   prop,

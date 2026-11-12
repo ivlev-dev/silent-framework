@@ -4,9 +4,13 @@ import { transform, type NativeTransformResult } from "@ivlev-dev/silent-swc";
 const OPTIONS_JSON = JSON.stringify({ swc: {}, hmr: false });
 const INDEX_JSON = JSON.stringify({ interfaces: {}, values: {} });
 
-export function compileSilent(filename: string): string {
+function optionsJson(ssr: boolean): string {
+  return ssr ? JSON.stringify({ swc: {}, hmr: false, ssr: true }) : OPTIONS_JSON;
+}
+
+export function compileSilent(filename: string, ssr = false): string {
   const source = readFileSync(filename, "utf8");
-  const raw = transform(source, filename, OPTIONS_JSON, INDEX_JSON);
+  const raw = transform(source, filename, optionsJson(ssr), INDEX_JSON);
   const parsed: unknown = JSON.parse(raw);
 
   if (!isTransformResult(parsed)) {

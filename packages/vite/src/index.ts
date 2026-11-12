@@ -13,14 +13,16 @@ export default silent;
 export function silent(options: SilentOptions = {}): Plugin {
   const opts = resolveOptions(options);
 
-  const buildOptionsJson = (): string =>
+  const buildOptionsJson = (ssr: boolean): string =>
     JSON.stringify({
       swc: opts.swc,
       requirePreloader: opts.requirePreloader,
       runtime: opts.runtime,
       hmr: opts.hmr,
+      ssr,
     });
-  const optionsJson = buildOptionsJson();
+  const optionsJson = buildOptionsJson(false);
+  const ssrOptionsJson = buildOptionsJson(true);
 
   let cachedIndexJson: string | null = null;
   let indexPromise: Promise<string> | null = null;
@@ -93,7 +95,7 @@ export function silent(options: SilentOptions = {}): Plugin {
         invalidateIndex();
       }
     },
-    async transform(code, id) {
+    async transform(code, id, transformOptions) {
       const moduleId = cleanModuleId(id);
       if (isVirtualModule(id) || isVirtualModule(moduleId)) return null;
       if (!matchesPattern(opts.include, moduleId)) return null;
@@ -106,7 +108,7 @@ export function silent(options: SilentOptions = {}): Plugin {
         swc,
         code,
         moduleId,
-        optionsJson,
+        transformOptions?.ssr === true ? ssrOptionsJson : optionsJson,
         indexJson,
       );
 
