@@ -13,7 +13,7 @@ import {
   type TemplatePlan,
 } from "./dom.js";
 import { registerDomHydrationRuntime } from "./dom-hydration-state.js";
-import { renderEffectUnlessStatic } from "./static-effect.js";
+import { createEffectUnlessStatic } from "./static-effect.js";
 import {
   INSERT_END,
   INSERT_START,
@@ -427,7 +427,7 @@ function textHydrated(
 ): void {
   let textNode = initial;
   let region: HydrationWindow | null = null;
-  renderEffectUnlessStatic(() => {
+  createEffectUnlessStatic(() => {
     const value = accessor();
     if (region !== null) {
       writeRegion(region.start, region.end, value);
@@ -614,7 +614,13 @@ export function insertHydrated(
 }
 
 export function installDomHydrationRuntime(): void {
-  registerDomHydrationRuntime({ settleNodes, writeRegion, insertHydrated, adoptPartsPlan });
+  registerDomHydrationRuntime({
+    settleNodes,
+    writeRegion,
+    insertHydrated,
+    hydratedEffect: createEffectUnlessStatic,
+    adoptPartsPlan,
+  });
 }
 
 installDomHydrationRuntime();

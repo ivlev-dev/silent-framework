@@ -1,6 +1,5 @@
 import type { Child, Children } from "./jsx.js";
 import { createRenderEffect, onCleanup } from "@ivlev-dev/silent-reactivity";
-import { renderEffectUnlessStatic } from "./static-effect.js";
 import { extractMetadata, isMetadataElement, markMetadataFree } from "./metadata.js";
 import type { ServerHole } from "./server-backend.js";
 import {
@@ -27,6 +26,7 @@ import {
 } from "./hydration-proxy.js";
 import {
   adoptPartsPlan,
+  hydratedEffect,
   insertHydrated,
   settleNodes,
   writeRegion,
@@ -99,6 +99,10 @@ export const TEXT_MARKER = "data-silent-text";
 const AUX_CACHE_LIMIT = 1024;
 
 let serverMode = false;
+
+declare const __SILENT_SERVER__: boolean | undefined;
+
+const SERVER = typeof __SILENT_SERVER__ === "undefined" || __SILENT_SERVER__;
 
 export function setServerMode(enabled: boolean): void {
   serverMode = enabled;
@@ -706,7 +710,7 @@ function applyPartsPlan(
 export function templateHoles(html: string, plan?: TemplatePlan): () => TemplateClone {
   let clientFactory: (() => TemplateClone) | null = null;
   return () => {
-    if (isServerMode()) {
+    if (SERVER && isServerMode()) {
       const backend = getServerBackend();
       if (backend !== null) {
         const template = backend.createTemplate(html);
@@ -959,15 +963,17 @@ export function insert(
   marker?: Node | ServerHole,
 ): void {
   if (isServerHole(marker)) {
-    const value = accessor();
-    if (!setServerHoleValue(marker, value)) {
-      marker.set(
-        `<!--${INSERT_START}-->${serializeServerValue(value)}<!--${INSERT_END}-->`,
-      );
+    if (SERVER) {
+      const value = accessor();
+      if (!setServerHoleValue(marker, value)) {
+        marker.set(
+          `<!--${INSERT_START}-->${serializeServerValue(value)}<!--${INSERT_END}-->`,
+        );
+      }
     }
     return;
   }
-  if (isServerMode()) {
+  if (SERVER && isServerMode()) {
     insertServer(parent, accessor, marker ?? null);
     return;
   }
@@ -982,13 +988,18 @@ export function insert(
 }
 
 export function text(node: Text, accessor: () => unknown): void {
-  renderEffectUnlessStatic(() => {
+  const apply = (): void => {
     const value = accessor();
     const next = stringOf(value);
     if (node.data !== next) {
       node.data = next;
     }
-  });
+  };
+  if (isHydrating()) {
+    hydratedEffect(apply);
+    return;
+  }
+  createRenderEffect(apply);
 }
 
 function isSvgElement(el: Element): boolean {
@@ -1007,14 +1018,19 @@ export function attr(el: Element, name: string, accessor: () => unknown): void {
   const svg = isSvgElement(el);
   let prev: unknown = accessor();
   applyAttr(el, name, prev, svg);
-  renderEffectUnlessStatic(() => {
+  const apply = (): void => {
     const value = accessor();
     if (valuesEqual(value, prev)) {
       return;
     }
     prev = value;
     applyAttr(el, name, value, svg);
-  });
+  };
+  if (isHydrating()) {
+    hydratedEffect(apply);
+    return;
+  }
+  createRenderEffect(apply);
 }
 
 export function applyAttr(el: Element, name: string, value: unknown, svg: boolean): void {

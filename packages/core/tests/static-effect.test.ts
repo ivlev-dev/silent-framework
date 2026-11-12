@@ -1,15 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { createSignal, flushSync } from "@ivlev-dev/silent-reactivity";
-import {
-  effectUnlessStatic,
-  renderEffectUnlessStatic,
-} from "../src/static-effect.js";
+import { createEffectUnlessStatic } from "../src/static-effect.js";
 import { text } from "../src/dom.js";
 
-describe("effectUnlessStatic", () => {
+describe("createEffectUnlessStatic", () => {
   it("не создаёт эффект для статического выражения", () => {
     let calls = 0;
-    const dispose = effectUnlessStatic(() => {
+    const dispose = createEffectUnlessStatic(() => {
       calls += 1;
     });
     expect(dispose).toBeNull();
@@ -19,7 +16,7 @@ describe("effectUnlessStatic", () => {
   it("создаёт эффект для реактивного выражения", () => {
     const [value, setValue] = createSignal(0);
     let calls = 0;
-    const dispose = effectUnlessStatic(() => {
+    const dispose = createEffectUnlessStatic(() => {
       value();
       calls += 1;
     });
@@ -38,9 +35,9 @@ describe("effectUnlessStatic", () => {
     const [outer, setOuter] = createSignal("a");
     const [inner, setInner] = createSignal("x");
     const seen: string[] = [];
-    const dispose = effectUnlessStatic(() => {
+    const dispose = createEffectUnlessStatic(() => {
       seen.push(outer());
-      effectUnlessStatic(() => {
+      createEffectUnlessStatic(() => {
         seen.push(inner());
       });
     });
@@ -61,8 +58,8 @@ describe("effectUnlessStatic", () => {
   it("переносит вложенную реактивную подписку в владельца эффекта", () => {
     const [value, setValue] = createSignal("a");
     const node = document.createTextNode("a");
-    const dispose = effectUnlessStatic(() => {
-      renderEffectUnlessStatic(() => {
+    const dispose = createEffectUnlessStatic(() => {
+      createEffectUnlessStatic(() => {
         node.data = value();
       });
     });
@@ -77,33 +74,8 @@ describe("effectUnlessStatic", () => {
   });
 });
 
-describe("renderEffectUnlessStatic", () => {
-  it("не создаёт подписку для статического выражения", () => {
-    let calls = 0;
-    const created = renderEffectUnlessStatic(() => {
-      calls += 1;
-    });
-    expect(created).toBe(false);
-    expect(calls).toBe(1);
-    flushSync();
-    expect(calls).toBe(1);
-  });
-
-  it("создаёт подписку для реактивного выражения", () => {
-    const [value, setValue] = createSignal(0);
-    let calls = 0;
-    const created = renderEffectUnlessStatic(() => {
-      value();
-      calls += 1;
-    });
-    expect(created).toBe(true);
-    expect(calls).toBe(1);
-    setValue(1);
-    flushSync();
-    expect(calls).toBe(2);
-  });
-
-  it("оставляет реактивную подписку в text", () => {
+describe("text при монтировании", () => {
+  it("оставляет реактивную подписку", () => {
     const [value, setValue] = createSignal("a");
     const node = document.createTextNode("a");
     let calls = 0;

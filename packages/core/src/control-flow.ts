@@ -15,8 +15,7 @@ import {
   createMountPoint,
   disposeNode,
 } from "./dom.js";
-import { settleNodes } from "./dom-hydration-state.js";
-import { effectUnlessStatic } from "./static-effect.js";
+import { hydratedEffect, settleNodes } from "./dom-hydration-state.js";
 import { extractMetadata, isMetadataFree } from "./metadata.js";
 import {
   ITEM,
@@ -30,12 +29,13 @@ import {
   withWindow,
 } from "./hydration-proxy.js";
 
-const SCOPED_EFFECT = Symbol.for("silent.scopedRenderEffect");
-const scoped = (createRoot as unknown as Record<symbol, unknown>)[SCOPED_EFFECT];
-const createScopedEffect: ((fn: () => void) => () => void) | null =
-  typeof scoped === "function" ? (scoped as (fn: () => void) => () => void) : null;
-
 const noopCleanup = (): void => {};
+
+const scopedCleanup = (fn: () => void): (() => void) =>
+  createRoot((dispose) => {
+    createRenderEffect(fn);
+    return dispose;
+  });
 
 interface ItemState<T> {
   item: T;
@@ -301,7 +301,9 @@ export function For<T>(props: ForProps<T>): Node {
       renderItem(state, props.children(item, index), initialMount);
       initialMount = null;
     };
-    state.cleanup = effectUnlessStatic(run) ?? noopCleanup;
+    state.cleanup = hydrating
+      ? hydratedEffect(run) ?? noopCleanup
+      : scopedCleanup(run);
 
     attachDisposer(anchor, () => removeState(state));
     return state;

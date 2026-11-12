@@ -5,6 +5,7 @@ export interface DomHydrationRuntime {
   settleNodes(end: Node | null, value: unknown): void;
   writeRegion(start: Node, end: Node, value: unknown): void;
   insertHydrated(parent: Node, accessor: () => unknown, marker: Node | null): void;
+  hydratedEffect(fn: () => void): (() => void) | null;
   adoptPartsPlan(
     root: Node,
     plan: TemplatePlan,
@@ -42,6 +43,10 @@ export function insertHydrated(
   marker: Node | null,
 ): void {
   requireRuntime().insertHydrated(parent, accessor, marker);
+}
+
+export function hydratedEffect(fn: () => void): (() => void) | null {
+  return requireRuntime().hydratedEffect(fn);
 }
 
 export function adoptPartsPlan(
