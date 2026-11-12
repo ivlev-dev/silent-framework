@@ -1,4 +1,4 @@
-import type { Plugin } from "vite";
+import type { ConfigEnv, Plugin, UserConfig } from "vite";
 import { loadSwc, nativeScan, nativeTransform } from "./native.js";
 import type { SilentIndex } from "./native.js";
 import { cleanModuleId, isInsideRoot, isSourceModule, isVirtualModule, matchesPattern, resolveOptions } from "./options.js";
@@ -63,11 +63,22 @@ export function silent(options: SilentOptions = {}): Plugin {
   return {
     name: "silent",
     enforce: "pre",
-    config() {
-      if (opts.view) {
-        return undefined;
+    config(config: UserConfig = {}, env?: ConfigEnv): UserConfig | undefined {
+      const define: Record<string, string> = {};
+      if (!opts.view) {
+        define.__SILENT_VIEW__ = "false";
       }
-      return { define: { __SILENT_VIEW__: "false" } };
+      if (env?.command === "build" && !config.build?.ssr) {
+        define.__SILENT_SERVER__ = "false";
+      }
+      const result: UserConfig = {};
+      if (Object.keys(define).length > 0) {
+        result.define = define;
+      }
+      if (!opts.view && config.build?.modulePreload === undefined) {
+        result.build = { modulePreload: { polyfill: false } };
+      }
+      return Object.keys(result).length === 0 ? undefined : result;
     },
     async buildStart() {
       await ensureIndex();

@@ -61,7 +61,32 @@ describe("silent()", () => {
   it("view: false отключает view-рантайм через define", () => {
     expect(createPlugin({ view: false }).config?.()).toEqual({
       define: { __SILENT_VIEW__: "false" },
+      build: { modulePreload: { polyfill: false } },
     });
+  });
+
+  it("view: false не переопределяет modulePreload из конфига", () => {
+    const plugin = createPlugin({ view: false });
+    expect(
+      plugin.config?.({ build: { modulePreload: { polyfill: true } } }),
+    ).toEqual({ define: { __SILENT_VIEW__: "false" } });
+    expect(plugin.config?.({ build: { modulePreload: false } })).toEqual({
+      define: { __SILENT_VIEW__: "false" },
+    });
+  });
+
+  it("клиентская сборка вырезает серверный код", () => {
+    const plugin = createPlugin();
+    expect(plugin.config?.({}, { command: "build", mode: "production" })).toEqual({
+      define: { __SILENT_SERVER__: "false" },
+    });
+    expect(
+      plugin.config?.({ build: { ssr: "src/entry-server.tsx" } }, {
+        command: "build",
+        mode: "production",
+      }),
+    ).toBeUndefined();
+    expect(plugin.config?.({}, { command: "serve", mode: "development" })).toBeUndefined();
   });
 
   it("по умолчанию не задаёт define для view", () => {
