@@ -35,7 +35,10 @@ fn ssr_compiles_list_items_and_fragments() {
 
 #[test]
 fn ssr_compiles_static_template_without_values() {
-    let code = run(r#"const el = <div class="x">static</div>;"#, json!({ "ssr": true }));
+    let code = run(
+        r#"const el = <div class="x">static</div>;"#,
+        json!({ "ssr": true }),
+    );
     assert!(code.contains("_$ssrRaw("), "{code}");
     assert!(!code.contains("_$ssrValue("), "{code}");
 }

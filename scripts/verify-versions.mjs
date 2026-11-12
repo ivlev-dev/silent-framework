@@ -51,7 +51,10 @@ if (versions.size !== 1) {
 }
 
 const version = entries[0].version;
-const tag = process.argv[2] ?? process.env.GITHUB_REF_NAME;
+const explicitTag = process.argv[2];
+const tag =
+  explicitTag ??
+  (process.env.GITHUB_REF_TYPE === "tag" ? process.env.GITHUB_REF_NAME : undefined);
 if (tag) {
   const expected = normalizeTag(tag);
   if (expected !== version) {
