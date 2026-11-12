@@ -15,6 +15,7 @@ import {
   parseEventName,
   prop,
   ref,
+  removeListener,
   setServerMode,
   spread,
   style,
@@ -506,6 +507,29 @@ describe("on", () => {
     on(inner, "onClick", () => order.push("bubble"));
     click(inner);
     expect(order).toEqual(["capture", "bubble"]);
+  });
+
+  it("держит несколько разных событий на одном элементе", () => {
+    const element = document.createElement("button");
+    document.body.appendChild(element);
+    const calls: string[] = [];
+    on(element, "onClick", () => () => calls.push("click"));
+    on(element, "onFocus", () => () => calls.push("focus"));
+    click(element);
+    element.dispatchEvent(new FocusEvent("focus"));
+    expect(calls).toEqual(["click", "focus"]);
+  });
+
+  it("удаляет только указанный обработчик", () => {
+    const element = document.createElement("button");
+    document.body.appendChild(element);
+    const calls: string[] = [];
+    on(element, "onClick", () => () => calls.push("click"));
+    on(element, "onFocus", () => () => calls.push("focus"));
+    removeListener(element, "onClick");
+    click(element);
+    element.dispatchEvent(new FocusEvent("focus"));
+    expect(calls).toEqual(["focus"]);
   });
 });
 

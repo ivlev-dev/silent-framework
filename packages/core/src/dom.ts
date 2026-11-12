@@ -39,6 +39,7 @@ type DisposerHost = Node & { [NODE_DISPOSER]?: () => void };
 interface ListenerHolder {
   current: EventListener | null;
   wrapper: EventListener;
+  key: string;
 }
 
 export interface MountPoint {
@@ -88,7 +89,7 @@ interface ParsedEvent {
 
 const parseCache = new Map<string, TemplateParse>();
 const METADATA_PATTERN = /<(?:title|meta|link)[\s/>]/i;
-const listenerRegistry = new WeakMap<Element, Map<string, ListenerHolder>>();
+const listenerRegistry = new WeakMap<Element, ListenerHolder | Map<string, ListenerHolder>>();
 const styleSnapshots = new WeakMap<Element, Set<string>>();
 const hyphenCache = new Map<string, string>();
 const eventNameCache = new Map<string, ParsedEvent>();
@@ -1287,13 +1288,20 @@ export function hyphen(raw: string): string {
   return result;
 }
 
-function getHolders(el: Element): Map<string, ListenerHolder> {
-  let holders = listenerRegistry.get(el);
-  if (holders === undefined) {
-    holders = new Map<string, ListenerHolder>();
-    listenerRegistry.set(el, holders);
-  }
-  return holders;
+function createHolder(key: string, handler: EventListener | null): ListenerHolder {
+  const holder: ListenerHolder = {
+    current: typeof handler === "function" ? handler : null,
+    wrapper: () => {},
+    key,
+  };
+  const wrapper: EventListener = (event: Event) => {
+    const current = holder.current;
+    if (typeof current === "function") {
+      current(event);
+    }
+  };
+  holder.wrapper = wrapper;
+  return holder;
 }
 
 function isEventName(name: string): boolean {
@@ -1334,25 +1342,34 @@ function buildEventName(name: string): ParsedEvent {
 
 export function addListener(el: Element, name: string, handler: EventListener | null): void {
   const { event, capture, key } = resolveEventName(name);
-  const holders = getHolders(el);
-  const registered = holders.get(key);
-  if (registered !== undefined) {
-    registered.current = typeof handler === "function" ? handler : null;
+  const existing = listenerRegistry.get(el);
+  if (existing === undefined) {
+    const holder = createHolder(key, handler);
+    listenerRegistry.set(el, holder);
+    el.addEventListener(event, holder.wrapper, capture);
     return;
   }
-  const holder: ListenerHolder = {
-    current: typeof handler === "function" ? handler : null,
-    wrapper: () => {},
-  };
-  const wrapper: EventListener = (event: Event) => {
-    const current = holder.current;
-    if (typeof current === "function") {
-      current(event);
+  if (existing instanceof Map) {
+    const registered = existing.get(key);
+    if (registered !== undefined) {
+      registered.current = typeof handler === "function" ? handler : null;
+      return;
     }
-  };
-  holder.wrapper = wrapper;
+    const holder = createHolder(key, handler);
+    existing.set(key, holder);
+    el.addEventListener(event, holder.wrapper, capture);
+    return;
+  }
+  if (existing.key === key) {
+    existing.current = typeof handler === "function" ? handler : null;
+    return;
+  }
+  const holder = createHolder(key, handler);
+  const holders = new Map<string, ListenerHolder>();
+  holders.set(existing.key, existing);
   holders.set(key, holder);
-  el.addEventListener(event, wrapper, capture);
+  listenerRegistry.set(el, holders);
+  el.addEventListener(event, holder.wrapper, capture);
 }
 
 export function removeListener(el: Element, name: string): void {
@@ -1361,13 +1378,22 @@ export function removeListener(el: Element, name: string): void {
   if (holders === undefined) {
     return;
   }
-  const registered = holders.get(key);
-  if (registered === undefined) {
+  if (holders instanceof Map) {
+    const registered = holders.get(key);
+    if (registered === undefined) {
+      return;
+    }
+    holders.delete(key);
+    registered.current = null;
+    el.removeEventListener(event, registered.wrapper, capture);
     return;
   }
-  holders.delete(key);
-  registered.current = null;
-  el.removeEventListener(event, registered.wrapper, capture);
+  if (holders.key !== key) {
+    return;
+  }
+  listenerRegistry.delete(el);
+  holders.current = null;
+  el.removeEventListener(event, holders.wrapper, capture);
 }
 
 export function on(el: Element, name: string, accessor: () => unknown): void {

@@ -307,8 +307,18 @@ export function shapeMatches(
 }
 
 export function significantChildren(node: Node, index: number): Node | null {
+  const first = node.firstChild;
+  if (first !== null && index === 0) {
+    if (first.nodeType !== Node.COMMENT_NODE) {
+      return first;
+    }
+    const data = (first as Comment).data;
+    if (data !== INSERT_START && data !== INSERT_END) {
+      return first;
+    }
+  }
   let depth = 0;
-  let child = node.firstChild;
+  let child = first;
   let position = 0;
   while (child !== null) {
     const next = child.nextSibling;
@@ -337,8 +347,18 @@ export function significantChildren(node: Node, index: number): Node | null {
 }
 
 export function significantChildrenFromEnd(node: Node, offset: number): Node | null {
+  const last = node.lastChild;
+  if (last !== null && offset === 0) {
+    if (last.nodeType !== Node.COMMENT_NODE) {
+      return last;
+    }
+    const data = (last as Comment).data;
+    if (data !== INSERT_START && data !== INSERT_END) {
+      return last;
+    }
+  }
   let depth = 0;
-  let child = node.lastChild;
+  let child = last;
   let position = 0;
   while (child !== null) {
     const previous = child.previousSibling;

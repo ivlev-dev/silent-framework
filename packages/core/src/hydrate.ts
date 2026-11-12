@@ -115,9 +115,6 @@ async function hydrateWith(
       }
     }
 
-    boundaryStart.remove();
-    boundaryEnd.remove();
-
     if (adopted === null) {
       const fresh = withoutHydration(() =>
         createRootResult(app, options, runtimeOptions, create),
@@ -130,6 +127,8 @@ async function hydrateWith(
       return handleFor(fresh.result, fresh.dispose);
     }
 
+    boundaryStart.remove();
+    boundaryEnd.remove();
     return handleFor(adopted.result, adopted.dispose);
   } finally {
     boundaryStart.remove();

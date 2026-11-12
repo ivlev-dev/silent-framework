@@ -107,6 +107,7 @@ function tryAdoptPartsPlanByPath(
   plan: TemplatePlan,
   holes: (Comment | undefined)[],
   attrs: (Element | undefined)[],
+  stripText: boolean,
 ): boolean {
   if (plan.roots === 1 && plan.holes.length === 1 && plan.attrs.length === 0) {
     const entry = plan.holes[0];
@@ -178,7 +179,7 @@ function tryAdoptPartsPlanByPath(
       return false;
     }
     element.removeAttribute(ATTR_MARKER + index);
-    if (element.hasAttribute(TEXT_MARKER)) {
+    if (stripText && element.hasAttribute(TEXT_MARKER)) {
       element.removeAttribute(TEXT_MARKER);
     }
   }
@@ -331,8 +332,9 @@ function tryAdoptPartsPlan(
   plan: TemplatePlan,
   holes: (Comment | undefined)[],
   attrs: (Element | undefined)[],
+  stripText: boolean,
 ): boolean {
-  if (tryAdoptPartsPlanByPath(root, plan, holes, attrs)) {
+  if (tryAdoptPartsPlanByPath(root, plan, holes, attrs, stripText)) {
     return true;
   }
   const adopted = tryAdoptPartsPlanByTrie(root, plan);
@@ -360,7 +362,15 @@ export function adoptPartsPlan(
     plan.holes.length === 0 ? NO_HOLES : new Array<Comment>(plan.holes.length);
   const attrs: Element[] =
     plan.attrs.length === 0 ? NO_ATTRIBUTES : new Array<Element>(plan.attrs.length);
-  if (tryAdoptPartsPlan(root, plan, holes, attrs)) {
+  let stripText = false;
+  for (let index = 0; index < plan.strips.length; index += 1) {
+    const names = plan.strips[index]?.names;
+    if (names !== undefined && names.includes(TEXT_MARKER)) {
+      stripText = true;
+      break;
+    }
+  }
+  if (tryAdoptPartsPlan(root, plan, holes, attrs, stripText)) {
     out.holes = holes;
     out.attrs = attrs;
     return;
