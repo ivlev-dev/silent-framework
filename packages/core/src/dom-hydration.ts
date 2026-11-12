@@ -101,6 +101,8 @@ function trieFor(plan: TemplatePlan): TrieNode {
   return trie;
 }
 
+const HOLE_ZERO = HOLE_MARKER + "0";
+
 function tryAdoptPartsPlanByPath(
   root: Node,
   plan: TemplatePlan,
@@ -121,7 +123,7 @@ function tryAdoptPartsPlanByPath(
         if (
           next !== null &&
           next.nodeType === Node.COMMENT_NODE &&
-          markerIndex((next as Comment).data, HOLE_MARKER) === 0
+          (next as Comment).data === HOLE_ZERO
         ) {
           holes[0] = next as Comment;
           return true;

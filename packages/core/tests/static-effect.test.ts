@@ -34,6 +34,30 @@ describe("effectUnlessStatic", () => {
     expect(calls).toBe(2);
   });
 
+  it("поддерживает вложенные пробные проходы", () => {
+    const [outer, setOuter] = createSignal("a");
+    const [inner, setInner] = createSignal("x");
+    const seen: string[] = [];
+    const dispose = effectUnlessStatic(() => {
+      seen.push(outer());
+      effectUnlessStatic(() => {
+        seen.push(inner());
+      });
+    });
+    expect(dispose).not.toBeNull();
+    expect(seen).toEqual(["a", "x"]);
+    setInner("y");
+    flushSync();
+    expect(seen).toEqual(["a", "x", "y"]);
+    setOuter("b");
+    flushSync();
+    expect(seen).toEqual(["a", "x", "y", "b", "y"]);
+    dispose?.();
+    setInner("z");
+    flushSync();
+    expect(seen).toEqual(["a", "x", "y", "b", "y"]);
+  });
+
   it("переносит вложенную реактивную подписку в владельца эффекта", () => {
     const [value, setValue] = createSignal("a");
     const node = document.createTextNode("a");

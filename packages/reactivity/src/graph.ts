@@ -599,18 +599,50 @@ interface ProbeTracker {
   disposed: boolean;
 }
 
+const trackerPool: ProbeTracker[] = [];
+const holderPool: OwnerNode[] = [];
+let probeDepth = 0;
+
+function acquireTracker(): ProbeTracker {
+  let tracker = trackerPool[probeDepth];
+  if (tracker === undefined) {
+    tracker = { nextDeps: null, nextDepVersions: null, disposed: false };
+    trackerPool.push(tracker);
+  } else {
+    tracker.nextDeps = null;
+    tracker.nextDepVersions = null;
+    tracker.disposed = false;
+  }
+  probeDepth += 1;
+  return tracker;
+}
+
+function acquireHolder(): OwnerNode {
+  let holder = holderPool[probeDepth];
+  if (holder === undefined) {
+    holder = {
+      disposed: false,
+      parent: null,
+      children: null,
+      cleanups: null,
+      computation: null,
+    };
+    holderPool.push(holder);
+  } else {
+    holder.disposed = false;
+  }
+  return holder;
+}
+
 function createRenderEffectUnlessStatic(fn: () => void): boolean {
-  const tracker: ProbeTracker = {
-    nextDeps: null,
-    nextDepVersions: null,
-    disposed: false,
-  };
+  const tracker = acquireTracker();
   const previous = currentListener;
   currentListener = tracker as unknown as ComputationNode;
   try {
     fn();
   } finally {
     currentListener = previous;
+    probeDepth -= 1;
   }
   const deps = tracker.nextDeps;
   const versions = tracker.nextDepVersions;
@@ -633,18 +665,8 @@ function createEffectUnlessStatic(fn: () => void): (() => void) | null {
   if (parentOwner !== null && parentOwner.disposed) {
     return null;
   }
-  const holder: OwnerNode = {
-    disposed: false,
-    parent: null,
-    children: null,
-    cleanups: null,
-    computation: null,
-  };
-  const tracker: ProbeTracker = {
-    nextDeps: null,
-    nextDepVersions: null,
-    disposed: false,
-  };
+  const holder = acquireHolder();
+  const tracker = acquireTracker();
   const previousListener = currentListener;
   currentListener = tracker as unknown as ComputationNode;
   currentOwner = holder;
@@ -653,11 +675,13 @@ function createEffectUnlessStatic(fn: () => void): (() => void) | null {
   } catch (error) {
     currentListener = previousListener;
     currentOwner = parentOwner;
+    probeDepth -= 1;
     disposeOwner(holder);
     throw error;
   }
   currentListener = previousListener;
   currentOwner = parentOwner;
+  probeDepth -= 1;
   const deps = tracker.nextDeps;
   const versions = tracker.nextDepVersions;
   const tracked = deps !== null && deps.length > 0 && versions !== null;
