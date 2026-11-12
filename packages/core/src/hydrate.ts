@@ -30,6 +30,7 @@ import type { MountHandle, MountOptions } from "./mount.js";
 import type { AnyComponent } from "./types.js";
 
 let runtimes: Promise<void> | null = null;
+let runtimesReady = false;
 
 async function settle(): Promise<void> {
   flushSync();
@@ -50,6 +51,17 @@ async function finish(ready: Promise<void>): Promise<void> {
   flushSync();
 }
 
+function complete(ready: Promise<void>): Promise<void> | null {
+  if (ready !== RESOLVED_READY) {
+    return finish(ready);
+  }
+  if (hasPendingWork()) {
+    return settle();
+  }
+  flushSync();
+  return null;
+}
+
 function ensureRuntimes(): Promise<void> {
   runtimes ??= (async () => {
     const [hydration, dom] = await Promise.all([
@@ -58,6 +70,7 @@ function ensureRuntimes(): Promise<void> {
     ]);
     hydration.installHydrationRuntime();
     dom.installDomHydrationRuntime();
+    runtimesReady = true;
   })();
   return runtimes;
 }
@@ -87,7 +100,10 @@ async function hydrateWith(
           { start: boundaryStart, end: boundaryEnd, cursor: boundaryStart.nextSibling },
           () => createRootResult(app, options, runtimeOptions, create),
         );
-        await finish(adopted.result.ready);
+        const pending = complete(adopted.result.ready);
+        if (pending !== null) {
+          await pending;
+        }
       } catch (error) {
         if (!(error instanceof HydrationMismatchError)) {
           throw error;
@@ -106,7 +122,10 @@ async function hydrateWith(
       const fresh = withoutHydration(() =>
         createRootResult(app, options, runtimeOptions, create),
       );
-      await finish(fresh.result.ready);
+      const pending = complete(fresh.result.ready);
+      if (pending !== null) {
+        await pending;
+      }
       element.replaceChildren(fresh.result.node);
       return handleFor(fresh.result, fresh.dispose);
     }
@@ -119,13 +138,21 @@ async function hydrateWith(
   }
 }
 
+const defaultOnMismatch = (error: HydrationMismatchError): void => {
+  console.warn(`[silent] гидрация: ${error.message}`);
+};
+
+const EMPTY_RUNTIME_OPTIONS: RuntimeOptions = {};
+
 export async function hydrate(
   target: Element | string,
   app: AnyComponent,
   options: MountOptions = {},
 ): Promise<MountHandle> {
   const element = resolveTarget(target);
-  await ensureRuntimes();
+  if (!runtimesReady) {
+    await ensureRuntimes();
+  }
 
   if (options.preloader !== undefined) {
     setDefaultPreloader(options.preloader);
@@ -134,17 +161,18 @@ export async function hydrate(
     setErrorHandler(options.onError);
   }
 
-  const runtimeOptions: RuntimeOptions = {
-    ...(options.container !== undefined ? { container: options.container } : {}),
-    ...(options.preloader !== undefined ? { preloader: options.preloader } : {}),
-    ...(options.onError !== undefined ? { onError: options.onError } : {}),
-  };
+  const runtimeOptions: RuntimeOptions =
+    options.container === undefined &&
+    options.preloader === undefined &&
+    options.onError === undefined
+      ? EMPTY_RUNTIME_OPTIONS
+      : {
+          ...(options.container !== undefined ? { container: options.container } : {}),
+          ...(options.preloader !== undefined ? { preloader: options.preloader } : {}),
+          ...(options.onError !== undefined ? { onError: options.onError } : {}),
+        };
 
-  const onMismatch =
-    options.onMismatch ??
-    ((error: HydrationMismatchError) => {
-      console.warn(`[silent] гидрация: ${error.message}`);
-    });
+  const onMismatch = options.onMismatch ?? defaultOnMismatch;
 
   const factory = componentFactoryFor(app);
   let create: ComponentFactory = factory instanceof Promise ? await factory : factory;

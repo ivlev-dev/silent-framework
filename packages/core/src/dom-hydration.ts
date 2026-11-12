@@ -19,7 +19,6 @@ import {
   INSERT_START,
   collectBetween,
   findInsertWindow,
-  isMarker,
   mismatch,
   withWindow,
   type HydrationWindow,
@@ -464,10 +463,14 @@ export function settleNodes(end: Node | null, value: unknown): void {
   if (parent === null) {
     return;
   }
-  for (const node of collectNodes(value as Children)) {
-    if (node.parentNode !== parent) {
-      parent.insertBefore(node, end);
+  if (value instanceof DocumentFragment) {
+    if (value.firstChild !== null) {
+      parent.insertBefore(value, end);
     }
+    return;
+  }
+  if (value.parentNode !== parent) {
+    parent.insertBefore(value, end);
   }
 }
 
@@ -576,7 +579,11 @@ export function insertHydrated(
   marker: Node | null,
 ): void {
   const previous = marker === null ? parent.lastChild : marker.previousSibling;
-  if (!isMarker(previous, INSERT_END)) {
+  if (
+    previous === null ||
+    previous.nodeType !== Node.COMMENT_NODE ||
+    (previous as Comment).data !== INSERT_END
+  ) {
     textHydrated(parent, accessor, marker, previous instanceof Text ? previous : null);
     return;
   }

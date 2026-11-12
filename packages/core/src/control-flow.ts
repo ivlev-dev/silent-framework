@@ -25,7 +25,6 @@ import {
   collectBetween,
   currentWindow,
   isHydrating,
-  isItemMarker,
   isMarker,
   mismatch,
   withWindow,
@@ -351,13 +350,13 @@ export function For<T>(props: ForProps<T>): Node {
     let position = 0;
     runWithOwner(parentOwner, () => {
       while (cursor !== null && cursor !== endAnchor) {
-        if (!isItemMarker(cursor)) {
+        if (cursor.nodeType !== Node.COMMENT_NODE || (cursor as Comment).data !== ITEM) {
           return mismatch("ожидался маркер элемента списка");
         }
-        const anchor = cursor;
+        const anchor = cursor as Comment;
         let node = cursor.nextSibling;
         while (node !== null && node !== endAnchor) {
-          if (node.nodeType === Node.COMMENT_NODE && isItemMarker(node)) {
+          if (node.nodeType === Node.COMMENT_NODE && (node as Comment).data === ITEM) {
             break;
           }
           node = node.nextSibling;
