@@ -4,12 +4,36 @@ import { homedir } from "node:os";
 import { extname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium } from "playwright-core";
+import { build } from "vite";
 
 const benchRoot = join(import.meta.dirname, "..");
 const cacheRoot = join(benchRoot, "node_modules", ".silent-bench", "browser");
 const APP = process.argv[2] ?? "silent";
+const appRoot = join(benchRoot, "browser", APP);
 const clientDir = join(cacheRoot, APP, "client");
-const ssrFile = join(cacheRoot, APP, "ssr", "entry-server.js");
+const ssrDir = join(cacheRoot, APP, "ssr");
+const ssrFile = join(ssrDir, "entry-server.js");
+const REBUILD = !process.argv.includes("--no-build");
+
+async function buildApp(): Promise<void> {
+  const configFile = join(appRoot, "vite.config.ts");
+  await build({
+    root: appRoot,
+    configFile,
+    logLevel: "silent",
+    build: { outDir: clientDir, emptyOutDir: true },
+  });
+  await build({
+    root: appRoot,
+    configFile,
+    logLevel: "silent",
+    build: { ssr: "src/entry-server.tsx", outDir: ssrDir, emptyOutDir: true },
+  });
+}
+
+if (REBUILD) {
+  await buildApp();
+}
 
 const TYPES = new Map([
   [".html", "text/html; charset=utf-8"],
