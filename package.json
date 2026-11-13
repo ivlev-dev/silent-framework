@@ -19,6 +19,7 @@
     "bench:build": "node scripts/bench-cpus.mjs pnpm --filter @ivlev-dev/silent-bench exec tsx src/build-bench.ts",
     "bench:hydrate": "node scripts/bench-cpus.mjs pnpm --filter @ivlev-dev/silent-bench exec tsx --conditions=browser src/hydrate-bench.ts",
     "bench:browser": "node scripts/bench-cpus.mjs pnpm --filter @ivlev-dev/silent-bench exec tsx src/browser-bench.ts",
+    "bench:alloc": "node scripts/bench-cpus.mjs pnpm --filter @ivlev-dev/silent-bench exec tsx src/browser-alloc.ts",
     "bench:vm": "sh scripts/bench-vm.sh",
     "bench:profile": "node scripts/bench-cpus.mjs pnpm --filter @ivlev-dev/silent-bench exec tsx src/browser-profile.ts",
     "test:e2e": "node scripts/e2e.mjs",

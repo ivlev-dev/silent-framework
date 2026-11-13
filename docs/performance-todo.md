@@ -152,7 +152,8 @@
 - [x] CI-порог регрессии: `scripts/bench-guard.mjs` (npm `bench:guard`) запускает выбранные наборы с `--json`, сравнивает с `scripts/bench-baseline.json` и падает при росте `start gzip` > 0.3 KB, `start JS` > 2%, warm build > 40%, падении `silent/solid` ratio > 15%; падение ops/s — предупреждение без `--strict`. Baseline обновляется `pnpm bench:guard --update`. В CI добавлены шаги `--only=build` и `--only=browser`.
 - [x] Все бенчмарки ограничены четырьмя CPU через `scripts/bench-cpus.mjs` (`SILENT_BENCH_CPUS`, по умолчанию `0-3`, отключается `SILENT_BENCH_CPUS=off`).
 - [x] Изолированный стенд `pnpm bench:vm` (`scripts/bench-vm.sh`): cgroup v2 cpuset-партиция с эксклюзивным ядром на хосте, `vng` (virtme-ng) с одним vCPU, закреплённым через `taskset`, и собственный cgroup внутри VM. Убирает шум планировщика на ядре и разброс между прогонами (0.53–0.70× против 0.78–1.11× на хосте), но абсолютные числа всё равно зависят от фоновой нагрузки хоста. `bench:guard` остаётся на четырёх CPU: в CI нет root для cpuset-партиции.
-- [x] Скрипт CPU-профиля с топом функций.
+- [x] Скрипт CPU-профиля с топом функций (`pnpm bench:profile silent`).
+- [x] Профиль аллокаций `pnpm bench:alloc silent` (CDP `HeapProfiler.startSampling`, 200 гидраций): на приложении с `For` больше всего аллоцируют per-row состояние списка (~20%), анонимные замыкания приложения (~11%), `createEffectUnlessStatic` (~7%), `insertHydrated` (~7%), `createOwnerNode`/`createEffectNode` (~7%) и `adoptPartsPlan` (~2%).
 
 Профиль Chromium (`pnpm bench:profile silent`): на одну строку приходится ~16 µs, GC 14–15%, дальше идут `significantChildren*` (~8%), `tryAdoptPartsPlanByPath` (~5%), `hydrateWith` (~5%), `removeAttribute` и обработчики событий. После переноса probe-эффектов в гидрационный чанк и быстрых путей обхода фиксированная часть сократилась с 18.4 до 16.1 µs.
 
