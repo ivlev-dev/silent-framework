@@ -55,14 +55,24 @@ function collect() {
   try {
     if (only.has("build")) {
       const data = run("build", join(directory, "build.json"), "bench:build");
+      const solidColdMs = data.solid?.coldMs;
+      const solidWarmMs = data.solid?.warmMs;
       metrics.build = {
         startJsKb: data.silent.startJsKb,
         startGzipKb: data.silent.startGzipKb,
         warmMs: data.silent.warmMs,
         coldMs: data.silent.coldMs,
         vmStartGzipKb: data.silentVm.startGzipKb,
-        solidColdMs: data.solid?.coldMs,
-        solidWarmMs: data.solid?.warmMs,
+        solidColdMs,
+        solidWarmMs,
+        coldRatio:
+          typeof solidColdMs === "number" && solidColdMs > 0
+            ? data.silent.coldMs / solidColdMs
+            : undefined,
+        warmRatio:
+          typeof solidWarmMs === "number" && solidWarmMs > 0
+            ? data.silent.warmMs / solidWarmMs
+            : undefined,
       };
     }
     if (only.has("browser")) {
