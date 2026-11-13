@@ -637,8 +637,26 @@ function createEffectUnlessStatic(fn: () => void): (() => void) | null {
   const deps = tracker.nextDeps;
   const versions = tracker.nextDepVersions;
   const tracked = deps !== null && deps.length > 0 && versions !== null;
-  if (!tracked && holder.children === null && holder.cleanups === null) {
-    return null;
+  if (!tracked) {
+    const children = holder.children;
+    const cleanups = holder.cleanups;
+    if (children === null && cleanups === null) {
+      return null;
+    }
+    const owner = createOwnerNode(parentOwner);
+    if (children !== null) {
+      const target = (owner.children ??= new Set<OwnerNode>());
+      for (const child of children) {
+        child.parent = owner;
+        target.add(child);
+      }
+      holder.children = null;
+    }
+    if (cleanups !== null) {
+      owner.cleanups = cleanups;
+      holder.cleanups = null;
+    }
+    return () => disposeOwner(owner);
   }
   const node = createEffectNode("renderEffect", fn);
   node.initialized = true;
