@@ -83,10 +83,14 @@ export function currentWindow(): HydrationWindow | null {
   return windows.length === 0 ? null : windows[windows.length - 1] ?? null;
 }
 
-export function withWindow<T>(window: HydrationWindow, fn: () => T): T {
+export function withWindow<T, A extends unknown[]>(
+  window: HydrationWindow,
+  fn: (...args: A) => T,
+  ...args: A
+): T {
   windows.push(window);
   try {
-    return fn();
+    return fn(...args);
   } finally {
     windows.pop();
   }

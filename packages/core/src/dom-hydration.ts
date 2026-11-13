@@ -620,7 +620,7 @@ export function insertHydrated(
   createRenderEffect(() => {
     if (!initialized) {
       initialized = true;
-      const value = resolveValue(withWindow(window, () => accessor()));
+      const value = resolveValue(withWindow(window, accessor));
       settleNodes(window.end, value);
       if (
         typeof value === "string" ||

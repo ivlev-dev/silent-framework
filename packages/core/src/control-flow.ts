@@ -444,7 +444,7 @@ export function For<T>(props: ForProps<T>): Node {
           end: itemEnd as Node,
           cursor: start.nextSibling,
         };
-        const value = withWindow(window, () => props.children(item, index));
+        const value = withWindow(window, props.children, item, index);
         settleNodes(itemEnd, value);
         if (window.cursor !== itemEnd) {
           mismatch("содержимое элемента списка не совпало");
@@ -782,9 +782,7 @@ export function Show(props: ShowProps): Node {
           end: anchor,
           cursor: outer.start.nextSibling,
         };
-        const value = withWindow(window, () =>
-          resolve(active ? props.children : props.fallback),
-        );
+        const value = withWindow(window, resolve, active ? props.children : props.fallback);
         settleNodes(anchor, value);
         if (window.cursor !== anchor) {
           mismatch("содержимое Show не совпало");

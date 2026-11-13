@@ -277,7 +277,7 @@ export function Index<T>(props: IndexProps<T>): Node {
           end: itemEnd,
           cursor: start.nextSibling,
         };
-        const rendered = withWindow(window, () => props.children(item, index));
+        const rendered = withWindow(window, props.children, item, index);
         if (outer !== null) {
           outer.cursor = window.cursor;
         }

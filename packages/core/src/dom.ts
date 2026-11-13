@@ -1614,7 +1614,7 @@ export function fragment(accessor: () => unknown): Node {
     createRenderEffect(() => {
       if (!initialized) {
         initialized = true;
-        const value = withWindow(window, () => accessor());
+        const value = withWindow(window, accessor);
         settleNodes(anchor, value);
         if (window.cursor !== anchor) {
           mismatch("содержимое fragment не совпало");
