@@ -299,8 +299,12 @@ silent({
 
 | Сценарий | ops/s | к Solid |
 | --- | ---: | ---: |
-| Silent hydrate | 8 746 | 0.32x |
-| Solid hydrate | 27 372 | 1.00x |
+| Silent hydrate (хост, 4 CPU) | 22 189 | 0.83x |
+| Solid hydrate (хост, 4 CPU) | 26 810 | 1.00x |
+| Silent hydrate (`bench:vm`, 1 изолированный vCPU) | 6 870–10 943 | 0.53–0.70x |
+| Solid hydrate (`bench:vm`, 1 изолированный vCPU) | 9 844–19 380 | 1.00x |
+
+`pnpm bench:vm` поднимает `vng` (virtme-ng) с одним vCPU, закреплённым за изолированным ядром хоста (cgroup v2 cpuset-партиция), и внутри VM запускает ту же команду в собственном cgroup. Абсолютные числа зависят от фоновой нагрузки хоста (память, I/O, частота), поэтому сравнивать можно только прогоны подряд; на одном ядре разрыв больше, потому что маркирующий GC конкурирует с главным потоком за одно ядро, а Silent аллоцирует заметно больше Solid.
 
 Гидрация Silent требует материализации клиентского дерева и только потом переиспользует серверные узлы; Solid привязывается к готовым узлам по `data-hk`. Разбор SSR-разметки у Silent дороже (больше маркеров) и в ops/s не входит.
 
@@ -308,9 +312,9 @@ silent({
 
 | Приложение | cold, ms | warm, ms | start JS, KB | start gzip, KB | all JS, KB | CSS, KB |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Silent (`view: false`) | 56 | 27 | 23.2 | 8.3 | 23.2 | 0.2 |
-| Silent (default, VM) | 32 | 26 | 26.4 | 9.5 | 38.8 | 0.2 |
-| Solid | 147 | 40 | 12.6 | 5.1 | 12.6 | 0.2 |
+| Silent (`view: false`) | 64 | 35 | 27.4 | 9.2 | 27.4 | 0.2 |
+| Silent (default, VM) | 39 | 34 | 31.2 | 10.7 | 44.6 | 0.2 |
+| Solid | 136 | 34 | 12.6 | 5.1 | 12.6 | 0.2 |
 
 У Silent с VM `all JS` включает lazy-чанк `component-view` (8.98 KB / 3.66 KB gzip), который загружается только при наличии ViewModel. При `view: false` lazy-чанк и `vite/preload-helper` не генерируются.
 
@@ -345,6 +349,7 @@ pnpm api:check
 pnpm dev
 pnpm bench
 pnpm bench:ssr
+pnpm bench:vm
 pnpm test:e2e
 pnpm test:ssr
 pnpm install:check
