@@ -2,6 +2,7 @@ import { container as rootContainer } from "@ivlev-dev/silent-di";
 import type { Container } from "@ivlev-dev/silent-di";
 import {
   createComponent,
+  getReady,
   hasPendingWork,
   setMetadataCollector,
   setServerBackend,
@@ -14,7 +15,7 @@ import {
 } from "@ivlev-dev/silent-core";
 import { createRoot, flushSync } from "@ivlev-dev/silent-reactivity";
 import { createDocument, installDomGlobals } from "./dom/document.js";
-import { pushNode, serializeNode } from "./dom/serializer.js";
+import { acquireParts, pushNode, releaseParts, serializeNode } from "./dom/serializer.js";
 import { createServerBackend } from "./string-backend.js";
 import type { DomNode } from "./dom/types.js";
 
@@ -46,18 +47,22 @@ function serializeHead(nodes: readonly Element[]): string {
   if (nodes.length === 0) {
     return "";
   }
-  const parts: string[] = [];
-  for (let index = 0; index < nodes.length; index += 1) {
-    const node = nodes[index];
-    if (node !== undefined) {
-      pushNode(node as unknown as DomNode, parts);
+  const parts = acquireParts();
+  try {
+    for (let index = 0; index < nodes.length; index += 1) {
+      const node = nodes[index];
+      if (node !== undefined) {
+        pushNode(node as unknown as DomNode, parts);
+      }
     }
+    const only = parts[0];
+    if (only === undefined) {
+      return "";
+    }
+    return parts.length === 1 ? only : parts.join("");
+  } finally {
+    releaseParts(parts);
   }
-  const only = parts[0];
-  if (only === undefined) {
-    return "";
-  }
-  return parts.length === 1 ? only : parts.join("");
 }
 
 function enqueue<T>(task: () => Promise<T>): Promise<T> {
@@ -123,14 +128,22 @@ async function renderOnce(app: AnyComponent, options: RenderOptions): Promise<Re
       throw new Error("Не удалось создать корневой компонент");
     }
 
-    await result.ready;
+    const ready = result.ready;
+    const synchronous = ready === getReady(result.node);
+    const idleAfterCreate = !hasPendingWork();
+
+    if (!synchronous) {
+      await ready;
+    }
     flushSync();
-    while (hasPendingWork()) {
-      await whenIdle();
+    if (!synchronous || !idleAfterCreate || hasPendingWork()) {
+      while (hasPendingWork()) {
+        await whenIdle();
+        flushSync();
+      }
+      await Promise.resolve();
       flushSync();
     }
-    await Promise.resolve();
-    flushSync();
 
     if (failed) {
       throw failure;

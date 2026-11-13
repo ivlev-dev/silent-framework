@@ -24,6 +24,27 @@ const ESCAPE_ATTRIBUTE = /[&<>"]/;
 const REPLACE_TEXT = /[&<>]/g;
 const REPLACE_ATTRIBUTE = /[&<>"]/g;
 
+const partsPool: string[][] = [];
+let partsDepth = 0;
+
+export function acquireParts(): string[] {
+  const depth = partsDepth;
+  partsDepth += 1;
+  const cached = partsPool[depth];
+  if (cached === undefined) {
+    const created: string[] = [];
+    partsPool[depth] = created;
+    return created;
+  }
+  cached.length = 0;
+  return cached;
+}
+
+export function releaseParts(parts: string[]): void {
+  parts.length = 0;
+  partsDepth -= 1;
+}
+
 function replaceText(char: string): string {
   if (char === "&") {
     return "&amp;";
@@ -129,13 +150,21 @@ export function serializeNode(node: DomNode): string {
   if (typeof render === "function") {
     return render.call(node);
   }
-  const parts: string[] = [];
-  pushNode(node, parts);
-  return parts.join("");
+  const parts = acquireParts();
+  try {
+    pushNode(node, parts);
+    return parts.join("");
+  } finally {
+    releaseParts(parts);
+  }
 }
 
 export function serializeChildren(node: DomNode): string {
-  const parts: string[] = [];
-  pushChildren(node, parts);
-  return parts.join("");
+  const parts = acquireParts();
+  try {
+    pushChildren(node, parts);
+    return parts.join("");
+  } finally {
+    releaseParts(parts);
+  }
 }
