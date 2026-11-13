@@ -54,6 +54,52 @@ interface ItemState<T> {
 
 const NO_NODES: Node[] = [];
 
+interface MutableWindow {
+  start: Node;
+  end: Node;
+  cursor: Node | null;
+}
+
+class KeyedState<T> implements ItemState<T> {
+  item: T;
+  anchor: Comment | null;
+  nodes: Node[];
+  nodesEnd: Node | null;
+  cleanup: () => void = noopCleanup;
+  disposed = false;
+  previousIndex = -1;
+  generation = -1;
+  index: Accessor<number>;
+  private handle: [Accessor<number>, Setter<number>] | null = null;
+  private position: number;
+
+  constructor(item: T, anchor: Comment | null, itemEnd: Node | null, position: number) {
+    this.item = item;
+    this.anchor = anchor;
+    this.nodes = itemEnd === null ? [] : NO_NODES;
+    this.nodesEnd = itemEnd;
+    this.position = position;
+    this.index = () => {
+      let handle = this.handle;
+      if (handle === null) {
+        handle = createSignal(this.position);
+        this.handle = handle;
+      }
+      return handle[0]();
+    };
+  }
+
+  setIndex(value: number | ((previous: number) => number)): number {
+    const next: number = typeof value === "function" ? value(this.position) : value;
+    this.position = next;
+    const handle = this.handle;
+    if (handle !== null) {
+      handle[1](next);
+    }
+    return next;
+  }
+}
+
 export interface ForProps<T> {
   each: readonly T[] | (() => readonly T[]);
   children: (item: T, index: () => number) => Node;
@@ -396,6 +442,8 @@ export function For<T>(props: ForProps<T>): Node {
     }
   };
 
+  let runWindow: MutableWindow | null = null;
+
   const makeState = (
     item: T,
     anchor: Comment | null,
@@ -403,55 +451,31 @@ export function For<T>(props: ForProps<T>): Node {
     position: number,
     mountParent: Node | null = null,
   ): ItemState<T> => {
-    let handle: [Accessor<number>, Setter<number>] | null = null;
-    let current = position;
+    const state = new KeyedState<T>(item, anchor, itemEnd, position);
     let initialMount: Node | null = mountParent;
-    const index: Accessor<number> = () => {
-      if (handle === null) {
-        handle = createSignal(current);
-      }
-      return handle[0]();
-    };
-    const setIndex: Setter<number> = (value) => {
-      const next: number = typeof value === "function" ? value(current) : value;
-      current = next;
-      if (handle !== null) {
-        handle[1](next);
-      }
-      return next;
-    };
-
-    const state: ItemState<T> = {
-      item,
-      index,
-      setIndex,
-      anchor,
-      nodes: itemEnd === null ? [] : NO_NODES,
-      nodesEnd: itemEnd,
-      cleanup: () => {},
-      disposed: false,
-      previousIndex: -1,
-      generation: -1,
-    };
-
     let seeded = itemEnd !== null;
     const run = (): void => {
       if (seeded) {
         seeded = false;
         const start = anchor as Comment;
-        const window = {
-          start,
-          end: itemEnd as Node,
-          cursor: start.nextSibling,
-        };
-        const value = withWindow(window, props.children, item, index);
-        settleNodes(itemEnd, value);
-        if (window.cursor !== itemEnd) {
+        const end = itemEnd as Node;
+        let window = runWindow;
+        if (window === null) {
+          window = { start, end, cursor: start.nextSibling };
+          runWindow = window;
+        } else {
+          window.start = start;
+          window.end = end;
+          window.cursor = start.nextSibling;
+        }
+        const value = withWindow(window, props.children, item, state.index);
+        settleNodes(end, value);
+        if (window.cursor !== end) {
           mismatch("содержимое элемента списка не совпало");
         }
         return;
       }
-      renderItem(state, props.children(item, index), initialMount);
+      renderItem(state, props.children(item, state.index), initialMount);
       initialMount = null;
     };
     state.cleanup = hydrating

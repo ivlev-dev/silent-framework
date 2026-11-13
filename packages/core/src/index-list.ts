@@ -53,6 +53,68 @@ interface IndexState<T> {
   disposed: boolean;
 }
 
+interface MutableWindow {
+  start: Node;
+  end: Node;
+  cursor: Node | null;
+}
+
+class IndexedState<T> implements IndexState<T> {
+  anchor: Comment | null;
+  nodes: Node[];
+  cleanup: () => void = noopCleanup;
+  disposed = false;
+  item: Accessor<T>;
+  index: Accessor<number>;
+  private itemHandle: [Accessor<T>, Setter<T>] | null = null;
+  private indexHandle: [Accessor<number>, Setter<number>] | null = null;
+  private currentItem: T;
+  private position: number;
+
+  constructor(value: T, anchor: Comment | null, nodes: Node[], position: number) {
+    this.anchor = anchor;
+    this.nodes = nodes;
+    this.currentItem = value;
+    this.position = position;
+    this.item = () => {
+      let handle = this.itemHandle;
+      if (handle === null) {
+        handle = createSignal(this.currentItem);
+        this.itemHandle = handle;
+      }
+      return handle[0]();
+    };
+    this.index = () => {
+      let handle = this.indexHandle;
+      if (handle === null) {
+        handle = createSignal(this.position);
+        this.indexHandle = handle;
+      }
+      return handle[0]();
+    };
+  }
+
+  setItem(value: T | ((previous: T) => T)): T {
+    const next: T = typeof value === "function" ? (value as (previous: T) => T)(this.currentItem) : value;
+    this.currentItem = next;
+    const handle = this.itemHandle;
+    if (handle !== null) {
+      handle[1](next);
+    }
+    return next;
+  }
+
+  setIndex(value: number | ((previous: number) => number)): number {
+    const next: number = typeof value === "function" ? value(this.position) : value;
+    this.position = next;
+    const handle = this.indexHandle;
+    if (handle !== null) {
+      handle[1](next);
+    }
+    return next;
+  }
+}
+
 export interface IndexProps<T> {
   each: readonly T[] | (() => readonly T[]);
   children: (item: Accessor<T>, index: Accessor<number>) => Node;
@@ -213,6 +275,8 @@ export function Index<T>(props: IndexProps<T>): Node {
     fallbackMount.clear();
   };
 
+  let runWindow: MutableWindow | null = null;
+
   const makeState = (
     value: T,
     anchor: Comment | null,
@@ -221,63 +285,21 @@ export function Index<T>(props: IndexProps<T>): Node {
     position: number,
     mountParent: Node | null = null,
   ): IndexState<T> => {
-    let itemHandle: [Accessor<T>, Setter<T>] | null = null;
-    let currentItem = value;
-    const item: Accessor<T> = () => {
-      if (itemHandle === null) {
-        itemHandle = createSignal(currentItem);
-      }
-      return itemHandle[0]();
-    };
-    const setItem: Setter<T> = (next) => {
-      const resolved: T =
-        typeof next === "function" ? (next as (previous: T) => T)(currentItem) : next;
-      currentItem = resolved;
-      if (itemHandle !== null) {
-        itemHandle[1](resolved);
-      }
-      return resolved;
-    };
-
-    let indexHandle: [Accessor<number>, Setter<number>] | null = null;
-    let currentIndex = position;
-    const index: Accessor<number> = () => {
-      if (indexHandle === null) {
-        indexHandle = createSignal(currentIndex);
-      }
-      return indexHandle[0]();
-    };
-    const setIndex: Setter<number> = (next) => {
-      const resolved: number =
-        typeof next === "function" ? (next as (previous: number) => number)(currentIndex) : next;
-      currentIndex = resolved;
-      if (indexHandle !== null) {
-        indexHandle[1](resolved);
-      }
-      return resolved;
-    };
-
-    const state: IndexState<T> = {
-      item,
-      setItem,
-      index,
-      setIndex,
-      anchor,
-      nodes,
-      cleanup: () => {},
-      disposed: false,
-    };
-
+    const state = new IndexedState<T>(value, anchor, nodes, position);
     let initialMount = mountParent;
     state.cleanup = createEffectUnlessStatic(() => {
       if (itemEnd !== null) {
         const start = anchor as Comment;
-        const window = {
-          start,
-          end: itemEnd,
-          cursor: start.nextSibling,
-        };
-        const rendered = withWindow(window, props.children, item, index);
+        let window = runWindow;
+        if (window === null) {
+          window = { start, end: itemEnd, cursor: start.nextSibling };
+          runWindow = window;
+        } else {
+          window.start = start;
+          window.end = itemEnd;
+          window.cursor = start.nextSibling;
+        }
+        const rendered = withWindow(window, props.children, state.item, state.index);
         if (outer !== null) {
           outer.cursor = window.cursor;
         }
@@ -308,7 +330,7 @@ export function Index<T>(props: IndexProps<T>): Node {
       if (parent === null) {
         return;
       }
-      const rendered = props.children(item, index);
+      const rendered = props.children(state.item, state.index);
       let placed: Node[];
       if (rendered instanceof Node && !(rendered instanceof DocumentFragment)) {
         const kept = extractMetadataNode(rendered);
