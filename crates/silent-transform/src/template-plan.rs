@@ -6,6 +6,7 @@ use swc_core::ecma::ast::{
 };
 
 const ATTR_MARKER: &str = "data-silent-a-";
+const HOLE_MARKER: &str = "silent-hole-";
 const METADATA_TAGS: [&str; 3] = ["title", "meta", "link"];
 const RISKY_TAGS: [&str; 22] = [
     "table", "thead", "tbody", "tfoot", "tr", "td", "th", "caption", "colgroup", "col", "select",
@@ -43,10 +44,11 @@ impl PartPath {
         }
     }
 
-    fn into_expr(self) -> Expr {
+    fn into_expr(self, marker: &str, index: usize) -> Expr {
         object_expr(vec![
             ("path", number_array(self.path)),
             ("counts", number_array(self.counts)),
+            ("key", string_expr(&format!("{marker}{index}"))),
         ])
     }
 }
@@ -138,7 +140,7 @@ impl TemplatePlan {
                 array_expr(
                     holes
                         .into_iter()
-                        .map(|(_, entry)| entry.into_expr())
+                        .map(|(index, entry)| entry.into_expr(HOLE_MARKER, index))
                         .collect(),
                 ),
             ),
@@ -147,7 +149,7 @@ impl TemplatePlan {
                 array_expr(
                     attrs
                         .into_iter()
-                        .map(|(_, entry)| entry.into_expr())
+                        .map(|(index, entry)| entry.into_expr(ATTR_MARKER, index))
                         .collect(),
                 ),
             ),

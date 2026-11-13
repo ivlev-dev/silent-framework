@@ -51,7 +51,7 @@ fn hoists_templates_across_components_in_one_module() {
         Index::default(),
     );
     assert_eq!(code.matches("const _tmpl$").count(), 1, "{code}");
-    assert_eq!(code.matches("silent-hole-0").count(), 1, "{code}");
+    assert_eq!(code.matches("<!--silent-hole-0-->").count(), 1, "{code}");
 }
 
 #[test]

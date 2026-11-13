@@ -102,6 +102,18 @@ function trieFor(plan: TemplatePlan): TrieNode {
 
 const HOLE_ZERO = HOLE_MARKER + "0";
 
+function holeMatches(data: string, key: string | undefined, index: number): boolean {
+  return key !== undefined ? data === key : markerIndex(data, HOLE_MARKER) === index;
+}
+
+function attrMatches(element: Element, key: string | undefined, index: number): boolean {
+  return element.hasAttribute(key ?? (ATTR_MARKER + index));
+}
+
+function attrName(key: string | undefined, index: number): string {
+  return key ?? (ATTR_MARKER + index);
+}
+
 function tryAdoptPartsPlanByPath(
   root: Node,
   plan: TemplatePlan,
@@ -140,7 +152,7 @@ function tryAdoptPartsPlanByPath(
     if (
       node !== null &&
       node.nodeType === Node.COMMENT_NODE &&
-      markerIndex((node as Comment).data, HOLE_MARKER) === index
+      holeMatches((node as Comment).data, entry.key, index)
     ) {
       holes[index] = node as Comment;
       continue;
@@ -150,7 +162,7 @@ function tryAdoptPartsPlanByPath(
       if (
         next !== null &&
         next.nodeType === Node.COMMENT_NODE &&
-        markerIndex((next as Comment).data, HOLE_MARKER) === index
+        holeMatches((next as Comment).data, entry.key, index)
       ) {
         holes[index] = next as Comment;
         continue;
@@ -167,7 +179,7 @@ function tryAdoptPartsPlanByPath(
     if (
       node === null ||
       node.nodeType !== Node.ELEMENT_NODE ||
-      !(node as Element).hasAttribute(ATTR_MARKER + index)
+      !attrMatches(node as Element, entry.key, index)
     ) {
       return false;
     }
@@ -178,7 +190,7 @@ function tryAdoptPartsPlanByPath(
     if (element === undefined) {
       return false;
     }
-    element.removeAttribute(ATTR_MARKER + index);
+    element.removeAttribute(attrName(plan.attrs[index]?.key, index));
     if (stripText && element.hasAttribute(TEXT_MARKER)) {
       element.removeAttribute(TEXT_MARKER);
     }
@@ -199,7 +211,7 @@ function tryAdoptPartsPlanByTrie(
       const index = nodeTrie.hole;
       if (
         node.nodeType === Node.COMMENT_NODE &&
-        markerIndex((node as Comment).data, HOLE_MARKER) === index
+        holeMatches((node as Comment).data, plan.holes[index]?.key, index)
       ) {
         holes[index] = node as Comment;
         return 1;
@@ -209,7 +221,7 @@ function tryAdoptPartsPlanByTrie(
         if (
           next !== null &&
           next.nodeType === Node.COMMENT_NODE &&
-          markerIndex((next as Comment).data, HOLE_MARKER) === index
+          holeMatches((next as Comment).data, plan.holes[index]?.key, index)
         ) {
           holes[index] = next as Comment;
           return 2;
@@ -223,7 +235,7 @@ function tryAdoptPartsPlanByTrie(
       }
       const element = node as Element;
       for (const index of nodeTrie.attrs) {
-        if (!element.hasAttribute(ATTR_MARKER + index)) {
+        if (!attrMatches(element, plan.attrs[index]?.key, index)) {
           return -1;
         }
       }
@@ -319,7 +331,7 @@ function tryAdoptPartsPlanByTrie(
   }
   for (let index = 0; index < adoptedAttrs.length; index += 1) {
     const element = adoptedAttrs[index]!;
-    element.removeAttribute(ATTR_MARKER + index);
+    element.removeAttribute(attrName(plan.attrs[index]?.key, index));
     if (element.hasAttribute(TEXT_MARKER)) {
       element.removeAttribute(TEXT_MARKER);
     }
@@ -516,7 +528,7 @@ function disposeRegion(state: RegionState): void {
     disposeNode(node);
     detach(node);
   }
-  state.nodes = [];
+  state.nodes.length = 0;
   state.text = null;
 }
 
@@ -576,7 +588,7 @@ export function writeRegion(start: Node, end: Node, value: unknown): void {
     disposeRegion(state);
     const text = document.createTextNode(next);
     state.text = text;
-    state.nodes = [text];
+    state.nodes.push(text);
     parent.insertBefore(text, end);
     return;
   }
@@ -597,7 +609,13 @@ export function insertHydrated(
     textHydrated(parent, accessor, marker, previous instanceof Text ? previous : null);
     return;
   }
-  const window = findInsertWindow(marker, parent);
+  const start = previous.previousSibling;
+  const window: HydrationWindow =
+    start !== null &&
+    start.nodeType === Node.COMMENT_NODE &&
+    (start as Comment).data === INSERT_START
+      ? { start, end: previous, cursor: previous }
+      : findInsertWindow(marker, parent);
   let initialized = false;
   createRenderEffect(() => {
     if (!initialized) {

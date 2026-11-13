@@ -54,6 +54,7 @@ export interface MountPoint {
 export interface PartPath {
   readonly path: readonly number[];
   readonly counts: readonly number[];
+  readonly key?: string;
 }
 
 export interface StripPlan {
@@ -649,8 +650,14 @@ function pickSignificantChild(
 ): Node | null {
   if (size === 1 && index === 0) {
     const first = parent.firstChild;
-    if (first !== null && first.nodeType !== Node.COMMENT_NODE) {
-      return first;
+    if (first !== null) {
+      if (first.nodeType !== Node.COMMENT_NODE) {
+        return first;
+      }
+      const data = (first as Comment).data;
+      if (data !== INSERT_START && data !== INSERT_END) {
+        return first;
+      }
     }
   }
   if (size === undefined || size <= 0) {

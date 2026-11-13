@@ -4,11 +4,20 @@ use swc_core::ecma::ast::{CallExpr, Callee, EsVersion, Expr, Lit, Prop, PropName
 use swc_core::ecma::parser::{lexer::Lexer, Parser, StringInput, Syntax, TsSyntax};
 use swc_core::ecma::visit::{Visit, VisitWith};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 struct Part {
     path: Vec<usize>,
     counts: Vec<usize>,
+    key: Option<String>,
 }
+
+impl PartialEq for Part {
+    fn eq(&self, other: &Self) -> bool {
+        self.path == other.path && self.counts == other.counts
+    }
+}
+
+impl Eq for Part {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Strip {
@@ -202,6 +211,7 @@ fn part_from_expr(expr: &Expr) -> Part {
     let mut part = Part {
         path: Vec::new(),
         counts: Vec::new(),
+        key: None,
     };
     for prop in &object.props {
         let PropOrSpread::Prop(prop) = prop else {
@@ -213,6 +223,7 @@ fn part_from_expr(expr: &Expr) -> Part {
         match key_name(&pair.key).as_str() {
             "path" => part.path = number_list(&pair.value),
             "counts" => part.counts = number_list(&pair.value),
+            "key" => part.key = Some(string_value(&pair.value)),
             key => panic!("unexpected part key: {key}"),
         }
     }
@@ -249,6 +260,7 @@ fn part(path: &[usize], counts: &[usize]) -> Part {
     Part {
         path: path.to_vec(),
         counts: counts.to_vec(),
+        key: None,
     }
 }
 
@@ -325,6 +337,17 @@ fn builds_plan_for_attrs_and_strips() {
             strip(&[0, 0], &[1, 1], &["data-silent-a-2"]),
         ]
     );
+}
+
+#[test]
+fn parses_part_keys() {
+    let holes = plan("const el = <li>{row.label}</li>;");
+    assert_eq!(holes.holes.len(), 1);
+    assert_eq!(holes.holes[0].key.as_deref(), Some("silent-hole-0"));
+    let attrs = plan("const el = <div id=\"x\" title={x} class={y}><span data-z={z} /></div>;");
+    assert_eq!(attrs.attrs.len(), 3);
+    assert_eq!(attrs.attrs[0].key.as_deref(), Some("data-silent-a-0"));
+    assert_eq!(attrs.attrs[2].key.as_deref(), Some("data-silent-a-2"));
 }
 
 #[test]

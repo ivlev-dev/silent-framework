@@ -74,6 +74,10 @@ export function findInsertWindow(marker: Node | null, parent: Node): HydrationWi
   if (isMarker(first, INSERT_START)) {
     return { start: first, end, cursor: first.nextSibling };
   }
+  const adjacent = end.previousSibling;
+  if (isMarker(adjacent, INSERT_START)) {
+    return { start: adjacent, end, cursor: end };
+  }
   let depth = 0;
   let cursor: Node | null = end;
   while (cursor !== null) {
