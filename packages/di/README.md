@@ -13,6 +13,7 @@
 - Скоупы: `singleton`, `scoped`, `transient` и дочерние контейнеры с наследованием привязок.
 - Асинхронное разрешение: `resolve` всегда возвращает `Promise`, кеш промисов разделяет параллельные вызовы.
 - Детектор циклов: `CircularDependencyError` с путём из токенов.
+- Защита от captive dependencies: singleton не может захватить `scoped`-сервис более короткого жизненного цикла (`InvalidScopeError`).
 - Точечное управление: `peek`, `has`, `clearCache(token?)`, `onDispose`-хуки, рекурсивный `dispose`.
 
 ## Установка
@@ -112,17 +113,26 @@ const transientA = await root.resolve(transientToken);
 const transientB = await root.resolve(transientToken);
 ```
 
-- `singleton` — экземпляр кешируется в контейнере-владельце привязки и разделяется между всеми скоупами (`singletonA === singletonB`).
+- `singleton` — экземпляр кешируется в контейнере-владельце привязки и разделяется между всеми скоупами (`singletonA === singletonB`). Фабрика получает контейнер, из которого вызван `resolve`, а кеш всегда принадлежит владельцу привязки. Для singleton из другого контейнера это фасад с тем же именем и методами, а не та же ссылка.
 - `scoped` — экземпляр кешируется в контейнере, с которого начался `resolve` (`scopedA === scopedB` внутри одного скоупа, но не между скоупами).
 - `transient` — каждый последовательный `resolve` создаёт новый экземпляр; параллельные вызовы до завершения разрешения разделяют один промис.
 
+### Captive dependency
+
+`singleton` живёт дольше request scope, поэтому его фабрика не может разрешать `scoped`-токен в контейнере, отличном от владельца singleton: такой экземпляр был бы захвачен навсегда и утёк бы между запросами. В этом случае `resolve` отклоняется `InvalidScopeError` с сообщением вида `singleton "Service" ... зависит от scoped "Tenant"; создайте request scope ...`.
+
+Разрешён случай, когда singleton и `scoped` живут в одном контейнере: например, ViewModel в `view:<имя>`-скоупе может зависеть от request-scoped сервиса этого же view. Если сервис должен быть общим для процесса — переведите его в `singleton`; если он относится к запросу — создайте request scope и не поднимайте его в корень.
+
 ## Ошибки и защита
 
-- `CircularDependencyError` — выбрасывается при циклической зависимости; поле `path` содержит токены в порядке обхода.
-- Отсутствующая привязка — `resolve` неизвестного токена выбрасывает ошибку `Async DI: no binding registered for token ...`.
-- После `dispose()` — `resolve` выбрасывает ошибку, `has` возвращает `false`, `peek` возвращает `undefined`, повторный `dispose` — no-op.
-- `resolve(undefined)` — выбрасывает ошибку `Async DI: resolve<T>() must be transformed by silentwire before runtime`.
+- `CircularDependencyError` — возникает при циклической зависимости; поле `path` содержит токены в порядке обхода.
+- `InvalidScopeError` — singleton-фабрика пытается захватить `scoped`-зависимость; поля `singletonToken`, `scopedToken` и `owner` содержат детали.
+- Отсутствующая привязка — `resolve` неизвестного токена возвращает отклонённый промис с ошибкой `Async DI: no binding registered for token ...`.
+- После `dispose()` — `resolve` возвращает отклонённый промис `Container "..." has been disposed`, `has` возвращает `false`, `peek` возвращает `undefined`, повторный `dispose` — no-op. `createScope` и `bind` на disposed-контейнере выбрасывают синхронно.
+- `resolve(undefined)` — отклонённый промис с ошибкой `Async DI: resolve<T>() must be transformed by silentwire before runtime`.
+- `resolve` никогда не бросает синхронно: ошибки валидации, `disposed` и отсутствующих привязок приходят отклонённым промисом. Для чтения уже разрешённого значения используйте `resolveSync` — он выбрасывает синхронно, если значение ещё не готово.
 - При ошибке фабрики кеш токена очищается, следующий `resolve` повторяет попытку.
+- `dispose()` выполняет `onDispose`-хуки в порядке регистрации, затем освобождает разрешённые инстансы в порядке LIFO, вызывает `[Symbol.dispose]` при наличии, очищает кеш, привязки и рекурсивно освобождает детей. Исключения хуков и `[Symbol.dispose]` не прерывают очистку: после неё выбрасывается первая ошибка или `AggregateError`.
 - `clearCache()` без аргумента сбрасывает кеш текущего контейнера и всех потомков; `clearCache(token)` — только один токен.
 
 ```ts
@@ -147,12 +157,13 @@ try {
 
 | Символ | Назначение |
 | --- | --- |
-| `Container` | Асинхронный контейнер: `bind`, `resolve`, `createScope`, `peek`, `has`, `clearCache`, `onDispose`, `dispose` |
+| `Container` | Асинхронный контейнер: `bind`, `resolve`, `resolveSync`, `createScope`, `peek`, `has`, `clearCache`, `onDispose`, `dispose` |
 | `container` | Глобальный корневой экземпляр `Container("root")` |
 | `createToken` | Создаёт типизированный токен (`symbol` c phantom-типом `T`) |
 | `Token` | Тип токена: `symbol` c phantom-параметром `T` |
 | `DI_CREATE` | Рантайм-символ `Symbol.for("silent.di.create")` для инстанциирования классов компилятором |
 | `CircularDependencyError` | Ошибка циклической зависимости с полем `path` |
+| `InvalidScopeError` | Captive-зависимость: singleton захватывает scoped-сервис |
 | `ScopeName` | Тип скоупа: `"singleton"`, `"transient"`, `"scoped"` |
 | `Factory` | Фабрика: `(container: Container) => T | Promise<T>` |
 | `Binding` | Привязка: `factory` + `scope` |

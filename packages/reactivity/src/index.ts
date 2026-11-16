@@ -1,5 +1,6 @@
 export type {
   Accessor,
+  EffectErrorHandler,
   MemoOptions,
   OnOptions,
   Owner,
@@ -10,6 +11,7 @@ export type {
 
 export {
   batch,
+  CircularComputationError,
   createEffect,
   createMemo,
   createRenderEffect,
@@ -19,6 +21,7 @@ export {
   getOwner,
   onCleanup,
   runWithOwner,
+  setEffectErrorHandler,
   untrack,
 } from "./graph.js";
 

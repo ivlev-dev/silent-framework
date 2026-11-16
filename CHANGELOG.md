@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.7.5
+
+Волна state/lifecycle reliability: готовность дерева, изоляция DI-скоупов в SSR, отмена Suspense, light-компоненты и устойчивость reactivity.
+
+### DI и SSR
+
+- Scoped-зависимости singleton больше не захватываются корневым контейнером: `InvalidScopeError` с токенами и owner; в SSR создаётся отдельный request-scope на каждый `renderToString`, который освобождается в `finally`.
+- `Container.dispose` стал exception-safe, освобождает инстансы через `Symbol.dispose` (LIFO), вызывает `onDispose` в FIFO, очищает кеши даже при исключении и пробрасывает первую ошибку/`AggregateError`.
+- `resolve` возвращает rejected Promise для disposed/unknown token; добавлен `resolveSync` для уже разрешённых значений.
+
+### Готовность и жизненный цикл
+
+- `ready` — готовность корня, `settled` — готовность всего дерева; `getReady` агрегирует все `COMPONENT_READY` поддерева, добавлены `getOwnReady`/`whenSettled`.
+- `mount().ready`/`ComponentResult.ready` остаются root-only; для полного UI используйте `settled`.
+- Light-компоненты получили собственный owner/root и переиспользуют инстанс при изменении props, не теряя focus и DOM-состояние.
+- `Suspense` отменяет отложенные загрузки через `AbortSignal`, освобождает детей, созданных до показа fallback, пробрасывает ошибки `lazy` в `ErrorBoundary`/`onError`.
+- Runtime options, DI scope, boundary и `onError` наследуются по owner-контексту, а не только через амбиентные глобалы после `await`.
+- HMR: `recreateVm` вызывает lifecycle старой VM, очищает сервисы scope, защищён от гонки поколений; `ErrorBoundary` не рендерит fallback после dispose.
+
+### Reactivity
+
+- Исключение в одном эффекте больше не срывает flush: остальные эффекты выполняются, ошибка уходит в `setEffectErrorHandler` (по умолчанию `console.error`).
+- Memo после исключения остаётся `DIRTY` и пересчитывается при следующем чтении; циклические memo дают `CircularComputationError` с путём.
+- Поиск зависимостей переведён с O(n²)-`indexOf` на run-stamp/Map; `batch` внутри initial-эффектов больше не перескакивает порядок.
+
+### Тесты и бенчмарки
+
+- Добавлены регрессии для DI captive/SSR request scope, dispose/Symbol.dispose, readiness/light/Suspense/HMR, reactivity reliability.
+- Стартовый JS вырос с 31.00 до 34.28 KB, gzip — с 10.49 до 11.70 KB; baseline `bench:guard` обновлён под 0.7.5.
+
 ## 0.7.4
 
 Волна SSR/hydration correctness: исправлены гидрация управляющих конструкций, raw-text и опасный HTML на сервере, а также несколько расхождений SSR/CSR.

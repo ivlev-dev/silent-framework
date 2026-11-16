@@ -35,6 +35,7 @@ export function handleFor(result: ComponentResult, rootDispose: () => void): Mou
   let disposed = false;
   return {
     ready: result.ready,
+    settled: result.settled,
     dispose: () => {
       if (disposed) {
         return;

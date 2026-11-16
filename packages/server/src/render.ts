@@ -36,6 +36,7 @@ const SERVER_BACKEND = createServerBackend();
 
 let queue: Promise<void> = Promise.resolve();
 let pendingTasks = 0;
+let requestSeq = 0;
 
 function finishTask(): void {
   pendingTasks -= 1;
@@ -85,6 +86,10 @@ export function renderToString(
 }
 
 async function renderOnce(app: AnyComponent, options: RenderOptions): Promise<RenderResult> {
+  const baseContainer = options.container ?? rootContainer;
+  requestSeq += 1;
+  const requestScope = baseContainer.createScope(`request:${requestSeq}`);
+
   const document = SERVER_DOCUMENT;
   const restore = installDomGlobals(document, { keepShape: true });
   setServerMode(true);
@@ -111,12 +116,15 @@ async function renderOnce(app: AnyComponent, options: RenderOptions): Promise<Re
   };
 
   const runtimeOptions: RuntimeOptions = {
-    container: options.container ?? rootContainer,
+    container: requestScope,
     preloader: options.preloader,
     onError: handleError,
   };
 
   let result: ComponentResult | null = null;
+  let rendered: RenderResult | null = null;
+  let renderError: unknown = null;
+  let renderFailed = false;
 
   try {
     result = createRoot((dispose) => {
@@ -150,13 +158,47 @@ async function renderOnce(app: AnyComponent, options: RenderOptions): Promise<Re
     }
 
     const head = serializeHead(headNodes);
-    return { html: serializeNode(result.node as unknown as DomNode), head };
+    rendered = { html: serializeNode(result.node as unknown as DomNode), head };
+  } catch (error) {
+    renderFailed = true;
+    renderError = error;
   } finally {
     setMetadataCollector(null);
     setServerBackend(null);
     restore();
     setServerMode(false);
-    result?.dispose();
-    disposeRoot();
+
+    try {
+      result?.dispose();
+    } catch (error) {
+      if (!renderFailed) {
+        renderFailed = true;
+        renderError = error;
+      }
+    }
+    try {
+      disposeRoot();
+    } catch (error) {
+      if (!renderFailed) {
+        renderFailed = true;
+        renderError = error;
+      }
+    }
+    try {
+      requestScope.dispose();
+    } catch (error) {
+      if (!renderFailed) {
+        renderFailed = true;
+        renderError = error;
+      }
+    }
   }
+
+  if (renderFailed) {
+    throw renderError;
+  }
+  if (rendered === null) {
+    throw new Error("Не удалось создать корневой компонент");
+  }
+  return rendered;
 }

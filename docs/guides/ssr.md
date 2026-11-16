@@ -43,6 +43,8 @@ function renderToString(
 
 `RenderResult` содержит два поля: `html` — разметку приложения без метаданных, `head` — сериализованные `title`, `meta` и `link`. `RenderOptions` принимает `props`, `container`, `preloader` и `onError`. Если `onError` не задан, первая ошибка резолва или загрузки отклоняет промис `renderToString`.
 
+На каждый рендер `renderToString` создаёт дочерний request scope от `options.container` (по умолчанию — глобальный `container`) и освобождает его в конце, даже при ошибке. `singleton`-привязки базового контейнера — process-wide состояние, общее для всех запросов; `scoped`-привязки изолированы request scope. Singleton-фабрика, разрешающая `scoped`-сервис из request scope, отклоняется `InvalidScopeError` — не храните данные пользователя или tenant в общих синглтонах.
+
 Минимальный HTTP-сервер на `node:http`:
 
 ```js

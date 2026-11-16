@@ -100,6 +100,7 @@ export class Container {
   constructor(name?: string, parent?: Container);
   bind<T>(token: unknown, factory?: unknown): BindingBuilder;
   resolve<T>(token: unknown): Promise<T>;
+  resolveSync<T>(token: unknown): T;
   peek<T>(token: unknown): T | undefined;
   has(token: unknown): boolean;
   createScope(name?: string): Container;
@@ -121,14 +122,16 @@ export function createToken<T>(name: string): Token<T>;
 
 Семантика: асинхронный контейнер с кешем промисов и разрешением конструкторов на этапе компиляции, дополненный `peek`, `has`, `onDispose`, `dispose`.
 
-- Singleton живёт в контейнере-владельце binding-а.
+- Singleton живёт в контейнере-владельце binding-а, фабрика получает запрашивающий контейнер.
 - Scoped живёт в контейнере, с которого начался resolve.
 - Transient не кешируется после успешного resolve; параллельные resolve до завершения делят один Promise.
+- Singleton-фабрика не может захватить scoped-зависимость из контейнера короче своей жизни: `InvalidScopeError`.
 - Ошибка factory очищает кеш.
-- Циклы обнаруживаются и выбрасывают `CircularDependencyError`.
+- Циклы обнаруживаются, `resolve` отклоняется `CircularDependencyError`; `resolve` не бросает синхронно, `resolveSync` читает готовое значение и бросает.
 - `bind` очищает кеш токена в текущем контейнере и потомках.
 - `peek` возвращает уже разрешённое значение без запуска factory.
-- `dispose` вызывает `onDispose`-хуки и очищает кеш/биндинги/детей.
+- `dispose` вызывает `onDispose`-хуки, освобождает инстансы через `[Symbol.dispose]` в порядке LIFO, очищает кеш/биндинги/детей даже при исключении.
+- SSR создаёт request scope на каждый `renderToString` и освобождает его после рендера.
 
 ## Индекс интерфейсов
 

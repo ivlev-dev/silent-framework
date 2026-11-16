@@ -334,7 +334,7 @@ describe("createComponent ready", () => {
     }
 
     const result = createComponent(Wrapper as unknown as AnyComponent);
-    await result.ready;
+    await result.settled;
     expect(result.node.textContent).toBe("late");
   });
 });

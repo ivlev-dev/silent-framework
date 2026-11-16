@@ -70,13 +70,29 @@ const opts: SignalOptions<number> = { equals: (a, b) => a === b };
 Стабильность: public
 
 ```ts
-interface MemoOptions<T> extends SignalOptions<T> {}
+interface MemoOptions<T> extends SignalOptions<T> {
+  name?: string;
+}
 ```
 
-Опции мемо; наследуют `equals` из `SignalOptions`.
+Опции мемо; наследуют `equals` из `SignalOptions`. Необязательное `name` используется в диагностике циклических вычислений и в `CircularComputationError.path`.
 
 ```ts
-const opts: MemoOptions<number> = { equals: (a, b) => a === b };
+const opts: MemoOptions<number> = { equals: (a, b) => a === b, name: "double" };
+```
+
+#### `EffectErrorHandler`
+
+Стабильность: public
+
+```ts
+type EffectErrorHandler = (error: unknown) => void;
+```
+
+Тип обработчика ошибок эффектов, передаваемого в `setEffectErrorHandler`.
+
+```ts
+const handler: EffectErrorHandler = (error) => console.error(error);
 ```
 
 #### `OnOptions`
@@ -190,7 +206,44 @@ const double = createMemo(() => count() * 2);
 console.log(double());
 ```
 
-Примечание: мемо ленив, не вычисляется до первого чтения.
+Примечание: мемо ленив, не вычисляется до первого чтения. Если `fn` или `equals` бросают, мемо откатывается в `DIRTY`: ошибка не кешируется, следующий read пересчитывает значение. Исключение распространяется к читателю (эффекту или прямому вызову).
+
+#### `CircularComputationError`
+
+Стабильность: public
+
+```ts
+class CircularComputationError extends Error {
+  readonly path: readonly string[];
+}
+```
+
+Возникает при циклической зависимости мемо (self или mutual). `path` содержит имена мемо от точки входа до повторного чтения; имя задаётся через `MemoOptions.name`, иначе используется имя функции или `memo#N`.
+
+```ts
+const self = createMemo((): number => self() + 1, { name: "self" });
+self(); // CircularComputationError: self -> self
+```
+
+#### `setEffectErrorHandler`
+
+Стабильность: public
+
+```ts
+type EffectErrorHandler = (error: unknown) => void;
+
+function setEffectErrorHandler(
+  handler: EffectErrorHandler | null,
+): EffectErrorHandler | null;
+```
+
+Настраивает обработчик ошибок эффектов. По умолчанию ошибки выводятся через `console.error`. Возвращает предыдущий обработчик; `null` отключает вывод, но не отключает изоляцию — остальные эффекты всё равно выполняются. Ошибка эффекта не прерывает flush и не влияет на последующие flush.
+
+```ts
+const previous = setEffectErrorHandler((error) => report(error));
+// ...
+setEffectErrorHandler(previous);
+```
 
 #### `createRenderEffect`
 
@@ -590,9 +643,10 @@ writeField(instance, "count", 5, (v) => {
 1. `createRenderEffect` выполняется синхронно при создании и далее обновляется через flush.
 2. `createEffect` и начальные эффекты планируются в микротаске через `queueMicrotask`.
 3. Запись в сигнал уведомляет наблюдателей: мемо помечаются `CHECK`/`DIRTY`, эффекты попадают в `effectQueue`.
-4. `batch(fn)` подавляет flush до выхода из внешнего батча; вложенные батчи не запускают flush.
+4. `batch(fn)` подавляет flush до выхода из внешнего батча; вложенные батчи не запускают flush. `batch` не запускает начальные эффекты и не прерывает их выполнение: если `batch` вызван внутри начального эффекта, обычные обновления ждут завершения всех начальных эффектов.
 5. `flushSync()` принудительно прогоняет `flushInitialEffects` и `flushEffects`, минуя микротаску.
 6. Обычный flush происходит один раз на микротаску (`scheduleFlush`); при разрывах батча — через `flushEffects`.
+7. Исключение одного эффекта изолируется: остальные эффекты выполняются, а ошибка передаётся в `setEffectErrorHandler`.
 
 Следствие: синхронные render-эффекты видят состояние сразу; обычные эффекты асинхронны; `batch` объединяет несколько записей в один прогон.
 
@@ -613,5 +667,7 @@ writeField(instance, "count", 5, (v) => {
 - Массивы: мутирующие методы (`push`, `pop`, `shift`, `unshift`, `splice`, `sort`, `reverse`, `fill`, `copyWithin`) уведомляют только затронутые индексы и `length`; сигналы ключей bump-ятся только при изменении состава ключей.
 - Повторная обёртка: экземпляры классов, отмеченных через `markReactiveClass` (компилятором для классов с `@reactive`), `deepReactive` не оборачивает повторно.
 - Ленивость мемо: `createMemo` не вычисляется до первого чтения; dependent-эффекты уведомляются только при реальном изменении значения (с учётом `equals`).
+- Ошибки мемо не кешируются: после исключения мемо остаётся `DIRTY` и пересчитывается при следующем чтении. Циклические мемо завершаются `CircularComputationError`.
+- Ошибки эффектов изолированы и передаются в `setEffectErrorHandler`; синхронный первый запуск `createRenderEffect` по-прежнему пробрасывает исключение вызывающему.
 - `deepReactive` не оборачивает DOM-узлы, `Date`, `Map`, `Set`, `Promise`, `RegExp`, `Error`, буферы и прочие не-plain объекты.
 - `Setter` updater использует `peek()` и не регистрирует зависимость; запись с `equals === true` не уведомляет наблюдателей.

@@ -68,10 +68,11 @@ describe("light-путь", () => {
     attachMeta(Child, ChildVM);
 
     const target = host();
-    await mount(
+    const handle = await mount(
       target,
       asComponent(() => component(Child as AnyComponent, {})),
     );
+    await handle.settled;
     expect(target.textContent).toBe("child");
   });
 

@@ -28,6 +28,7 @@ export interface MountOptions {
 
 export interface MountHandle {
   readonly ready: Promise<void>;
+  readonly settled: Promise<void>;
   dispose(): void;
 }
 

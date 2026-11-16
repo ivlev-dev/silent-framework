@@ -1,4 +1,9 @@
-import { createRenderEffect, onCleanup } from "@ivlev-dev/silent-reactivity";
+import {
+  createRenderEffect,
+  getOwner,
+  onCleanup,
+} from "@ivlev-dev/silent-reactivity";
+import * as reactivity from "@ivlev-dev/silent-reactivity";
 import { getRuntimeOptions, withRuntimeOptions } from "./component.js";
 import type { Children } from "./jsx.js";
 import { collectNodes, createMountPoint, isServerMode } from "./dom.js";
@@ -18,6 +23,57 @@ import {
 export interface ErrorBoundaryProps {
   readonly fallback: (error: unknown, reset: () => void) => unknown;
   readonly children: unknown | (() => unknown);
+}
+
+interface BoundaryReporter {
+  isActive(): boolean;
+  report(error: unknown): boolean;
+}
+
+type EffectErrorHandler = (error: unknown) => void;
+
+const activeBoundaries: BoundaryReporter[] = [];
+let dispatcherInstalled = false;
+let fallbackEffectHandler: EffectErrorHandler | null = null;
+
+function ensureEffectDispatcher(): void {
+  if (dispatcherInstalled) {
+    return;
+  }
+  const candidate = (
+    reactivity as unknown as {
+      setEffectErrorHandler?: (
+        handler: EffectErrorHandler | null,
+      ) => EffectErrorHandler | null;
+    }
+  ).setEffectErrorHandler;
+  if (typeof candidate !== "function") {
+    return;
+  }
+  dispatcherInstalled = true;
+  fallbackEffectHandler = candidate((error: unknown) => {
+    for (let index = activeBoundaries.length - 1; index >= 0; index -= 1) {
+      const reporter = activeBoundaries[index];
+      if (reporter !== undefined && reporter.isActive() && reporter.report(error)) {
+        return;
+      }
+    }
+    fallbackEffectHandler?.(error);
+  });
+}
+
+function registerEffectReporter(reporter: BoundaryReporter): void {
+  if (getOwner() === null) {
+    return;
+  }
+  activeBoundaries.push(reporter);
+  ensureEffectDispatcher();
+  onCleanup(() => {
+    const index = activeBoundaries.indexOf(reporter);
+    if (index !== -1) {
+      activeBoundaries.splice(index, 1);
+    }
+  });
 }
 
 declare const __SILENT_SERVER__: boolean | undefined;
@@ -82,6 +138,17 @@ export function ErrorBoundary(props: ErrorBoundaryProps): Node {
       showFallback(error);
     }
   }
+
+  registerEffectReporter({
+    isActive: () => !disposed,
+    report(error: unknown): boolean {
+      if (disposed) {
+        return false;
+      }
+      showFallback(error);
+      return true;
+    },
+  });
 
   createRenderEffect(render);
   onCleanup(() => {
@@ -158,8 +225,12 @@ function hydrateErrorBoundary(props: ErrorBoundaryProps): Node {
   const window = beginRegion(outer, anchor);
   let settled = false;
   let failed = false;
+  let disposed = false;
 
   const showFallback = (error: unknown): void => {
+    if (disposed) {
+      return;
+    }
     failed = true;
     if (settled) {
       const fallback = withRuntimeOptions(options, () =>
@@ -212,11 +283,28 @@ function hydrateErrorBoundary(props: ErrorBoundaryProps): Node {
   };
 
   const reset = (): void => {
+    if (disposed) {
+      return;
+    }
     failed = false;
     render();
   };
 
+  registerEffectReporter({
+    isActive: () => !disposed,
+    report(error: unknown): boolean {
+      if (disposed) {
+        return false;
+      }
+      showFallback(error);
+      return true;
+    },
+  });
+
   createRenderEffect(render);
-  onCleanup(mount.clear);
+  onCleanup(() => {
+    disposed = true;
+    mount.clear();
+  });
   return document.createDocumentFragment();
 }

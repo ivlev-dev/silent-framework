@@ -30,7 +30,7 @@ import {
 - точки входа компиляции JSX: `jsx`, `jsxs`, `jsxDEV`, `Fragment`;
 - DOM-примитивы скомпилированных шаблонов: `template`, `templateHoles`, `insert`, `text`, `attr`, `prop`, `style`, `spread`, `on`, `ref`, `effect`, `fragment`, `dynamic`, `attachDisposer`, `NODE_DISPOSER`;
 - компоненты и помощники: `component`, `createComponent`, `For`, `Show`, `Suspense`, `lazy`;
-- runtime-управление: `getReady`, `getViewMeta`, `getComponentName`, `isViewComponent`, `setPreloader`, `setFallback`, `setDefaultPreloader`, `setErrorHandler`, `whenIdle`;
+- runtime-управление: `getReady`, `getOwnReady`, `whenSettled`, `getViewMeta`, `getComponentName`, `isViewComponent`, `setPreloader`, `setFallback`, `setDefaultPreloader`, `setErrorHandler`, `whenIdle`;
 - символы метаданных: `VIEW_META`, `PRELOADER`, `COMPONENT_READY`, `COMPONENT_DISPOSE`;
 - типы: `JSX`, `Child`, `Children`, `AnyComponent`, `Preloader`, `ViewMeta`, `ViewRuntimeContext`, `SuspenseProps`, `LazyOptions`.
 
@@ -250,12 +250,14 @@ export class CounterVM extends ViewModel<{ step: number }> {
 interface ComponentResult {
   readonly node: Node;
   readonly ready: Promise<void>;
+  readonly settled: Promise<void>;
   dispose(): void;
 }
 ```
 
 - `node` — корневой узел (элемент, фрагмент или фрагмент с маркерами view).
-- `ready` — промис готовности: для view-компонента завершается после резолва VM и рендера; для синхронного — сразу (либо берётся `COMPONENT_READY` внутри результата, так что вложенные `lazy` учитываются).
+- `ready` — готовность самого компонента: для view-компонента завершается после резолва VM и рендера; для синхронного — сразу (либо берётся `COMPONENT_READY` внутри результата).
+- `settled` — готовность всего поддерева: дочерние async VM, `lazy`, `Suspense` и `whenIdle`.
 - `dispose()` — останавливает компонент: прерывает `signal`, снимает узлы с DOM, останавливает эффекты и scope, снимает HMR-регистрацию.
 
 ### `RuntimeOptions`
@@ -544,13 +546,11 @@ function setReady(node: Node, ready: Promise<void>): void;
 function getReady(node: Node): Promise<void>;
 ```
 
-Возвращает промис готовности узла:
+Возвращает агрегированный промис готовности узла и всего его поддерева: собирает все `COMPONENT_READY`, включая диапазоны `<!--silent-view-->…<!--silent-view-end-->`, и ждёт их через `Promise.all`. Если готовых промисов нет — возвращает уже разрешённый промис.
 
-- если узел имеет `COMPONENT_READY` — его промис;
-- если узел — `DocumentFragment` — промис первого дочернего узла, у которого он есть;
-- иначе — сразу разрешённый промис.
+`getOwnReady(node)` возвращает только собственный `COMPONENT_READY` узла. `whenSettled(node)` ждёт `getReady(node)` и `whenIdle()`.
 
-`mount` и `createComponent` уже ждут этот промис; `getReady` полезен, когда узел вставляется вручную.
+`mount().ready`/`ComponentResult.ready` — только корневой компонент; `mount().settled`/`ComponentResult.settled` — всё поддерево.
 
 ### `createComponent`
 
@@ -678,11 +678,13 @@ interface MountOptions {
 ```ts
 interface MountHandle {
   readonly ready: Promise<void>;
+  readonly settled: Promise<void>;
   dispose(): void;
 }
 ```
 
-- `ready` — тот же промис готовности, что и у корневого компонента: удобен для `Suspense`-подобного ожидания внешним кодом.
+- `ready` — готовность корневого компонента.
+- `settled` — готовность всего дерева: дочерние async VM, `lazy`, `Suspense` и `whenIdle`. Для ожидания полного UI используйте `settled`.
 - `dispose()` — демонтирует приложение (идемпотентно): dispose корневого компонента и владельца, снятие узлов; ViewModel проходит `beforeUnmount`/`unmounted`/`dispose`.
 
 ### `hydrate`

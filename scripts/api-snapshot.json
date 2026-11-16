@@ -31,6 +31,7 @@
       "getComponentName",
       "getDefaultPreloader",
       "getErrorHandler",
+      "getOwnReady",
       "getReady",
       "getRuntimeOptions",
       "getViewMeta",
@@ -94,6 +95,7 @@
       "watch",
       "WatchOptions",
       "whenIdle",
+      "whenSettled",
       "withRuntimeOptions"
     ],
     "@ivlev-dev/silent-di": [
@@ -105,12 +107,14 @@
       "createToken",
       "DI_CREATE",
       "Factory",
+      "InvalidScopeError",
       "ScopeName",
       "Token"
     ],
     "@ivlev-dev/silent-reactivity": [
       "Accessor",
       "batch",
+      "CircularComputationError",
       "copyReactiveState",
       "createEffect",
       "createMemo",
@@ -119,6 +123,7 @@
       "createRoot",
       "createSignal",
       "deepReactive",
+      "EffectErrorHandler",
       "flushSync",
       "getComputed",
       "getOwner",
@@ -134,6 +139,7 @@
       "readField",
       "registerCleanup",
       "runWithOwner",
+      "setEffectErrorHandler",
       "Setter",
       "SignalOptions",
       "storeFor",

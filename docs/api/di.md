@@ -35,13 +35,29 @@
 
 Дочерние скоупы создаются через `createScope(name?)` и наследуют привязки родителя.
 
+Фабрика всегда получает контейнер, из которого начался `resolve`, а кеш экземпляра принадлежит владельцу привязки: для `singleton` — контейнеру с `bind`, для `scoped`/`transient` — контейнеру вызова. Если singleton запрошен из другого контейнера, фабрика получает фасад запрашивающего контейнера с тем же `name` и методами; сравнивать его по ссылке с исходным контейнером не следует.
+
+### Captive dependency
+
+`singleton` переживает request scope, поэтому его фабрика не может разрешать `scoped`-токен в контейнере, отличном от владельца singleton. Иначе request-специфичный экземпляр навсегда остался бы в singleton и утёк бы между запросами. Такое разрешение отклоняется `InvalidScopeError`:
+
+```ts
+const tenant = createToken<{ id: string }>("Tenant");
+root.bind(tenant, () => ({ id: "request" })).inScopedScope();
+root.bind(Service, async (c) => new Service(await c.resolve(tenant)));
+
+await root.createScope("request").resolve(Service); // InvalidScopeError
+```
+
+Singleton и `scoped` в одном контейнере совместимы: например, ViewModel в `view:*`-скоупе может зависеть от request-scoped сервиса того же view. Для общих данных используйте `singleton`, для данных запроса — отдельный request scope.
+
 ### Кеш промисов
 
 Для каждого токена в подходящем контейнере хранится `Promise` разрешения. Параллельные `resolve` одного токена получают один и тот же промис. При ошибке factory кеш очищается, следующий `resolve` повторяет попытку. Транзиент очищает кеш после завершения. `clearCache(token?)` сбрасывает кеш и `resolved`-значения.
 
 ### Обнаружение циклов
 
-При рекурсивном разрешении контейнер отслеживает множество токенов, которые сейчас разрешаются. Если токен встречается повторно, выбрасывается `CircularDependencyError` с полем `path` — массивом токенов в порядке обхода.
+При рекурсивном разрешении контейнер отслеживает множество токенов, которые сейчас разрешаются. Если токен встречается повторно, `resolve` отклоняется `CircularDependencyError` с полем `path` — массивом токенов в порядке обхода. Защита от captive-зависимостей проверяется до создания экземпляра, поэтому ошибочная конфигурация не оставляет частично закешированных сервисов.
 
 ## API
 
@@ -55,6 +71,7 @@ class Container {
   constructor(name?: string, parent?: Container);
   bind<T = unknown>(token: unknown, factory?: unknown): BindingBuilder;
   resolve<T = unknown>(token: unknown): Promise<T>;
+  resolveSync<T = unknown>(token: unknown): T;
   peek<T = unknown>(token: unknown): T | undefined;
   has(token: unknown): boolean;
   createScope(name?: string): Container;
@@ -78,7 +95,7 @@ const scope = root.createScope("request");
 const value = await scope.resolve(token);
 ```
 
-Ограничения: после `dispose()` любой вызов `resolve` выбрасывает ошибку. `resolve(undefined)` запрещён и выбрасывает ошибку. Контейнер не потокобезопасен в смысле реентерабельности — вызовы должны быть асинхронными через промисы.
+Ограничения: `resolve` никогда не бросает синхронно — ошибки disposed-контейнера, неизвестного токена и `undefined` приходят отклонённым промисом. `resolveSync` читает только уже разрешённое значение и выбрасывает синхронно, если оно ещё не готово. Контейнер не потокобезопасен в смысле реентерабельности — вызовы должны быть асинхронными через промисы.
 
 ### `container`
 
@@ -335,9 +352,13 @@ const t2 = await root.resolve(transientToken);
 
 Проверяет наличие привязки с учётом родителя. Не запускает factory и не создаёт неявных привязок.
 
+### `Container.resolveSync`
+
+Возвращает уже разрешённое значение из кеша без асинхронного ожидания. Если токен не разрешён, контейнер disposed или привязки нет — выбрасывает ошибку. Полезен в синхронных участках, где значение гарантированно подготовлено ранее.
+
 ### `Container.dispose`
 
-Помечает контейнер как disposed, вызывает `onDispose`-хуки (сначала контейнера, затем дочерних — в порядке вызова `createScope`/`onDispose`), очищает кеш, привязки и неявные токены, удаляет контейнер из `children` родителя, рекурсивно dispose-ит детей. Повторный вызов не делает ничего.
+Помечает контейнер как disposed, вызывает `onDispose`-хуки в порядке регистрации, освобождает разрешённые инстансы в порядке LIFO (вызывая `[Symbol.dispose]`, если он есть), очищает кеш, привязки и неявные токены, удаляет контейнер из `children` родителя, рекурсивно dispose-ит детей. Повторный вызов не делает ничего. Исключения хуков и `[Symbol.dispose]` не прерывают очистку: после неё выбрасывается первая ошибка или `AggregateError`.
 
 ### `Container.clearCache`
 
@@ -351,15 +372,17 @@ const t2 = await root.resolve(transientToken);
 
 - `has(token)` возвращает `false` (привязки очищены).
 - `peek(token)` возвращает `undefined`.
-- `resolve(token)` выбрасывает ошибку `"Container ... has been disposed"`.
+- `resolve(token)` возвращает отклонённый промис `"Container ... has been disposed"`.
+- `resolveSync(token)`, `createScope()` и `bind()` выбрасывают синхронно.
 - Вызов `dispose()` повторно — no-op.
 
 ## Ошибки
 
 - `CircularDependencyError` — возникает при циклической зависимости. Поле `path: unknown[]` содержит путь из токенов.
-- Отсутствующая привязка — `resolve` неизвестного токена (не функции-класса и не зарегистрированного) выбрасывает `Error("Async DI: no binding registered for token ...")`.
-- Вызов после `dispose` — `resolve` выбрасывает `Error("Container \"name\" has been disposed")`.
-- `resolve(undefined)` — выбрасывает `Error("Async DI: resolve<T>() must be transformed by silentwire before runtime")`.
+- `InvalidScopeError` — singleton-фабрика разрешает `scoped`-токен вне контейнера-владельца; поля `singletonToken`, `scopedToken`, `owner`.
+- Отсутствующая привязка — `resolve` неизвестного токена (не функции-класса и не зарегистрированного) возвращает отклонённый промис с ошибкой `Error("Async DI: no binding registered for token ...")`.
+- Вызов после `dispose` — `resolve` возвращает отклонённый промис с `Error("Container \"name\" has been disposed")`.
+- `resolve(undefined)` — отклонённый промис с `Error("Async DI: resolve<T>() must be transformed by silentwire before runtime")`.
 
 ## Интеграция с компилятором
 

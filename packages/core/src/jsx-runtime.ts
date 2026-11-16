@@ -30,6 +30,7 @@ export { Suspense, lazy, type SuspenseProps, type LazyOptions } from "./suspense
 export {
   component,
   createComponent,
+  getOwnReady,
   getReady,
   getViewMeta,
   getComponentName,
@@ -39,6 +40,7 @@ export {
   setFallback,
   setPreloader,
   whenIdle,
+  whenSettled,
   COMPONENT_READY,
   COMPONENT_DISPOSE,
   PRELOADER,

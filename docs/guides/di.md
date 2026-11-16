@@ -160,8 +160,8 @@ export class ContextVM {
 - `peek(token)` — возвращает кешированный экземпляр или `undefined`, не запуская разрешение.
 - `has(token)` — есть ли привязка (с учётом родителей и неявных).
 - `clearCache()` — сброс кеша текущего контейнера и всех потомков; `clearCache(token)` — только один токен.
-- `onDispose(fn)` — регистрирует хук, вызываемый при `dispose`.
-- `dispose()` — рекурсивно очищает контейнер и все дочерние скоупы; повторный вызов — no-op. После `dispose` `resolve` выбрасывает ошибку, `has` возвращает `false`, `peek` — `undefined`.
+- `onDispose(fn)` — регистрирует хук, вызываемый при `dispose` в порядке регистрации.
+- `dispose()` — рекурсивно очищает контейнер и все дочерние скоупы; повторный вызов — no-op. Разрешённые инстансы освобождаются в порядке LIFO, у них вызывается `[Symbol.dispose]`, если он есть. Исключения хуков и `[Symbol.dispose]` не прерывают очистку: после неё выбрасывается первая ошибка или `AggregateError`. После `dispose` `resolve` возвращает отклонённый промис, `resolveSync`, `createScope` и `bind` выбрасывают синхронно, `has` возвращает `false`, `peek` — `undefined`.
 
 ```ts
 const root = new Container("root");
@@ -182,6 +182,24 @@ scope.dispose(); // + все дочерние скоупы
 - `singleton` — кешируется в контейнере-владельце привязки, разделяется всеми скоупами.
 - `scoped` — кешируется в контейнере, с которого начался `resolve` (внутри одного скоупа одинаков, между скоупами — разный).
 - `transient` — каждый завершённый `resolve` создаёт новый экземпляр; параллельные вызовы до завершения разделяют один промис, после чего кеш очищается.
+
+Фабрика получает контейнер, из которого вызван `resolve`, но кеш всегда принадлежит владельцу привязки. Это важно для SSR: глобальный контейнер — process-wide состояние, а request scope — данные одного запроса.
+
+### Captive dependency: singleton и scoped
+
+`singleton` живёт дольше request scope, поэтому его фабрика не может захватить `scoped`-сервис из контейнера короче своей жизни. Такое разрешение отклоняется `InvalidScopeError`:
+
+```ts
+const Tenant = createToken<{ id: string }>("Tenant");
+const Repo = createToken<Repo>("Repo");
+
+root.bind(Tenant, () => ({ id: "request" })).inScopedScope();
+root.bind(Repo, async (c) => new Repo(await c.resolve(Tenant))); // singleton
+
+await root.createScope("request").resolve(Repo); // InvalidScopeError
+```
+
+Исправление: сделайте зависимость `singleton`, если она общая для процесса, либо переведите сам сервис в `scoped`/`transient`, чтобы он жил в request scope. Singleton и `scoped` в одном контейнере допустимы — например, ViewModel в `view:*`-скоупе может зависеть от request-scoped сервиса этого view.
 
 ## Циклы и ошибки
 
@@ -210,6 +228,8 @@ try {
 - Отсутствующая привязка: `Async DI: no binding registered for token ...`
 - Контейнер утилизирован: `Container "<name>" has been disposed`
 - Нет трансформации: `Async DI: resolve<T>() must be transformed by silentwire before runtime` (при `resolve(undefined)`)
+- Captive-зависимость: `InvalidScopeError` с полями `singletonToken`, `scopedToken`, `owner`.
+- `resolve` не бросает синхронно: перечисленные ошибки приходят отклонённым промисом. Для синхронного чтения готового значения есть `resolveSync`.
 - При ошибке фабрики кеш токена очищается — следующий `resolve` повторяет попытку.
 
 Как чинить циклы: разбейте зависимость через ленивый резолв (вызывать `container.resolve` внутри метода, а не в конструкторе) или вынесите общий код в третий сервис. При необходимости очистите кеш `clearCache(token)` после исправления.
@@ -269,7 +289,7 @@ export function handleRequest(id: string): void {
 }
 ```
 
-`RequestId` будет одинаковым внутри скоупа и разным между запросами.
+`RequestId` будет одинаковым внутри скоупа и разным между запросами. В SSR `renderToString` создаёт такой request scope автоматически от `options.container` и освобождает его после рендера, поэтому вручную оборачивать каждый вызов не нужно.
 
 ### 3. Подмена реализации в тестах
 

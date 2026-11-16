@@ -1,14 +1,16 @@
 import type { AnyComponent, Preloader } from "./types.js";
+import type { Children } from "./jsx.js";
 import {
   component,
   getDefaultPreloader,
   getErrorHandler,
+  getReady,
   getRuntimeOptions,
   setReady,
   trackAsyncWork,
   withRuntimeOptions,
 } from "./component.js";
-import { createMountPoint } from "./dom.js";
+import { collectNodes, createMountPoint, disposeNode } from "./dom.js";
 import { settleNodes } from "./dom-hydration-state.js";
 import { beginRegion, regionMatches, settleWindow } from "./hydration-cursor.js";
 import { getCurrentBoundary, runWithBoundary, type AsyncBoundary } from "./boundary.js";
@@ -49,6 +51,37 @@ function errorNode(error: unknown): Node {
   );
 }
 
+function nodesOf(value: unknown): Node[] {
+  if (value instanceof Node) {
+    return value instanceof DocumentFragment
+      ? collectNodes(value as unknown as Children)
+      : [value];
+  }
+  if (value === null || value === undefined) {
+    return [];
+  }
+  return collectNodes(value as unknown as Children);
+}
+
+function valueReady(value: unknown): Promise<void> {
+  const nodes = nodesOf(value);
+  if (nodes.length === 0) {
+    return Promise.resolve();
+  }
+  const [only] = nodes;
+  if (only !== undefined && nodes.length === 1) {
+    return getReady(only);
+  }
+  return Promise.all(nodes.map((node) => getReady(node))).then(() => undefined);
+}
+
+function disposeValue(value: unknown): void {
+  for (const node of nodesOf(value)) {
+    disposeNode(node);
+    node.parentNode?.removeChild(node);
+  }
+}
+
 export function Suspense(props: SuspenseProps): Node {
   if (isHydrating()) {
     return hydrateSuspense(props);
@@ -79,9 +112,11 @@ export function Suspense(props: SuspenseProps): Node {
     mount.render(childrenValue);
   };
 
+  const controller = new AbortController();
   const boundary: AsyncBoundary = {
+    signal: controller.signal,
     register(promise: Promise<void>): void {
-      if (disposed || showingChildren) {
+      if (disposed || showingChildren || controller.signal.aborted) {
         return;
       }
       const tracked: Promise<unknown> = promise;
@@ -102,6 +137,7 @@ export function Suspense(props: SuspenseProps): Node {
     { ...options, boundary },
     () => runWithBoundary(boundary, () => resolveValue(props.children)),
   );
+  setReady(anchor, valueReady(childrenValue));
 
   if (pending.size === 0) {
     showChildren();
@@ -109,8 +145,13 @@ export function Suspense(props: SuspenseProps): Node {
 
   onCleanup(() => {
     disposed = true;
+    controller.abort();
     pending.clear();
     mount.clear();
+    if (!showingChildren) {
+      disposeValue(childrenValue);
+    }
+    childrenValue = null;
   });
 
   return container;
@@ -191,7 +232,7 @@ export function lazy<P extends Record<string, unknown>>(
       onCleanup(() => {
         disposed = true;
       });
-      const pending = trackAsyncWork(ensure());
+      const pending = trackAsyncWork(ensure(), boundary?.signal ?? null);
       boundary?.register(pending);
       void pending.then(
         () => {
@@ -223,7 +264,8 @@ export function lazy<P extends Record<string, unknown>>(
           if (disposed) {
             return;
           }
-          const handler = options.onError ?? getErrorHandler();
+          const handler =
+            options.onError ?? runtimeOptions.onError ?? getErrorHandler();
           handler(error, Lazy);
         },
       );
@@ -249,7 +291,7 @@ export function lazy<P extends Record<string, unknown>>(
       mount.render(withRuntimeOptions(runtimeOptions, () => component(preloader, {})));
     }
 
-    const promise = trackAsyncWork(ensure());
+    const promise = trackAsyncWork(ensure(), boundary?.signal ?? null);
     setReady(
       anchor,
       promise.then(
@@ -280,8 +322,12 @@ export function lazy<P extends Record<string, unknown>>(
         if (disposed) {
           return;
         }
-        const handler = options.onError ?? getErrorHandler();
+        const handler =
+          options.onError ?? runtimeOptions.onError ?? getErrorHandler();
         handler(error, Lazy);
+        if (disposed) {
+          return;
+        }
         mount.render(errorNode(error));
       },
     );

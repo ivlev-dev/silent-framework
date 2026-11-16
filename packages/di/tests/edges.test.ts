@@ -446,17 +446,17 @@ describe("dispose", () => {
     expect(child.has(token)).toBe(false);
   });
 
-  it("resolve после dispose родителя выбрасывает понятную ошибку", () => {
+  it("resolve после dispose родителя отклоняет промис", async () => {
     const root = new Container("root");
     const token = createToken<string>("after-dispose");
     root.bind(token, () => "value");
 
     root.dispose();
 
-    expect(() => root.resolve(token)).toThrow('Container "root" has been disposed');
+    await expect(root.resolve(token)).rejects.toThrow('Container "root" has been disposed');
   });
 
-  it("resolve класса после dispose не создаёт fallback-экземпляр", () => {
+  it("resolve класса после dispose не создаёт fallback-экземпляр", async () => {
     const root = new Container("root");
 
     class Service {
@@ -465,7 +465,8 @@ describe("dispose", () => {
 
     root.dispose();
 
-    expect(() => root.resolve(Service)).toThrow('Container "root" has been disposed');
+    await expect(root.resolve(Service)).rejects.toThrow('Container "root" has been disposed');
+    expect(root.has(Service)).toBe(false);
   });
 
   it("resolve после dispose скоупа не затрагивает родителя", async () => {
@@ -476,8 +477,19 @@ describe("dispose", () => {
     const child = root.createScope("child");
     child.dispose();
 
-    expect(() => child.resolve(token)).toThrow('Container "child" has been disposed');
+    await expect(child.resolve(token)).rejects.toThrow('Container "child" has been disposed');
     expect(await root.resolve(token)).toBe("alive");
+  });
+
+  it("createScope и bind на disposed-контейнере выбрасывают", () => {
+    const root = new Container("root");
+    const child = root.createScope("child");
+    root.dispose();
+
+    expect(() => root.createScope("late")).toThrow('Container "root" has been disposed');
+    expect(() => root.bind("late", () => 1)).toThrow('Container "root" has been disposed');
+    expect(() => child.createScope("late")).toThrow('Container "child" has been disposed');
+    expect(() => child.bind("late", () => 1)).toThrow('Container "child" has been disposed');
   });
 });
 

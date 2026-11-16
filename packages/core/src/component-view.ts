@@ -45,10 +45,11 @@ import {
   callHook,
   getDefaultPreloader,
   getErrorHandler,
-  getReady,
+  getOwnReady,
   setComponentCreator,
   setReady,
   trackPending,
+  whenSettled,
   withRuntimeOptions,
   type ComponentResult,
   type RuntimeOptions,
@@ -239,6 +240,11 @@ export function createViewResult(
   };
 
   let disposed = false;
+  let generation = 0;
+  let resolveDisposed: (() => void) | null = null;
+  const disposedGate = new Promise<void>((resolve) => {
+    resolveDisposed = resolve;
+  });
   let vmInstance: object | null = null;
   let fallbackRootDispose: (() => void) | null = null;
   let viewRootDispose: (() => void) | null = null;
@@ -295,6 +301,9 @@ export function createViewResult(
       return;
     }
     disposed = true;
+    generation += 1;
+    resolveDisposed?.();
+    resolveDisposed = null;
     controller?.abort();
     if (vmInstance !== null) {
       callHook(vmInstance, "beforeUnmount");
@@ -478,30 +487,62 @@ export function createViewResult(
           }
         },
         replaceVm: (nextVm: object) => {
-          if (vmInstance !== null) {
-            disposeVm(vmInstance);
+          if (disposed) {
+            return;
           }
+          generation += 1;
+          const previous = vmInstance;
+          if (previous !== null) {
+            if (createdCalled) {
+              callHook(previous, "beforeUnmount");
+            }
+            clearView();
+            if (createdCalled) {
+              callHook(previous, "unmounted");
+            }
+            disposeVm(previous);
+          } else {
+            clearView();
+          }
+          createdCalled = false;
           vmInstance = nextVm;
-          renderView(nextVm, true);
+          scope.clearCache();
+          runWithOwner(componentOwner, () => renderView(nextVm, true));
         },
         recreateVm: async (nextVm?: unknown) => {
           if (disposed) {
             return;
           }
+          const ticket = ++generation;
           if (nextVm !== undefined) {
             metaRef = { ...metaRef, vm: nextVm };
           }
           const previous = vmInstance;
-          scope.clearCache(metaRef.vm);
+          const hadView = createdCalled;
+          if (previous !== null) {
+            if (hadView) {
+              callHook(previous, "beforeUnmount");
+            }
+            clearView();
+            if (hadView) {
+              callHook(previous, "unmounted");
+            }
+          } else {
+            clearView();
+          }
+          vmInstance = null;
+          createdCalled = false;
+          scope.clearCache();
           const next = await scope.resolve<object>(metaRef.vm);
-          if (disposed) {
+          if (disposed || ticket !== generation) {
             disposeVm(next);
+            if (previous !== null) {
+              disposeVm(previous);
+            }
             return;
           }
           if (previous !== null) {
             copyReactiveState(previous, next);
-          }
-          if (previous !== null) {
             disposeVm(previous);
           }
           vmInstance = next;
@@ -522,35 +563,51 @@ export function createViewResult(
       });
     }
 
+    const readyGeneration = generation;
     const ready = (async () => {
       try {
         const resolved = await Promise.resolve().then(() =>
           scope.resolve<object>(metaRef.vm),
         );
-        if (disposed || (controller !== null && controller.signal.aborted)) {
+        if (
+          disposed ||
+          readyGeneration !== generation ||
+          (controller !== null && controller.signal.aborted)
+        ) {
           disposeVm(resolved);
           return;
         }
         vmInstance = resolved;
         runWithOwner(componentOwner, () => renderView(resolved, true));
       } catch (error) {
-        if (!disposed) {
-          reportError(error, component, options);
-          renderError(start, end, error);
+        if (disposed || readyGeneration !== generation) {
+          return;
         }
+        reportError(error, component, options);
+        renderError(start, end, error);
       }
     })();
 
-    setReady(start, trackPending(ready));
-    boundary?.register(getReady(start));
+    setReady(start, trackPending(Promise.race([ready, disposedGate])));
+    boundary?.register(getOwnReady(start));
     return null;
   });
 
   void root;
 
+  const ownReady = getOwnReady(start);
   return {
     node: hydrated ? start : fragment!,
-    ready: getReady(start),
+    ready: ownReady,
+    settled: Promise.race([
+      ownReady.then(async () => {
+        if (disposed) {
+          return;
+        }
+        await whenSettled(start);
+      }),
+      disposedGate,
+    ]),
     dispose: disposeInstance,
   };
 }

@@ -234,7 +234,7 @@ describe("dispose и onDispose", () => {
     expect(root.peek<string>(token)).toBeUndefined();
     expect(root.has(token)).toBe(false);
     expect(child.has(token)).toBe(false);
-    expect(() => child.resolve(token)).toThrow("has been disposed");
+    await expect(child.resolve(token)).rejects.toThrow("has been disposed");
   });
 
   it("повторный dispose не вызывает хуки", async () => {
@@ -386,15 +386,51 @@ describe("Fallback", () => {
 });
 
 describe("Граничные случаи", () => {
-  it("resolve(undefined) выбрасывает ошибку", () => {
+  it("resolve(undefined) отклоняет промис, resolveSync выбрасывает", async () => {
     const root = new Container("root");
-    expect(() => root.resolve(undefined)).toThrow("must be transformed by silentwire before runtime");
+    await expect(root.resolve(undefined)).rejects.toThrow(
+      "must be transformed by silentwire before runtime",
+    );
+    expect(() => root.resolveSync(undefined)).toThrow(
+      "must be transformed by silentwire before runtime",
+    );
   });
 
-  it("неизвестный токен выбрасывает ошибку no binding", () => {
+  it("неизвестный токен отклоняет промис, resolveSync выбрасывает", async () => {
     const root = new Container("root");
-    expect(() => root.resolve("unknown")).toThrow("no binding registered");
-    expect(() => root.resolve(createToken<unknown>("unbound"))).toThrow("no binding registered");
+    await expect(root.resolve("unknown")).rejects.toThrow("no binding registered");
+    await expect(root.resolve(createToken<unknown>("unbound"))).rejects.toThrow(
+      "no binding registered",
+    );
+    expect(() => root.resolveSync("unknown")).toThrow("no binding registered");
+    expect(() => root.resolveSync(createToken<unknown>("unbound"))).toThrow(
+      "no binding registered",
+    );
+  });
+
+  it("resolve не бросает синхронно для disposed-контейнера", async () => {
+    const root = new Container("root");
+    root.bind("value", 1);
+    root.dispose();
+
+    let promise: Promise<unknown> | null = null;
+    expect(() => {
+      promise = root.resolve("value");
+    }).not.toThrow();
+
+    await expect(promise).rejects.toThrow('Container "root" has been disposed');
+    expect(() => root.resolveSync("value")).toThrow('Container "root" has been disposed');
+  });
+
+  it("resolveSync возвращает уже разрешённое значение", async () => {
+    const root = new Container("root");
+    const token = createToken<{ id: number }>("sync-read");
+    root.bind(token, () => ({ id: 7 }));
+
+    expect(() => root.resolveSync(token)).toThrow("has not been resolved yet");
+
+    const value = await root.resolve(token);
+    expect(root.resolveSync(token)).toBe(value);
   });
 
   it("bind без factory резолвится в undefined", async () => {

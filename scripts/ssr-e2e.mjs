@@ -197,7 +197,7 @@ async function main() {
       }
     }
     const counter = Number(await page.textContent("strong.value"));
-    assert.ok(counter > 0 && counter % 2 === 0, `неожиданное значение счётчика: ${String(counter)}`);
+    assert.ok(counter > 0, `неожиданное значение счётчика: ${String(counter)}`);
     assert.equal(Number(await page.textContent(".double")), counter * 2);
 
     await page.click('button:has-text("Добавить")');

@@ -1,4 +1,11 @@
-import type { Accessor, MemoOptions, Owner, Setter, SignalOptions } from "./types.js";
+import type {
+  Accessor,
+  EffectErrorHandler,
+  MemoOptions,
+  Owner,
+  Setter,
+  SignalOptions,
+} from "./types.js";
 
 type EqualityFn<T> = (a: T, b: T) => boolean;
 type NodeState = 0 | 1 | 2;
@@ -8,10 +15,51 @@ const CHECK: NodeState = 1;
 const DIRTY: NodeState = 2;
 const MAX_FLUSH_ITERATIONS = 100000;
 
+let reconcileStampSeq = 0;
+let wakeStampSeq = 0;
+let memoIdSeq = 0;
+
+const defaultEffectErrorHandler: EffectErrorHandler = (error) => {
+  console.error(error);
+};
+
+let effectErrorHandler: EffectErrorHandler | null = defaultEffectErrorHandler;
+
+export function setEffectErrorHandler(
+  handler: EffectErrorHandler | null,
+): EffectErrorHandler | null {
+  const previous = effectErrorHandler;
+  effectErrorHandler = handler;
+  return previous;
+}
+
+function reportEffectError(error: unknown): void {
+  const handler = effectErrorHandler;
+  if (handler === null) {
+    return;
+  }
+  try {
+    handler(error);
+  } catch (handlerError) {
+    console.error(handlerError);
+  }
+}
+
+export class CircularComputationError extends Error {
+  readonly path: readonly string[];
+
+  constructor(path: readonly string[]) {
+    super(`Circular memo computation detected: ${path.join(" -> ")}`);
+    this.name = "CircularComputationError";
+    this.path = path;
+  }
+}
+
 interface SignalNode {
   readonly type: "signal";
   value: unknown;
   version: number;
+  reconcileStamp: number;
   readonly equals: EqualityFn<unknown>;
   readonly observers: Set<ComputationNode>;
 }
@@ -20,17 +68,20 @@ interface MemoNode {
   readonly type: "memo";
   value: unknown;
   version: number;
+  reconcileStamp: number;
   readonly equals: EqualityFn<unknown>;
   readonly fn: () => unknown;
+  readonly name: string;
   state: NodeState;
   disposed: boolean;
   initialized: boolean;
   running: boolean;
+  failed: boolean;
+  wakeStamp: number;
   readonly observers: Set<ComputationNode>;
   deps: SourceNode[] | null;
   depVersions: number[] | null;
-  nextDeps: SourceNode[] | null;
-  nextDepVersions: number[] | null;
+  nextDepMap: Map<SourceNode, number> | null;
   readonly owner: OwnerNode;
 }
 
@@ -43,8 +94,7 @@ interface EffectNode {
   running: boolean;
   deps: SourceNode[] | null;
   depVersions: number[] | null;
-  nextDeps: SourceNode[] | null;
-  nextDepVersions: number[] | null;
+  nextDepMap: Map<SourceNode, number> | null;
   readonly owner: OwnerNode;
 }
 
@@ -72,9 +122,11 @@ const pendingInitial = new Set<EffectNode>();
 const effectQueue = new Set<EffectNode>();
 const ownerRefs = new WeakMap<OwnerNode, Owner>();
 const ownerNodes = new WeakMap<Owner, OwnerNode>();
+const memoStack: MemoNode[] = [];
 
 let flushScheduled = false;
 let flushing = false;
+let initialFlushing = false;
 let batchDepth = 0;
 
 function createSignalNode<T>(value: T, equals: EqualityFn<unknown>): SignalNode {
@@ -82,9 +134,23 @@ function createSignalNode<T>(value: T, equals: EqualityFn<unknown>): SignalNode 
     type: "signal",
     value,
     version: 0,
+    reconcileStamp: 0,
     equals,
     observers: new Set<ComputationNode>(),
   };
+}
+
+function trackDependency(node: SourceNode): void {
+  const listener = currentListener;
+  if (listener === null || listener.disposed) {
+    return;
+  }
+  let nextDeps = listener.nextDepMap;
+  if (nextDeps === null) {
+    nextDeps = new Map<SourceNode, number>();
+    listener.nextDepMap = nextDeps;
+  }
+  nextDeps.set(node, node.version);
 }
 
 function readSource(node: SourceNode): unknown {
@@ -92,27 +158,26 @@ function readSource(node: SourceNode): unknown {
     if (node.disposed) {
       return node.value;
     }
-    updateIfNecessary(node);
-  }
-  const listener = currentListener;
-  if (listener !== null && !listener.disposed) {
-    let nextDeps = listener.nextDeps;
-    let nextVersions = listener.nextDepVersions;
-    if (nextDeps === null || nextVersions === null) {
-      nextDeps = [];
-      nextVersions = [];
-      listener.nextDeps = nextDeps;
-      listener.nextDepVersions = nextVersions;
+    if (node.running) {
+      throw circularError(node);
     }
-    const existing = nextDeps.indexOf(node);
-    if (existing === -1) {
-      nextDeps.push(node);
-      nextVersions.push(node.version);
-    } else {
-      nextVersions[existing] = node.version;
+    try {
+      updateIfNecessary(node);
+    } catch (error) {
+      trackDependency(node);
+      throw error;
     }
   }
+  trackDependency(node);
   return node.value;
+}
+
+function circularError(node: MemoNode): CircularComputationError {
+  const start = memoStack.indexOf(node);
+  const active = start === -1 ? memoStack : memoStack.slice(start);
+  const path = active.map((entry) => entry.name);
+  path.push(node.name);
+  return new CircularComputationError(path);
 }
 
 function writeSource(node: SignalNode, value: unknown): void {
@@ -127,7 +192,14 @@ function writeSource(node: SignalNode, value: unknown): void {
 }
 
 function markDirty(node: ComputationNode): void {
-  if (node.disposed || node.state === DIRTY) {
+  if (node.disposed) {
+    return;
+  }
+  if (node.state === DIRTY) {
+    if (node.type === "memo" && node.failed) {
+      node.failed = false;
+      wakeObservers(node, ++wakeStampSeq);
+    }
     return;
   }
   node.state = DIRTY;
@@ -137,6 +209,32 @@ function markDirty(node: ComputationNode): void {
     }
   } else {
     queueEffect(node);
+  }
+}
+
+function wakeObservers(node: ComputationNode, stamp: number): void {
+  if (node.type !== "memo") {
+    return;
+  }
+  for (const observer of node.observers) {
+    if (observer.disposed) {
+      continue;
+    }
+    if (observer.type === "memo") {
+      if (observer.wakeStamp === stamp) {
+        continue;
+      }
+      if (observer.state === CLEAN) {
+        observer.state = CHECK;
+      }
+      observer.wakeStamp = stamp;
+      wakeObservers(observer, stamp);
+    } else {
+      if (observer.state === CLEAN) {
+        observer.state = DIRTY;
+      }
+      queueEffect(observer);
+    }
   }
 }
 
@@ -200,6 +298,12 @@ function runWithTracking<T>(node: ComputationNode, fn: () => T): T {
   currentListener = node;
   currentOwner = node.owner;
   node.running = true;
+  let nextDeps = node.nextDepMap;
+  if (nextDeps === null) {
+    nextDeps = new Map<SourceNode, number>();
+    node.nextDepMap = nextDeps;
+  }
+  nextDeps.clear();
   try {
     return fn();
   } finally {
@@ -211,11 +315,10 @@ function runWithTracking<T>(node: ComputationNode, fn: () => T): T {
 }
 
 function reconcileDependencies(node: ComputationNode): void {
-  const nextDeps = node.nextDeps;
-  const nextVersions = node.nextDepVersions;
-  if (nextDeps === null) {
-    const previousDeps = node.deps;
-    const previousVersions = node.depVersions;
+  const nextMap = node.nextDepMap;
+  const previousDeps = node.deps;
+  const previousVersions = node.depVersions;
+  if (nextMap === null || nextMap.size === 0) {
     if (previousDeps !== null) {
       for (const dep of previousDeps) {
         dep.observers.delete(node);
@@ -227,28 +330,35 @@ function reconcileDependencies(node: ComputationNode): void {
     }
     node.deps = null;
     node.depVersions = null;
-    node.nextDeps = null;
-    node.nextDepVersions = null;
     return;
   }
-  if (nextVersions === null) {
-    node.nextDeps = null;
-    return;
+  const nextDeps: SourceNode[] = [];
+  const nextVersions: number[] = [];
+  for (const [dep, version] of nextMap) {
+    nextDeps.push(dep);
+    nextVersions.push(version);
   }
-  const previousDeps = node.deps;
-  const previousVersions = node.depVersions;
+  nextMap.clear();
   if (previousDeps === null) {
     for (const dep of nextDeps) {
       dep.observers.add(node);
     }
   } else {
+    const presenceStamp = ++reconcileStampSeq;
+    for (const dep of nextDeps) {
+      dep.reconcileStamp = presenceStamp;
+    }
     for (const dep of previousDeps) {
-      if (nextDeps.indexOf(dep) === -1) {
+      if (dep.reconcileStamp !== presenceStamp) {
         dep.observers.delete(node);
       }
     }
+    const previousStamp = ++reconcileStampSeq;
+    for (const dep of previousDeps) {
+      dep.reconcileStamp = previousStamp;
+    }
     for (const dep of nextDeps) {
-      if (previousDeps.indexOf(dep) === -1) {
+      if (dep.reconcileStamp !== previousStamp) {
         dep.observers.add(node);
       }
     }
@@ -259,26 +369,34 @@ function reconcileDependencies(node: ComputationNode): void {
   }
   node.deps = nextDeps;
   node.depVersions = nextVersions;
-  node.nextDeps = null;
-  node.nextDepVersions = null;
 }
 
 function recomputeMemo(node: MemoNode): void {
   if (node.disposed) {
     return;
   }
-  resetOwner(node.owner);
-  node.state = CLEAN;
   const previous = node.value;
   const wasInitialized = node.initialized;
-  const next = runWithTracking(node, node.fn);
-  node.initialized = true;
-  if (!wasInitialized || !node.equals(previous, next)) {
-    node.value = next;
-    node.version += 1;
-    for (const observer of node.observers) {
-      markCheck(observer);
+  memoStack.push(node);
+  try {
+    resetOwner(node.owner);
+    node.state = CLEAN;
+    const next = runWithTracking(node, node.fn);
+    node.initialized = true;
+    node.failed = false;
+    if (!wasInitialized || !node.equals(previous, next)) {
+      node.value = next;
+      node.version += 1;
+      for (const observer of node.observers) {
+        markCheck(observer);
+      }
     }
+  } catch (error) {
+    node.state = DIRTY;
+    node.failed = true;
+    throw error;
+  } finally {
+    memoStack.pop();
   }
 }
 
@@ -316,21 +434,45 @@ function scheduleFlush(): void {
   });
 }
 
-function flushInitialEffects(): void {
-  if (pendingInitial.size === 0) {
+function runQueuedEffect(node: EffectNode): void {
+  if (node.disposed) {
     return;
   }
-  const nodes = Array.from(pendingInitial);
-  pendingInitial.clear();
-  for (const node of nodes) {
-    if (!node.disposed) {
-      updateIfNecessary(node);
+  try {
+    updateIfNecessary(node);
+  } catch (error) {
+    if (node.state === DIRTY) {
+      node.state = CLEAN;
     }
+    reportEffectError(error);
+  }
+}
+
+function flushInitialEffects(): void {
+  if (pendingInitial.size === 0 || initialFlushing) {
+    return;
+  }
+  initialFlushing = true;
+  try {
+    let iterations = 0;
+    while (pendingInitial.size > 0) {
+      const nodes = Array.from(pendingInitial);
+      pendingInitial.clear();
+      for (const node of nodes) {
+        runQueuedEffect(node);
+      }
+      iterations += nodes.length;
+      if (iterations > MAX_FLUSH_ITERATIONS) {
+        throw new Error("Reactivity flush exceeded iteration limit");
+      }
+    }
+  } finally {
+    initialFlushing = false;
   }
 }
 
 function flushEffects(): void {
-  if (flushing) {
+  if (flushing || initialFlushing) {
     return;
   }
   flushing = true;
@@ -342,9 +484,7 @@ function flushEffects(): void {
         break;
       }
       effectQueue.delete(entry.value);
-      if (!entry.value.disposed) {
-        updateIfNecessary(entry.value);
-      }
+      runQueuedEffect(entry.value);
       iterations += 1;
       if (iterations > MAX_FLUSH_ITERATIONS) {
         throw new Error("Reactivity flush exceeded iteration limit");
@@ -439,8 +579,8 @@ function disposeComputation(node: ComputationNode): void {
   }
   node.deps = null;
   node.depVersions = null;
-  node.nextDeps = null;
-  node.nextDepVersions = null;
+  node.nextDepMap?.clear();
+  node.nextDepMap = null;
   disposeOwner(node.owner);
 }
 
@@ -478,8 +618,7 @@ function createEffectNode(type: "effect" | "renderEffect", fn: () => void): Effe
     running: false,
     deps: null,
     depVersions: null,
-    nextDeps: null,
-    nextDepVersions: null,
+    nextDepMap: null,
     owner,
   };
   owner.computation = node;
@@ -537,21 +676,26 @@ export function createMemo<T>(fn: () => T, options?: MemoOptions<T>): Accessor<T
       ? Object.is
       : (a, b) => equalsOption(a as T, b as T);
   const owner = createOwnerNode(currentOwner);
+  const name =
+    options?.name ?? (fn.name.length > 0 ? fn.name : `memo#${(memoIdSeq += 1)}`);
   const node: MemoNode = {
     type: "memo",
     value: undefined,
     version: 0,
+    reconcileStamp: 0,
     equals: equality,
     fn: fn as () => unknown,
+    name,
     state: DIRTY,
     disposed: false,
     initialized: false,
     running: false,
+    failed: false,
+    wakeStamp: 0,
     observers: new Set<ComputationNode>(),
     deps: null,
     depVersions: null,
-    nextDeps: null,
-    nextDepVersions: null,
+    nextDepMap: null,
     owner,
   };
   owner.computation = node;
@@ -572,8 +716,7 @@ export function createRenderEffect(fn: () => void): void {
 }
 
 interface ProbeTracker {
-  nextDeps: SourceNode[] | null;
-  nextDepVersions: number[] | null;
+  nextDepMap: Map<SourceNode, number> | null;
   disposed: boolean;
 }
 
@@ -584,11 +727,10 @@ let probeDepth = 0;
 function acquireTracker(): ProbeTracker {
   let tracker = trackerPool[probeDepth];
   if (tracker === undefined) {
-    tracker = { nextDeps: null, nextDepVersions: null, disposed: false };
+    tracker = { nextDepMap: null, disposed: false };
     trackerPool.push(tracker);
   } else {
-    tracker.nextDeps = null;
-    tracker.nextDepVersions = null;
+    tracker.nextDepMap?.clear();
     tracker.disposed = false;
   }
   probeDepth += 1;
@@ -628,16 +770,15 @@ function createEffectUnlessStatic(fn: () => void): (() => void) | null {
     currentListener = previousListener;
     currentOwner = parentOwner;
     probeDepth -= 1;
+    tracker.nextDepMap?.clear();
     disposeOwner(holder);
     throw error;
   }
   currentListener = previousListener;
   currentOwner = parentOwner;
   probeDepth -= 1;
-  const deps = tracker.nextDeps;
-  const versions = tracker.nextDepVersions;
-  const tracked = deps !== null && deps.length > 0 && versions !== null;
-  if (!tracked) {
+  const nextMap = tracker.nextDepMap;
+  if (nextMap === null || nextMap.size === 0) {
     const children = holder.children;
     const cleanups = holder.cleanups;
     if (children === null && cleanups === null) {
@@ -658,15 +799,20 @@ function createEffectUnlessStatic(fn: () => void): (() => void) | null {
     }
     return () => disposeOwner(owner);
   }
+  const deps: SourceNode[] = [];
+  const versions: number[] = [];
+  for (const [dep, version] of nextMap) {
+    deps.push(dep);
+    versions.push(version);
+  }
+  nextMap.clear();
   const node = createEffectNode("renderEffect", fn);
   node.initialized = true;
   node.state = CLEAN;
-  if (deps !== null && versions !== null) {
-    node.deps = deps;
-    node.depVersions = versions;
-    for (const dep of deps) {
-      dep.observers.add(node);
-    }
+  node.deps = deps;
+  node.depVersions = versions;
+  for (const dep of deps) {
+    dep.observers.add(node);
   }
   const owner = node.owner;
   const children = holder.children;

@@ -130,7 +130,7 @@ async function hydrateWith(
           { start: boundaryStart, end: boundaryEnd, cursor: boundaryStart.nextSibling },
           () => createRootResult(app, options, runtimeOptions, create),
         );
-        const pending = complete(adopted.result.ready);
+        const pending = complete(adopted.result.settled);
         if (pending !== null) {
           await pending;
         }
@@ -150,7 +150,7 @@ async function hydrateWith(
       const fresh = withoutHydration(() =>
         createRootResult(app, options, runtimeOptions, create),
       );
-      const pending = complete(fresh.result.ready);
+      const pending = complete(fresh.result.settled);
       if (pending !== null) {
         await pending;
       }
