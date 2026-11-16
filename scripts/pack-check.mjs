@@ -26,6 +26,7 @@ const expectations = {
   swc: ["package/README.md", "package/index.js", "package/index.d.ts"],
   vite: ["package/README.md", "package/dist/index.js", "package/dist/index.d.ts"],
   server: ["package/README.md", "package/dist/index.js", "package/dist/index.d.ts"],
+  router: ["package/README.md", "package/dist/index.js", "package/dist/index.d.ts"],
   silent: ["package/README.md", "package/index.js", "package/index.d.ts"],
 };
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.9.0
+
+Новый пакет `@ivlev-dev/silent-router`.
+
+### Router
+
+- Класс `Router` с вложенными маршрутами, `:param`, `*`, index-маршрутами, specificity, redirect, guards, `load`, `AbortSignal`, scroll restoration и реактивным состоянием `route`/`params`/`query`/`matched`.
+- Публичные компоненты только `Link` и `RouterView`; публичных hooks (`useRouter`, `useRoute`, `useParams`) нет.
+- `Link`: настоящий `<a href>`, base, перехват левого клика без модификаторов, реактивные `activeClass`/`exactActiveClass`.
+- `RouterView`: matched-компонент по `depth`, fallback, реактивное обновление и освобождение DOM.
+- `BrowserHistory`, `MemoryHistory`, `createBrowserHistory`, `createMemoryHistory`; SSR через memory history.
+- Ошибки `RouterMissingError`, `RouterNavigationError`, `RouterAbortError`.
+- Пакет добавлен в build/version/pack/publish-инфраструктуру как восьмой публикуемый пакет; документация — `docs/api/router.md`.
+
 ## 0.8.0
 
 Волна прикладных примитивов: Context, Portal, Transition, Resource, Head, keyed-списки, controlled bindings и расширенная реактивность.
