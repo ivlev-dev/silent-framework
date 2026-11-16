@@ -73,4 +73,4 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Verify all packages are published
         run: pnpm published:check
-        timeout-minutes: 10
+        timeout-minutes: 15
