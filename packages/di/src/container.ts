@@ -163,6 +163,22 @@ export class Container {
     return builder;
   }
 
+  bindValue<T>(token: unknown, value: T): void {
+    this.assertUsable();
+    const binding: Binding<unknown> = {
+      factory: async () => value,
+      scope: "singleton",
+    };
+    this.bindings.set(token, binding);
+    this.implicitTokens.delete(token);
+    this.clearCache(token);
+    this.resolved.set(token, value);
+  }
+
+  peekValue<T = unknown>(token: unknown): T | undefined {
+    return this.peek<T>(token);
+  }
+
   createScope(name = `scope:${Math.random()}`): Container {
     this.assertUsable();
     const scope = new Container(name, this);

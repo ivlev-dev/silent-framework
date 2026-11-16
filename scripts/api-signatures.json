@@ -921,7 +921,7 @@
       },
       "Container": {
         "kind": "class",
-        "signature": "export declare class Container { readonly name: string; constructor(name?: string, parent?: Container); bind<T = unknown>(token: unknown, factory?: unknown): BindingBuilder; createScope(name?: string): Container; resolve<T = unknown>(token: unknown): Promise<T>; resolveSync<T = unknown>(token: unknown): T; peek<T = unknown>(token: unknown): T | undefined; has(token: unknown): boolean; snapshot(): ContainerSnapshot; clearCache(token?: unknown): void; onDispose(fn: () => void): void; dispose(): void; }"
+        "signature": "export declare class Container { readonly name: string; constructor(name?: string, parent?: Container); bind<T = unknown>(token: unknown, factory?: unknown): BindingBuilder; bindValue<T>(token: unknown, value: T): void; peekValue<T = unknown>(token: unknown): T | undefined; createScope(name?: string): Container; resolve<T = unknown>(token: unknown): Promise<T>; resolveSync<T = unknown>(token: unknown): T; peek<T = unknown>(token: unknown): T | undefined; has(token: unknown): boolean; snapshot(): ContainerSnapshot; clearCache(token?: unknown): void; onDispose(fn: () => void): void; dispose(): void; }"
       },
       "ContainerSnapshot": {
         "kind": "interface",
@@ -1156,6 +1156,14 @@
       }
     },
     "@ivlev-dev/silent-router": {
+      "AnyRouteGuard": {
+        "kind": "type",
+        "signature": "export type AnyRouteGuard = (...args: never[]) => RouteGuardResult | Promise<RouteGuardResult>;"
+      },
+      "AnyRouteLoader": {
+        "kind": "type",
+        "signature": "export type AnyRouteLoader = (...args: never[]) => RouteLoaderResult | Promise<RouteLoaderResult>;"
+      },
       "BrowserHistory": {
         "kind": "class",
         "signature": "export declare class BrowserHistory implements RouterHistory { constructor(win?: Window); get location(): HistoryLocation; push(to: string, state?: unknown): void; replace(to: string, state?: unknown): void; back(): void; forward(): void; listen(listener: HistoryListener): () => void; dispose(): void; }"
@@ -1178,6 +1186,10 @@
         "kind": "interface",
         "signature": "export interface HistoryLocation { readonly pathname: string; readonly search: string; readonly hash: string; readonly state: unknown; }"
       },
+      "IRouter": {
+        "kind": "interface",
+        "signature": "export interface IRouter { readonly base: string; readonly state: Accessor<RouterState>; readonly route: RouteLocation | null; readonly params: RouteParams; readonly query: RouteQuery; readonly hash: string; readonly matched: readonly MatchedRoute[]; resolve(to: RouteTarget): RouteLocation; href(to: RouteTarget): string; push(to: RouteTarget): Promise<void>; replace(to: RouteTarget): Promise<void>; back(): void; forward(): void; start(): Promise<void>; stop(): void; dispose(): void; } export declare const IRouter: typeof Router;"
+      },
       "Link": {
         "kind": "function",
         "type": "(props: LinkProps) => Node",
@@ -1185,7 +1197,7 @@
       },
       "LinkProps": {
         "kind": "interface",
-        "signature": "export interface LinkProps { readonly to: RouteTarget | (() => RouteTarget); readonly replace?: boolean; readonly activeClass?: string; readonly exactActiveClass?: string; readonly class?: ClassNameValue; readonly children?: Children; readonly router?: Router; }"
+        "signature": "export interface LinkProps { readonly to: RouteTarget | (() => RouteTarget); readonly replace?: boolean; readonly activeClass?: string; readonly exactActiveClass?: string; readonly class?: ClassNameValue; readonly children?: Children; readonly router?: IRouter; }"
       },
       "MatchedRoute": {
         "kind": "interface",
@@ -1195,9 +1207,37 @@
         "kind": "class",
         "signature": "export declare class MemoryHistory implements RouterHistory { constructor(initial?: string | { url: string; state?: unknown; }); get length(): number; get position(): number; get location(): HistoryLocation; push(to: string, state?: unknown): void; replace(to: string, state?: unknown): void; back(): void; forward(): void; listen(listener: HistoryListener): () => void; dispose(): void; }"
       },
+      "PathParams": {
+        "kind": "type",
+        "signature": "export type PathParams<Path extends string> = string extends Path ? Readonly<Record<string, string>> : { readonly [Key in ParamName<Path>]: string; };"
+      },
       "QueryInput": {
         "kind": "type",
         "signature": "export type QueryInput = string | number | boolean | null | undefined | readonly (string | number)[];"
+      },
+      "Route": {
+        "kind": "class",
+        "signature": "export declare abstract class Route<Path extends string = string, Query extends RouteQueryShape = RouteQuery> implements RouteDefinition { abstract readonly path: Path; readonly name?: string; readonly component?: AnyComponent; readonly children?: readonly RouteInput[]; readonly redirect?: RouteRedirect; readonly meta?: RouteMeta; } export interface Route<Path extends string = string, Query extends RouteQueryShape = RouteQuery> { beforeEnter?(to: TypedRouteLocation<Path, Query>, from: TypedRouteLocation<Path, Query> | null, signal: AbortSignal): RouteGuardResult | Promise<RouteGuardResult>; load?(context: RouteLoadContext<Path, Query>): RouteLoaderResult | Promise<RouteLoaderResult>; }"
+      },
+      "RouteClass": {
+        "kind": "type",
+        "signature": "export type RouteClass = new () => RouteDefinition;"
+      },
+      "RouteClassGuard": {
+        "kind": "type",
+        "signature": "export type RouteClassGuard<Path extends string = string, Query = RouteQuery> = (to: TypedRouteLocation<Path, Query>, from: TypedRouteLocation<Path, Query> | null, signal: AbortSignal) => RouteGuardResult | Promise<RouteGuardResult>;"
+      },
+      "RouteClassLoad": {
+        "kind": "type",
+        "signature": "export type RouteClassLoad<Path extends string = string, Query = RouteQuery> = (context: RouteLoadContext<Path, Query>) => RouteLoaderResult | Promise<RouteLoaderResult>;"
+      },
+      "RouteComponent": {
+        "kind": "type",
+        "signature": "export type RouteComponent<Path extends string = string, Query = RouteQuery> = (props: RouteViewProps<Path, Query>) => unknown;"
+      },
+      "RouteDefinition": {
+        "kind": "interface",
+        "signature": "export interface RouteDefinition { readonly path: string; readonly name?: string; readonly component?: AnyComponent; readonly children?: readonly RouteInput[]; readonly redirect?: RouteRedirect; readonly meta?: RouteMeta; readonly beforeEnter?: AnyRouteGuard; readonly load?: AnyRouteLoader; }"
       },
       "RouteGuard": {
         "kind": "type",
@@ -1206,6 +1246,14 @@
       "RouteGuardResult": {
         "kind": "type",
         "signature": "export type RouteGuardResult = boolean | void | string | RouteLocationTargetObject;"
+      },
+      "RouteInput": {
+        "kind": "type",
+        "signature": "export type RouteInput = RouteRecord | RouteDefinition | RouteClass;"
+      },
+      "RouteLoadContext": {
+        "kind": "interface",
+        "signature": "export interface RouteLoadContext<Path extends string = string, Query = RouteQuery> extends RouteViewProps<Path, Query> { readonly signal: AbortSignal; }"
       },
       "RouteLoader": {
         "kind": "type",
@@ -1235,13 +1283,17 @@
         "kind": "type",
         "signature": "export type RouteQuery = Readonly<Record<string, RouteQueryValue>>;"
       },
+      "RouteQueryShape": {
+        "kind": "type",
+        "signature": "export type RouteQueryShape = Readonly<Record<string, QueryInput>>;"
+      },
       "RouteQueryValue": {
         "kind": "type",
         "signature": "export type RouteQueryValue = string | readonly string[];"
       },
       "Router": {
         "kind": "class",
-        "signature": "export declare class Router { readonly base: string; readonly state: Accessor<RouterState>; constructor(options: RouterOptions); static current(): Router | null; get route(): RouteLocation | null; get params(): RouteParams; get query(): RouteQuery; get hash(): string; get matched(): readonly MatchedRoute[]; resolve(to: RouteTarget): RouteLocation; href(to: RouteTarget): string; push(to: RouteTarget): Promise<void>; replace(to: RouteTarget): Promise<void>; back(): void; forward(): void; start(): Promise<void>; stop(): void; dispose(): void; }"
+        "signature": "export declare class Router implements IRouter { readonly base: string; readonly state: Accessor<RouterState>; constructor(options: RouterOptions); static current(): Router | null; provide(container: Container): this; get route(): RouteLocation | null; get params(): RouteParams; get query(): RouteQuery; get hash(): string; get matched(): readonly MatchedRoute[]; resolve(to: RouteTarget): RouteLocation; href(to: RouteTarget): string; push(to: RouteTarget): Promise<void>; replace(to: RouteTarget): Promise<void>; back(): void; forward(): void; start(): Promise<void>; stop(): void; dispose(): void; }"
       },
       "RouterAbortError": {
         "kind": "class",
@@ -1273,7 +1325,7 @@
       },
       "RouterOptions": {
         "kind": "interface",
-        "signature": "export interface RouterOptions { readonly routes: readonly RouteRecord[]; readonly base?: string; readonly history?: RouterHistory; readonly scrollBehavior?: ScrollBehavior; }"
+        "signature": "export interface RouterOptions { readonly routes: readonly RouteInput[]; readonly base?: string; readonly history?: RouterHistory; readonly scrollBehavior?: ScrollBehavior; readonly container?: Container; }"
       },
       "RouterState": {
         "kind": "interface",
@@ -1285,16 +1337,20 @@
         "signature": "export declare function RouterView(props: RouterViewProps): Node;"
       },
       "RouterViewComponentProps": {
-        "kind": "interface",
-        "signature": "export interface RouterViewComponentProps { readonly route: RouteLocation | null; readonly params: RouteParams; readonly query: RouteQuery; readonly hash: string; readonly router: Router; }"
+        "kind": "type",
+        "signature": "export type RouterViewComponentProps<Path extends string = string, Query = RouteQuery> = RouteViewProps<Path, Query>;"
       },
       "RouterViewProps": {
         "kind": "interface",
-        "signature": "export interface RouterViewProps { readonly router?: Router; readonly depth?: number; readonly fallback?: unknown; }"
+        "signature": "export interface RouterViewProps { readonly router?: IRouter; readonly depth?: number; readonly fallback?: unknown; }"
       },
       "RouteTarget": {
         "kind": "type",
         "signature": "export type RouteTarget = string | RouteLocationTargetObject;"
+      },
+      "RouteViewProps": {
+        "kind": "interface",
+        "signature": "export interface RouteViewProps<Path extends string = string, Query = RouteQuery> { readonly route: TypedRouteLocation<Path, Query>; readonly params: PathParams<Path>; readonly query: Query; readonly hash: string; readonly router: IRouter; }"
       },
       "ScrollBehavior": {
         "kind": "type",
@@ -1307,6 +1363,10 @@
       "ScrollPosition": {
         "kind": "interface",
         "signature": "export interface ScrollPosition { readonly left: number; readonly top: number; }"
+      },
+      "TypedRouteLocation": {
+        "kind": "type",
+        "signature": "export type TypedRouteLocation<Path extends string = string, Query = RouteQuery> = Omit<RouteLocation, \"params\" | \"query\"> & { readonly params: PathParams<Path>; readonly query: Query; };"
       }
     },
     "@ivlev-dev/silent-server": {

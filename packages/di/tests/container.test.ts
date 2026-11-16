@@ -4,8 +4,7 @@ import type { Token } from "../src/index.js";
 
 const delay = (ms: number): Promise<void> => new Promise<void>((settle) => setTimeout(settle, ms));
 
-describe("Области видимости", () => {
-  it("синглтон кешируется в контейнере-владельце и общий между скоупами", async () => {
+describe("Области видимости", () => {  it("синглтон кешируется в контейнере-владельце и общий между скоупами", async () => {
     const root = new Container("root");
     const token = createToken<{ id: number }>("shared");
     let calls = 0;
@@ -476,5 +475,33 @@ describe("Граничные случаи", () => {
     const scope = container.createScope();
     expect(scope).toBeInstanceOf(Container);
     expect(scope.name).toMatch(/^scope:/);
+  });
+});
+
+describe("Синхронные значения", () => {
+  it("bindValue доступен сразу через peek и peekValue", async () => {
+    const root = new Container("root");
+    const token = createToken<{ id: number }>("value");
+    const value = { id: 1 };
+    root.bindValue(token, value);
+
+    expect(root.peek(token)).toBe(value);
+    expect(root.peekValue(token)).toBe(value);
+
+    const scope = root.createScope("child");
+    expect(scope.peekValue(token)).toBe(value);
+    expect(await scope.resolve(token)).toBe(value);
+  });
+
+  it("bindValue заменяет привязку и очищает кеш", async () => {
+    const root = new Container("root");
+    const token = createToken<{ id: number }>("replace");
+    root.bind(token, () => ({ id: 1 }));
+    expect(await root.resolve(token)).toEqual({ id: 1 });
+
+    const next = { id: 2 };
+    root.bindValue(token, next);
+    expect(root.peekValue(token)).toBe(next);
+    expect(await root.resolve(token)).toBe(next);
   });
 });

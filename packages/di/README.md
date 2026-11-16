@@ -14,7 +14,7 @@
 - Асинхронное разрешение: `resolve` всегда возвращает `Promise`, кеш промисов разделяет параллельные вызовы.
 - Детектор циклов: `CircularDependencyError` с путём из токенов.
 - Защита от captive dependencies: singleton не может захватить `scoped`-сервис более короткого жизненного цикла (`InvalidScopeError`).
-- Точечное управление: `peek`, `has`, `clearCache(token?)`, `onDispose`-хуки, рекурсивный `dispose`.
+- Точечное управление: `bindValue`, `peek`, `peekValue`, `has`, `clearCache(token?)`, `onDispose`-хуки, рекурсивный `dispose`.
 
 ## Установка
 
@@ -157,7 +157,7 @@ try {
 
 | Символ | Назначение |
 | --- | --- |
-| `Container` | Асинхронный контейнер: `bind`, `resolve`, `resolveSync`, `createScope`, `peek`, `has`, `clearCache`, `onDispose`, `dispose` |
+| `Container` | Асинхронный контейнер: `bind`, `bindValue`, `resolve`, `resolveSync`, `createScope`, `peek`, `peekValue`, `has`, `clearCache`, `onDispose`, `dispose` |
 | `container` | Глобальный корневой экземпляр `Container("root")` |
 | `createToken` | Создаёт типизированный токен (`symbol` c phantom-типом `T`) |
 | `Token` | Тип токена: `symbol` c phantom-параметром `T` |

@@ -1,4 +1,5 @@
 import { createRoot } from "@ivlev-dev/silent-reactivity";
+import { withRuntimeOptions, type RuntimeOptions } from "@ivlev-dev/silent-core";
 import type { RouterViewComponentProps } from "../src/index";
 
 export interface Rendered {
@@ -6,12 +7,21 @@ export interface Rendered {
   dispose(): void;
 }
 
-export function render(factory: () => Node): Rendered {
+export function render(
+  factory: () => Node,
+  options?: RuntimeOptions,
+): Rendered {
   const host = document.createElement("div");
   let stop = (): void => {};
   createRoot((dispose) => {
     stop = dispose;
-    host.appendChild(factory());
+    if (options === undefined) {
+      host.appendChild(factory());
+      return;
+    }
+    withRuntimeOptions(options, () => {
+      host.appendChild(factory());
+    });
   });
   document.body.appendChild(host);
   return {

@@ -182,6 +182,10 @@ function compilePattern(pattern: string): PatternSegment[] {
       result.push({ kind: "param", name: segment.slice(1) });
       continue;
     }
+    if (segment.startsWith("{") && segment.endsWith("}") && segment.length > 2) {
+      result.push({ kind: "param", name: segment.slice(1, -1) });
+      continue;
+    }
     result.push({ kind: "static", value: segment });
   }
   return result;
@@ -577,7 +581,7 @@ export function resolveLocation(
     }
     targetPath = interpolatePath(route.path, params);
   } else if (target.path !== undefined && target.path !== "") {
-    targetPath = target.path.includes(":")
+    targetPath = target.path.includes(":") || target.path.includes("{")
       ? interpolatePath(target.path, params)
       : normalizePath(target.path);
   } else {

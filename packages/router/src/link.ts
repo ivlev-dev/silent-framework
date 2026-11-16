@@ -2,6 +2,7 @@ import {
   attr,
   createElement,
   createMountPoint,
+  getRuntimeOptions,
   normalizeClass,
   on,
   type Children,
@@ -9,7 +10,7 @@ import {
 } from "@ivlev-dev/silent-core";
 import { createRenderEffect, onCleanup } from "@ivlev-dev/silent-reactivity";
 import { RouterMissingError, isPathActive, type RouteTarget } from "./match.js";
-import { Router } from "./router.js";
+import { Router, type IRouter } from "./router.js";
 
 export interface LinkProps {
   readonly to: RouteTarget | (() => RouteTarget);
@@ -18,11 +19,18 @@ export interface LinkProps {
   readonly exactActiveClass?: string;
   readonly class?: ClassNameValue;
   readonly children?: Children;
-  readonly router?: Router;
+  readonly router?: IRouter;
 }
 
-function resolveRouter(router: Router | undefined): Router {
-  const resolved = router ?? Router.current();
+function resolveRouter(router: IRouter | undefined): IRouter {
+  if (router !== undefined) {
+    return router;
+  }
+  const injected = getRuntimeOptions().container?.peek<IRouter>(Router);
+  if (injected !== undefined) {
+    return injected;
+  }
+  const resolved = Router.current();
   if (resolved === null) {
     throw new RouterMissingError("Link требует Router: передайте router или создайте экземпляр");
   }

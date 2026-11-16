@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.11.0
+
+Router переведён на MVVM/DI-контракт.
+
+### Router и DI
+
+- Добавлен `IRouter`; `Router implements IRouter`. `IRouter` экспортируется как тип и runtime-токен для compiler DI.
+- `Router.provide(container)` и `RouterOptions.container`; `Container.bindValue`/`peekValue` для синхронной доставки.
+- `Link`/`RouterView` получают роутер из DI-контекста, explicit prop или `Router.current()`.
+- ViewModel может принимать `constructor(private readonly router: IRouter)`; роут-компоненты монтируются через core `component()`, поэтому VM/DI работают в route-компонентах.
+- `RouterView` передаёт `RouteViewProps` с `route/params/query/hash/router`.
+
+### Route-классы
+
+- `abstract class Route<Path, Query>` с `path`, `name`, `component`, `children`, `redirect`, `meta`, `beforeEnter`, `load`.
+- `RouterOptions.routes` принимает классы, экземпляры и старые object-routes.
+- Поддержаны path params `/edit/{id}` (и `:id`), `PathParams<Path>`, типизированный query, `RouteViewProps`.
+- `load()` поддерживает динамические импорты (`import("./edit")`) и `{ default }`, кешируется.
+- Guards/redirects/loaders работают с route-классами; SSR через `MemoryHistory` сохранён.
+- Object-routes/`Router.current()` оставлены для обратной совместимости.
+
+### Проверки
+
+- Router: 71 тест; DI: 92; core: 475 + 1 skipped; server: 193.
+- Добавлены тесты DI-инъекции `IRouter`, route-классов, `{id}`, typed query, динамических импортов и SSR с VM-роутом.
+
 ## 0.10.1
 
 ### Partial hydration

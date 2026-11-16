@@ -1,4 +1,5 @@
 import type { AnyComponent } from "@ivlev-dev/silent-core";
+import type { Container } from "@ivlev-dev/silent-di";
 import {
   createSignal,
   type Accessor,
@@ -30,6 +31,13 @@ import {
   type ScrollBehavior,
   type ScrollPosition,
 } from "./match.js";
+import {
+  hasContextLoader,
+  normalizeRoutes,
+  type RouteClassLoad,
+  type RouteInput,
+  type RouteLoadContext,
+} from "./route.js";
 
 export interface RouterState {
   readonly route: RouteLocation | null;
@@ -41,11 +49,31 @@ export interface RouterState {
   readonly error: unknown;
 }
 
+export interface IRouter {
+  readonly base: string;
+  readonly state: Accessor<RouterState>;
+  readonly route: RouteLocation | null;
+  readonly params: RouteParams;
+  readonly query: RouteQuery;
+  readonly hash: string;
+  readonly matched: readonly MatchedRoute[];
+  resolve(to: RouteTarget): RouteLocation;
+  href(to: RouteTarget): string;
+  push(to: RouteTarget): Promise<void>;
+  replace(to: RouteTarget): Promise<void>;
+  back(): void;
+  forward(): void;
+  start(): Promise<void>;
+  stop(): void;
+  dispose(): void;
+}
+
 export interface RouterOptions {
-  readonly routes: readonly RouteRecord[];
+  readonly routes: readonly RouteInput[];
   readonly base?: string;
   readonly history?: RouterHistory;
   readonly scrollBehavior?: ScrollBehavior;
+  readonly container?: Container;
 }
 
 const EMPTY_PARAMS: RouteParams = Object.freeze({});
@@ -86,7 +114,7 @@ function isRedirectResult(
   return typeof value === "string" || (typeof value === "object" && value !== null);
 }
 
-export class Router {
+export class Router implements IRouter {
   readonly base: string;
   readonly state: Accessor<RouterState>;
 
@@ -105,7 +133,7 @@ export class Router {
 
   constructor(options: RouterOptions) {
     this.base = normalizeBase(options.base ?? "");
-    this.compiled = compileRoutes(options.routes);
+    this.compiled = compileRoutes(normalizeRoutes(options.routes));
     this.history = options.history ?? createDefaultHistory();
     this.ownsHistory = options.history === undefined;
     this.scrollBehavior = options.scrollBehavior;
@@ -121,11 +149,19 @@ export class Router {
     });
     this.state = this.stateSignal[0];
     this.activate();
+    if (options.container !== undefined) {
+      this.provide(options.container);
+    }
   }
 
   static current(): Router | null {
     const router = routers[routers.length - 1];
     return router ?? null;
+  }
+
+  provide(container: Container): this {
+    container.bindValue(Router, this);
+    return this;
   }
 
   get route(): RouteLocation | null {
@@ -388,7 +424,19 @@ export class Router {
       }
       let result: RouteLoaderResult;
       try {
-        result = await load(location, signal);
+        if (hasContextLoader(entry.record)) {
+          const context: RouteLoadContext = {
+            route: location,
+            params: location.params,
+            query: location.query,
+            hash: location.hash,
+            router: this,
+            signal,
+          };
+          result = await (load as unknown as RouteClassLoad)(context);
+        } else {
+          result = await load(location, signal);
+        }
       } catch (error) {
         if (signal.aborted || id !== this.navigationId) {
           throw new RouterAbortError(location.fullPath);
@@ -524,3 +572,5 @@ export class Router {
     return normalizePath(pathname);
   }
 }
+
+export const IRouter: typeof Router = Router;

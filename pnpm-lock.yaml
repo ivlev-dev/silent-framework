@@ -360,10 +360,16 @@ importers:
       '@ivlev-dev/silent-core':
         specifier: workspace:*
         version: link:../core
+      '@ivlev-dev/silent-di':
+        specifier: workspace:*
+        version: link:../di
       '@ivlev-dev/silent-reactivity':
         specifier: workspace:*
         version: link:../reactivity
     devDependencies:
+      '@ivlev-dev/silent-swc':
+        specifier: workspace:*
+        version: link:../swc
       jsdom:
         specifier: ^31.0.0
         version: 31.0.0

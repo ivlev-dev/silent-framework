@@ -70,9 +70,11 @@ class Container {
   readonly name: string;
   constructor(name?: string, parent?: Container);
   bind<T = unknown>(token: unknown, factory?: unknown): BindingBuilder;
+  bindValue<T>(token: unknown, value: T): void;
   resolve<T = unknown>(token: unknown): Promise<T>;
   resolveSync<T = unknown>(token: unknown): T;
   peek<T = unknown>(token: unknown): T | undefined;
+  peekValue<T = unknown>(token: unknown): T | undefined;
   has(token: unknown): boolean;
   createScope(name?: string): Container;
   snapshot(): ContainerSnapshot;
@@ -82,7 +84,7 @@ class Container {
 }
 ```
 
-Описание: асинхронный контейнер зависимостей. Хранит привязки, кеш и дочерние скоупы. При передаче `parent` привязки разрешаются с учётом иерархии родителя, а сам контейнер регистрируется как ребёнок родителя.
+Описание: асинхронный контейнер зависимостей. Хранит привязки, кеш и дочерние скоупы. При передаче `parent` привязки разрешаются с учётом иерархии родителя, а сам контейнер регистрируется как ребёнок родителя. `bindValue` регистрирует готовое значение и сразу кладёт его в `resolved`, поэтому `peek`/`peekValue` синхронно возвращают его без `resolve`.
 
 Пример:
 

@@ -1,4 +1,20 @@
-export { Router, type RouterOptions, type RouterState } from "./router.js";
+export { Router, IRouter, type RouterOptions, type RouterState } from "./router.js";
+export {
+  Route,
+  type AnyRouteGuard,
+  type AnyRouteLoader,
+  type PathParams,
+  type RouteClass,
+  type RouteClassGuard,
+  type RouteClassLoad,
+  type RouteComponent,
+  type RouteDefinition,
+  type RouteInput,
+  type RouteLoadContext,
+  type RouteQueryShape,
+  type RouteViewProps,
+  type TypedRouteLocation,
+} from "./route.js";
 export {
   BrowserHistory,
   MemoryHistory,

@@ -1,34 +1,34 @@
 import {
   collectNodes,
+  component,
   createMountPoint,
+  getRuntimeOptions,
   isServerMode,
+  type AnyComponent,
   type Children,
 } from "@ivlev-dev/silent-core";
-import { createMemo, createRenderEffect, onCleanup } from "@ivlev-dev/silent-reactivity";
+import { createMemo, createRenderEffect, createRoot, onCleanup } from "@ivlev-dev/silent-reactivity";
 import {
   RouterMissingError,
   type MatchedRoute,
   type RouteLocation,
-  type RouteParams,
   type RouteQuery,
 } from "./match.js";
-import { Router } from "./router.js";
+import type { RouteViewProps } from "./route.js";
+import { Router, type IRouter } from "./router.js";
 
 export const ROUTER_VIEW_MARKER = "silent-router-view";
 
 export interface RouterViewProps {
-  readonly router?: Router;
+  readonly router?: IRouter;
   readonly depth?: number;
   readonly fallback?: unknown;
 }
 
-export interface RouterViewComponentProps {
-  readonly route: RouteLocation | null;
-  readonly params: RouteParams;
-  readonly query: RouteQuery;
-  readonly hash: string;
-  readonly router: Router;
-}
+export type RouterViewComponentProps<
+  Path extends string = string,
+  Query = RouteQuery,
+> = RouteViewProps<Path, Query>;
 
 interface ViewSelection {
   readonly entry: MatchedRoute | undefined;
@@ -37,15 +37,22 @@ interface ViewSelection {
   readonly hash: string;
 }
 
-function resolveRouter(router: Router | undefined): Router {
-  const resolved = router ?? Router.current();
+function resolveRouter(router: IRouter | undefined): IRouter {
+  if (router !== undefined) {
+    return router;
+  }
+  const injected = getRuntimeOptions().container?.peek<IRouter>(Router);
+  if (injected !== undefined) {
+    return injected;
+  }
+  const resolved = Router.current();
   if (resolved === null) {
     throw new RouterMissingError("RouterView требует Router: передайте router или создайте экземпляр");
   }
   return resolved;
 }
 
-function selectView(router: Router, depth: number): ViewSelection {
+function selectView(router: IRouter, depth: number): ViewSelection {
   const state = router.state();
   return {
     entry: state.matched[depth],
@@ -63,23 +70,26 @@ function sameSelection(left: ViewSelection, right: ViewSelection): boolean {
 }
 
 function renderSelection(
-  router: Router,
+  router: IRouter,
   props: RouterViewProps,
   selection: ViewSelection,
 ): unknown {
   const entry = selection.entry;
-  const component = entry?.component;
-  if (entry === undefined || component === undefined) {
+  const routeComponent = entry?.component;
+  if (entry === undefined || routeComponent === undefined || selection.route === null) {
     return props.fallback;
   }
-  const viewProps: RouterViewComponentProps = {
+  const viewProps: RouteViewProps = {
     route: selection.route,
     params: entry.params,
     query: selection.query,
     hash: selection.hash,
     router,
   };
-  return (component as (props: RouterViewComponentProps) => unknown)(viewProps);
+  return component(
+    routeComponent as AnyComponent,
+    viewProps as unknown as Record<string, unknown>,
+  );
 }
 
 export function RouterView(props: RouterViewProps): Node {
@@ -102,9 +112,22 @@ export function RouterView(props: RouterViewProps): Node {
     () => selectView(router, depth),
     { equals: sameSelection },
   );
+  let viewRootDispose: (() => void) | null = null;
   createRenderEffect(() => {
-    mount.render(renderSelection(router, props, selection()));
+    const current = selection();
+    mount.clear();
+    viewRootDispose?.();
+    viewRootDispose = null;
+    const output = createRoot((dispose) => {
+      viewRootDispose = dispose;
+      return renderSelection(router, props, current);
+    });
+    mount.render(output);
   });
-  onCleanup(mount.clear);
+  onCleanup(() => {
+    mount.clear();
+    viewRootDispose?.();
+    viewRootDispose = null;
+  });
   return container;
 }
