@@ -210,8 +210,10 @@ abstract class ViewModel<P = unknown> {
 ```
 
 - `props` и `view` создаются рантаймом: `view` — после вставки корневого узла.
+- `view` имеет тип `Node`, потому что view может вернуть несколько корней (`DocumentFragment`). Если view возвращает один элемент, для `querySelector`, `getBoundingClientRect` и других DOM-методов нужен явный cast: `const root = this.view as Element`.
 - `dispose()` останавливает reactive store экземпляра — эффекты, `@watch`, вычисления (`@computed`); повторный вызов безопасен.
 - Наследование не обязательно: хуки опознаются по именам на любом объекте VM.
+- При `noImplicitOverride` переопределяемые хуки `ViewModel` (`mounted`, `unmounted`, `created`, `beforeMount`, `updated`, `beforeUnmount`) требуют модификатора `override`.
 - Типовой параметр `P` описывает props компонента; в примерах используется как `extends ViewModel<{ step: number }>`.
 
 Пример из README:
@@ -965,6 +967,19 @@ export const Counter = (
 
 Компилятор извлекает `vm` и `preloader` из `this`-типа, добавляет метаданные silent.view и value-import нужных значений; в месте использования `<Counter count={3} />` параметр VM не нужен и недоступен. Несоответствия props ловятся типами: отсутствующий или неверно типизированный prop даёт ошибку компиляции.
 
+Props можно деструктурировать без потери реактивности:
+
+```tsx
+function Greeting(props: { name: string; suffix?: string }) {
+  const { name, suffix = "!" } = props;
+  return <b>{name}{suffix}</b>;
+}
+```
+
+Компилятор заменяет чтения таких переменных на обращения к `props.name`/`props.suffix`, а объявление деструктуризации удаляет. Поддерживаются переименование, значения по умолчанию, вложенная деструктуризация и деструктуризация параметра `({ name }: P)`. Ограничения: работает для `const`-деструктуризации с инициализатором `props`; при переприсваивании имени или `...rest` объявление остаётся обычным снапшотом. Объявления через `let`/`var` компилятор не трансформирует.
+
+Динамические SVG-дети (`For`, `.map()`, компоненты) создаются в SVG-пространстве имён, в том числе при вставке внутрь `<svg>`; компилятор передаёт namespace-хинт, а рантайм дополнительно определяет SVG по корневому тегу. `<style>` и `<script>` поддерживают текстовую интерполяцию через `textContent`: CSS/JS не должен содержать JSX-детей.
+
 ### `JSX`
 
 *Стабильность: public.*
@@ -975,7 +990,7 @@ export const Counter = (
 - `JSX.ElementType = keyof JSX.IntrinsicElements | ((...args: never[]) => JSX.Element)`.
 - `JSX.ElementChildrenAttribute` — показывает TS, где искать `children` в props компонента.
 - `JSX.IntrinsicAttributes` — содержит `key?: string | number`; ключ удаляется рантаймом `jsx` перед вызовом компонента.
-- `JSX.IntrinsicElements` — таблица встроенных тегов с типизированными props: общие (`class`/`className`, `id`, `style` как строка или объект, `ref`, `children`, `dangerouslySetInnerHTML`, обработчики `onClick`, `onInput`, `onChange`, `onKeyDown`, `onKeyUp`, `onSubmit`, `onFocus`, `onBlur`, `onScroll`, `onPointerDown`, `onPointerMove`, `onPointerUp` и capture-варианты) и специфичные для `a`, `button`, `img`, `input`, `textarea`, `select`, `form`; SVG-теги (`svg`, `path`, `circle`, `rect`, `line`, `g`, `defs`, `linearGradient`, `stop`, `use`, `tspan`) типизированы так же, создаются в SVG-пространстве имён; произвольные теги `[tag: string]` принимают общие props.
+- `JSX.IntrinsicElements` — таблица встроенных тегов с типизированными props: общие (`class`/`className`, `id`, `style` как строка или объект, `ref`, `children`, `dangerouslySetInnerHTML`, обработчики `onClick`, `onInput`, `onChange`, `onKeyDown`, `onKeyUp`, `onSubmit`, `onFocus`, `onBlur`, `onScroll`, `onPointerDown`, `onPointerMove`, `onPointerUp` и capture-варианты) и специфичные для `a`, `button`, `img`, `input`, `textarea`, `select`, `form`; SVG-теги (`svg`, `path`, `circle`, `rect`, `line`, `g`, `defs`, `linearGradient`, `radialGradient`, `stop`, `use`, `text`, `tspan`, `textPath`, `pattern`, `mask`, `clipPath`, `filter`, `fe*`, `symbol`, `marker`, `foreignObject`) типизированы так же, создаются в SVG-пространстве имён; произвольные теги `[tag: string]` принимают общие props.
 
 Пользовательский код расширяет таблицу (или опирается на fallback) через расширение `JSX.IntrinsicElements`, компилятор при этом не меняется.
 
@@ -984,10 +999,18 @@ export const Counter = (
 *Стабильность: public.*
 
 ```ts
-type Child = Node | string | number | bigint | boolean | null | undefined;
+type Child =
+  | Node
+  | string
+  | number
+  | bigint
+  | boolean
+  | null
+  | undefined
+  | Iterable<Child>;
 ```
 
-Допустимый дочерний элемент. `null`, `undefined` и `boolean` при рендере отбрасываются.
+Допустимый дочерний элемент. `null`, `undefined` и `boolean` при рендере отбрасываются. Массивы, `Set`, генераторы и другие `Iterable<Child>` разворачиваются рекурсивно, поэтому `.map()` в JSX типизируется и рендерится без `For`.
 
 ### `Children`
 
@@ -997,7 +1020,7 @@ type Child = Node | string | number | bigint | boolean | null | undefined;
 type Children = Child | Child[] | (() => Children);
 ```
 
-Вложенные массивы и функции (реактивные «толкатели») поддерживаются рекурсивно; функции разворачиваются при каждом прогоне эффекта.
+Вложенные массивы, итераторы и функции (реактивные «толкатели») поддерживаются рекурсивно; функции разворачиваются при каждом прогоне эффекта.
 
 ### `Component`
 
@@ -1104,7 +1127,7 @@ interface ForProps<T> {
 <Show when={this.vm.ready} fallback={<b>no</b>}>yes</Show>
 ```
 
-Props: `when` (значение или функция), `fallback`, `children`. «Правда» — всё, кроме `null`, `undefined`, `false`, `0` и `""`. Активная ветка рендерится как children, иначе как fallback; функции разворачиваются; содержимое заменяется при изменении условия.
+Props: `when` (значение или функция), `fallback`, `children`. «Правда» — всё, кроме `null`, `undefined`, `false`, `0` и `""`. Активная ветка рендерится как children, иначе как fallback; функции разворачиваются; содержимое заменяется при изменении условия. Пока `when` остаётся истинным, DOM-узлы ветки сохраняются: обновление несвязанных сигналов не пересоздаёт формы, не сбрасывает значения и фокус. Пересоздание происходит только на переходе `false → true`.
 
 ### `Index`
 
@@ -1295,10 +1318,16 @@ function template(html: string): () => Node;
 *Стабильность: internal.*
 
 ```ts
-function templateHoles(html: string): () => TemplateClone;
+function templateHoles(
+  html: string,
+  plan?: TemplatePlan,
+  namespace?: "svg",
+): () => TemplateClone;
 ```
 
 Как `template`, но дополнительно находит точки вставки «холов»: комментарии вида `silent-hole-<N>` (порядковый индекс до первого пропуска) и элементы с атрибутами `data-silent-a-<N>` (атрибуты после чтения удаляются — в серверном режиме, включённом `setServerMode`, они сохраняются).
+
+`plan` — план адоптации компилятора. `namespace: "svg"` парсит HTML внутри `<svg>`, чтобы корневые `path`/`circle`/`g` получили SVG-пространство имён. Без явного значения SVG определяется по первому корневому тегу; это покрывает динамических детей `For`, `.map()` и компонентов.
 
 ### `setServerMode`
 
@@ -1503,10 +1532,10 @@ mount.nodes();
 *Стабильность: internal.*
 
 ```ts
-function collectNodes(value: Children): Node[];
+function collectNodes(value: Children | Iterable<Child>): Node[];
 ```
 
-Нормализует `Children` в плоский список узлов: разворачивает функции и массивы, выбрасывает `null`/`undefined`/boolean, разбивает `DocumentFragment` на потомков, конвертирует строки и числа в текстовые узлы.
+Нормализует `Children` в плоский список узлов: разворачивает функции, массивы и произвольные `Iterable` (`Set`, генераторы, `NodeList`), выбрасывает `null`/`undefined`/boolean, разбивает `DocumentFragment` на потомков, конвертирует строки и числа в текстовые узлы. DOM-узлы не трактуются как итераторы.
 
 ### `disposeNode`
 

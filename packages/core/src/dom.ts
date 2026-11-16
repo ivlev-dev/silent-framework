@@ -76,6 +76,8 @@ export interface TemplatePlan {
   readonly strips: readonly StripPlan[];
 }
 
+export type TemplateNamespace = "svg";
+
 interface TemplateParse {
   readonly content: DocumentFragment;
   readonly rootCount: number;
@@ -144,19 +146,10 @@ const booleanNames = new Set<string>([
   "reversed",
 ]);
 
-export const svgTagNames = new Set<string>([
-  "svg",
-  "path",
-  "circle",
-  "rect",
-  "line",
-  "g",
-  "defs",
-  "linearGradient",
-  "stop",
-  "use",
-  "tspan",
-]);
+const SVG_TAGS =
+  "svg|path|circle|rect|line|poly(?:line|gon)|ellipse|g|defs|use|text|tspan|textPath|linearGradient|radialGradient|stop";
+const SVG_TAG = new RegExp(`^(?:${SVG_TAGS})$`, "i");
+const SVG_TEMPLATE = new RegExp(`^<(?!svg[\\s/>])(?:${SVG_TAGS})[\\s/>]`, "i");
 
 function isRenderableChild(value: unknown): boolean {
   return value !== null && value !== undefined && typeof value !== "boolean";
@@ -243,10 +236,21 @@ function collectInto(nodes: Node[], value: unknown): void {
     nodes.push(current);
     return;
   }
+  if (
+    typeof current === "object"
+    && current !== null
+    && !(current instanceof Node)
+    && typeof (current as { [Symbol.iterator]?: unknown })[Symbol.iterator] === "function"
+  ) {
+    for (const item of current as Iterable<unknown>) {
+      collectInto(nodes, item);
+    }
+    return;
+  }
   nodes.push(document.createTextNode(stringOf(current)));
 }
 
-export function collectNodes(value: Children): Node[] {
+export function collectNodes(value: Children | Iterable<Child>): Node[] {
   if (value instanceof Node) {
     if (!(value instanceof DocumentFragment)) {
       return [value];
@@ -365,14 +369,28 @@ export function createMountPoint(
   };
 }
 
-function readTemplate(html: string): TemplateParse {
-  const cached = parseCache.get(html);
+function readTemplate(html: string, namespace?: TemplateNamespace): TemplateParse {
+  const svg = namespace === "svg" || SVG_TEMPLATE.test(html);
+  const key = svg ? "s:" + html : html;
+  const cached = parseCache.get(key);
   if (cached !== undefined) {
     return cached;
   }
   const element = document.createElement("template");
-  element.innerHTML = html;
-  const content = element.content;
+  element.innerHTML = svg ? "<svg>" + html + "</svg>" : html;
+  let content = element.content;
+  if (svg) {
+    const wrapper = content.firstChild;
+    content = document.createDocumentFragment();
+    if (wrapper !== null) {
+      let child = wrapper.firstChild;
+      while (child !== null) {
+        const next = child.nextSibling;
+        content.appendChild(child);
+        child = next;
+      }
+    }
+  }
   const rootCount = content.childNodes.length;
   const metadata = METADATA_PATTERN.test(html);
   const parsed: TemplateParse = {
@@ -383,7 +401,7 @@ function readTemplate(html: string): TemplateParse {
     simple: !metadata && !html.includes("silent-insert"),
     parts: null,
   };
-  parseCache.set(html, parsed);
+  parseCache.set(key, parsed);
   return parsed;
 }
 
@@ -735,7 +753,11 @@ function applyPartsPlan(
   return { holes, attrs };
 }
 
-export function templateHoles(html: string, plan?: TemplatePlan): () => TemplateClone {
+export function templateHoles(
+  html: string,
+  plan?: TemplatePlan,
+  namespace?: TemplateNamespace,
+): () => TemplateClone {
   let clientFactory: (() => TemplateClone) | null = null;
   return () => {
     if (SERVER && isServerMode()) {
@@ -748,7 +770,7 @@ export function templateHoles(html: string, plan?: TemplatePlan): () => Template
         }
       }
     }
-    clientFactory ??= createClientTemplateHoles(html, plan);
+    clientFactory ??= createClientTemplateHoles(html, plan, namespace);
     return clientFactory();
   };
 }
@@ -759,10 +781,11 @@ const NO_ATTRIBUTES: Element[] = [];
 function createClientTemplateHoles(
   html: string,
   providedPlan?: TemplatePlan,
+  namespace?: TemplateNamespace,
 ): () => TemplateClone {
   let parsed: TemplateParse | null = null;
   const parse = (): TemplateParse => {
-    parsed ??= readTemplate(html);
+    parsed ??= readTemplate(html, namespace);
     return parsed;
   };
   const mark = (node: Node): Node => {
@@ -1080,13 +1103,14 @@ export function attr(el: Element, name: string, accessor: () => unknown): void {
     return;
   }
   const svg = isSvgElement(el);
-  let prev: unknown = accessor();
-  applyAttr(el, name, prev, svg);
+  let prev: unknown;
+  let initialized = false;
   const apply = (): void => {
     const value = accessor();
-    if (valuesEqual(value, prev)) {
+    if (initialized && valuesEqual(value, prev)) {
       return;
     }
+    initialized = true;
     prev = value;
     applyAttr(el, name, value, svg);
   };
@@ -1133,19 +1157,30 @@ function applyProperty(el: Element, name: string, value: unknown): void {
   const target = el as unknown as Record<string, unknown>;
   if (name === "value") {
     const empty = value === null || value === undefined;
-    target["value"] = empty ? "" : value;
+    const next = empty ? "" : value;
+    if (valuesEqual(target["value"], next) || String(target["value"]) === String(next)) {
+      if (empty && el.hasAttribute(name)) {
+        el.removeAttribute(name);
+      }
+      return;
+    }
+    target["value"] = next;
     if (empty) {
       el.removeAttribute(name);
     }
     return;
   }
   const enabled = Boolean(value);
-  target[name] = enabled;
-  if (enabled) {
-    el.setAttribute(name, "");
-    return;
+  if (target[name] !== enabled) {
+    target[name] = enabled;
   }
-  el.removeAttribute(name);
+  if (enabled !== el.hasAttribute(name)) {
+    if (enabled) {
+      el.setAttribute(name, "");
+    } else {
+      el.removeAttribute(name);
+    }
+  }
 }
 
 export function spread(el: Element, accessor: () => unknown): void {
@@ -1544,15 +1579,18 @@ function dispatchDelegated(event: Event, key: string): void {
       if (holder !== undefined) {
         const handler = holder.current;
         if (typeof handler === "function") {
+          Reflect.defineProperty(event, "currentTarget", { configurable: true, value: node });
           handler(event);
         }
         if (event.cancelBubble) {
+          Reflect.deleteProperty(event, "currentTarget");
           return;
         }
       }
     }
     node = node.parentNode;
   }
+  Reflect.deleteProperty(event, "currentTarget");
 }
 
 export function addListener(el: Element, name: string, handler: EventListener | null): void {
@@ -1715,7 +1753,7 @@ export function dynamic(tag: () => string, props: Record<string, unknown>): Node
 }
 
 export function createElement(tag: string): Element {
-  if (svgTagNames.has(tag)) {
+  if (SVG_TAG.test(tag)) {
     return document.createElementNS("http://www.w3.org/2000/svg", tag);
   }
   return document.createElement(tag);

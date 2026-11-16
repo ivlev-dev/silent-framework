@@ -6,13 +6,19 @@ export function Counter(
   this: { vm: CounterVM; preloader: typeof CounterPreloader },
   props: { step: number },
 ) {
+  const { step } = props;
   return (
     <section class="counter">
       <h2>Счётчик</h2>
+      <svg class="icon" viewBox="0 0 8 8" aria-hidden="true">
+        <For each={[1]}>
+          {() => <path class="icon-path" d="M0 0h8" />}
+        </For>
+      </svg>
       <div class="row">
         <button onClick={() => this.vm.decrement()}>-</button>
         <strong class="value">{this.vm.count}</strong>
-        <button onClick={() => this.vm.increment(props.step)}>+</button>
+        <button onClick={() => this.vm.increment(step)}>+</button>
       </div>
       <p>
         Двойное значение: <span class="double">{this.vm.double}</span>

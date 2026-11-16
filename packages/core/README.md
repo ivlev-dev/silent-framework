@@ -79,7 +79,7 @@ export class CounterVM extends ViewModel<CounterProps> {
 }
 ```
 
-View-компонент получает VM через `this`, а props — обычным параметром:
+View-компонент получает VM через `this`, а props — обычным параметром. Props можно деструктурировать в `const { step } = props`: компилятор сохранит реактивность, заменив чтения на `props.step`.
 
 ```tsx
 import type { CounterVM } from "./counter.vm";

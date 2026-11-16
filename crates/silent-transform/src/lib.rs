@@ -2,6 +2,7 @@ pub mod imports;
 pub mod index;
 pub mod jsx;
 pub mod paths;
+pub mod props;
 pub mod scan;
 #[path = "template-plan.rs"]
 mod template_plan;

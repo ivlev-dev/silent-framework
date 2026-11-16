@@ -51,7 +51,8 @@ export const Fragment = Symbol.for("silent.fragment");
 
 const VIEW_META = Symbol.for("silent.view");
 
-type JsxType = string | symbol | ((props: Record<string, unknown>) => Node);
+type JsxComponent = (props: never) => Node;
+type JsxType = string | symbol | JsxComponent;
 type JsxProps = Record<string, unknown> | null | undefined;
 
 export function jsx(type: JsxType, props: JsxProps, key?: string | number): Node {
@@ -86,7 +87,7 @@ function jsxValue(type: JsxType, props: Record<string, unknown>): Node {
         "Компонент использует метаданные silent.view: для его рендера нужен плагин @ivlev-dev/silent-vite",
       );
     }
-    const result = type(props);
+    const result = (type as (props: Record<string, unknown>) => Node)(props);
     return result ?? document.createComment("silent-empty");
   }
   throw new Error("Неизвестный тип JSX-элемента");

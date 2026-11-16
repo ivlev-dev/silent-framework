@@ -71,6 +71,7 @@ pub(crate) struct SilentPass {
     pub(crate) hoisted_templates: Vec<(Ident, Expr)>,
     pub(crate) hoisted_template_names: HashMap<String, Ident>,
     pub(crate) template_counter: usize,
+    pub(crate) svg_context: bool,
 }
 
 impl SilentPass {
@@ -102,6 +103,7 @@ impl SilentPass {
             hoisted_templates: Vec::new(),
             hoisted_template_names: HashMap::new(),
             template_counter: 0,
+            svg_context: false,
         }
     }
 
@@ -741,6 +743,7 @@ impl VisitMut for SilentPass {
         if is_view {
             inject_this_alias(&mut node.function);
         }
+        crate::props::rewrite_function_props(&mut node.function);
         self.view_stack.push(is_view);
         node.visit_mut_children_with(self);
         self.view_stack.pop();
@@ -751,9 +754,15 @@ impl VisitMut for SilentPass {
         if is_view {
             inject_this_alias(&mut node.function);
         }
+        crate::props::rewrite_function_props(&mut node.function);
         self.view_stack.push(is_view);
         node.visit_mut_children_with(self);
         self.view_stack.pop();
+    }
+
+    fn visit_mut_arrow_expr(&mut self, node: &mut swc_core::ecma::ast::ArrowExpr) {
+        crate::props::rewrite_arrow_props(node);
+        node.visit_mut_children_with(self);
     }
 
     fn visit_mut_class_decl(&mut self, class: &mut ClassDecl) {

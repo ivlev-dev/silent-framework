@@ -1,4 +1,12 @@
-export type Child = Node | string | number | bigint | boolean | null | undefined;
+export type Child =
+  | Node
+  | string
+  | number
+  | bigint
+  | boolean
+  | null
+  | undefined
+  | Iterable<Child>;
 
 export type Children = Child | Child[] | (() => Children);
 
@@ -53,6 +61,32 @@ export namespace JSX {
     use: CommonProps;
     text: CommonProps;
     tspan: CommonProps;
+    ellipse: CommonProps;
+    polyline: CommonProps;
+    polygon: CommonProps;
+    textPath: CommonProps;
+    pattern: CommonProps;
+    mask: CommonProps;
+    clipPath: CommonProps;
+    filter: CommonProps;
+    feGaussianBlur: CommonProps;
+    feOffset: CommonProps;
+    feBlend: CommonProps;
+    feColorMatrix: CommonProps;
+    feComposite: CommonProps;
+    feFlood: CommonProps;
+    feImage: CommonProps;
+    feMerge: CommonProps;
+    feMergeNode: CommonProps;
+    feMorphology: CommonProps;
+    feTurbulence: CommonProps;
+    symbol: CommonProps;
+    marker: CommonProps;
+    radialGradient: CommonProps;
+    view: CommonProps;
+    foreignObject: CommonProps;
+    desc: CommonProps;
+    metadata: CommonProps;
     strong: CommonProps;
     em: CommonProps;
     small: CommonProps;

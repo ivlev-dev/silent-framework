@@ -1,4 +1,5 @@
 import type {
+  Children,
   ViewContext,
   Component,
 } from "../src/jsx";
@@ -82,6 +83,91 @@ export const IntrinsicCheck = () => (
           <tspan />
         </text>
       </g>
+      <ellipse />
+      <polyline />
+      <polygon />
+      <text>
+        <textPath />
+      </text>
+      <pattern>
+        <rect />
+      </pattern>
+      <mask>
+        <rect />
+      </mask>
+      <clipPath>
+        <rect />
+      </clipPath>
+      <filter>
+        <feGaussianBlur />
+        <feOffset />
+        <feBlend />
+        <feColorMatrix />
+        <feComposite />
+        <feFlood />
+        <feImage />
+        <feMerge>
+          <feMergeNode />
+        </feMerge>
+        <feMorphology />
+        <feTurbulence />
+      </filter>
+      <symbol>
+        <rect />
+      </symbol>
+      <marker>
+        <path />
+      </marker>
+      <radialGradient>
+        <stop />
+      </radialGradient>
+      <view />
+      <foreignObject>
+        <div />
+      </foreignObject>
+      <desc />
+      <metadata />
     </svg>
   </div>
+);
+
+export const MappedSvg = () => (
+  <svg viewBox="0 0 8 8">
+    {[1, 2].map((n) => (
+      <path key={n} d="M0 0h8" />
+    ))}
+  </svg>
+);
+
+export function SetChildren() {
+  const nodes = new Set<Node>([document.createTextNode("set")]);
+  return <div>{nodes}</div>;
+}
+
+function* nodeGenerator(): Generator<Node, void, unknown> {
+  yield document.createTextNode("gen");
+}
+
+export function GeneratorChildren() {
+  return <div>{nodeGenerator()}</div>;
+}
+
+export const PrimitiveArrayChildren = () => (
+  <div>{["a", 1, 2n, true, null, undefined]}</div>
+);
+
+function Panel(props: { children?: Children }) {
+  return <section>{props.children}</section>;
+}
+
+export const PanelUsage = () => (
+  <Panel>
+    {[1, 2].map((n) => (
+      <span key={n}>{n}</span>
+    ))}
+  </Panel>
+);
+
+export const PanelSetUsage = () => (
+  <Panel>{new Set<Node>([document.createTextNode("set")])}</Panel>
 );

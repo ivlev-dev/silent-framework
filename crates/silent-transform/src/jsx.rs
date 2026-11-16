@@ -9,7 +9,7 @@ use swc_core::ecma::ast::{
     MemberExpr, MemberProp, ObjectLit, ParenExpr, Pat, Prop, PropName, PropOrSpread, ReturnStmt,
     SpreadElement, Stmt, Str, VarDecl, VarDeclKind, VarDeclarator,
 };
-use swc_core::ecma::visit::VisitMutWith;
+use swc_core::ecma::visit::{Visit, VisitMutWith, VisitWith};
 
 #[derive(Default)]
 struct TemplateParts {
@@ -17,6 +17,7 @@ struct TemplateParts {
     holes: Vec<Expr>,
     attrs: Vec<DynamicAttr>,
     plan: TemplatePlan,
+    svg: bool,
 }
 
 struct DynamicAttr {
@@ -53,13 +54,20 @@ impl SilentPass {
         if is_component_name(&element.opening.name) {
             return Box::new(self.compile_component(element));
         }
-        let mut parts = TemplateParts::default();
+        let svg = self.svg_context && !is_svg_name(&element.opening.name);
+        let mut parts = TemplateParts {
+            svg,
+            ..TemplateParts::default()
+        };
         self.build_element_html(element, &mut parts);
         Box::new(self.finish_template(parts))
     }
 
     pub(crate) fn compile_fragment(&mut self, fragment: &JSXFragment) -> Box<Expr> {
-        let mut parts = TemplateParts::default();
+        let mut parts = TemplateParts {
+            svg: self.svg_context,
+            ..TemplateParts::default()
+        };
         self.build_children_html(&fragment.children, &mut parts);
         Box::new(self.finish_template(parts))
     }
@@ -77,6 +85,16 @@ impl SilentPass {
     }
 
     fn build_element_html(&mut self, element: &JSXElement, parts: &mut TemplateParts) {
+        let svg = self.svg_context;
+        self.build_element_html_in(element, parts, svg);
+    }
+
+    fn build_element_html_in(
+        &mut self,
+        element: &JSXElement,
+        parts: &mut TemplateParts,
+        svg: bool,
+    ) {
         let tag = element_name_string(&element.opening.name);
         parts.plan.open_element(&tag);
         parts.html.push('<');
@@ -123,7 +141,17 @@ impl SilentPass {
             parts.plan.close_element();
             return;
         }
+        let children_svg = if tag.eq_ignore_ascii_case("svg") {
+            true
+        } else if svg && tag.eq_ignore_ascii_case("foreignObject") {
+            false
+        } else {
+            svg
+        };
+        let previous = self.svg_context;
+        self.svg_context = children_svg;
         self.build_children_html(&element.children, parts);
+        self.svg_context = previous;
         parts.html.push_str("</");
         parts.html.push_str(&tag);
         parts.html.push('>');
@@ -141,6 +169,7 @@ impl SilentPass {
             Dynamic(Expr),
         }
 
+        let raw_text = is_raw_text_tag(tag);
         let mut pieces: Vec<Piece> = Vec::new();
         for child in children {
             match child {
@@ -170,8 +199,18 @@ impl SilentPass {
                             pieces.push(Piece::Text(format_number(value.value)));
                         }
                         Expr::Lit(Lit::Bool(_)) | Expr::Lit(Lit::Null(_)) => {}
-                        Expr::JSXElement(_) | Expr::JSXFragment(_) => return None,
+                        Expr::JSXElement(_) | Expr::JSXFragment(_) => {
+                            if raw_text {
+                                self.report_error(raw_text_child_error(tag));
+                                continue;
+                            }
+                            return None;
+                        }
                         other => {
+                            if raw_text && contains_jsx(other) {
+                                self.report_error(raw_text_child_error(tag));
+                                continue;
+                            }
                             let compiled = self.compile_expr(other);
                             pieces.push(Piece::Dynamic(*compiled));
                         }
@@ -179,7 +218,13 @@ impl SilentPass {
                 }
                 JSXElementChild::JSXElement(_)
                 | JSXElementChild::JSXFragment(_)
-                | JSXElementChild::JSXSpreadChild(_) => return None,
+                | JSXElementChild::JSXSpreadChild(_) => {
+                    if raw_text {
+                        self.report_error(raw_text_child_error(tag));
+                        continue;
+                    }
+                    return None;
+                }
             }
         }
 
@@ -195,8 +240,8 @@ impl SilentPass {
             parts.plan.add_text(&text);
             return Some(RcdataChildren {
                 attrs: String::new(),
-                text: if text.is_empty() {
-                    String::new()
+                text: if text.is_empty() || raw_text {
+                    text
                 } else {
                     escape_html(&text)
                 },
@@ -379,13 +424,28 @@ impl SilentPass {
             holes,
             attrs,
             plan,
+            svg,
         } = parts;
         let runtime = Expr::Ident(self.helper("templateHoles"));
         let init = match plan.finish() {
-            Some(plan) => call_expr(runtime, vec![string_expr(&html), plan]),
+            Some(plan) => {
+                let mut args = vec![string_expr(&html), plan];
+                if svg {
+                    args.push(string_expr("svg"));
+                }
+                call_expr(runtime, args)
+            }
+            None if svg => call_expr(
+                runtime,
+                vec![
+                    string_expr(&html),
+                    Expr::Ident(ident("undefined")),
+                    string_expr("svg"),
+                ],
+            ),
             None => call_expr(runtime, vec![string_expr(&html)]),
         };
-        let name = self.hoisted_template(&html, init);
+        let name = self.hoisted_namespaced_template(&html, svg, init);
         let clone_call = call_expr(Expr::Ident(name), Vec::new());
         let result = ident_expr("_r$");
 
@@ -551,6 +611,22 @@ impl SilentPass {
             });
         }
         call_expr(Expr::Ident(self.helper("ssrRaw")), vec![parts_expr])
+    }
+
+    fn hoisted_namespaced_template(&mut self, html: &str, svg: bool, init: Expr) -> Ident {
+        if svg {
+            self.hoisted_template(&format!("svg\u{1}{html}"), init)
+        } else {
+            self.hoisted_template(html, init)
+        }
+    }
+
+    fn report_error(&self, message: impl Into<String>) {
+        self.errors.borrow_mut().push(format!(
+            "{}: {}",
+            self.filename.to_string_lossy(),
+            message.into()
+        ));
     }
 
     fn make_getter(&mut self, key: PropName, mut value: Expr) -> GetterProp {
@@ -1040,7 +1116,44 @@ fn format_number(value: f64) -> String {
 }
 
 fn is_rcdata_tag(tag: &str) -> bool {
-    matches!(tag.to_ascii_lowercase().as_str(), "textarea" | "title")
+    matches!(
+        tag.to_ascii_lowercase().as_str(),
+        "textarea" | "title" | "style" | "script"
+    )
+}
+
+fn is_raw_text_tag(tag: &str) -> bool {
+    matches!(tag.to_ascii_lowercase().as_str(), "style" | "script")
+}
+
+fn raw_text_child_error(tag: &str) -> String {
+    format!(
+        "элемент <{tag}> поддерживает только текстовое содержимое; используйте интерполяцию строк вместо JSX-детей"
+    )
+}
+
+fn is_svg_name(name: &JSXElementName) -> bool {
+    element_name_string(name).eq_ignore_ascii_case("svg")
+}
+
+fn contains_jsx(expr: &Expr) -> bool {
+    struct Probe {
+        found: bool,
+    }
+
+    impl Visit for Probe {
+        fn visit_jsx_element(&mut self, _: &JSXElement) {
+            self.found = true;
+        }
+
+        fn visit_jsx_fragment(&mut self, _: &JSXFragment) {
+            self.found = true;
+        }
+    }
+
+    let mut probe = Probe { found: false };
+    expr.visit_with(&mut probe);
+    probe.found
 }
 
 fn is_void_tag(tag: &str) -> bool {

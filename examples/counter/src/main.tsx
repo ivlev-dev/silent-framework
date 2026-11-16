@@ -7,4 +7,9 @@ if (root === null) {
   throw new Error("#app not found");
 }
 
-void hydrate(root, App, { props: { title: "Silent Framework" } });
+const state = globalThis as typeof globalThis & { __silentReady?: boolean };
+void hydrate(root, App, { props: { title: "Silent Framework" } }).then((handle) =>
+  handle.ready.then(() => {
+    state.__silentReady = true;
+  }),
+);

@@ -87,6 +87,10 @@ async function runCounter(browser) {
     await page.locator(".value").waitFor();
     assert.equal((await page.locator(".value").textContent())?.trim(), "0");
     assert.equal(
+      await page.locator(".counter .icon-path").evaluate((element) => element.namespaceURI),
+      "http://www.w3.org/2000/svg",
+    );
+    assert.equal(
       await page.title(),
       "Silent Framework: счётчик",
       "заголовок страницы не установлен из view",
@@ -200,6 +204,74 @@ async function runTodo(browser) {
   }
 }
 
+async function runRegressions(browser) {
+  const server = await startServer(counterDir);
+  const page = await browser.newPage();
+  const errors = collectErrors(page);
+
+  try {
+    await page.goto(new URL("regressions.html", server.url).href, {
+      waitUntil: "domcontentloaded",
+    });
+    await page.locator(".regressions").waitFor();
+
+    const namespaces = await page.evaluate(() => {
+      const dynamicPath = document.querySelector(".dynamic-svg .icon-path");
+      const mappedCircle = document.querySelector(".mapped-svg .mapped-circle");
+      return {
+        path: dynamicPath?.namespaceURI ?? null,
+        circle: mappedCircle?.namespaceURI ?? null,
+        pathParent: dynamicPath?.parentElement?.localName ?? null,
+        circleParent: mappedCircle?.parentElement?.localName ?? null,
+      };
+    });
+    assert.deepEqual(namespaces, {
+      path: "http://www.w3.org/2000/svg",
+      circle: "http://www.w3.org/2000/svg",
+      pathParent: "svg",
+      circleParent: "svg",
+    });
+
+    assert.equal(
+      await page.locator(".probe-style").evaluate((element) => getComputedStyle(element).color),
+      "rgb(1, 2, 3)",
+    );
+
+    const input = page.locator(".show-input");
+    await input.fill("typed");
+    await input.focus();
+    await page.evaluate(() => globalThis.__silentTick?.());
+    await page.waitForFunction(
+      () => document.querySelector(".other")?.textContent?.trim() === "1",
+    );
+    assert.equal(await input.inputValue(), "typed");
+    assert.equal(
+      await page.evaluate(() => document.activeElement?.classList.contains("show-input")),
+      true,
+    );
+
+    const select = page.locator(".native-select");
+    await select.focus();
+    await page.evaluate(() => globalThis.__silentTick?.());
+    assert.equal(await select.inputValue(), "b");
+    assert.equal(
+      await page.evaluate(() => document.activeElement?.classList.contains("native-select")),
+      true,
+    );
+    await select.selectOption("c");
+    assert.equal(await select.inputValue(), "c");
+
+    assert.equal((await page.locator(".greeting").textContent())?.trim(), "Ann");
+    await page.locator(".rename").click();
+    assert.equal((await page.locator(".greeting").textContent())?.trim(), "Bob");
+
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+    await server.close();
+  }
+}
+
 async function main() {
   const browser = await chromium.launch({
     executablePath: findChrome(),
@@ -210,6 +282,7 @@ async function main() {
   try {
     await runCounter(browser);
     await runTodo(browser);
+    await runRegressions(browser);
     console.log("e2e: ok");
   } finally {
     await browser.close();

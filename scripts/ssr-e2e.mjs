@@ -84,6 +84,10 @@ async function main() {
       "SSR не содержит заголовка счётчика",
     );
     assert.ok(
+      ssrHtml.includes('class="icon-path"'),
+      "SSR не содержит динамического SVG-ребёнка",
+    );
+    assert.ok(
       ssrHtml.includes("data-silent-a-"),
       "SSR не сохранил маркеры data-silent-a-*",
     );
@@ -153,13 +157,24 @@ async function main() {
       { timeout: 10_000 },
     );
     await page.waitForFunction(
+      () => globalThis.__silentReady === true,
+      undefined,
+      { timeout: 10_000 },
+    );
+    await page.waitForFunction(
       () => !document.body.innerHTML.includes("data-silent-"),
       undefined,
       { timeout: 10_000 },
     );
+    await page.waitForTimeout(100);
 
     const renderedValue = await page.textContent("strong.value");
     assert.equal(renderedValue, "0", "гидрация изменила начальное значение счётчика");
+    assert.equal(
+      await page.locator(".counter .icon-path").evaluate((element) => element.namespaceURI),
+      "http://www.w3.org/2000/svg",
+      "гидрация потеряла SVG-namespace динамического ребёнка",
+    );
     assert.equal(
       await page.title(),
       "Silent Framework: счётчик",

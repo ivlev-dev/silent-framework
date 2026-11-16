@@ -47,6 +47,12 @@ button:hover {
   background: #2a3742;
 }
 
+.icon {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
 .value,
 .double,
 .city {
