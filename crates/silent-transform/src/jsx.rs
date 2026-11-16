@@ -102,7 +102,7 @@ impl SilentPass {
 
         for attr in &element.opening.attrs {
             match attr {
-                JSXAttrOrSpread::JSXAttr(attr) => self.build_html_attr(attr, parts),
+                JSXAttrOrSpread::JSXAttr(attr) => self.build_html_attr(attr, &tag, parts),
                 JSXAttrOrSpread::SpreadElement(spread) => {
                     let expr = self.compile_expr(&spread.expr);
                     self.push_dynamic_attr("", *expr, DynamicAttrKind::Spread, parts);
@@ -175,10 +175,10 @@ impl SilentPass {
             match child {
                 JSXElementChild::JSXText(text) => {
                     let raw = text.value.to_string_lossy();
-                    let value = if raw.contains('\n') {
-                        process_text(&raw)
-                    } else {
+                    let value = if raw_text || !raw.contains('\n') {
                         raw.into_owned()
+                    } else {
+                        process_text(&raw)
                     };
                     if !value.is_empty() {
                         pieces.push(Piece::Text(value));
@@ -282,29 +282,36 @@ impl SilentPass {
         })
     }
 
-    fn build_html_attr(&mut self, attr: &JSXAttr, parts: &mut TemplateParts) {
+    fn build_html_attr(&mut self, attr: &JSXAttr, tag: &str, parts: &mut TemplateParts) {
         let name = attr_name_string(&attr.name);
         if name == "key" {
             return;
         }
         let name = normalize_attr_name(&name);
+        let static_value_only = name == "value" && tag.eq_ignore_ascii_case("select");
         let Some(value) = &attr.value else {
-            write_static_attr(parts, &name, StaticValue::Bool(true));
+            if !static_value_only {
+                write_static_attr(parts, &name, StaticValue::Bool(true));
+            }
             return;
         };
         match value {
             JSXAttrValue::Str(value) => {
-                write_static_attr(
-                    parts,
-                    &name,
-                    StaticValue::Str(value.value.to_string_lossy().into_owned()),
-                );
+                if !static_value_only {
+                    write_static_attr(
+                        parts,
+                        &name,
+                        StaticValue::Str(value.value.to_string_lossy().into_owned()),
+                    );
+                }
             }
             JSXAttrValue::JSXExprContainer(container) => match &container.expr {
                 JSXExpr::JSXEmptyExpr(_) => {}
                 JSXExpr::Expr(expr) => {
                     if let Some(value) = static_value(expr) {
-                        write_static_attr(parts, &name, value);
+                        if !static_value_only {
+                            write_static_attr(parts, &name, value);
+                        }
                     } else {
                         let compiled = self.compile_expr(expr);
                         let kind = dynamic_kind(&name);
@@ -333,6 +340,10 @@ impl SilentPass {
         let index = parts.attrs.len();
         parts.html.push_str(&format!(" data-silent-a-{index}=\"\""));
         parts.plan.mark_attr(&format!("data-silent-a-{index}"));
+        if matches!(kind, DynamicAttrKind::InnerHtml) {
+            parts.html.push_str(" data-silent-text=\"\"");
+            parts.plan.mark_attr("data-silent-text");
+        }
         parts.attrs.push(DynamicAttr {
             kind: match kind {
                 DynamicAttrKind::Attr(_) => DynamicAttrKind::Attr(name.to_string()),
@@ -493,8 +504,8 @@ impl SilentPass {
                 DynamicAttrKind::InnerHtml => {
                     let html = member_expr(attr.expr, "__html");
                     call_expr(
-                        Expr::Ident(self.helper("prop")),
-                        vec![element, string_expr("innerHTML"), arrow_expr(html)],
+                        Expr::Ident(self.helper("innerHtml")),
+                        vec![element, arrow_expr(html)],
                     )
                 }
                 DynamicAttrKind::TextValue => call_expr(
@@ -981,10 +992,38 @@ fn write_static_attr(parts: &mut TemplateParts, name: &str, value: StaticValue) 
         StaticValue::Bool(true) => {
             parts.html.push(' ');
             parts.html.push_str(name);
-            parts.html.push_str("=\"\"");
+            if is_boolean_attr(name) {
+                parts.html.push_str("=\"\"");
+            } else {
+                parts.html.push_str("=\"true\"");
+            }
         }
         StaticValue::Bool(false) | StaticValue::Null => {}
     }
+}
+
+fn is_boolean_attr(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "hidden"
+            | "autofocus"
+            | "required"
+            | "readonly"
+            | "multiple"
+            | "novalidate"
+            | "async"
+            | "defer"
+            | "open"
+            | "muted"
+            | "playsinline"
+            | "checked"
+            | "disabled"
+            | "selected"
+            | "inert"
+            | "loop"
+            | "controls"
+            | "reversed"
+    )
 }
 
 fn dynamic_kind(name: &str) -> DynamicAttrKind {

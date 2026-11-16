@@ -68,8 +68,9 @@ export function shapeMatches(
   claimed: Node,
   ignoreTopMetadata?: boolean,
   simpleFresh?: boolean,
+  strict?: boolean,
 ): boolean {
-  return runtime().shapeMatches(fresh, claimed, ignoreTopMetadata, simpleFresh);
+  return runtime().shapeMatches(fresh, claimed, ignoreTopMetadata, simpleFresh, strict);
 }
 
 export function significantChildren(node: Node, index: number): Node | null {

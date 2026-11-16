@@ -11,6 +11,11 @@ export interface HydrationWindow {
   cursor: Node | null;
 }
 
+export interface HydrationContext {
+  readonly windows: HydrationWindow[];
+  readonly listener: ((error: HydrationMismatchError) => void) | null;
+}
+
 export const INSERT_START = "silent-insert";
 export const INSERT_END = "silent-insert-end";
 export const VIEW_START = "silent-view";
@@ -39,16 +44,20 @@ export interface HydrationRuntime {
     claimed: Node,
     ignoreTopMetadata?: boolean,
     simpleFresh?: boolean,
+    strict?: boolean,
   ): boolean;
   significantChildren(node: Node, index: number): Node | null;
   significantChildrenFromEnd(node: Node, offset: number): Node | null;
   countSignificantChildren(node: Node): number;
 }
 
-let active = false;
-let windows: HydrationWindow[] = [];
-let mismatchListener: ((error: HydrationMismatchError) => void) | null = null;
+const contexts: HydrationContext[] = [];
+let current: HydrationContext | null = null;
 let runtime: HydrationRuntime | null = null;
+
+function refreshContext(): void {
+  current = contexts.length === 0 ? null : contexts[contexts.length - 1] ?? null;
+}
 
 export function registerHydrationRuntime(next: HydrationRuntime): void {
   runtime = next;
@@ -62,24 +71,40 @@ export function getHydrationRuntime(): HydrationRuntime {
 }
 
 export function isHydrating(): boolean {
-  return active;
+  return current !== null;
 }
 
 export function beginHydration(
   listener?: (error: HydrationMismatchError) => void,
-): void {
-  active = true;
-  windows = [];
-  mismatchListener = listener ?? null;
+): HydrationContext {
+  const context: HydrationContext = {
+    windows: [],
+    listener: listener ?? null,
+  };
+  contexts.push(context);
+  current = context;
+  return context;
 }
 
-export function endHydration(): void {
-  active = false;
-  windows = [];
-  mismatchListener = null;
+export function endHydration(context?: HydrationContext): void {
+  if (context === undefined) {
+    contexts.pop();
+    refreshContext();
+    return;
+  }
+  const index = contexts.lastIndexOf(context);
+  if (index === -1) {
+    return;
+  }
+  contexts.splice(index, 1);
+  refreshContext();
 }
 
 export function currentWindow(): HydrationWindow | null {
+  if (current === null) {
+    return null;
+  }
+  const windows = current.windows;
   return windows.length === 0 ? null : windows[windows.length - 1] ?? null;
 }
 
@@ -88,24 +113,25 @@ export function withWindow<T, A extends unknown[]>(
   fn: (...args: A) => T,
   ...args: A
 ): T {
-  windows.push(window);
+  const context = current;
+  if (context === null) {
+    return fn(...args);
+  }
+  context.windows.push(window);
   try {
     return fn(...args);
   } finally {
-    windows.pop();
+    context.windows.pop();
   }
 }
 
 export function withoutHydration<T>(fn: () => T): T {
-  const previousActive = active;
-  const previousWindows = windows;
-  active = false;
-  windows = [];
+  const previous = current;
+  current = null;
   try {
     return fn();
   } finally {
-    active = previousActive;
-    windows = previousWindows;
+    current = previous;
   }
 }
 
@@ -114,8 +140,9 @@ export function mismatch(message: string): never {
 }
 
 export function reportMismatch(error: HydrationMismatchError): void {
-  if (mismatchListener !== null) {
-    mismatchListener(error);
+  const listener = current?.listener ?? null;
+  if (listener !== null) {
+    listener(error);
   }
 }
 

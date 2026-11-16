@@ -1,3 +1,9 @@
+export interface StaticHole {
+  readonly position: number;
+  readonly group: number;
+  readonly name: string;
+}
+
 export interface ParsedTemplate {
   readonly parts: readonly string[];
   readonly indexes: readonly number[];
@@ -7,6 +13,12 @@ export interface ParsedTemplate {
   readonly holes?: readonly number[] | undefined;
   readonly attrs?: readonly number[] | undefined;
   readonly attrTexts?: readonly number[] | undefined;
+  readonly attrModes?: readonly number[] | undefined;
+  readonly attrTags?: readonly (string | undefined)[] | undefined;
+  readonly attrGroups?: readonly number[] | undefined;
+  readonly statics?: readonly StaticHole[] | undefined;
+  readonly staticText?: ReadonlyMap<string, string> | undefined;
+  readonly initial?: readonly (string | undefined)[] | undefined;
   readonly holesOrdered?: boolean | undefined;
 }
 

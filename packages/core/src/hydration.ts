@@ -111,9 +111,11 @@ interface ShapeCursor {
   node: Node | null;
   depth: number;
   ignoreTopMetadata: boolean;
+  resume: (Node | null)[] | null;
 }
 
 const HOLE_PREFIX = "silent-hole-";
+const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 
 function isHoleText(node: Node, next: Node | null): boolean {
   return (
@@ -123,35 +125,93 @@ function isHoleText(node: Node, next: Node | null): boolean {
   );
 }
 
-function nextShapeChild(cursor: ShapeCursor, skipHoleText = false): Node | null {
-  let child = cursor.node;
-  while (child !== null) {
-    const next = child.nextSibling;
-    let skip = cursor.depth > 0;
-    if (child.nodeType === Node.COMMENT_NODE) {
-      const data = (child as Comment).data;
-      if (data === INSERT_START) {
-        cursor.depth += 1;
-        skip = true;
-      } else if (data === INSERT_END) {
-        if (cursor.depth > 0) {
-          cursor.depth -= 1;
-        }
-        skip = true;
-      }
-    } else if (skipHoleText && isHoleText(child, next)) {
-      skip = true;
-    }
-    cursor.node = next;
-    if (!skip && !(cursor.ignoreTopMetadata && isMetadataElement(child))) {
-      return child;
-    }
-    child = next;
+function isTableBody(node: Node): boolean {
+  if (node.nodeType !== Node.ELEMENT_NODE) {
+    return false;
   }
-  return null;
+  const element = node as Element;
+  return (
+    element.tagName === "TBODY" &&
+    (element.namespaceURI === HTML_NAMESPACE || element.namespaceURI === null)
+  );
 }
 
-function attributesMatch(left: Element, right: Element): boolean {
+function nextShapeChild(cursor: ShapeCursor): Node | null {
+  for (;;) {
+    let child = cursor.node;
+    let descended = false;
+    while (child !== null) {
+      const next = child.nextSibling;
+      let skip = cursor.depth > 0;
+      if (child.nodeType === Node.COMMENT_NODE) {
+        const data = (child as Comment).data;
+        if (data === INSERT_START) {
+          cursor.depth += 1;
+          skip = true;
+        } else if (data === INSERT_END) {
+          if (cursor.depth > 0) {
+            cursor.depth -= 1;
+          }
+          skip = true;
+        }
+      } else if (skip && isTableBody(child)) {
+        (cursor.resume ??= []).push(next);
+        cursor.node = child.firstChild;
+        descended = true;
+        break;
+      }
+      cursor.node = next;
+      if (!skip && !(cursor.ignoreTopMetadata && isMetadataElement(child))) {
+        return child;
+      }
+      child = next;
+    }
+    if (descended) {
+      continue;
+    }
+    const resume = cursor.resume;
+    if (resume === null || resume.length === 0) {
+      return null;
+    }
+    cursor.node = resume.pop() ?? null;
+  }
+}
+
+function enterShapeChild(cursor: ShapeCursor, section: Node): Node | null {
+  (cursor.resume ??= []).push(section.nextSibling);
+  cursor.node = section.firstChild;
+  return nextShapeChild(cursor);
+}
+
+function isHoleMarker(node: Node): boolean {
+  return (
+    node.nodeType === Node.COMMENT_NODE &&
+    (node as Comment).data.startsWith(HOLE_PREFIX)
+  );
+}
+
+function holeTextMatches(fresh: string, claimed: string): boolean {
+  if (fresh === claimed || fresh.length === 0 || claimed.length === 0) {
+    return true;
+  }
+  return fresh.startsWith(claimed) || claimed.startsWith(fresh);
+}
+
+function splitHoleText(node: Text, prefix: string): void {
+  if (prefix.length === 0) {
+    return;
+  }
+  const parent = node.parentNode;
+  if (parent === null) {
+    return;
+  }
+  const remainder = node.data.slice(prefix.length);
+  const staticNode = document.createTextNode(prefix);
+  parent.insertBefore(staticNode, node);
+  node.data = remainder;
+}
+
+function attributesMatch(left: Element, right: Element, strict = false): boolean {
   const attributes = left.attributes;
   const length = attributes.length;
   for (let index = 0; index < length; index += 1) {
@@ -170,7 +230,118 @@ function attributesMatch(left: Element, right: Element): boolean {
       return false;
     }
   }
+  if (!strict) {
+    return true;
+  }
+  const claimedAttributes = right.attributes;
+  const claimedLength = claimedAttributes.length;
+  for (let index = 0; index < claimedLength; index += 1) {
+    const attribute = claimedAttributes.item(index);
+    if (attribute === null) {
+      return false;
+    }
+    const name = attribute.name;
+    if (name.startsWith("data-silent-a-")) {
+      continue;
+    }
+    if (attribute.value !== left.getAttribute(name)) {
+      return false;
+    }
+  }
   return true;
+}
+
+export function staleAttributes(fresh: Element, claimed: Element): string[] {
+  const stale: string[] = [];
+  const attributes = claimed.attributes;
+  const length = attributes.length;
+  for (let index = 0; index < length; index += 1) {
+    const attribute = attributes.item(index);
+    if (attribute === null) {
+      continue;
+    }
+    const name = attribute.name;
+    if (name.startsWith("data-silent-a-")) {
+      continue;
+    }
+    if (attribute.value !== fresh.getAttribute(name)) {
+      stale.push(name);
+    }
+  }
+  return stale;
+}
+
+function childrenMatch(
+  left: Element,
+  right: Element,
+  ignoreTopMetadata: boolean,
+  simpleFresh: boolean,
+  strict: boolean,
+): boolean {
+  const leftCursor: ShapeCursor = {
+    node: left.firstChild,
+    depth: 0,
+    ignoreTopMetadata,
+    resume: null,
+  };
+  const rightCursor: ShapeCursor = {
+    node: right.firstChild,
+    depth: 0,
+    ignoreTopMetadata: false,
+    resume: null,
+  };
+  let x = nextShapeChild(leftCursor);
+  let y = nextShapeChild(rightCursor);
+  while (x !== null && y !== null) {
+    if (isTableBody(y) && !isTableBody(x)) {
+      if (isHoleMarker(x)) {
+        y = nextShapeChild(rightCursor);
+        continue;
+      }
+      y = enterShapeChild(rightCursor, y);
+      continue;
+    }
+    if (isTableBody(x) && !isTableBody(y)) {
+      if (isHoleMarker(y)) {
+        x = nextShapeChild(leftCursor);
+        continue;
+      }
+      x = enterShapeChild(leftCursor, x);
+      continue;
+    }
+    if (isHoleText(y, y.nextSibling)) {
+      if (x.nodeType !== Node.TEXT_NODE) {
+        y = nextShapeChild(rightCursor);
+        continue;
+      }
+      const staticText = (x as Text).data;
+      const claimedText = y as Text;
+      if (x !== y && claimedText.data.startsWith(staticText)) {
+        splitHoleText(claimedText, staticText);
+      } else if (!holeTextMatches(staticText, claimedText.data)) {
+        return false;
+      }
+      x = nextShapeChild(leftCursor);
+      y = nextShapeChild(rightCursor);
+      continue;
+    }
+    if (!shapeMatches(x, y, false, simpleFresh, strict)) {
+      return false;
+    }
+    x = nextShapeChild(leftCursor);
+    y = nextShapeChild(rightCursor);
+  }
+  while (y !== null) {
+    if (isTableBody(y) && x === null) {
+      y = enterShapeChild(rightCursor, y);
+      continue;
+    }
+    if (!isHoleText(y, y.nextSibling)) {
+      return false;
+    }
+    y = nextShapeChild(rightCursor);
+  }
+  return x === null;
 }
 
 export function mergeTopLevelMetadata(fresh: Node, claimed: Node): void {
@@ -206,6 +377,7 @@ export function shapeMatches(
   claimed: Node,
   ignoreTopMetadata = false,
   simpleFresh = false,
+  strict = false,
 ): boolean {
   const nodeType = fresh.nodeType;
   if (nodeType !== claimed.nodeType) {
@@ -217,89 +389,10 @@ export function shapeMatches(
     if (left.tagName !== right.tagName || left.namespaceURI !== right.namespaceURI) {
       return false;
     }
-    if (!attributesMatch(left, right)) {
+    if (!attributesMatch(left, right, strict)) {
       return false;
     }
-    if (simpleFresh) {
-      let freshChild = left.firstChild;
-      let claimedChild = right.firstChild;
-      let depth = 0;
-      while (freshChild !== null) {
-        let matched: Node | null = null;
-        while (claimedChild !== null) {
-          const candidate = claimedChild;
-          const next = candidate.nextSibling;
-          let skip = depth > 0;
-          if (candidate.nodeType === Node.COMMENT_NODE) {
-            const data = (candidate as Comment).data;
-            if (data === INSERT_START) {
-              depth += 1;
-              skip = true;
-            } else if (data === INSERT_END) {
-              if (depth > 0) {
-                depth -= 1;
-              }
-              skip = true;
-            }
-          } else if (isHoleText(candidate, next)) {
-            skip = true;
-          }
-          claimedChild = next;
-          if (!skip) {
-            matched = candidate;
-            break;
-          }
-        }
-        if (matched === null || !shapeMatches(freshChild, matched, false, true)) {
-          return false;
-        }
-        freshChild = freshChild.nextSibling;
-      }
-      while (claimedChild !== null) {
-        const candidate = claimedChild;
-        const next = candidate.nextSibling;
-        let skip = depth > 0;
-        if (candidate.nodeType === Node.COMMENT_NODE) {
-          const data = (candidate as Comment).data;
-          if (data === INSERT_START) {
-            depth += 1;
-            skip = true;
-          } else if (data === INSERT_END) {
-            if (depth > 0) {
-              depth -= 1;
-            }
-            skip = true;
-          }
-        } else if (isHoleText(candidate, next)) {
-          skip = true;
-        }
-        claimedChild = next;
-        if (!skip) {
-          return false;
-        }
-      }
-      return true;
-    }
-    const rightCursor: ShapeCursor = {
-      node: right.firstChild,
-      depth: 0,
-      ignoreTopMetadata: false,
-    };
-    const leftCursor: ShapeCursor = {
-      node: left.firstChild,
-      depth: 0,
-      ignoreTopMetadata,
-    };
-    let x = nextShapeChild(leftCursor);
-    let y = nextShapeChild(rightCursor, true);
-    while (x !== null && y !== null) {
-      if (!shapeMatches(x, y)) {
-        return false;
-      }
-      x = nextShapeChild(leftCursor);
-      y = nextShapeChild(rightCursor);
-    }
-    return x === null && y === null;
+    return childrenMatch(left, right, ignoreTopMetadata, simpleFresh, strict);
   }
   if (nodeType === Node.TEXT_NODE) {
     return (fresh as Text).data === (claimed as Text).data;

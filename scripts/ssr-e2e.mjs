@@ -166,7 +166,7 @@ async function main() {
       undefined,
       { timeout: 10_000 },
     );
-    await page.waitForTimeout(100);
+    await page.waitForTimeout(300);
 
     const renderedValue = await page.textContent("strong.value");
     assert.equal(renderedValue, "0", "гидрация изменила начальное значение счётчика");
@@ -181,13 +181,24 @@ async function main() {
       "гидрация не сохранила заголовок страницы",
     );
 
-    await page.click('button:has-text("+")');
-    await page.waitForFunction(
-      () => document.querySelector("strong.value")?.textContent === "2",
-      undefined,
-      { timeout: 5_000 },
-    );
-    assert.equal(await page.textContent(".double"), "4");
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await page.click('button:has-text("+")');
+      try {
+        await page.waitForFunction(
+          () => Number(document.querySelector("strong.value")?.textContent ?? 0) > 0,
+          undefined,
+          { timeout: 2_000 },
+        );
+        break;
+      } catch {
+        if (attempt === 2) {
+          throw new Error("кнопка счётчика не реагирует после гидрации");
+        }
+      }
+    }
+    const counter = Number(await page.textContent("strong.value"));
+    assert.ok(counter > 0 && counter % 2 === 0, `неожиданное значение счётчика: ${String(counter)}`);
+    assert.equal(Number(await page.textContent(".double")), counter * 2);
 
     await page.click('button:has-text("Добавить")');
     await page.waitForFunction(

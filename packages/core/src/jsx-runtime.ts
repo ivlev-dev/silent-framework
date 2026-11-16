@@ -10,6 +10,7 @@ export {
   text,
   attr,
   prop,
+  innerHtml,
   style,
   spread,
   on,

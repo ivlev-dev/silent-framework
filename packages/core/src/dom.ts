@@ -32,6 +32,11 @@ import {
   settleNodes,
   writeRegion,
 } from "./dom-hydration-state.js";
+import {
+  beginRegion,
+  regionMatches,
+  settleWindow,
+} from "./hydration-cursor.js";
 
 export const NODE_DISPOSER = Symbol("silent.disposer");
 const ITEM_DISPOSER = Symbol("silent.itemDisposer");
@@ -99,10 +104,18 @@ const listenerRegistry = new WeakMap<Element, ListenerHolder | Map<string, Liste
 const delegatedInstalled = new Set<string>();
 const DELEGATED_EVENTS =
   /^(?:change|click|contextmenu|dblclick|input|keydown|keyup|mousedown|mouseup|pointerdown|pointerup|submit|touchend|touchstart)$/;
-const styleSnapshots = new WeakMap<Element, Set<string>>();
-const styleValues = new WeakMap<Element, Map<string, string>>();
+const styleStates = new WeakMap<Element, StyleState>();
 const hyphenCache = new Map<string, string>();
 const eventNameCache = new Map<string, ParsedEvent>();
+
+interface StyleState {
+  readonly snapshot: Set<string>;
+  readonly applied: Map<string, string>;
+}
+
+function createStyleState(): StyleState {
+  return { snapshot: new Set<string>(), applied: new Map<string, string>() };
+}
 
 export const HOLE_MARKER = "silent-hole-";
 export const ATTR_MARKER = "data-silent-a-";
@@ -329,6 +342,20 @@ export function createMountPoint(
       textNode = null;
     }
     nodes = [];
+    initialized = false;
+    prev = null;
+  };
+
+  const sameNodes = (next: readonly Node[]): boolean => {
+    if (textNode !== null || next.length !== nodes.length) {
+      return false;
+    }
+    for (let index = 0; index < next.length; index += 1) {
+      if (next[index] !== nodes[index]) {
+        return false;
+      }
+    }
+    return true;
   };
 
   return {
@@ -340,27 +367,40 @@ export function createMountPoint(
       if (initialized && valuesEqual(value, prev)) {
         return;
       }
-      initialized = true;
-      prev = value;
       if (typeof value === "string" || typeof value === "number" || typeof value === "bigint") {
         const next = stringOf(value);
         if (textNode === null) {
           clear();
           textNode = document.createTextNode(next);
           nodes = [textNode];
+          initialized = true;
+          prev = value;
           place(marker === null ? parent : marker.parentNode ?? parent, textNode);
           return;
         }
+        initialized = true;
+        prev = value;
         if (textNode.data !== next) {
           textNode.data = next;
         }
         return;
       }
-      clear();
       if (!isRenderableChild(value)) {
+        clear();
+        initialized = true;
+        prev = value;
         return;
       }
-      nodes = extractMetadata(collectNodes(value as Child));
+      const next = extractMetadata(collectNodes(value as Child));
+      if (sameNodes(next)) {
+        initialized = true;
+        prev = value;
+        return;
+      }
+      clear();
+      initialized = true;
+      prev = value;
+      nodes = next;
       const target = marker === null ? parent : marker.parentNode ?? parent;
       for (const node of nodes) {
         place(target, node);
@@ -1128,11 +1168,11 @@ export function applyAttr(el: Element, name: string, value: unknown, svg: boolea
   }
   if (name === "style") {
     if (typeof value === "object" && value !== null) {
-      applyStyle(el, value, ensureSnapshot(el));
+      applyStyle(el, value, elementStyleState(el));
       return;
     }
     if (value === null || value === undefined) {
-      applyStyle(el, value, ensureSnapshot(el));
+      applyStyle(el, value, elementStyleState(el));
       return;
     }
     el.setAttribute("style", stringOf(value));
@@ -1142,20 +1182,102 @@ export function applyAttr(el: Element, name: string, value: unknown, svg: boolea
     applyProperty(el, name, value);
     return;
   }
+  const target = svg ? svgAttributeTarget(name) : null;
   if (value === null || value === undefined || value === false) {
-    el.removeAttribute(name);
+    if (target === null) {
+      el.removeAttribute(name);
+    } else {
+      removeSvgAttribute(el, target);
+    }
     return;
   }
   if (value === true) {
-    el.setAttribute(name, booleanNames.has(name) ? "" : "true");
+    const text = booleanNames.has(name) ? "" : "true";
+    if (target === null) {
+      el.setAttribute(name, text);
+    } else {
+      setSvgAttribute(el, target, text);
+    }
     return;
   }
-  el.setAttribute(name, stringOf(value));
+  const text = stringOf(value);
+  if (target === null) {
+    el.setAttribute(name, text);
+  } else {
+    setSvgAttribute(el, target, text);
+  }
+}
+
+interface SvgAttributeTarget {
+  readonly name: string;
+  readonly namespace: string | null;
+}
+
+const XLINK_NAMESPACE = "http://www.w3.org/1999/xlink";
+const SVG_ATTRIBUTE_NAMES: ReadonlyMap<string, string> = new Map([
+  ["strokeWidth", "stroke-width"],
+  ["strokeLinecap", "stroke-linecap"],
+  ["strokeLinejoin", "stroke-linejoin"],
+  ["strokeDasharray", "stroke-dasharray"],
+  ["strokeDashoffset", "stroke-dashoffset"],
+  ["strokeMiterlimit", "stroke-miterlimit"],
+  ["strokeOpacity", "stroke-opacity"],
+  ["fillOpacity", "fill-opacity"],
+  ["fillRule", "fill-rule"],
+  ["clipPath", "clip-path"],
+  ["clipRule", "clip-rule"],
+  ["stopColor", "stop-color"],
+  ["stopOpacity", "stop-opacity"],
+  ["gradientUnits", "gradient-units"],
+  ["gradientTransform", "gradient-transform"],
+  ["patternUnits", "pattern-units"],
+  ["patternContentUnits", "pattern-content-units"],
+  ["fontFamily", "font-family"],
+  ["fontSize", "font-size"],
+  ["fontWeight", "font-weight"],
+  ["textAnchor", "text-anchor"],
+  ["dominantBaseline", "dominant-baseline"],
+  ["shapeRendering", "shape-rendering"],
+  ["colorInterpolation", "color-interpolation"],
+  ["markerUnits", "marker-units"],
+  ["markerWidth", "marker-width"],
+  ["markerHeight", "marker-height"],
+  ["markerStart", "marker-start"],
+  ["markerMid", "marker-mid"],
+  ["markerEnd", "marker-end"],
+]);
+
+function svgAttributeTarget(name: string): SvgAttributeTarget {
+  if (name.startsWith("xlink:")) {
+    return { name, namespace: XLINK_NAMESPACE };
+  }
+  return { name: SVG_ATTRIBUTE_NAMES.get(name) ?? name, namespace: null };
+}
+
+function setSvgAttribute(el: Element, target: SvgAttributeTarget, value: string): void {
+  if (target.namespace === null) {
+    el.setAttribute(target.name, value);
+    return;
+  }
+  el.setAttributeNS(target.namespace, target.name, value);
+}
+
+function removeSvgAttribute(el: Element, target: SvgAttributeTarget): void {
+  if (target.namespace === null) {
+    el.removeAttribute(target.name);
+    return;
+  }
+  const separator = target.name.indexOf(":");
+  const local = separator === -1 ? target.name : target.name.slice(separator + 1);
+  el.removeAttributeNS(target.namespace, local);
 }
 
 function applyProperty(el: Element, name: string, value: unknown): void {
   const target = el as unknown as Record<string, unknown>;
   if (name === "value") {
+    if (el.localName === "select" && isServerMode()) {
+      return;
+    }
     const empty = value === null || value === undefined;
     const next = empty ? "" : value;
     if (valuesEqual(target["value"], next) || String(target["value"]) === String(next)) {
@@ -1167,6 +1289,14 @@ function applyProperty(el: Element, name: string, value: unknown): void {
     target["value"] = next;
     if (empty) {
       el.removeAttribute(name);
+      return;
+    }
+    if (el.localName === "select" && (el as unknown as HTMLSelectElement).options.length === 0) {
+      queueMicrotask(() => {
+        if (!valuesEqual(target["value"], next)) {
+          target["value"] = next;
+        }
+      });
     }
     return;
   }
@@ -1192,7 +1322,14 @@ export function spread(el: Element, accessor: () => unknown): void {
         return;
       }
       for (const [key, item] of Object.entries(value)) {
-        if (key === "ref" || key === "children") {
+        if (
+          key === "ref"
+          || key === "children"
+          || key === "key"
+          || key === "innerHTML"
+          || key === "dangerouslySetInnerHTML"
+          || isEventName(key)
+        ) {
           continue;
         }
         server.setAttribute(key, item);
@@ -1213,9 +1350,39 @@ export function spread(el: Element, accessor: () => unknown): void {
     }
   };
 
+  const removeKey = (key: string): void => {
+    if (key === "ref") {
+      releaseRef();
+      return;
+    }
+    if (key === "children" || key === "key") {
+      return;
+    }
+    if (key === "style") {
+      applyStyle(el, null, elementStyleState(el));
+      return;
+    }
+    if (key === "innerHTML" || key === "dangerouslySetInnerHTML") {
+      applyInnerHtml(el, null);
+      return;
+    }
+    if (isEventName(key)) {
+      removeListener(el, key);
+      return;
+    }
+    applyAttr(el, key, undefined, svg);
+  };
+
   createRenderEffect(() => {
     const value = accessor();
     if (typeof value !== "object" || value === null) {
+      if (prevKeys !== null) {
+        for (const key of prevKeys) {
+          removeKey(key);
+        }
+      }
+      prev = null;
+      prevKeys = null;
       return;
     }
     const props = value as Record<string, unknown>;
@@ -1225,19 +1392,7 @@ export function spread(el: Element, accessor: () => unknown): void {
         if (key in props) {
           continue;
         }
-        if (key === "ref") {
-          releaseRef();
-          continue;
-        }
-        if (key === "style") {
-          applyStyle(el, null, ensureSnapshot(el));
-          continue;
-        }
-        if (isEventName(key)) {
-          removeListener(el, key);
-          continue;
-        }
-        applyAttr(el, key, undefined, svg);
+        removeKey(key);
       }
     }
     for (const key of keys) {
@@ -1260,6 +1415,10 @@ export function spread(el: Element, accessor: () => unknown): void {
       if (key === "children" || key === "key") {
         continue;
       }
+      if (key === "innerHTML" || key === "dangerouslySetInnerHTML") {
+        applyInnerHtml(el, next);
+        continue;
+      }
       if (isEventName(key)) {
         addListener(el, key, typeof next === "function" ? (next as EventListener) : null);
         continue;
@@ -1269,7 +1428,7 @@ export function spread(el: Element, accessor: () => unknown): void {
         continue;
       }
       if (key === "style") {
-        applyStyle(el, next, ensureSnapshot(el));
+        applyStyle(el, next, elementStyleState(el));
         continue;
       }
       applyAttr(el, key, next, svg);
@@ -1279,6 +1438,42 @@ export function spread(el: Element, accessor: () => unknown): void {
   });
 
   onCleanup(releaseRef);
+}
+
+function applyInnerHtml(el: Element, value: unknown): void {
+  let html = "";
+  const resolved = resolveValue(value);
+  if (resolved !== null && typeof resolved === "object") {
+    const raw = resolveValue((resolved as { __html?: unknown }).__html);
+    html = raw === null || raw === undefined ? "" : String(raw);
+  } else if (resolved !== null && resolved !== undefined) {
+    html = String(resolved);
+  }
+  for (const child of Array.from(el.childNodes)) {
+    disposeNode(child);
+  }
+  (el as unknown as { innerHTML: string }).innerHTML = html;
+}
+
+export function innerHtml(el: Element, accessor: () => unknown): void {
+  const server = serverAttribute(el);
+  if (server !== null) {
+    createEffectUnlessStatic(() => {
+      server.setAttribute("innerHTML", accessor());
+    });
+    return;
+  }
+  let prev: unknown;
+  let initialized = false;
+  createRenderEffect(() => {
+    const value = accessor();
+    if (initialized && valuesEqual(value, prev)) {
+      return;
+    }
+    initialized = true;
+    prev = value;
+    applyInnerHtml(el, value);
+  });
 }
 
 export function prop(el: Element, name: string, accessor: () => unknown): void {
@@ -1310,33 +1505,25 @@ export function style(el: Element, accessor: () => unknown): void {
     });
     return;
   }
-  const snapshot = ensureSnapshot(el);
+  const state = createStyleState();
   createRenderEffect(() => {
-    applyStyle(el, accessor(), snapshot);
+    applyStyle(el, accessor(), state);
   });
 }
 
-function ensureSnapshot(el: Element): Set<string> {
-  let snapshot = styleSnapshots.get(el);
-  if (snapshot === undefined) {
-    snapshot = new Set<string>();
-    styleSnapshots.set(el, snapshot);
+function elementStyleState(el: Element): StyleState {
+  let state = styleStates.get(el);
+  if (state === undefined) {
+    state = createStyleState();
+    styleStates.set(el, state);
   }
-  return snapshot;
+  return state;
 }
 
-function ensureAppliedStyle(el: Element): Map<string, string> {
-  let applied = styleValues.get(el);
-  if (applied === undefined) {
-    applied = new Map<string, string>();
-    styleValues.set(el, applied);
-  }
-  return applied;
-}
-
-function applyStyle(el: Element, value: unknown, snapshot: Set<string>): void {
+function applyStyle(el: Element, value: unknown, state: StyleState): void {
   const style = (el as HTMLElement).style;
-  const applied = ensureAppliedStyle(el);
+  const applied = state.applied;
+  const snapshot = state.snapshot;
   if (value === null || value === undefined) {
     for (const key of snapshot) {
       style.removeProperty(key);
@@ -1346,34 +1533,29 @@ function applyStyle(el: Element, value: unknown, snapshot: Set<string>): void {
     return;
   }
   if (typeof value === "string") {
-    if (style.cssText !== value) {
-      style.cssText = value;
-    }
-    applied.clear();
-    const keep = new Set<string>();
-    let cursor = 0;
-    while (cursor <= value.length) {
-      const limit = value.indexOf(";", cursor);
-      const entryEnd = limit === -1 ? value.length : limit;
-      const separator = value.indexOf(":", cursor);
-      const keyEnd = separator !== -1 && separator < entryEnd ? separator : entryEnd;
-      const key = value.slice(cursor, keyEnd).trim();
-      if (key !== "") {
-        keep.add(key);
+    const keys = new Set<string>();
+    for (const [key, target] of parseStyleString(value)) {
+      keys.add(key);
+      if (target === "") {
+        if (applied.get(key) !== "") {
+          style.removeProperty(key);
+          applied.delete(key);
+        }
+        snapshot.delete(key);
+        continue;
       }
-      if (limit === -1) {
-        break;
+      if (applied.get(key) !== target) {
+        style.setProperty(key, target);
+        applied.set(key, target);
       }
-      cursor = limit + 1;
+      snapshot.add(key);
     }
     for (const key of snapshot) {
-      if (!keep.has(key)) {
+      if (!keys.has(key)) {
         style.removeProperty(key);
         snapshot.delete(key);
+        applied.delete(key);
       }
-    }
-    for (const key of keep) {
-      snapshot.add(key);
     }
     return;
   }
@@ -1408,6 +1590,30 @@ function applyStyle(el: Element, value: unknown, snapshot: Set<string>): void {
       applied.delete(key);
     }
   }
+}
+
+function parseStyleString(value: string): Array<[string, string]> {
+  const entries: Array<[string, string]> = [];
+  let cursor = 0;
+  while (cursor <= value.length) {
+    const limit = value.indexOf(";", cursor);
+    const entryEnd = limit === -1 ? value.length : limit;
+    const separator = value.indexOf(":", cursor);
+    const keyEnd = separator !== -1 && separator < entryEnd ? separator : entryEnd;
+    const key = value.slice(cursor, keyEnd).trim();
+    if (key !== "") {
+      const target =
+        separator !== -1 && separator < entryEnd
+          ? value.slice(separator + 1, entryEnd).trim()
+          : "";
+      entries.push([key, target]);
+    }
+    if (limit === -1) {
+      break;
+    }
+    cursor = limit + 1;
+  }
+  return entries;
 }
 
 export function hyphen(raw: string): string {
@@ -1451,7 +1657,18 @@ function createHolder(key: string, handler: EventListener | null): ListenerHolde
 }
 
 function isEventName(name: string): boolean {
-  return name.startsWith("on:") || (name.startsWith("on") && name.length > 2);
+  if (name.startsWith("on:")) {
+    return true;
+  }
+  if (name.length <= 2 || !name.startsWith("on")) {
+    return false;
+  }
+  const code = name.charCodeAt(2);
+  if (code >= 65 && code <= 90) {
+    return true;
+  }
+  const rest = name.slice(2).toLowerCase();
+  return DOM_EVENT_NAMES.has(DOM_EVENT_ALIASES.get(rest) ?? rest);
 }
 
 export function parseEventName(name: string): { event: string; capture: boolean } {
@@ -1543,23 +1760,59 @@ const DOM_EVENT_ALIASES: ReadonlyMap<string, string> = new Map([
 
 function buildEventName(name: string): ParsedEvent {
   if (name.startsWith("on:")) {
-    const event = name.slice(3);
-    return { event, capture: false, key: "e:" + event };
+    const raw = name.slice(3);
+    const capture = raw.endsWith(":capture");
+    const event = capture ? raw.slice(0, -8) : raw;
+    if (event.length === 0) {
+      throw new Error(`Некорректное имя события: "${name}"`);
+    }
+    return { event, capture, key: (capture ? "c:" : "e:") + event };
   }
-  let event = name.slice(2);
-  const capture = event.endsWith("Capture");
-  if (capture) {
+  if (name.length > 2 && name.startsWith("on") && isUpperCode(name.charCodeAt(2))) {
+    let event = name.slice(2);
+    let capture = false;
+    if (event.length > 7 && event.endsWith("Capture")) {
+      event = event.slice(0, -7);
+      capture = true;
+    }
+    if (event.length === 0) {
+      throw new Error(`Некорректное имя события: "${name}"`);
+    }
+    const lower = event.toLowerCase();
+    const canonical = DOM_EVENT_ALIASES.get(lower) ?? lower;
+    if (!DOM_EVENT_NAMES.has(canonical)) {
+      throw new Error(
+        `Неизвестное событие "${name}". Для пользовательского события используйте "on:${lower}"`,
+      );
+    }
+    return { event: canonical, capture, key: (capture ? "c:" : "e:") + canonical };
+  }
+  if (name.length > 2 && name.startsWith("on")) {
+    const rest = name.slice(2).toLowerCase();
+    const aliased = DOM_EVENT_ALIASES.get(rest) ?? rest;
+    if (DOM_EVENT_NAMES.has(aliased) || rest.includes("-")) {
+      return { event: aliased, capture: false, key: "e:" + aliased };
+    }
+  }
+  let event = name;
+  let capture = false;
+  if (event.length > 7 && event.endsWith("Capture")) {
     event = event.slice(0, -7);
+    capture = true;
   }
   const lower = event.toLowerCase();
   const canonical = DOM_EVENT_ALIASES.get(lower) ?? lower;
-  if (DOM_EVENT_NAMES.has(canonical)) {
-    return { event: canonical, capture, key: (capture ? "c:" : "e:") + canonical };
+  if (!EVENT_NAME.test(canonical)) {
+    throw new Error(`Некорректное имя события: "${name}"`);
   }
-  const first = event.charAt(0);
-  event = first === "" ? event : first.toLowerCase() + event.slice(1);
-  return { event, capture, key: (capture ? "c:" : "e:") + event };
+  return { event: canonical, capture, key: (capture ? "c:" : "e:") + canonical };
 }
+
+function isUpperCode(code: number): boolean {
+  return code >= 65 && code <= 90;
+}
+
+const EVENT_NAME = /^[a-z][a-z0-9-]*$/;
 
 function ensureDelegated(event: string, key: string): void {
   if (delegatedInstalled.has(key)) {
@@ -1571,26 +1824,37 @@ function ensureDelegated(event: string, key: string): void {
 
 function dispatchDelegated(event: Event, key: string): void {
   let node = event.target as Node | null;
-  while (node !== null) {
-    if (node instanceof Element) {
-      const entry = listenerRegistry.get(node);
-      const holder =
-        entry instanceof Map ? entry.get(key) : entry !== undefined && entry.key === key ? entry : undefined;
-      if (holder !== undefined) {
-        const handler = holder.current;
-        if (typeof handler === "function") {
-          Reflect.defineProperty(event, "currentTarget", { configurable: true, value: node });
-          handler(event);
-        }
-        if (event.cancelBubble) {
-          Reflect.deleteProperty(event, "currentTarget");
-          return;
+  try {
+    while (node !== null) {
+      if (node instanceof Element) {
+        const entry = listenerRegistry.get(node);
+        const holder =
+          entry instanceof Map
+            ? entry.get(key)
+            : entry !== undefined && entry.key === key
+              ? entry
+              : undefined;
+        if (holder !== undefined) {
+          const handler = holder.current;
+          if (typeof handler === "function") {
+            Reflect.defineProperty(event, "currentTarget", {
+              configurable: true,
+              value: node,
+            });
+            try {
+              handler.call(node, event);
+            } catch {}
+            if (event.cancelBubble) {
+              return;
+            }
+          }
         }
       }
+      node = node.parentNode;
     }
-    node = node.parentNode;
+  } finally {
+    Reflect.deleteProperty(event, "currentTarget");
   }
-  Reflect.deleteProperty(event, "currentTarget");
 }
 
 export function addListener(el: Element, name: string, handler: EventListener | null): void {
@@ -1718,20 +1982,17 @@ export function fragment(accessor: () => unknown): Node {
     if (!isMarker(anchor, FRAGMENT)) {
       return mismatch("не найден якорь fragment");
     }
-    const window = {
-      start: outer.start,
-      end: anchor,
-      cursor: outer.start.nextSibling,
-    };
+    const window = beginRegion(outer, anchor);
     let initialized = false;
     createRenderEffect(() => {
       if (!initialized) {
         initialized = true;
         const value = withWindow(window, accessor);
         settleNodes(anchor, value);
-        if (window.cursor !== anchor) {
+        if (!regionMatches(window, anchor, value)) {
           mismatch("содержимое fragment не совпало");
         }
+        settleWindow(outer, anchor);
         return;
       }
       writeRegion(window.start, window.end, accessor());
@@ -1772,6 +2033,10 @@ export function applyProps(el: Element, props: Record<string, unknown> | undefin
     }
     if (key === "ref") {
       applyElementRef(el, value);
+      continue;
+    }
+    if (key === "innerHTML" || key === "dangerouslySetInnerHTML") {
+      applyInnerHtml(el, value);
       continue;
     }
     if (isEventName(key)) {

@@ -32,6 +32,7 @@ export {
   dynamic,
   effect,
   fragment,
+  innerHtml,
   insert,
   isServerMode,
   on,

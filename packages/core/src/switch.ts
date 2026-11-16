@@ -1,9 +1,10 @@
-import { createRenderEffect, onCleanup } from "@ivlev-dev/silent-reactivity";
+import { createRenderEffect, createSignal, onCleanup } from "@ivlev-dev/silent-reactivity";
 import type { Children } from "./jsx.js";
 import { MATCH_DESCRIPTOR, attachMatch, isMatchNode } from "./match-node.js";
 import { collectNodes, createMountPoint, isServerMode } from "./dom.js";
 import { extractMetadata } from "./metadata.js";
 import { settleNodes } from "./dom-hydration-state.js";
+import { beginRegion, regionMatches, settleWindow } from "./hydration-cursor.js";
 import {
   SWITCH,
   collectBetween,
@@ -40,36 +41,73 @@ function resolve(value: unknown): unknown {
   return current;
 }
 
-interface Selection {
-  found: boolean;
-  value: unknown;
+interface Branch {
+  readonly key: number;
+  readonly read: () => unknown;
 }
 
-function collectMatch(value: unknown, selection: Selection): void {
+interface ScanState {
+  index: number;
+}
+
+function scanBranch(value: unknown, state: ScanState): Branch | null {
   let current = value;
   while (typeof current === "function") {
     current = (current as () => unknown)();
   }
   if (Array.isArray(current)) {
     for (let index = 0; index < current.length; index += 1) {
-      collectMatch(current[index], selection);
+      const found = scanBranch(current[index], state);
+      if (found !== null) {
+        return found;
+      }
     }
-    return;
+    return null;
   }
-  if (selection.found || !isMatchNode(current)) {
-    return;
+  if (!isMatchNode(current)) {
+    return null;
   }
+  const key = state.index;
+  state.index += 1;
   const descriptor = current[MATCH_DESCRIPTOR];
-  if (truthy(descriptor.when())) {
-    selection.found = true;
-    selection.value = descriptor.children();
+  if (!truthy(descriptor.when())) {
+    return null;
   }
+  return { key, read: descriptor.children };
+}
+
+function findBranch(children: unknown): Branch | null {
+  return scanBranch(children, { index: 0 });
 }
 
 function select(props: SwitchProps): unknown {
-  const selection: Selection = { found: false, value: undefined };
-  collectMatch(props.children, selection);
-  return selection.found ? selection.value : resolve(props.fallback);
+  const branch = findBranch(props.children);
+  return branch === null ? resolve(props.fallback) : branch.read();
+}
+
+interface BranchBinding {
+  read: () => unknown;
+  readonly version: () => number;
+}
+
+function bindBranch(props: SwitchProps): BranchBinding {
+  const [epoch, setEpoch] = createSignal(0);
+  const binding: BranchBinding = {
+    read: () => resolve(props.fallback),
+    version: epoch,
+  };
+  let selected: number | null | undefined = undefined;
+  createRenderEffect(() => {
+    const branch = findBranch(props.children);
+    const key = branch === null ? null : branch.key;
+    if (selected === key) {
+      return;
+    }
+    selected = key;
+    binding.read = branch === null ? () => resolve(props.fallback) : branch.read;
+    setEpoch((value) => value + 1);
+  });
+  return binding;
 }
 
 export function Match(props: MatchProps): Node {
@@ -105,24 +143,22 @@ export function Switch(props: SwitchProps): Node {
       return mismatch("якорь Switch отсоединён");
     }
     const mount = createMountPoint(parent, anchor, collectBetween(outer.start, anchor));
+    const binding = bindBranch(props);
     let initialized = false;
     createRenderEffect(() => {
+      binding.version();
       if (!initialized) {
         initialized = true;
-        const window = {
-          start: outer.start,
-          end: anchor,
-          cursor: outer.start.nextSibling,
-        };
-        const value = withWindow(window, () => select(props));
+        const window = beginRegion(outer, anchor);
+        const value = withWindow(window, binding.read);
         settleNodes(anchor, value);
-        if (window.cursor !== anchor) {
+        if (!regionMatches(window, anchor, value)) {
           mismatch("содержимое Switch не совпало");
         }
-        outer.cursor = anchor.nextSibling;
+        settleWindow(outer, anchor);
         return;
       }
-      mount.render(select(props));
+      mount.render(binding.read());
     });
     onCleanup(mount.clear);
     return document.createDocumentFragment();
@@ -132,8 +168,10 @@ export function Switch(props: SwitchProps): Node {
   const anchor = document.createComment(SWITCH);
   container.appendChild(anchor);
   const mount = createMountPoint(container, anchor);
+  const binding = bindBranch(props);
   createRenderEffect(() => {
-    mount.render(select(props));
+    binding.version();
+    mount.render(binding.read());
   });
   onCleanup(mount.clear);
   return container;

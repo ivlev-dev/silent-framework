@@ -4,6 +4,7 @@ import type { Children } from "./jsx.js";
 import { collectNodes, createMountPoint, isServerMode } from "./dom.js";
 import { extractMetadata } from "./metadata.js";
 import { settleNodes } from "./dom-hydration-state.js";
+import { beginRegion, regionMatches, settleWindow } from "./hydration-cursor.js";
 import {
   ERROR_BOUNDARY,
   collectBetween,
@@ -154,31 +155,28 @@ function hydrateErrorBoundary(props: ErrorBoundaryProps): Node {
 
   const mount = createMountPoint(parent, anchor, collectBetween(outer.start, anchor));
   const options = getRuntimeOptions();
-  const window = {
-    start: outer.start,
-    end: anchor,
-    cursor: outer.start.nextSibling,
-  };
-  let initialized = false;
+  const window = beginRegion(outer, anchor);
+  let settled = false;
   let failed = false;
 
   const showFallback = (error: unknown): void => {
     failed = true;
-    const fallback = withRuntimeOptions(options, () =>
-      initialized
-        ? resolve(props.fallback(error, reset))
-        : withWindow(window, () => resolve(props.fallback(error, reset))),
-    );
-    if (initialized) {
+    if (settled) {
+      const fallback = withRuntimeOptions(options, () =>
+        resolve(props.fallback(error, reset)),
+      );
       mount.render(fallback);
       return;
     }
-    if (window.cursor !== anchor) {
+    const fallback = withRuntimeOptions(options, () =>
+      withWindow(window, () => resolve(props.fallback(error, reset))),
+    );
+    if (!regionMatches(window, anchor, fallback)) {
       return mismatch("содержимое ErrorBoundary не совпало");
     }
-    outer.cursor = anchor.nextSibling;
+    settleWindow(outer, anchor);
     settleNodes(anchor, fallback);
-    initialized = true;
+    settled = true;
   };
 
   const guardedOptions = { ...options, onError: showFallback };
@@ -188,19 +186,19 @@ function hydrateErrorBoundary(props: ErrorBoundaryProps): Node {
       return;
     }
     try {
-      if (!initialized) {
-        initialized = true;
+      if (!settled) {
         const value = withRuntimeOptions(guardedOptions, () =>
           withWindow(window, () => resolve(props.children)),
         );
         if (failed) {
           return;
         }
-        if (window.cursor !== anchor) {
+        if (!regionMatches(window, anchor, value)) {
           mismatch("содержимое ErrorBoundary не совпало");
         }
-        outer.cursor = anchor.nextSibling;
+        settleWindow(outer, anchor);
         settleNodes(anchor, value);
+        settled = true;
         return;
       }
       const value = withRuntimeOptions(guardedOptions, () => resolve(props.children));

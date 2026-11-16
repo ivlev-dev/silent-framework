@@ -10,6 +10,7 @@ import {
 } from "./component.js";
 import { createMountPoint } from "./dom.js";
 import { settleNodes } from "./dom-hydration-state.js";
+import { beginRegion, regionMatches, settleWindow } from "./hydration-cursor.js";
 import { getCurrentBoundary, runWithBoundary, type AsyncBoundary } from "./boundary.js";
 import {
   HydrationMismatchError,
@@ -133,17 +134,17 @@ function hydrateSuspense(props: SuspenseProps): Node {
   const boundary: AsyncBoundary = {
     register(): void {},
   };
-  const window = {
-    start: outer.start,
-    end: anchor,
-    cursor: outer.start.nextSibling,
-  };
+  const window = beginRegion(outer, anchor);
 
   let children: unknown = null;
   withRuntimeOptions({ ...options, boundary }, () => {
     children = withWindow(window, () => resolveValue(props.children));
   });
   settleNodes(anchor, children);
+  if (!regionMatches(window, anchor, children)) {
+    return mismatch("содержимое Suspense не совпало");
+  }
+  settleWindow(outer, anchor);
 
   onCleanup(mount.clear);
 
@@ -185,11 +186,8 @@ export function lazy<P extends Record<string, unknown>>(
       if (anchor === null) {
         return mismatch("не найден якорь lazy");
       }
-      const window = {
-        start: outer.start,
-        end: anchor,
-        cursor: outer.start.nextSibling,
-      };
+      const window = beginRegion(outer, anchor);
+      settleWindow(outer, anchor);
       onCleanup(() => {
         disposed = true;
       });
@@ -208,7 +206,7 @@ export function lazy<P extends Record<string, unknown>>(
                   component(target, propsRecord),
                 );
                 settleNodes(window.end, value);
-                if (window.cursor !== window.end) {
+                if (!regionMatches(window, window.end, value)) {
                   mismatch("содержимое lazy не совпало");
                 }
               });

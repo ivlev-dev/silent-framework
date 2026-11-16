@@ -19,6 +19,8 @@ import {
   isServerMode,
 } from "./dom.js";
 import { hydratedEffect, settleNodes } from "./dom-hydration-state.js";
+import { beginRegion, regionMatches, settleWindow } from "./hydration-cursor.js";
+import { normalizeItems, type ListSource } from "./list-items.js";
 import { getServerBackend, serializeServerValue } from "./server-proxy.js";
 import { extractMetadata, extractMetadataNode, isMetadataFree } from "./metadata.js";
 import {
@@ -101,7 +103,7 @@ class KeyedState<T> implements ItemState<T> {
 }
 
 export interface ForProps<T> {
-  each: readonly T[] | (() => readonly T[]);
+  each: ListSource<T> | (() => ListSource<T>);
   children: (item: T, index: () => number) => Node;
   fallback?: unknown;
 }
@@ -176,8 +178,9 @@ const LIST_END_MARKER = `<!--${LIST_END}-->`;
 function renderForServer<T>(props: ForProps<T>): Node {
   const fallback = props.fallback;
   const hasFallback = fallback !== undefined;
-  const items: readonly T[] =
-    typeof props.each === "function" ? props.each() : props.each;
+  const items: readonly T[] = normalizeItems<T>(
+    typeof props.each === "function" ? props.each() : props.each,
+  );
   const backend = getServerBackend();
   if (backend?.createRaw !== undefined) {
     if (items.length === 0) {
@@ -190,13 +193,9 @@ function renderForServer<T>(props: ForProps<T>): Node {
     let currentIndex = 0;
     const indexOf = (): number => currentIndex;
     for (let position = 0; position < items.length; position += 1) {
-      const item = items[position];
-      if (item === undefined) {
-        break;
-      }
       currentIndex = position;
       out += ITEM_MARKER;
-      out += serializeServerValue(props.children(item, indexOf));
+      out += serializeServerValue(props.children(items[position] as T, indexOf));
     }
     out += LIST_END_MARKER;
     return backend.createRaw(out) as Node;
@@ -206,17 +205,10 @@ function renderForServer<T>(props: ForProps<T>): Node {
     const values: unknown[] = new Array(total);
     let currentIndex = 0;
     const indexOf = (): number => currentIndex;
-    let count = 0;
     for (let position = 0; position < total; position += 1) {
-      const item = items[position];
-      if (item === undefined) {
-        break;
-      }
       currentIndex = position;
-      values[position] = props.children(item, indexOf);
-      count = position + 1;
+      values[position] = props.children(items[position] as T, indexOf);
     }
-    values.length = count;
     let parts: string[];
     if (total === 0) {
       if (hasFallback) {
@@ -225,15 +217,13 @@ function renderForServer<T>(props: ForProps<T>): Node {
       } else {
         parts = [LIST_END_MARKER];
       }
-    } else if (count === 0) {
-      parts = [ITEM_MARKER];
     } else {
-      parts = new Array<string>(count + 1);
+      parts = new Array<string>(total + 1);
       parts[0] = ITEM_MARKER;
-      if (count > 1) {
-        parts.fill(ITEM_MARKER, 1, count);
+      if (total > 1) {
+        parts.fill(ITEM_MARKER, 1, total);
       }
-      parts[count] = LIST_END_MARKER;
+      parts[total] = LIST_END_MARKER;
     }
     const fragment = backend.createFragment(parts, values);
     if (fragment !== null) {
@@ -246,10 +236,7 @@ function renderForServer<T>(props: ForProps<T>): Node {
   let fallbackIndex = 0;
   const indexOf = (): number => fallbackIndex;
   for (let position = 0; position < items.length; position += 1) {
-    const item = items[position];
-    if (item === undefined) {
-      break;
-    }
+    const item = items[position] as T;
     const anchor = document.createComment(ITEM);
     sink.insertBefore(anchor, endAnchor);
     fallbackIndex = position;
@@ -470,7 +457,7 @@ export function For<T>(props: ForProps<T>): Node {
         }
         const value = withWindow(window, props.children, item, state.index);
         settleNodes(end, value);
-        if (window.cursor !== end) {
+        if (!regionMatches(window, end, value)) {
           mismatch("содержимое элемента списка не совпало");
         }
         return;
@@ -509,17 +496,13 @@ export function For<T>(props: ForProps<T>): Node {
     }
     endAnchor = candidate;
     const items: readonly T[] = untrack(() =>
-      typeof props.each === "function" ? props.each() : props.each,
+      normalizeItems<T>(typeof props.each === "function" ? props.each() : props.each),
     );
     if (items.length === 0) {
       if (hasFallback) {
-        const window = {
-          start: outer.start,
-          end: endAnchor,
-          cursor: outer.start.nextSibling,
-        };
-        withWindow(window, () => resolve(fallback));
-        if (window.cursor !== endAnchor) {
+        const window = beginRegion(outer, endAnchor);
+        const value = withWindow(window, () => resolve(fallback));
+        if (!regionMatches(window, endAnchor, value)) {
           return mismatch("содержимое fallback списка не совпало");
         }
         fallbackSeed = collectBetween(outer.start, endAnchor);
@@ -552,6 +535,7 @@ export function For<T>(props: ForProps<T>): Node {
     if (position !== items.length) {
       return mismatch("число элементов списка не совпало");
     }
+    settleWindow(outer, endAnchor);
   } else {
     endAnchor = document.createComment(LIST_END);
     const sink = container ?? (container = document.createDocumentFragment());
@@ -577,7 +561,7 @@ export function For<T>(props: ForProps<T>): Node {
     }
 
     const each = props.each;
-    const items: readonly T[] = typeof each === "function" ? each() : each;
+    const items: readonly T[] = normalizeItems<T>(typeof each === "function" ? each() : each);
     if (skipFirst) {
       skipFirst = false;
       return;
@@ -795,25 +779,29 @@ export function Show(props: ShowProps): Node {
       return mismatch("якорь Show отсоединён");
     }
     const mount = createMountPoint(parent, anchor, collectBetween(outer.start, anchor));
+    const [active, setActive] = createSignal(false);
+    createRenderEffect(() => {
+      setActive(truthy(resolve(props.when)));
+    });
     let initialized = false;
     createRenderEffect(() => {
-      const when = resolve(props.when);
-      const active = truthy(when);
+      const current = active();
       if (!initialized) {
         initialized = true;
-        const window = {
-          start: outer.start,
-          end: anchor,
-          cursor: outer.start.nextSibling,
-        };
-        const value = withWindow(window, resolve, active ? props.children : props.fallback);
+        const window = beginRegion(outer, anchor);
+        const value = withWindow(
+          window,
+          resolve,
+          current ? props.children : props.fallback,
+        );
         settleNodes(anchor, value);
-        if (window.cursor !== anchor) {
+        if (!regionMatches(window, anchor, value)) {
           mismatch("содержимое Show не совпало");
         }
+        settleWindow(outer, anchor);
         return;
       }
-      mount.render(active ? resolve(props.children) : resolve(props.fallback));
+      mount.render(resolve(current ? props.children : props.fallback));
     });
     onCleanup(mount.clear);
     return document.createDocumentFragment();
@@ -823,10 +811,12 @@ export function Show(props: ShowProps): Node {
   const anchor = document.createComment(SHOW);
   container.appendChild(anchor);
   const mount = createMountPoint(container, anchor);
+  const [active, setActive] = createSignal(false);
   createRenderEffect(() => {
-    const when = resolve(props.when);
-    const next: unknown = truthy(when) ? resolve(props.children) : resolve(props.fallback);
-    mount.render(next);
+    setActive(truthy(resolve(props.when)));
+  });
+  createRenderEffect(() => {
+    mount.render(resolve(active() ? props.children : props.fallback));
   });
   onCleanup(mount.clear);
   return container;

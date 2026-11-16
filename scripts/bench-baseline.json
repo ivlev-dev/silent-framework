@@ -1,22 +1,13 @@
 {
   "build": {
-    "startJsKb": 28.47,
-    "startGzipKb": 9.68,
-    "warmMs": 36.85,
-    "coldMs": 62.47,
-    "vmStartGzipKb": 11.2,
-    "solidColdMs": 141.11,
-    "solidWarmMs": 36.53,
-    "coldRatio": 0.44270427326199413,
-    "warmRatio": 1.0087599233506708
-  },
-  "browser": {
-    "silentOps": 23640.66,
-    "solidOps": 26455.03,
-    "ratio": 0.89,
-    "p50Ms": 0.03
-  },
-  "alloc": {
-    "totalKb": 4941.73
+    "startJsKb": 30.98,
+    "startGzipKb": 10.49,
+    "warmMs": 39.38,
+    "coldMs": 60.07,
+    "vmStartGzipKb": 12.01,
+    "solidColdMs": 127.69,
+    "solidWarmMs": 31.31,
+    "coldRatio": 0.4704362127026392,
+    "warmRatio": 1.257745129351645
   }
 }

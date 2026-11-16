@@ -7,6 +7,7 @@ import {
   endHydration,
   withWindow,
   withoutHydration,
+  type HydrationContext,
 } from "./hydration-state.js";
 import {
   RESOLVED_READY,
@@ -31,6 +32,7 @@ import type { AnyComponent } from "./types.js";
 
 let runtimes: Promise<void> | null = null;
 let runtimesReady = false;
+let hydrationQueue: Promise<void> = Promise.resolve();
 
 async function settle(): Promise<void> {
   flushSync();
@@ -75,6 +77,33 @@ function ensureRuntimes(): Promise<void> {
   return runtimes;
 }
 
+async function serialized<T>(task: () => Promise<T>): Promise<T> {
+  const previous = hydrationQueue;
+  let release: () => void = () => {};
+  hydrationQueue = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  try {
+    return await task();
+  } finally {
+    release();
+  }
+}
+
+type AdoptedRoot = ReturnType<typeof createRootResult>;
+
+function disposeAdopted(adopted: AdoptedRoot | null): void {
+  if (adopted === null) {
+    return;
+  }
+  try {
+    adopted.result.dispose();
+  } finally {
+    adopted.dispose();
+  }
+}
+
 async function hydrateWith(
   element: Element,
   app: AnyComponent,
@@ -89,12 +118,13 @@ async function hydrateWith(
   element.insertBefore(boundaryStart, element.firstChild);
   element.appendChild(boundaryEnd);
 
-  let adopted: { readonly result: ReturnType<typeof createRootResult>["result"]; readonly dispose: () => void } | null = null;
+  let adopted: AdoptedRoot | null = null;
+  let handedOff = false;
   const hasServerMarkup = !forceFresh && boundaryStart.nextSibling !== boundaryEnd;
 
   try {
     if (hasServerMarkup) {
-      beginHydration(onMismatch);
+      const context: HydrationContext = beginHydration(onMismatch);
       try {
         adopted = withWindow(
           { start: boundaryStart, end: boundaryEnd, cursor: boundaryStart.nextSibling },
@@ -108,10 +138,11 @@ async function hydrateWith(
         if (!(error instanceof HydrationMismatchError)) {
           throw error;
         }
-        onMismatch(error);
+        disposeAdopted(adopted);
         adopted = null;
+        onMismatch(error);
       } finally {
-        endHydration();
+        endHydration(context);
       }
     }
 
@@ -124,16 +155,20 @@ async function hydrateWith(
         await pending;
       }
       element.replaceChildren(fresh.result.node);
+      handedOff = true;
       return handleFor(fresh.result, fresh.dispose);
     }
 
     boundaryStart.remove();
     boundaryEnd.remove();
+    handedOff = true;
     return handleFor(adopted.result, adopted.dispose);
   } finally {
     boundaryStart.remove();
     boundaryEnd.remove();
-    endHydration();
+    if (!handedOff) {
+      disposeAdopted(adopted);
+    }
   }
 }
 
@@ -143,10 +178,10 @@ const defaultOnMismatch = (error: HydrationMismatchError): void => {
 
 const EMPTY_RUNTIME_OPTIONS: RuntimeOptions = {};
 
-export async function hydrate(
+async function hydrateRoot(
   target: Element | string,
   app: AnyComponent,
-  options: MountOptions = {},
+  options: MountOptions,
 ): Promise<MountHandle> {
   const element = resolveTarget(target);
   if (!runtimesReady) {
@@ -200,4 +235,12 @@ export async function hydrate(
       true,
     );
   }
+}
+
+export async function hydrate(
+  target: Element | string,
+  app: AnyComponent,
+  options: MountOptions = {},
+): Promise<MountHandle> {
+  return serialized(() => hydrateRoot(target, app, options));
 }

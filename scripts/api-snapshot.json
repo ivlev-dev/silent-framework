@@ -39,6 +39,7 @@
       "HydrationMismatchError",
       "Index",
       "IndexProps",
+      "innerHtml",
       "insert",
       "isServerMode",
       "isViewComponent",

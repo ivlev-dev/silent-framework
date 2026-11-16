@@ -391,3 +391,112 @@ fn style_with_dynamic_element_child_fails() {
     .unwrap_err();
     assert!(error.contains("<style>"), "unexpected error: {error}");
 }
+
+#[test]
+fn static_script_preserves_exact_newlines() {
+    let code = run(
+        "export function view() {\n  return <script>const a=1;\n// comment\nconst b=2;</script>;\n}\n",
+    );
+    assert!(
+        code.contains("<script>const a=1;\\n// comment\\nconst b=2;</script>"),
+        "script must keep newlines: {code}"
+    );
+}
+
+#[test]
+fn static_style_preserves_exact_newlines() {
+    let code = run("export function view() {\n  return <style>a > b\n/* c */</style>;\n}\n");
+    assert!(
+        code.contains("<style>a > b\\n/* c */</style>"),
+        "style must keep newlines: {code}"
+    );
+}
+
+#[test]
+fn static_title_and_textarea_still_collapse_newlines() {
+    let code = run(
+        "export function view() {\n  return <div><title>a\nb</title><textarea>c\nd</textarea></div>;\n}\n",
+    );
+    assert!(
+        code.contains("<title>a b</title>"),
+        "title must collapse: {code}"
+    );
+    assert!(
+        code.contains("<textarea>c d</textarea>"),
+        "textarea must collapse: {code}"
+    );
+}
+
+#[test]
+fn dangerously_set_inner_html_uses_inner_html_helper() {
+    let code = run(r#"export function view(props: { html: string }) {
+  return <div dangerouslySetInnerHTML={{ __html: props.html }} />;
+}
+"#);
+    assert!(
+        code.contains("_$innerHtml("),
+        "missing innerHtml helper: {code}"
+    );
+    assert!(
+        !code.contains("_$prop("),
+        "innerHtml must not go through prop: {code}"
+    );
+    assert!(
+        code.contains("data-silent-text"),
+        "innerHTML element needs a content hole marker: {code}"
+    );
+}
+
+#[test]
+fn static_boolean_and_non_boolean_attributes_are_synchronized() {
+    let code = run(r#"export function view() {
+  return <div aria-hidden={true} draggable={true} data-flag={true} hidden={true} />;
+}
+"#);
+    assert!(
+        code.contains("aria-hidden=\"true\""),
+        "unexpected markup: {code}"
+    );
+    assert!(
+        code.contains("draggable=\"true\""),
+        "unexpected markup: {code}"
+    );
+    assert!(
+        code.contains("data-flag=\"true\""),
+        "unexpected markup: {code}"
+    );
+    assert!(code.contains("hidden=\"\""), "unexpected markup: {code}");
+    assert!(
+        !code.contains(" hidden=\"true\""),
+        "unexpected markup: {code}"
+    );
+}
+
+#[test]
+fn select_value_is_not_rendered_as_attribute() {
+    let code = run(r#"export function view() {
+  return <select value="b"><option value="a">a</option><option value="b">b</option></select>;
+}
+"#);
+    assert!(
+        !code.contains("<select value="),
+        "select must not render value attribute: {code}"
+    );
+    assert!(code.contains("value=\"b\""), "option keeps value: {code}");
+}
+
+#[test]
+fn dynamic_select_value_still_binds_on_client() {
+    let code = run(r#"export function view(props: { value: string }) {
+  return <select value={props.value}><option value="a">a</option></select>;
+}
+"#);
+    assert!(
+        code.contains("_$attr("),
+        "dynamic select value must stay reactive: {code}"
+    );
+    assert!(
+        !code.contains("<select value="),
+        "select must not render static value attribute: {code}"
+    );
+}

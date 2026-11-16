@@ -42,6 +42,16 @@ const BOOLEAN_ATTRIBUTES: ReadonlySet<string> = new Set([
   "required",
   "autofocus",
   "hidden",
+  "novalidate",
+  "async",
+  "defer",
+  "open",
+  "muted",
+  "playsinline",
+  "inert",
+  "loop",
+  "controls",
+  "reversed",
 ]);
 
 function attributeText(value: unknown): string {
@@ -81,6 +91,29 @@ class RawSlot {
   constructor(value: unknown) {
     this.value = value;
   }
+}
+
+export type RawContentMode = "text" | "raw" | "html";
+
+function rawText(value: string, pattern: RegExp | null): string {
+  if (pattern === null) {
+    return value;
+  }
+  return value.replace(pattern, (match) => "<\\/" + match.slice(2));
+}
+
+function staticAttributeText(name: string, value: unknown): string {
+  if (value === null || value === undefined || value === false) {
+    return "";
+  }
+  const serialized = serializeAttribute(name, value);
+  if (serialized === null) {
+    return "";
+  }
+  if (serialized === true) {
+    return " " + name;
+  }
+  return " " + serialized;
 }
 
 class RawHoleImpl implements RawHole {
@@ -149,32 +182,83 @@ export class RawText extends NodeImpl {
 export class RawAttr {
   private readonly hole: RawHole;
   private readonly content: RawHole | undefined;
+  private readonly mode: RawContentMode;
+  private readonly tag: string | undefined;
+  private readonly rawPattern: RegExp | null;
+  private readonly statics: Map<string, RawHole> | undefined;
   private readonly values: Map<string, string>;
   private readonly boolean: Set<string>;
 
-  constructor(hole: RawHole, content?: RawHole) {
+  constructor(
+    hole: RawHole,
+    content?: RawHole,
+    mode: RawContentMode = "text",
+    tag?: string,
+    rawTag?: string,
+    statics?: Map<string, RawHole>,
+  ) {
     this.hole = hole;
     this.content = content;
+    this.mode = mode;
+    this.tag = tag;
+    this.statics = statics;
+    this.rawPattern =
+      mode === "raw" && rawTag !== undefined && rawTag !== ""
+        ? new RegExp("</" + rawTag, "gi")
+        : null;
     this.values = new Map<string, string>();
     this.boolean = new Set<string>();
   }
 
   setAttribute(name: string, value: unknown): void {
-    if (this.content !== undefined && (name === "value" || name === "textContent")) {
-      this.setContent(value);
+    if (this.content !== undefined) {
+      if (this.mode === "html") {
+        if (name === "innerHTML") {
+          this.setContent(value);
+          return;
+        }
+      } else if (name === "value" || name === "textContent") {
+        this.setContent(value);
+        return;
+      }
+    }
+    if (name === "value" && this.tag === "select") {
       return;
+    }
+    const statics = this.statics;
+    if (statics !== undefined) {
+      const key = name === "className" ? "class" : name;
+      const hole = statics.get(key);
+      if (hole !== undefined) {
+        hole.set(staticAttributeText(key, value));
+        this.values.delete(key);
+        this.boolean.delete(key);
+        return;
+      }
     }
     this.setRawAttribute(name, value);
   }
 
   private setContent(value: unknown): void {
+    const content = this.content;
+    if (content === undefined) {
+      return;
+    }
+    if (this.mode === "html") {
+      content.set(value === null || value === undefined ? "" : String(value));
+      return;
+    }
     const text =
       value === null || value === undefined
         ? ""
         : typeof value === "string"
-          ? escapeText(value)
-          : escapeText(String(value));
-    this.content?.set(text);
+          ? value
+          : String(value);
+    if (this.mode === "raw") {
+      content.set(rawText(text, this.rawPattern));
+      return;
+    }
+    content.set(escapeText(text));
   }
 
   private setRawAttribute(name: string, value: unknown): void {
@@ -217,6 +301,7 @@ export class RawNode extends NodeImpl {
     tails?: readonly string[],
     bare?: readonly boolean[],
     wrap = true,
+    initial?: readonly (string | undefined)[],
   ) {
     super(NODE_TEXT);
     this.parts = parts;
@@ -227,6 +312,14 @@ export class RawNode extends NodeImpl {
     this.wrap = wrap;
     const count = indexes.length;
     this.slots = new Array<string | RawSlot | undefined>(count);
+    if (initial !== undefined) {
+      for (let position = 0; position < count; position += 1) {
+        const value = initial[position];
+        if (value !== undefined) {
+          this.slots[position] = value;
+        }
+      }
+    }
     const holes = new Array<RawHole>(count);
     for (let position = 0; position < count; position += 1) {
       holes[position] = new RawHoleImpl(
@@ -359,8 +452,7 @@ export class RawNode extends NodeImpl {
       this.tails,
       this.bare,
       this.wrap,
-    );
-    for (let position = 0; position < this.slots.length; position += 1) {
+    );    for (let position = 0; position < this.slots.length; position += 1) {
       const value = this.slots[position];
       if (value !== undefined) {
         clone.slots[position] = value;

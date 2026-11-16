@@ -20,6 +20,8 @@ import {
 } from "./dom.js";
 import { getServerBackend, serializeServerValue } from "./server-proxy.js";
 import { settleNodes } from "./dom-hydration-state.js";
+import { beginRegion, regionMatches, settleWindow } from "./hydration-cursor.js";
+import { normalizeItems, type ListSource } from "./list-items.js";
 import { extractMetadata, extractMetadataNode, isMetadataFree } from "./metadata.js";
 import {
   ITEM,
@@ -116,7 +118,7 @@ class IndexedState<T> implements IndexState<T> {
 }
 
 export interface IndexProps<T> {
-  each: readonly T[] | (() => readonly T[]);
+  each: ListSource<T> | (() => ListSource<T>);
   children: (item: Accessor<T>, index: Accessor<number>) => Node;
   fallback?: unknown;
 }
@@ -132,8 +134,9 @@ function resolve(value: unknown): unknown {
 function renderIndexServer<T>(props: IndexProps<T>): Node {
   const fallback = props.fallback;
   const hasFallback = fallback !== undefined;
-  const items: readonly T[] =
-    typeof props.each === "function" ? props.each() : props.each;
+  const items: readonly T[] = normalizeItems<T>(
+    typeof props.each === "function" ? props.each() : props.each,
+  );
   const backend = getServerBackend();
   if (backend?.createRaw !== undefined) {
     if (items.length === 0) {
@@ -146,11 +149,8 @@ function renderIndexServer<T>(props: IndexProps<T>): Node {
     let currentIndex = 0;
     const indexOf = (): number => currentIndex;
     for (let position = 0; position < items.length; position += 1) {
-      const item = items[position];
-      if (item === undefined) {
-        break;
-      }
       currentIndex = position;
+      const item = items[position] as T;
       out += ITEM_MARKER;
       out += serializeServerValue(props.children(() => item, indexOf));
     }
@@ -162,17 +162,11 @@ function renderIndexServer<T>(props: IndexProps<T>): Node {
     const values: unknown[] = new Array(total);
     let currentIndex = 0;
     const indexOf = (): number => currentIndex;
-    let count = 0;
     for (let position = 0; position < total; position += 1) {
-      const item = items[position];
-      if (item === undefined) {
-        break;
-      }
       currentIndex = position;
+      const item = items[position] as T;
       values[position] = props.children(() => item, indexOf);
-      count = position + 1;
     }
-    values.length = count;
     let parts: string[];
     if (total === 0) {
       if (hasFallback) {
@@ -181,15 +175,13 @@ function renderIndexServer<T>(props: IndexProps<T>): Node {
       } else {
         parts = [LIST_END_MARKER];
       }
-    } else if (count === 0) {
-      parts = [ITEM_MARKER];
     } else {
-      parts = new Array<string>(count + 1);
+      parts = new Array<string>(total + 1);
       parts[0] = ITEM_MARKER;
-      if (count > 1) {
-        parts.fill(ITEM_MARKER, 1, count);
+      if (total > 1) {
+        parts.fill(ITEM_MARKER, 1, total);
       }
-      parts[count] = LIST_END_MARKER;
+      parts[total] = LIST_END_MARKER;
     }
     const fragment = backend.createFragment(parts, values);
     if (fragment !== null) {
@@ -202,10 +194,7 @@ function renderIndexServer<T>(props: IndexProps<T>): Node {
   let fallbackIndex = 0;
   const indexOf = (): number => fallbackIndex;
   for (let position = 0; position < items.length; position += 1) {
-    const item = items[position];
-    if (item === undefined) {
-      break;
-    }
+    const item = items[position] as T;
     const anchor = document.createComment(ITEM);
     sink.insertBefore(anchor, endAnchor);
     fallbackIndex = position;
@@ -300,11 +289,8 @@ export function Index<T>(props: IndexProps<T>): Node {
           window.cursor = start.nextSibling;
         }
         const rendered = withWindow(window, props.children, state.item, state.index);
-        if (outer !== null) {
-          outer.cursor = window.cursor;
-        }
         settleNodes(itemEnd, rendered);
-        if (window.cursor !== itemEnd) {
+        if (!regionMatches(window, itemEnd, rendered)) {
           mismatch("содержимое элемента списка не совпало");
         }
         return;
@@ -380,21 +366,14 @@ export function Index<T>(props: IndexProps<T>): Node {
     }
     endAnchor = candidate;
     const items: readonly T[] = untrack(() =>
-      typeof props.each === "function" ? props.each() : props.each,
+      normalizeItems<T>(typeof props.each === "function" ? props.each() : props.each),
     );
     if (items.length === 0) {
       if (hasFallback) {
-        const window = {
-          start: outer.start,
-          end: endAnchor,
-          cursor: outer.start.nextSibling,
-        };
-        withWindow(window, () => resolve(fallback));
-        if (window.cursor !== endAnchor) {
+        const window = beginRegion(outer, endAnchor);
+        const value = withWindow(window, () => resolve(fallback));
+        if (!regionMatches(window, endAnchor, value)) {
           return mismatch("содержимое fallback списка не совпало");
-        }
-        if (outer !== null) {
-          outer.cursor = window.cursor;
         }
         fallbackSeed = collectBetween(outer.start, endAnchor);
       }
@@ -425,7 +404,7 @@ export function Index<T>(props: IndexProps<T>): Node {
     if (position !== items.length) {
       return mismatch("число элементов списка не совпало");
     }
-    outer.cursor = endAnchor.nextSibling;
+    settleWindow(outer, endAnchor);
   } else {
     endAnchor = document.createComment(LIST_END);
     container.appendChild(endAnchor);
@@ -447,7 +426,7 @@ export function Index<T>(props: IndexProps<T>): Node {
     }
 
     const each = props.each;
-    const items: readonly T[] = typeof each === "function" ? each() : each;
+    const items: readonly T[] = normalizeItems<T>(typeof each === "function" ? each() : each);
     if (skipFirst) {
       skipFirst = false;
       return;

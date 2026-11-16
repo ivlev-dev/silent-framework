@@ -31,6 +31,7 @@ import {
   withoutHydration,
   type HydrationWindow,
 } from "./hydration.js";
+import { settleWindow } from "./hydration-cursor.js";
 import {
   createComponentLight,
   getComponentName,
@@ -210,7 +211,7 @@ export function createViewResult(
       return mismatch("не найден закрывающий маркер view");
     }
     end = claimedEnd;
-    outer.cursor = outer.end;
+    settleWindow(outer, end);
   } else {
     start = document.createComment(VIEW_START);
     end = document.createComment(VIEW_END);
