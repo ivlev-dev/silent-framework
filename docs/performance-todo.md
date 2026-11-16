@@ -103,18 +103,16 @@
 
 ## M7. Размер бандла
 
-Факты по `bench:build/silent` (36.5 KB min / 12.25 KB gzip против 12.6 KB у Solid), по данным `rollup-plugin-visualizer` (rendered / gzip):
+Факты по `bench:build/silent` (`view: false`, 28.33 KB min / 9.58 KB gzip в замере с `rollup-plugin-visualizer`; `bench:build` даёт 27.4 / 9.17 из-за настроек gzip), rendered / gzip:
 
-- `core/dom.js` — 18.3 / 4.58 KB
-- `core/component.js` — 14.5 / 4.02 KB
-- `core/control-flow.js` — 11.8 / 3.25 KB
-- `reactivity/graph.js` — 8.5 / 2.21 KB
-- `core/hydration.js` — 8.5 / 2.08 KB
-- `di/container.js` — 5.7 / 1.62 KB
-- `core/metadata.js` — 2.9 / 1.05 KB
-- `reactivity/store.js` — 1.5 / 0.61 KB
-- `core/mount*` — 1.8 / 0.87 KB
-- `registry`, `component-context`, `boundary`, `server-backend`, `server-hole` — по 0.2–0.35 KB gzip
+- `core/dom.js` — 19.15 / 4.76 KB
+- `core/control-flow.js` — 14.06 / 3.77 KB (только `For`: `Show`/`Switch`/`Suspense` вырезаны tree-shaking'ом)
+- `reactivity/graph.js` — 11.87 / 2.85 KB
+- `core/metadata.js` — 3.05 / 1.06 KB
+- `core/component-lite.js` — 2.31 / 0.83 KB
+- `core/component-state.js` — 1.46 / 0.66 KB
+- `core/mount-core.js` + `mount.js` — 2.28 / 1.05 KB
+- `core/hydration-state.js` 0.44, `hydration-proxy.js` 0.31, `dom-hydration-state.js` 0.30, `match-node.js` 0.18, `server-state.js` 0.18, `server-proxy.js` 0.12 — в mount-сборке нужны только для веток гидрации
 
 Причины: mount-приложение платит за hydrate, view/VM/DI-путь, `copyReactiveState`, серверные ветки DOM и полный `For`. `createComponent` статически тянет `createViewResult`, DI и hydration, поэтому tree-shaking не может их выбросить.
 
@@ -135,7 +133,8 @@
 - [x] `start JS` после выноса DOM-гидрации: **26.4 KB** (default) и **23.2 KB** с `view: false`; Solid 12.6 KB.
 - [x] `bench:build` отдельно считает `start JS`, `start gzip`, `all JS`.
 - [x] Бюджет ≤ 25.5 KB start для `view: false`: после волны гидрации размер вырос до 28.1 KB / 9.5 gzip, затем возвращён к **25.4 KB / 8.6 gzip** — probe-код только в гидрационном чанке, `__SILENT_SERVER__: false` в production-клиенте вырезает серверный `insert`, `view: false` отключает полифилл `modulepreload`. Default-режим — **29.3 KB / 10.1 gzip**, lazy view — 13.0 KB.
-- [ ] Дожать default-режим (28.6 KB): `dom` 4.58 KB gzip, `control-flow` 3.25, `graph` 2.21, `metadata` 1.05, `component-lite` 0.93.
+- [ ] Дожать default-режим (28.6 KB): `dom` 4.76 KB gzip, `control-flow` 3.77, `graph` 2.85, `metadata` 1.06, `component-lite` 0.83.
+- [ ] Вынести гид рационные прокси из стартового чанка mount-only сборки: `hydration-state` 0.44 + `hydration-proxy` 0.31 + `dom-hydration-state` 0.30 + `match-node` 0.18 KB gzip нужны только при `isHydrating()`. План: оставить в стартовом модуле один флаг (`active` + `isHydrating`), а реестр функций и маркеры держать в ленивом `hydration`-рантайме. Ожидаемо ~0.8–1.2 KB gzip.
 - [ ] Проверить размер `For`/`Show` и сгенерированного кода (соседние тексты, лишние обёртки).
 - [ ] Разделить client/server entry через package `exports`/условия `browser`/`node`.
 - [ ] Убрать неиспользуемые helper'ы из сгенерированного кода.
