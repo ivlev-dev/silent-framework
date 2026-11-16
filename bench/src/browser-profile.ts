@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { homedir } from "node:os";
 import { extname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import { chromium } from "playwright-core";
+import { launchChromium } from "./chromium";
 
 const benchRoot = join(import.meta.dirname, "..");
 const cacheRoot = join(benchRoot, "node_modules", ".silent-bench", "browser");
@@ -19,19 +19,6 @@ const TYPES = new Map([
   [".css", "text/css; charset=utf-8"],
 ]);
 
-function findChrome(): string {
-  const base = join(homedir(), ".cache", "ms-playwright");
-  for (const entry of readdirSync(base)) {
-    if (!entry.startsWith("chromium-")) continue;
-    for (const candidate of [
-      join(base, entry, "chrome-linux64", "chrome"),
-      join(base, entry, "chrome-linux", "chrome"),
-    ]) {
-      if (existsSync(candidate)) return candidate;
-    }
-  }
-  throw new Error("Chromium не найден");
-}
 
 async function ssrHtml(): Promise<string> {
   const module = (await import(`${pathToFileURL(ssrFile).href}?v=${String(Date.now())}`)) as {
@@ -76,7 +63,7 @@ interface ProfileNode {
 
 const html = await ssrHtml();
 const server = await serve(clientDir);
-const browser = await chromium.launch({ executablePath: findChrome(), headless: true, args: ["--no-sandbox"] });
+const browser = await launchChromium();
 const page = await browser.newPage();
 await page.addInitScript("globalThis.__name = globalThis.__name || ((value) => value);");
 

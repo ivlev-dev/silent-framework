@@ -4,7 +4,8 @@ import { createServer } from "node:http";
 import { homedir, cpus } from "node:os";
 import { extname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import { chromium, type Browser } from "playwright-core";
+import type { Browser } from "playwright-core";
+import { launchChromium } from "./chromium";
 import { build } from "vite";
 import { ROWS, TITLE } from "../browser/shared/app-data";
 import { resolveBenchJsonPath, round2, writeBenchJson } from "./cli";
@@ -85,23 +86,6 @@ const CONTENT_TYPES = new Map<string, string>([
   [".svg", "image/svg+xml"],
 ]);
 
-function findChrome(): string {
-  const base = join(homedir(), ".cache", "ms-playwright");
-  for (const entry of readdirSync(base)) {
-    if (!entry.startsWith("chromium-")) {
-      continue;
-    }
-    for (const candidate of [
-      join(base, entry, "chrome-linux64", "chrome"),
-      join(base, entry, "chrome-linux", "chrome"),
-    ]) {
-      if (existsSync(candidate)) {
-        return candidate;
-      }
-    }
-  }
-  throw new Error("Chromium не найден в ~/.cache/ms-playwright");
-}
 
 function clientDirectory(app: BenchApp): string {
   return join(cacheRoot, app.name, "client");
@@ -530,11 +514,7 @@ async function main(): Promise<void> {
   assert.ok(silentHtml.includes(TITLE));
   assert.ok(solidHtml.includes(TITLE));
 
-  const browser = await chromium.launch({
-    executablePath: findChrome(),
-    headless: true,
-    args: ["--no-sandbox"],
-  });
+  const browser = await launchChromium();
 
   const metrics: AppMetrics[] = [];
   try {
