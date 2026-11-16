@@ -18,6 +18,7 @@
 - `Suspense` и `lazy`: асинхронные границы и отложенная загрузка модулей.
 - SSR без внешних DOM-зависимостей (`@ivlev-dev/silent-server`), `renderToStream` и гидрация без вспышки прелоадера.
 - `<title>`, `<meta>` и `<link>` из любого компонента выносятся в `<head>` — как в React 19, с SSR-поддержкой.
+- Опциональный `@ivlev-dev/silent-router`: класс `Router`, компоненты `Link`/`RouterView`, guards/loaders и memory history для SSR.
 - Справочник API с автопроверкой полноты (`pnpm api:check`).
 
 ## Установка
