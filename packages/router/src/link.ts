@@ -54,12 +54,27 @@ function matchesParams(
   return true;
 }
 
+function isExactActive(router: IRouter, target: RouteTarget): boolean {
+  const current = router.state().route;
+  if (current === null) {
+    return false;
+  }
+  const location = router.resolve(target);
+  if (location.name !== null && current.name === location.name) {
+    return matchesParams(current.params, location.params);
+  }
+  return current.path === location.path;
+}
+
 export function Link(props: LinkProps): Node {
   const router = resolveRouter(props.router);
   const element = createElement("a");
   const target = (): RouteTarget => resolveTarget(props.to);
 
   attr(element, "href", () => router.href(target()));
+  attr(element, "aria-current", () =>
+    isExactActive(router, target()) ? "page" : null,
+  );
 
   if (
     props.class !== undefined

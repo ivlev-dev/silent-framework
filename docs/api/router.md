@@ -174,7 +174,7 @@ const routes: RouteRecord[] = [
 <Link to={{ name: "user", params: { id: 42 }, query: { tab: "info" } }}>Профиль</Link>
 ```
 
-`LinkProps`: `to`, `replace`, `activeClass`, `exactActiveClass`, `class`, `children`, `router?: IRouter`, `prefetch?: boolean`. `prefetch` вызывает `router.prefetch` на `pointerenter`/`focus` и загружает lazy-компонент заранее. Рендерит настоящий `<a href>`, перехватывает только левый клик без модификаторов, active-классы реактивны.
+`LinkProps`: `to`, `replace`, `activeClass`, `exactActiveClass`, `class`, `children`, `router?: IRouter`, `prefetch?: boolean`. `prefetch` вызывает `router.prefetch` на `pointerenter`/`focus` и загружает lazy-компонент заранее. Рендерит настоящий `<a href>`, перехватывает только левый клик без модификаторов, active-классы реактивны, а на точный активный маршрут ставит `aria-current="page"`.
 
 ## `RouterView`
 

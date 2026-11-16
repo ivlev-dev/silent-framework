@@ -96,6 +96,15 @@ describe("Link", () => {
     expect(loaded).toBe(1);
   });
 
+  it("ставит aria-current на точный активный маршрут", async () => {
+    const { router } = setup();
+    await router.start();
+    const { host } = mount(() => Link({ to: "/", children: "Главная" }));
+    expect(host.querySelector("a")?.getAttribute("aria-current")).toBe("page");
+    await router.push("/about");
+    expect(host.querySelector("a")?.getAttribute("aria-current")).toBeNull();
+  });
+
   it("перехватывает левый клик и делает push", async () => {
     const { router } = setup();
     await router.start();

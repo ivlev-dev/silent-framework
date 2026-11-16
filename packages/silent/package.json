@@ -1,6 +1,6 @@
 {
   "name": "@ivlev-dev/silent",
-  "version": "0.11.2",
+  "version": "0.11.3",
   "type": "module",
   "sideEffects": false,
   "main": "./index.js",
