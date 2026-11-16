@@ -237,7 +237,11 @@ this.preloader из метаданных
 
 ```ts
 export function template(html: string): () => Node;
-export function templateHoles(html: string): () => { node: Node; holes: Comment[]; attrs: Element[] };
+export function templateHoles(
+  html: string,
+  plan?: TemplatePlan,
+  namespace?: "svg",
+): () => { node: Node; holes: Comment[]; attrs: Element[] };
 export function insert(parent: Node, accessor: () => unknown, marker?: Node): void;
 export function text(node: Text, accessor: () => unknown): void;
 export function attr(el: Element, name: string, accessor: () => unknown): void;
@@ -291,10 +295,10 @@ export function App() {
 - При перестановке двигаются только элементы вне LIS.
 
 - `template` кеширует клонирование по HTML-строке.
-- `insert` принимает Node, строку, число, массив, функцию, `null`/`undefined`/boolean.
+- `insert` принимает Node, строку, число, массив, произвольный `Iterable` (`Set`, генератор, `NodeList`), функцию, `null`/`undefined`/boolean.
 - `text` обновляет `Text.data` только при изменении значения.
-- `attr`/`prop`/`style` сравнивают с предыдущим значением.
-- `on` навешивает обработчик один раз и читает актуальную функцию.
+- `attr`/`prop`/`style` сравнивают с предыдущим значением; нативные `value`/`checked`/`selected`/`disabled` повторно не записываются.
+- `on` навешивает обработчик один раз и читает актуальную функцию; для делегированных событий `event.currentTarget` указывает на элемент-обработчик.
 - `component` читает `Symbol.for("silent.view")` и вызывает view/sync-компонент.
 
 ## Rust-компилятор
@@ -303,7 +307,9 @@ export function App() {
 
 1. Парсинг TS/TSX.
 2. Компонентные метаданные, DI, JSX.
-   - RCDATA-элементы (`textarea`, `title`) не получают комментарии-хуки: статический текст остаётся в разметке, динамическое содержимое сворачивается в один бондинг (`value` для `textarea`, `textContent` для `title`) с маркерами `data-silent-a-N` и `data-silent-text`.
+   - Деструктуризация `props` в компоненте переписывается в чтения исходного объекта (`const { value } = props` → `props.value`), поэтому переименование и defaults не теряют реактивность.
+   - RCDATA/raw-text элементы (`textarea`, `title`, `style`, `script`) не получают комментарии-хуки: статический текст остаётся в разметке, динамическое содержимое сворачивается в один бондинг (`value` для `textarea`, `textContent` для остальных) с маркерами `data-silent-a-N` и `data-silent-text`.
+   - Динамические SVG-шаблоны внутри `<svg>` получают namespace-хинт `"svg"`; `foreignObject` возвращает HTML-контекст для детей.
 3. Штатные проходы SWC: TS strip, decorators, target, minify.
 4. Codegen + source map.
 
