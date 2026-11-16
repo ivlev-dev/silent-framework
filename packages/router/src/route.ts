@@ -1,6 +1,7 @@
 import type { AnyComponent } from "@ivlev-dev/silent-core";
 import type {
   QueryInput,
+  QuerySchema,
   RouteGuard,
   RouteGuardResult,
   RouteLoader,
@@ -17,19 +18,47 @@ export type RouteQueryShape = Readonly<Record<string, QueryInput>>;
 
 type BracedParams<Path extends string> =
   Path extends `${string}{${infer Name}}${infer Rest}`
-    ? Name | BracedParams<Rest>
+    ? Name extends ""
+      ? BracedParams<Rest>
+      : Name | BracedParams<Rest>
     : never;
 
+type NameChar =
+  | "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m"
+  | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z"
+  | "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M"
+  | "N" | "O" | "P" | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z"
+  | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
+  | "_" | "$";
+
+type TakeParamName<
+  Value extends string,
+  Name extends string = "",
+> = Value extends `${infer Char}${infer Rest}`
+  ? Char extends NameChar
+    ? TakeParamName<Rest, `${Name}${Char}`>
+    : { readonly name: Name; readonly rest: Value }
+  : { readonly name: Name; readonly rest: "" };
+
+type LastChar<Value extends string> = Value extends `${infer Char}${infer Rest}`
+  ? Rest extends ""
+    ? Char
+    : LastChar<Rest>
+  : "";
+
 type ColonParams<Path extends string> =
-  Path extends `${string}/:${infer Name}/${infer Rest}`
-    ? Name | ColonParams<`/${Rest}`>
-    : Path extends `${string}/:${infer Name}`
-      ? Name
-      : Path extends `:${infer Name}/${infer Rest}`
-        ? Name | ColonParams<`/${Rest}`>
-        : Path extends `:${infer Name}`
-          ? Name
-          : never;
+  Path extends `${infer Head}:${infer Tail}`
+    ? LastChar<Head> extends NameChar
+      ? ColonParams<Tail>
+      : TakeParamName<Tail> extends {
+        readonly name: infer Name extends string;
+        readonly rest: infer Rest extends string;
+      }
+        ? Name extends ""
+          ? ColonParams<Rest>
+          : Name | ColonParams<Rest>
+        : never
+    : never;
 
 type ParamName<Path extends string> = BracedParams<Path> | ColonParams<Path>;
 
@@ -92,7 +121,9 @@ export type AnyRouteLoader = (
   ...args: never[]
 ) => RouteLoaderResult | Promise<RouteLoaderResult>;
 
-export interface RouteDefinition {
+export interface RouteDefinition<
+  Query = Readonly<Record<string, unknown>>,
+> {
   readonly path: string;
   readonly name?: string;
   readonly component?: AnyComponent;
@@ -101,18 +132,20 @@ export interface RouteDefinition {
   readonly meta?: RouteMeta;
   readonly beforeEnter?: AnyRouteGuard;
   readonly load?: AnyRouteLoader;
+  readonly query?: QuerySchema<Query>;
 }
 
 export abstract class Route<
   Path extends string = string,
   Query extends RouteQueryShape = RouteQuery,
-> implements RouteDefinition {
+> implements RouteDefinition<Query> {
   abstract readonly path: Path;
   declare readonly name?: string;
   declare readonly component?: AnyComponent;
   declare readonly children?: readonly RouteInput[];
   declare readonly redirect?: RouteRedirect;
   declare readonly meta?: RouteMeta;
+  declare readonly query?: QuerySchema<Query>;
 }
 
 export interface Route<
@@ -164,6 +197,7 @@ function definitionToRecord(
     meta?: RouteMeta;
     beforeEnter?: RouteGuard;
     load?: RouteLoader;
+    query?: QuerySchema<Readonly<Record<string, unknown>>>;
   } = { path: input.path };
 
   if (input.name !== undefined) {
@@ -181,6 +215,9 @@ function definitionToRecord(
   }
   if (input.meta !== undefined) {
     record.meta = input.meta;
+  }
+  if (input.query !== undefined) {
+    record.query = input.query;
   }
   if (input.beforeEnter !== undefined) {
     record.beforeEnter = input.beforeEnter as RouteGuard;

@@ -30,6 +30,8 @@ export {
   RouterNavigationError,
   type MatchedRoute,
   type QueryInput,
+  type QueryParser,
+  type QuerySchema,
   type RouteGuard,
   type RouteGuardResult,
   type RouteLoader,

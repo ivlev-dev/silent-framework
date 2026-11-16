@@ -504,4 +504,37 @@ describe("Синхронные значения", () => {
     expect(root.peekValue(token)).toBe(next);
     expect(await root.resolve(token)).toBe(next);
   });
+
+  it("bind с non-function значением доступен синхронно", async () => {
+    const root = new Container("root");
+    const token = createToken<{ id: number }>("bound-value");
+    const value = { id: 7 };
+    root.bind(token, value);
+
+    expect(root.peekValue(token)).toBe(value);
+    expect(await root.resolve(token)).toBe(value);
+
+    const scope = root.createScope("child");
+    expect(scope.peekValue(token)).toBe(value);
+  });
+
+  it("bind с function factory по-прежнему ленивый", async () => {
+    const root = new Container("root");
+    const token = createToken<{ id: number }>("lazy-factory");
+    root.bind(token, () => ({ id: 1 }));
+
+    expect(root.peekValue(token)).toBeUndefined();
+    expect(await root.resolve(token)).toEqual({ id: 1 });
+  });
+
+  it("bind со значением не ломает transient scope", async () => {
+    const root = new Container("root");
+    const token = createToken<{ id: number }>("transient-value");
+    const value = { id: 1 };
+    root.bind(token, value).inTransientScope();
+
+    expect(root.peekValue(token)).toBeUndefined();
+    expect(await root.resolve(token)).toBe(value);
+    expect(root.peekValue(token)).toBeUndefined();
+  });
 });

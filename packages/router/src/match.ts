@@ -1,9 +1,27 @@
 import type { AnyComponent } from "@ivlev-dev/silent-core";
 
 export type RouteParams = Readonly<Record<string, string>>;
-export type RouteQueryValue = string | readonly string[];
+export type RouteQueryScalar = string | number | boolean;
+export type RouteQueryValue =
+  | string
+  | number
+  | boolean
+  | readonly (string | number | boolean)[];
 export type RouteQuery = Readonly<Record<string, RouteQueryValue>>;
 export type RouteMeta = Readonly<Record<string, unknown>>;
+
+export type QueryParser<T = unknown> =
+  | "string"
+  | "number"
+  | "boolean"
+  | "string[]"
+  | "number[]"
+  | "boolean[]"
+  | ((raw: string | string[] | undefined) => T | undefined);
+
+export type QuerySchema<Q> = {
+  readonly [K in keyof Q]: QueryParser<Q[K]>;
+};
 export type RouterErrorCode =
   | "abort"
   | "guard"
@@ -44,7 +62,7 @@ export type QueryInput =
   | boolean
   | null
   | undefined
-  | readonly (string | number)[];
+  | readonly (string | number | boolean)[];
 
 export interface RouteLocationTargetObject {
   readonly path?: string;
@@ -94,7 +112,7 @@ export type RouteLoader = (
   signal: AbortSignal,
 ) => RouteLoaderResult | Promise<RouteLoaderResult>;
 
-export interface RouteRecord {
+export interface RouteRecord<Q = Readonly<Record<string, unknown>>> {
   readonly path: string;
   readonly name?: string;
   readonly component?: AnyComponent;
@@ -103,6 +121,7 @@ export interface RouteRecord {
   readonly beforeEnter?: RouteGuard;
   readonly load?: RouteLoader;
   readonly meta?: RouteMeta;
+  readonly query?: QuerySchema<Q>;
 }
 
 export interface ScrollPosition {
@@ -118,9 +137,27 @@ export type ScrollBehavior = (
   savedPosition: ScrollPosition | null,
 ) => ScrollBehaviorResult | Promise<ScrollBehaviorResult>;
 
+interface PatternLiteralPart {
+  readonly kind: "literal";
+  readonly value: string;
+}
+
+interface PatternParamPart {
+  readonly kind: "param";
+  readonly name: string;
+}
+
+type PatternPart = PatternLiteralPart | PatternParamPart;
+
 type PatternSegment =
   | { readonly kind: "static"; readonly value: string }
   | { readonly kind: "param"; readonly name: string }
+  | {
+    readonly kind: "mixed";
+    readonly parts: readonly PatternPart[];
+    readonly names: readonly string[];
+    readonly regex: RegExp;
+  }
   | { readonly kind: "wildcard"; readonly name: string };
 
 export interface CompiledRoute {
@@ -170,6 +207,64 @@ function safeDecode(value: string): string {
   }
 }
 
+const PARAM_NAME = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+const WHOLE_BRACED_PARAM = /^\{([^{}]+)\}$/;
+const PARAM_TOKEN = /\{([^{}]+)\}|(?:^|([^A-Za-z0-9_$])):([A-Za-z_$][A-Za-z0-9_$]*)/g;
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function tokenizeSegment(segment: string): readonly PatternPart[] | null {
+  const parts: PatternPart[] = [];
+  let position = 0;
+  let found = false;
+  PARAM_TOKEN.lastIndex = 0;
+  for (let match = PARAM_TOKEN.exec(segment); match !== null; match = PARAM_TOKEN.exec(segment)) {
+    const braced = match[1];
+    const boundary = match[2];
+    const colon = match[3];
+    const name = braced ?? colon;
+    if (name === undefined || name === "") {
+      continue;
+    }
+    const start = match.index + (boundary === undefined ? 0 : boundary.length);
+    if (start > position) {
+      parts.push({ kind: "literal", value: segment.slice(position, start) });
+    }
+    parts.push({ kind: "param", name });
+    position = match.index + match[0].length;
+    found = true;
+  }
+  if (!found) {
+    return null;
+  }
+  if (position < segment.length) {
+    parts.push({ kind: "literal", value: segment.slice(position) });
+  }
+  return parts;
+}
+
+function compileMixedSegment(parts: readonly PatternPart[]): PatternSegment {
+  const names: string[] = [];
+  let source = "^";
+  for (const part of parts) {
+    if (part.kind === "param") {
+      names.push(part.name);
+      source += "(.+)";
+      continue;
+    }
+    source += escapeRegExp(safeDecode(part.value));
+  }
+  source += "$";
+  return {
+    kind: "mixed",
+    parts,
+    names,
+    regex: new RegExp(source, "u"),
+  };
+}
+
 function compilePattern(pattern: string): PatternSegment[] {
   const segments = pathSegments(pattern);
   const result: PatternSegment[] = [];
@@ -178,12 +273,18 @@ function compilePattern(pattern: string): PatternSegment[] {
       result.push({ kind: "wildcard", name: WILDCARD_PARAM });
       continue;
     }
-    if (segment.startsWith(":")) {
+    if (segment.startsWith(":") && PARAM_NAME.test(segment.slice(1))) {
       result.push({ kind: "param", name: segment.slice(1) });
       continue;
     }
-    if (segment.startsWith("{") && segment.endsWith("}") && segment.length > 2) {
-      result.push({ kind: "param", name: segment.slice(1, -1) });
+    const braced = WHOLE_BRACED_PARAM.exec(segment);
+    if (braced !== null) {
+      result.push({ kind: "param", name: braced[1] ?? "" });
+      continue;
+    }
+    const parts = tokenizeSegment(segment);
+    if (parts !== null) {
+      result.push(compileMixedSegment(parts));
       continue;
     }
     result.push({ kind: "static", value: segment });
@@ -196,11 +297,33 @@ function scoreOf(segments: readonly PatternSegment[]): number[] {
     if (segment.kind === "static") {
       return 4;
     }
+    if (segment.kind === "mixed") {
+      return 3;
+    }
     if (segment.kind === "param") {
       return 2;
     }
     return 1;
   });
+}
+
+function literalWeight(segment: PatternSegment | undefined): number {
+  if (segment === undefined) {
+    return 0;
+  }
+  if (segment.kind === "static") {
+    return segment.value.length;
+  }
+  if (segment.kind !== "mixed") {
+    return 0;
+  }
+  let total = 0;
+  for (const part of segment.parts) {
+    if (part.kind === "literal") {
+      total += part.value.length;
+    }
+  }
+  return total;
 }
 
 function joinRoutePath(parent: string, child: string): string {
@@ -255,6 +378,14 @@ function compareSpecificity(left: CompiledRoute, right: CompiledRoute): number {
       return leftScore - rightScore;
     }
   }
+  const weightLength = Math.max(left.segments.length, right.segments.length);
+  for (let index = 0; index < weightLength; index += 1) {
+    const leftWeight = literalWeight(left.segments[index]);
+    const rightWeight = literalWeight(right.segments[index]);
+    if (leftWeight !== rightWeight) {
+      return leftWeight - rightWeight;
+    }
+  }
   if (left.chain.length !== right.chain.length) {
     return left.chain.length - right.chain.length;
   }
@@ -281,6 +412,22 @@ function matchPattern(
     }
     if (segment.kind === "param") {
       params[segment.name] = safeDecode(part);
+      position += 1;
+      continue;
+    }
+    if (segment.kind === "mixed") {
+      const match = segment.regex.exec(safeDecode(part));
+      if (match === null) {
+        return null;
+      }
+      for (let index = 0; index < segment.names.length; index += 1) {
+        const name = segment.names[index];
+        const value = match[index + 1];
+        if (name === undefined || value === undefined) {
+          return null;
+        }
+        params[name] = value;
+      }
       position += 1;
       continue;
     }
@@ -335,32 +482,159 @@ export function parseQuery(search: string): RouteQuery {
   return result;
 }
 
+function isQueryArray(value: RouteQueryValue): value is readonly RouteQueryScalar[] {
+  return Array.isArray(value);
+}
+
 export function buildQuery(query: RouteQuery): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
-    if (Array.isArray(value)) {
+    if (value === undefined || value === null) {
+      continue;
+    }
+    if (isQueryArray(value)) {
       for (const item of value) {
-        params.append(key, item);
+        params.append(key, String(item));
       }
       continue;
     }
-    params.append(key, value as string);
+    params.append(key, String(value));
   }
   const search = params.toString();
   return search === "" ? "" : `?${search}`;
 }
 
 function normalizeQuery(query: Readonly<Record<string, QueryInput>>): RouteQuery {
-  const result: Record<string, string | readonly string[]> = {};
+  const result: Record<string, RouteQueryValue> = {};
   for (const [key, value] of Object.entries(query)) {
-    if (value === null || value === undefined || value === false) {
+    if (value === null || value === undefined) {
       continue;
     }
     if (Array.isArray(value)) {
-      result[key] = (value as readonly (string | number)[]).map((item) => String(item));
+      const items = (value as readonly (string | number | boolean)[]).map((item) => String(item));
+      if (items.length === 0) {
+        continue;
+      }
+      result[key] = items;
       continue;
     }
-    result[key] = String(value);
+    result[key] = value as RouteQueryScalar;
+  }
+  return result;
+}
+
+function lastQueryString(value: RouteQueryValue | undefined): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (isQueryArray(value)) {
+    const last = value[value.length - 1];
+    return last === undefined ? undefined : String(last);
+  }
+  return String(value);
+}
+
+function queryStrings(value: RouteQueryValue | undefined): string[] {
+  if (value === undefined) {
+    return [];
+  }
+  if (isQueryArray(value)) {
+    return value.map((item) => String(item));
+  }
+  return [String(value)];
+}
+
+function parseNumberValue(value: string | undefined): number | undefined {
+  if (value === undefined || value.trim() === "") {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parseBooleanValue(value: string | undefined): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "true") {
+    return true;
+  }
+  if (normalized === "false") {
+    return false;
+  }
+  return undefined;
+}
+
+function parseWithSchema<T>(
+  parser: QueryParser<T>,
+  value: RouteQueryValue | undefined,
+): T | undefined {
+  if (typeof parser === "function") {
+    const raw = value === undefined
+      ? undefined
+      : isQueryArray(value)
+        ? value.map((item) => String(item))
+        : String(value);
+    return parser(raw);
+  }
+  if (parser === "string") {
+    return lastQueryString(value) as T | undefined;
+  }
+  if (parser === "number") {
+    return parseNumberValue(lastQueryString(value)) as T | undefined;
+  }
+  if (parser === "boolean") {
+    return parseBooleanValue(lastQueryString(value)) as T | undefined;
+  }
+  const items = queryStrings(value);
+  if (items.length === 0) {
+    return undefined;
+  }
+  if (parser === "string[]") {
+    return items as T;
+  }
+  if (parser === "number[]") {
+    const parsed = items
+      .map((item) => parseNumberValue(item))
+      .filter((item): item is number => item !== undefined);
+    return parsed.length === 0 ? undefined : parsed as T;
+  }
+  const parsed = items
+    .map((item) => parseBooleanValue(item))
+    .filter((item): item is boolean => item !== undefined);
+  return parsed.length === 0 ? undefined : parsed as T;
+}
+
+function querySchemaFor(
+  chain: readonly RouteRecord[],
+): QuerySchema<Readonly<Record<string, unknown>>> | undefined {
+  let schema: Record<string, QueryParser<unknown>> | undefined;
+  for (const record of chain) {
+    const current = record.query;
+    if (current === undefined) {
+      continue;
+    }
+    schema = { ...(schema ?? {}), ...current };
+  }
+  return schema;
+}
+
+function applyQuerySchema(
+  query: RouteQuery,
+  schema: QuerySchema<Readonly<Record<string, unknown>>> | undefined,
+): RouteQuery {
+  if (schema === undefined) {
+    return query;
+  }
+  const result: Record<string, RouteQueryValue> = { ...query };
+  for (const [key, parser] of Object.entries(schema)) {
+    const parsed = parseWithSchema(parser, query[key]);
+    if (parsed === undefined || parsed === null) {
+      delete result[key];
+      continue;
+    }
+    result[key] = parsed as RouteQueryValue;
   }
   return result;
 }
@@ -380,8 +654,8 @@ function interpolatePath(
       output.push(segment.value);
       continue;
     }
-    const raw = params[segment.name];
     if (segment.kind === "wildcard") {
+      const raw = params[segment.name];
       if (raw === undefined) {
         continue;
       }
@@ -394,6 +668,27 @@ function interpolatePath(
       );
       continue;
     }
+    if (segment.kind === "mixed") {
+      let value = "";
+      for (const part of segment.parts) {
+        if (part.kind === "literal") {
+          value += part.value;
+          continue;
+        }
+        const raw = params[part.name];
+        if (raw === undefined) {
+          throw new RouterNavigationError(
+            `Не задан параметр маршрута ":${part.name}"`,
+            "resolve",
+            pattern,
+          );
+        }
+        value += encodeParam(String(raw));
+      }
+      output.push(value);
+      continue;
+    }
+    const raw = params[segment.name];
     if (raw === undefined) {
       throw new RouterNavigationError(
         `Не задан параметр маршрута ":${segment.name}"`,
@@ -459,11 +754,12 @@ export function createLocation(
     }
     matched.push(entryFor(record, pattern, match.params, components));
   }
-  const query = parseQuery(search);
+  const rawQuery = parseQuery(search);
+  const query = applyQuerySchema(rawQuery, querySchemaFor(match.route.chain));
   const normalizedHash = normalizeHash(hash);
   return {
     path,
-    fullPath: `${path}${buildQuery(query)}${normalizedHash}`,
+    fullPath: `${path}${buildQuery(rawQuery)}${normalizedHash}`,
     name: match.route.record.name ?? null,
     params: match.params,
     query,

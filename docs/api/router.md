@@ -2,7 +2,7 @@
 
 Пакет `@ivlev-dev/silent-router` строится вокруг интерфейса `IRouter`, класса `Router`, route-классов `Route` и двух публичных компонентов — `Link` и `RouterView`. Публичных hooks (`useRouter`, `useRoute`, `useParams`) нет.
 
-Экспорты: `Router`, `IRouter`, `RouterOptions`, `RouterState`, `Route`, `RouteClass`, `RouteDefinition`, `RouteInput`, `RouteViewProps`, `RouteLoadContext`, `RouteClassGuard`, `RouteClassLoad`, `RouteComponent`, `PathParams`, `TypedRouteLocation`, `RouteQueryShape`, `AnyRouteGuard`, `AnyRouteLoader`, `BrowserHistory`, `MemoryHistory`, `createBrowserHistory`, `createMemoryHistory`, `HistoryListener`, `HistoryLocation`, `RouterHistory`, `RouterAbortError`, `RouterMissingError`, `RouterNavigationError`, `MatchedRoute`, `QueryInput`, `RouteGuard`, `RouteGuardResult`, `RouteLoader`, `RouteLoaderResult`, `RouteLocation`, `RouteLocationTargetObject`, `RouteMeta`, `RouteParams`, `RouteQuery`, `RouteQueryValue`, `RouteRecord`, `RouteRedirect`, `RouteTarget`, `RouterErrorCode`, `ScrollBehavior`, `ScrollBehaviorResult`, `ScrollPosition`, `Link`, `LinkProps`, `RouterView`, `RouterViewComponentProps`, `RouterViewProps`.
+Экспорты: `Router`, `IRouter`, `RouterOptions`, `RouterState`, `Route`, `RouteClass`, `RouteDefinition`, `RouteInput`, `RouteViewProps`, `RouteLoadContext`, `RouteClassGuard`, `RouteClassLoad`, `RouteComponent`, `PathParams`, `TypedRouteLocation`, `RouteQueryShape`, `QueryParser`, `QuerySchema`, `AnyRouteGuard`, `AnyRouteLoader`, `BrowserHistory`, `MemoryHistory`, `createBrowserHistory`, `createMemoryHistory`, `HistoryListener`, `HistoryLocation`, `RouterHistory`, `RouterAbortError`, `RouterMissingError`, `RouterNavigationError`, `MatchedRoute`, `QueryInput`, `RouteGuard`, `RouteGuardResult`, `RouteLoader`, `RouteLoaderResult`, `RouteLocation`, `RouteLocationTargetObject`, `RouteMeta`, `RouteParams`, `RouteQuery`, `RouteQueryValue`, `RouteRecord`, `RouteRedirect`, `RouteTarget`, `RouterErrorCode`, `ScrollBehavior`, `ScrollBehaviorResult`, `ScrollPosition`, `Link`, `LinkProps`, `RouterView`, `RouterViewComponentProps`, `RouterViewProps`.
 
 ## `IRouter`
 
@@ -53,7 +53,7 @@ const router = new Router({ routes });
 router.provide(container);
 ```
 
-`provide` использует `container.bindValue(Router, router)`, поэтому роутер доступен синхронно через `container.peek(Router)` сразу после регистрации. Явная привязка `container.bind(Router, router)` тоже поддерживается, но для синхронного чтения потребуется предварительный `await container.resolve(Router)`.
+`provide` использует `container.bindValue(Router, router)`, поэтому роутер доступен синхронно через `container.peek(Router)` сразу после регистрации. Явная привязка `container.bind(Router, router)` с готовым экземпляром также сразу видна через `peek`/`peekValue` и `resolveSync`; `resolve` возвращает тот же экземпляр. Function-factory в `bind` остаётся ленивым и резолвится асинхронно, а transient/scoped-семантика не меняется.
 
 `Link` и `RouterView` ищут роутер в таком порядке:
 
@@ -86,7 +86,43 @@ function UserView(props: RouteViewProps<"/users/{id}", { tab?: "info" | "profile
 }
 ```
 
-`PathParams<"/users/{id}">` даёт `{ readonly id: string }`; старый синтаксис `:id` поддерживается и типизируется так же. Query-параметр `Query` описывает форму `props.query`.
+`PathParams<"/users/{id}">` даёт `{ readonly id: string }`; старый синтаксис `:id` поддерживается и типизируется так же. Параметры можно смешивать с литералами внутри одного сегмента: `prefix-{id}`, `edit-{id}-{tab}`, `v{version}.{ext}`. `PathParams` выводит все имена, включая mixed-сегменты. Query-параметр `Query` описывает форму `props.query`.
+
+```tsx
+import {
+  Route,
+  type QuerySchema,
+  type RouteViewProps,
+} from "@ivlev-dev/silent-router";
+
+type EditQuery = { page: number; active: boolean; tags: string[] };
+
+const editQuery: QuerySchema<EditQuery> = {
+  page: "number",
+  active: "boolean",
+  tags: "string[]",
+};
+
+class EditRoute extends Route<"/edit-{id}", EditQuery> {
+  readonly path = "/edit-{id}";
+  readonly name = "edit";
+  readonly component = EditView;
+  readonly query = editQuery;
+}
+
+function EditView(props: RouteViewProps<"/edit-{id}", EditQuery>) {
+  return (
+    <section>
+      <h1>{props.params.id}</h1>
+      <p>{props.query.page}</p>
+      <p>{String(props.query.active)}</p>
+      <p>{props.query.tags.join(", ")}</p>
+    </section>
+  );
+}
+```
+
+`query` — runtime-схема, а не только типы. Для `/edit-7?page=2&active=true&tags=a&tags=b` `props.query`, `router.query` и `router.state().query` содержат `{ page: 2, active: true, tags: ["a", "b"] }`. Поддерживаются `"string"`, `"number"`, `"boolean"`, `"string[]"`, `"number[]"`, `"boolean[]"` и функция `(raw: string | string[] | undefined) => value | undefined`. Невалидные `number`/`boolean` и отсутствующие ключи дают `undefined` (ключ не попадает в объект). Схемы вложенных маршрутов объединяются от корня к листу, лист имеет приоритет. Сериализация query поддерживает числа, boolean и массивы; `fullPath` сохраняет исходное представление query.
 
 `Route` поддерживает `path`, `name`, `component`, `children`, `redirect`, `meta`, `beforeEnter`, `load`. `RouterOptions.routes` принимает route-классы, их экземпляры и старые object-routes; классы инстанцируются роутером.
 
@@ -116,9 +152,11 @@ class AdminUserRoute extends Route<"users/{id}"> {
 Сопоставление путей:
 
 - `{id}` и `:id` — параметрический сегмент;
-- `*` — wildcard-хвост, попадает в `params["*"]`;
+- mixed-сегменты `prefix-{id}`, `edit-{id}-{tab}`, `v{version}.{ext}` сочетают литералы и параметры; параметры корректно декодируются и кодируются, duplicate-имена дают last wins;
+- `*` — wildcard-хвост, попадает в `params["*"]`; wildcard не смешивается с литералами и параметрами в одном сегменте;
 - `""` — index-маршрут;
-- вложенная цепочка важнее одиночного маршрута, статический сегмент важнее параметра, параметр важнее wildcard.
+- специфичность: чистый статический сегмент важнее mixed, mixed важнее чистого параметра, параметр важнее wildcard; при равной специфичности учитывается длина литералов и порядок объявления;
+- вложенная цепочка важнее одиночного маршрута.
 
 Object-routes (`RouteRecord`) остаются как совместимый устаревший формат:
 

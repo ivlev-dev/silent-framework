@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.11.1
+
+### Router
+
+- Mixed-сегменты path: `edit-{id}`, `edit-{id}-{tab}`, `v{version}.{ext}`; mixed-специфичность между static и param, encode/decode параметров.
+- `container.bind(Router, instance)` теперь сразу доступен через `peek`/`peekValue`/`resolveSync` и `resolve`; `provide`/`bindValue` сохранены.
+- Runtime query-схема: `QueryParser`/`QuerySchema`, `query` на `Route`/`RouteDefinition`/`RouteRecord`; строки→number/boolean/массивы, function parser, `buildQuery` для чисел/boolean/массивов, парсинг цепочки routes.
+- `RouteQuery` расширен runtime-значениями; `RouteViewProps.query`/`RouterState.query`/`router.query` получают распарсенные значения.
+- Обновлены README, `docs/api/router.md`, API snapshots/signatures.
+- Тесты router/di/core/server и typecheck зелёные.
+
 ## 0.11.0
 
 Router переведён на MVVM/DI-контракт.

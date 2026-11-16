@@ -146,6 +146,9 @@ export class Container {
     this.bindings.set(token, binding);
     this.implicitTokens.delete(token);
     this.clearCache(token);
+    if (factory !== undefined && !isFunctionValue(factory)) {
+      this.resolved.set(token, factory);
+    }
 
     const changeScope = (scope: ScopeName): BindingBuilder => {
       if (binding.scope !== scope) {

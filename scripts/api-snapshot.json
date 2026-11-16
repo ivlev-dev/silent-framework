@@ -273,6 +273,8 @@
       "MemoryHistory",
       "PathParams",
       "QueryInput",
+      "QueryParser",
+      "QuerySchema",
       "Route",
       "RouteClass",
       "RouteClassGuard",

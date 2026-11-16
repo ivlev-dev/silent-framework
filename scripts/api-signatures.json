@@ -1213,11 +1213,19 @@
       },
       "QueryInput": {
         "kind": "type",
-        "signature": "export type QueryInput = string | number | boolean | null | undefined | readonly (string | number)[];"
+        "signature": "export type QueryInput = string | number | boolean | null | undefined | readonly (string | number | boolean)[];"
+      },
+      "QueryParser": {
+        "kind": "type",
+        "signature": "export type QueryParser<T = unknown> = \"string\" | \"number\" | \"boolean\" | \"string[]\" | \"number[]\" | \"boolean[]\" | ((raw: string | string[] | undefined) => T | undefined);"
+      },
+      "QuerySchema": {
+        "kind": "type",
+        "signature": "export type QuerySchema<Q> = { readonly [K in keyof Q]: QueryParser<Q[K]>; };"
       },
       "Route": {
         "kind": "class",
-        "signature": "export declare abstract class Route<Path extends string = string, Query extends RouteQueryShape = RouteQuery> implements RouteDefinition { abstract readonly path: Path; readonly name?: string; readonly component?: AnyComponent; readonly children?: readonly RouteInput[]; readonly redirect?: RouteRedirect; readonly meta?: RouteMeta; } export interface Route<Path extends string = string, Query extends RouteQueryShape = RouteQuery> { beforeEnter?(to: TypedRouteLocation<Path, Query>, from: TypedRouteLocation<Path, Query> | null, signal: AbortSignal): RouteGuardResult | Promise<RouteGuardResult>; load?(context: RouteLoadContext<Path, Query>): RouteLoaderResult | Promise<RouteLoaderResult>; }"
+        "signature": "export declare abstract class Route<Path extends string = string, Query extends RouteQueryShape = RouteQuery> implements RouteDefinition<Query> { abstract readonly path: Path; readonly name?: string; readonly component?: AnyComponent; readonly children?: readonly RouteInput[]; readonly redirect?: RouteRedirect; readonly meta?: RouteMeta; readonly query?: QuerySchema<Query>; } export interface Route<Path extends string = string, Query extends RouteQueryShape = RouteQuery> { beforeEnter?(to: TypedRouteLocation<Path, Query>, from: TypedRouteLocation<Path, Query> | null, signal: AbortSignal): RouteGuardResult | Promise<RouteGuardResult>; load?(context: RouteLoadContext<Path, Query>): RouteLoaderResult | Promise<RouteLoaderResult>; }"
       },
       "RouteClass": {
         "kind": "type",
@@ -1237,7 +1245,7 @@
       },
       "RouteDefinition": {
         "kind": "interface",
-        "signature": "export interface RouteDefinition { readonly path: string; readonly name?: string; readonly component?: AnyComponent; readonly children?: readonly RouteInput[]; readonly redirect?: RouteRedirect; readonly meta?: RouteMeta; readonly beforeEnter?: AnyRouteGuard; readonly load?: AnyRouteLoader; }"
+        "signature": "export interface RouteDefinition<Query = Readonly<Record<string, unknown>>> { readonly path: string; readonly name?: string; readonly component?: AnyComponent; readonly children?: readonly RouteInput[]; readonly redirect?: RouteRedirect; readonly meta?: RouteMeta; readonly beforeEnter?: AnyRouteGuard; readonly load?: AnyRouteLoader; readonly query?: QuerySchema<Query>; }"
       },
       "RouteGuard": {
         "kind": "type",
@@ -1289,7 +1297,7 @@
       },
       "RouteQueryValue": {
         "kind": "type",
-        "signature": "export type RouteQueryValue = string | readonly string[];"
+        "signature": "export type RouteQueryValue = string | number | boolean | readonly (string | number | boolean)[];"
       },
       "Router": {
         "kind": "class",
@@ -1301,7 +1309,7 @@
       },
       "RouteRecord": {
         "kind": "interface",
-        "signature": "export interface RouteRecord { readonly path: string; readonly name?: string; readonly component?: AnyComponent; readonly children?: readonly RouteRecord[]; readonly redirect?: RouteRedirect; readonly beforeEnter?: RouteGuard; readonly load?: RouteLoader; readonly meta?: RouteMeta; }"
+        "signature": "export interface RouteRecord<Q = Readonly<Record<string, unknown>>> { readonly path: string; readonly name?: string; readonly component?: AnyComponent; readonly children?: readonly RouteRecord[]; readonly redirect?: RouteRedirect; readonly beforeEnter?: RouteGuard; readonly load?: RouteLoader; readonly meta?: RouteMeta; readonly query?: QuerySchema<Q>; }"
       },
       "RouteRedirect": {
         "kind": "type",

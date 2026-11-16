@@ -142,9 +142,28 @@ describe("DI-доставка роутера", () => {
     const bound = createRouter([HomeRoute, AboutRoute], undefined, "/about");
     await bound.start();
     container.bind(Router, bound);
-    await container.resolve(Router);
+    expect(container.peekValue<Router>(Router)).toBe(bound);
+    expect(await container.resolve<Router>(Router)).toBe(bound);
     const { host } = mount(() => RouterView({}), container);
     expect(host.querySelector("[data-view=about]")).not.toBeNull();
+  });
+
+  it("bind(Router, router) синхронно доступен Link и RouterView без provide и resolve", async () => {
+    const container = trackContainer(new Container("app"));
+    const router = createRouter([HomeRoute, AboutRoute], undefined, "/about", "/app");
+    await router.start();
+    container.bind(Router, router);
+    expect(container.peekValue(Router)).toBe(router);
+    expect(await container.resolve(Router)).toBe(router);
+
+    const view = mount(() => RouterView({}), container);
+    expect(view.host.querySelector("[data-view=about]")).not.toBeNull();
+
+    const link = mount(
+      () => Link({ to: "/about", children: "О нас" }),
+      container,
+    );
+    expect(link.host.querySelector("a")?.getAttribute("href")).toBe("/app/about");
   });
 
   it("Link без router prop получает роутер из DI", async () => {

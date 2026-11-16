@@ -7,8 +7,9 @@
 ## Возможности
 
 - `IRouter` и `Router implements IRouter`; ViewModel получает роутер через `constructor(private readonly router: IRouter)`.
-- Route-классы с типизированными `PathParams<"/edit/{id}">` и generic-query.
+- Route-классы с типизированными `PathParams<"/edit/{id}">` и generic-query, включая mixed-сегменты `edit-{id}-{tab}` и `v{version}.{ext}`.
 - Синтаксис `/edit/{id}` и совместимый `:id`, вложенные маршруты, `*`, index-маршруты.
+- Runtime-схема query (`QuerySchema`) приводит `number`, `boolean` и массивы; `RouteViewProps.query` и `router.query` содержат уже распарсенные значения.
 - `redirect`, синхронные и асинхронные `beforeEnter`, ленивый `load(context)` с кешированием.
 - `Link` и `RouterView` получают роутер из DI-контекста синхронно, с fallback на prop и `Router.current()`.
 - `RouterView` монтирует route-компоненты через core `component(...)`, поэтому ViewModel/DI работают.
@@ -121,7 +122,7 @@ const router = new Router({ routes });
 router.provide(container);
 ```
 
-`provide` вызывает `container.bindValue(Router, router)`, поэтому `container.peek(Router)` работает синхронно сразу после регистрации. `container.bind(Router, router)` также поддерживается, но синхронный `peek` увидит значение только после `await container.resolve(Router)`.
+`provide` вызывает `container.bindValue(Router, router)`, поэтому `container.peek(Router)` работает синхронно сразу после регистрации. `container.bind(Router, router)` с готовым экземпляром тоже виден синхронно через `peek`/`peekValue`: non-function значение сразу попадает в resolved-кеш, а function-factory сохраняет прежнее ленивое поведение.
 
 Порядок поиска роутера в `Link` и `RouterView`:
 
@@ -163,11 +164,44 @@ class AdminUserRoute extends Route<"users/{id}"> {
 `Route` поддерживает `path`, `name`, `component`, `children`, `redirect`, `meta`, `beforeEnter`, `load`.
 
 - `{id}` и `:id` — параметрические сегменты. `PathParams<"/users/{id}">` даёт `{ readonly id: string }`.
-- `Query` — generic-форма query для `RouteViewProps` и `RouteLoadContext`.
+- Параметры можно смешивать с литералами внутри одного сегмента: `prefix-{id}`, `edit-{id}-{tab}`, `v{version}.{ext}`. Mixed-сегмент специфичнее чистого параметра и уступает чистому статическому сегменту.
+- `Query` — generic-форма query для `RouteViewProps` и `RouteLoadContext`. `query` задаёт runtime-схему (`QueryParser`/`QuerySchema`): `"string"`, `"number"`, `"boolean"`, `"string[]"`, `"number[]"`, `"boolean[]"` или функция `(raw) => value | undefined`.
 - `load(context)` получает `route`, `params`, `query`, `hash`, `router`, `signal`; можно вернуть компонент или модуль с `default`. Компонент кешируется.
 - `beforeEnter` возвращает `true`, `false`, путь/объект маршрута или `Promise` с этим значением.
 - `redirect` — строка, объект маршрута или функция `(to) => target`.
 - `meta` не интерпретируется роутером и доступен через `matched[i].record.meta`.
+
+```ts
+import { Route, type QuerySchema, type RouteViewProps } from "@ivlev-dev/silent-router";
+
+type EditQuery = { page: number; active: boolean; tags: string[] };
+
+const editQuery: QuerySchema<EditQuery> = {
+  page: "number",
+  active: "boolean",
+  tags: "string[]",
+};
+
+class EditRoute extends Route<"/edit-{id}", EditQuery> {
+  readonly path = "/edit-{id}";
+  readonly name = "edit";
+  readonly component = EditView;
+  readonly query = editQuery;
+}
+
+function EditView(props: RouteViewProps<"/edit-{id}", EditQuery>) {
+  return (
+    <section>
+      <h1>{props.params.id}</h1>
+      <p>{props.query.page}</p>
+      <p>{String(props.query.active)}</p>
+      <p>{props.query.tags.join(", ")}</p>
+    </section>
+  );
+}
+```
+
+Для `/edit-7?page=2&active=true&tags=a&tags=b` в `props.query` и `router.query` будут `{ page: 2, active: true, tags: ["a", "b"] }`. Невалидные `number`/`boolean` и отсутствующие ключи дают `undefined` (ключ не попадает в объект). Function-parser получает сырое значение `string | string[] | undefined`. Схемы вложенных маршрутов объединяются от корня к листу.
 
 Object-routes остаются для совместимости:
 
@@ -331,7 +365,7 @@ router.dispose();
 ## Публичный API
 
 - Классы: `Router`, `Route`, `BrowserHistory`, `MemoryHistory`, `RouterMissingError`, `RouterNavigationError`, `RouterAbortError`.
-- Интерфейсы и типы: `IRouter`, `RouterOptions`, `RouterState`, `RouteClass`, `RouteDefinition`, `RouteInput`, `RouteViewProps`, `RouteLoadContext`, `RouteClassGuard`, `RouteClassLoad`, `RouteComponent`, `PathParams`, `TypedRouteLocation`, `RouteQueryShape`, `RouteRecord`, `RouteLocation`, `MatchedRoute`, `RouteParams`, `RouteQuery`, `RouteTarget`, `RouteGuard`, `RouteLoader`, `RouteRedirect`, `ScrollBehavior`, `ScrollPosition`, `RouterHistory`, `HistoryLocation`, `LinkProps`, `RouterViewProps`, `RouterViewComponentProps`.
+- Интерфейсы и типы: `IRouter`, `RouterOptions`, `RouterState`, `RouteClass`, `RouteDefinition`, `RouteInput`, `RouteViewProps`, `RouteLoadContext`, `RouteClassGuard`, `RouteClassLoad`, `RouteComponent`, `PathParams`, `TypedRouteLocation`, `RouteQueryShape`, `QueryParser`, `QuerySchema`, `RouteRecord`, `RouteLocation`, `MatchedRoute`, `RouteParams`, `RouteQuery`, `RouteQueryValue`, `RouteTarget`, `RouteGuard`, `RouteLoader`, `RouteRedirect`, `ScrollBehavior`, `ScrollPosition`, `RouterHistory`, `HistoryLocation`, `LinkProps`, `RouterViewProps`, `RouterViewComponentProps`.
 - Компоненты: `Link`, `RouterView`.
 - Функции создания истории: `createBrowserHistory`, `createMemoryHistory`.
 
