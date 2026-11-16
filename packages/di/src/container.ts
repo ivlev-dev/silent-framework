@@ -12,6 +12,17 @@ interface CaptiveFrame {
 
 const SYMBOL_DISPOSE: symbol | undefined = (Symbol as { readonly dispose?: symbol }).dispose;
 
+export interface ContainerSnapshot {
+  readonly name: string;
+  readonly disposed: boolean;
+  readonly parent: string | null;
+  readonly scopes: number;
+  readonly bindings: number;
+  readonly resolved: number;
+  readonly resolving: number;
+  readonly children: readonly ContainerSnapshot[];
+}
+
 export class CircularDependencyError extends Error {
   readonly path: unknown[];
 
@@ -199,6 +210,36 @@ export class Container {
 
   has(token: unknown): boolean {
     return this.findBindingWithOwner(token) !== undefined;
+  }
+
+  snapshot(): ContainerSnapshot {
+    return this.snapshotInternal(0);
+  }
+
+  private snapshotInternal(depth: number): ContainerSnapshot {
+    const children = depth >= 64
+      ? []
+      : [...this.children].map((child) => child.snapshotInternal(depth + 1));
+    let scopes = 0;
+    let bindings = this.bindings.size;
+    let resolved = this.resolved.size;
+    let resolving = this.resolving.size;
+    for (const child of children) {
+      scopes += child.scopes + 1;
+      bindings += child.bindings;
+      resolved += child.resolved;
+      resolving += child.resolving;
+    }
+    return {
+      name: this.name,
+      disposed: this.disposed,
+      parent: this.parent === undefined ? null : this.parent.name,
+      scopes,
+      bindings,
+      resolved,
+      resolving,
+      children,
+    };
   }
 
   clearCache(token?: unknown): void {

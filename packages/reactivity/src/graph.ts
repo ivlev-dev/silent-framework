@@ -19,6 +19,28 @@ let reconcileStampSeq = 0;
 let wakeStampSeq = 0;
 let memoIdSeq = 0;
 
+export interface ReactivityStats {
+  readonly signalsCreated: number;
+  readonly effectsCreated: number;
+  readonly renderEffectsCreated: number;
+  readonly memosCreated: number;
+  readonly effectRuns: number;
+  readonly activeEffects: number;
+  readonly activeMemos: number;
+  readonly activeOwners: number;
+  readonly pendingEffects: number;
+  readonly batchDepth: number;
+}
+
+let signalsCreated = 0;
+let effectsCreated = 0;
+let renderEffectsCreated = 0;
+let memosCreated = 0;
+let effectRuns = 0;
+let activeEffects = 0;
+let activeMemos = 0;
+let activeOwners = 0;
+
 const defaultEffectErrorHandler: EffectErrorHandler = (error) => {
   console.error(error);
 };
@@ -107,6 +129,7 @@ interface OwnerNode {
   children: Set<OwnerNode> | null;
   cleanups: (() => void)[] | null;
   computation: ComputationNode | null;
+  counted: boolean;
 }
 
 export interface SignalHandle<T> {
@@ -131,6 +154,7 @@ let initialFlushing = false;
 let batchDepth = 0;
 
 function createSignalNode<T>(value: T, equals: EqualityFn<unknown>): SignalNode {
+  signalsCreated += 1;
   return {
     type: "signal",
     value,
@@ -405,6 +429,7 @@ function runEffect(node: EffectNode): void {
   if (node.disposed) {
     return;
   }
+  effectRuns += 1;
   resetOwner(node.owner);
   node.state = CLEAN;
   node.initialized = true;
@@ -503,7 +528,11 @@ function createOwnerNode(parent: OwnerNode | null): OwnerNode {
     children: null,
     cleanups: null,
     computation: null,
+    counted: true,
   };
+  if (!node.disposed) {
+    activeOwners += 1;
+  }
   if (parent !== null && !parent.disposed) {
     (parent.children ??= new Set<OwnerNode>()).add(node);
   }
@@ -549,6 +578,9 @@ function disposeOwner(owner: OwnerNode): void {
     return;
   }
   owner.disposed = true;
+  if (owner.counted) {
+    activeOwners = Math.max(0, activeOwners - 1);
+  }
   runCleanups(owner);
   disposeOwnerChildren(owner);
   if (owner.parent !== null) {
@@ -562,8 +594,10 @@ function disposeComputation(node: ComputationNode): void {
   }
   node.disposed = true;
   if (node.type === "memo") {
+    activeMemos = Math.max(0, activeMemos - 1);
     node.observers.clear();
   } else {
+    activeEffects = Math.max(0, activeEffects - 1);
     effectQueue.delete(node);
     pendingInitial.delete(node);
   }
@@ -609,6 +643,11 @@ function toOwner(node: OwnerNode): Owner {
 }
 
 function createEffectNode(type: "effect" | "renderEffect", fn: () => void): EffectNode {
+  if (type === "effect") {
+    effectsCreated += 1;
+  } else {
+    renderEffectsCreated += 1;
+  }
   const owner = createOwnerNode(currentOwner);
   const node: EffectNode = {
     type,
@@ -625,6 +664,8 @@ function createEffectNode(type: "effect" | "renderEffect", fn: () => void): Effe
   owner.computation = node;
   if (owner.disposed) {
     node.disposed = true;
+  } else {
+    activeEffects += 1;
   }
   return node;
 }
@@ -678,6 +719,7 @@ export function createSignal<T>(
 }
 
 export function createMemo<T>(fn: () => T, options?: MemoOptions<T>): Accessor<T> {
+  memosCreated += 1;
   const equalsOption = options?.equals;
   const equality: EqualityFn<unknown> =
     equalsOption === undefined
@@ -709,6 +751,8 @@ export function createMemo<T>(fn: () => T, options?: MemoOptions<T>): Accessor<T
   owner.computation = node;
   if (owner.disposed) {
     node.disposed = true;
+  } else {
+    activeMemos += 1;
   }
   return () => readSource(node) as T;
 }
@@ -754,6 +798,7 @@ function acquireHolder(): OwnerNode {
       children: null,
       cleanups: null,
       computation: null,
+      counted: false,
     };
     holderPool.push(holder);
   } else {
@@ -855,6 +900,21 @@ export function createRoot<T>(fn: (dispose: () => void) => T): T {
 
 export function getOwner(): Owner | null {
   return currentOwner === null ? null : toOwner(currentOwner);
+}
+
+export function getReactivityStats(): ReactivityStats {
+  return {
+    signalsCreated,
+    effectsCreated,
+    renderEffectsCreated,
+    memosCreated,
+    effectRuns,
+    activeEffects,
+    activeMemos,
+    activeOwners,
+    pendingEffects: effectQueue.size + pendingInitial.size,
+    batchDepth,
+  };
 }
 
 export function runWithOwner<T>(owner: Owner | null, fn: () => T): T {

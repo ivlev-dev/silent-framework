@@ -1,8 +1,10 @@
 import type { AnyComponent, ViewMeta } from "./types.js";
 
 export interface ViewInstance {
+  readonly id?: number;
   readonly moduleId: string;
   readonly name: string;
+  readonly hydrated?: boolean;
   readonly component: AnyComponent;
   readonly meta: ViewMeta;
   readonly props: Record<string, unknown>;
@@ -54,6 +56,19 @@ export function getAllViewInstances(): readonly ViewInstance[] {
     result.push(...set);
   }
   return result;
+}
+
+export function getViewRegistryStats(): { readonly modules: number; readonly views: number } {
+  let modules = 0;
+  let views = 0;
+  for (const set of getRegistry().values()) {
+    if (set.size === 0) {
+      continue;
+    }
+    modules += 1;
+    views += set.size;
+  }
+  return { modules, views };
 }
 
 export function disposeModuleViews(moduleId: string): void {

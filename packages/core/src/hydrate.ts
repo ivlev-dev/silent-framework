@@ -19,6 +19,7 @@ import {
   type RuntimeOptions,
 } from "./component-state.js";
 import { resetIds } from "./id.js";
+import { emitDevtoolsError } from "./devtools-events.js";
 import {
   componentFactoryFor,
   createRootResult,
@@ -142,6 +143,12 @@ async function hydrateWith(
         }
         disposeAdopted(adopted);
         adopted = null;
+        emitDevtoolsError({
+          name: null,
+          moduleId: null,
+          phase: "hydration",
+          message: error.message,
+        });
         onMismatch(error);
       } finally {
         endHydration(context);

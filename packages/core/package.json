@@ -1,6 +1,6 @@
 {
   "name": "@ivlev-dev/silent-core",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.js",
@@ -17,6 +17,14 @@
     "./hmr": {
       "types": "./dist/hmr.d.ts",
       "import": "./dist/hmr.js"
+    },
+    "./devtools": {
+      "types": "./dist/devtools.d.ts",
+      "import": "./dist/devtools.js"
+    },
+    "./server-stream": {
+      "types": "./dist/server-stream.d.ts",
+      "import": "./dist/server-stream.js"
     },
     "./jsx-dev-runtime": {
       "types": "./dist/jsx-runtime.d.ts",

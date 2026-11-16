@@ -1,7 +1,8 @@
 import { container as rootContainer } from "@ivlev-dev/silent-di";
 import type { AnyComponent, Preloader, ViewMeta } from "./types.js";
 import { ComponentContext } from "./component-context.js";
-import { attachDisposer, disposeNode } from "./dom.js";
+import { attachDisposer, disposeNode, isServerMode } from "./dom.js";
+import { openServerStreamRegion } from "./server-stream.js";
 import {
   copyReactiveState,
   createRoot,
@@ -11,6 +12,12 @@ import {
   type Owner,
 } from "@ivlev-dev/silent-reactivity";
 import { registerView } from "./registry.js";
+import {
+  emitDevtoolsError,
+  emitDevtoolsMount,
+  emitDevtoolsUnmount,
+  isDevtoolsActive,
+} from "./devtools-events.js";
 import { extractMetadata } from "./metadata.js";
 import {
   getCurrentBoundary,
@@ -62,6 +69,8 @@ interface DisposeHost {
 }
 
 setComponentCreator(createComponentView);
+
+let viewSequence = 0;
 
 function readAttachedPreloader(component: AnyComponent): Preloader | null {
   const record = component as unknown as Record<PropertyKey, unknown>;
@@ -168,7 +177,14 @@ function reportError(
   error: unknown,
   component: AnyComponent,
   options: RuntimeOptions,
+  phase: string,
 ): void {
+  emitDevtoolsError({
+    name: getComponentName(component),
+    moduleId: readMeta(component)?.moduleId ?? null,
+    phase,
+    message: error instanceof Error ? error.message : String(error),
+  });
   const handler = options.onError ?? getErrorHandler();
   handler(error, component);
 }
@@ -194,6 +210,8 @@ export function createViewResult(
   props: Record<string, unknown>,
   options: RuntimeOptions,
 ): ComponentResult {
+  const viewId = (viewSequence += 1);
+  let mountedAt: number | null = null;
   let fragment: DocumentFragment | null = null;
   const hydrated = isHydrating();
   const propsProxy = createPropsProxy(props);
@@ -223,6 +241,13 @@ export function createViewResult(
     fragment = document.createDocumentFragment();
     fragment.appendChild(start);
     fragment.appendChild(end);
+  }
+
+  const streamRegion =
+    isServerMode() && !hydrated ? openServerStreamRegion() : null;
+  if (streamRegion !== null && fragment !== null) {
+    fragment.insertBefore(streamRegion.start, start);
+    fragment.appendChild(streamRegion.end);
   }
 
   let controller: AbortController | null = null;
@@ -296,7 +321,7 @@ export function createViewResult(
         void root;
       });
     } catch (error) {
-      reportError(error, componentRef, options);
+      reportError(error, componentRef, options, "preloader");
     }
   };
 
@@ -327,6 +352,12 @@ export function createViewResult(
     scope.dispose();
     start.remove();
     end.remove();
+    emitDevtoolsUnmount({
+      viewId,
+      name: getComponentName(componentRef),
+      moduleId: metaRef.moduleId ?? null,
+      lifetimeMs: mountedAt === null ? 0 : Math.max(0, Date.now() - mountedAt),
+    });
   };
 
   attachDisposer(start, disposeInstance);
@@ -358,6 +389,14 @@ export function createViewResult(
     }
     if (initial) {
       callHook(nextVm, "mounted");
+      mountedAt = Date.now();
+      emitDevtoolsMount({
+        viewId,
+        name: getComponentName(componentRef),
+        moduleId: metaRef.moduleId ?? null,
+        hydrated,
+        props: isDevtoolsActive() ? Object.keys(props) : [],
+      });
     } else {
       callHook(nextVm, "updated");
     }
@@ -469,6 +508,7 @@ export function createViewResult(
       adoptPending = false;
       if (renderAdopted(nextVm, owner)) {
         finishRender(nextVm, initial);
+        streamRegion?.resolve();
         return;
       }
       clearView();
@@ -476,10 +516,12 @@ export function createViewResult(
         renderFresh(nextVm, owner);
       });
       finishRender(nextVm, initial);
+      streamRegion?.resolve();
       return;
     }
     renderFresh(nextVm, owner);
     finishRender(nextVm, initial);
+    streamRegion?.resolve();
   };
 
   const root = createRoot((disposeRoot) => {
@@ -493,8 +535,10 @@ export function createViewResult(
 
     if (metaRef.moduleId !== undefined) {
       unregister = registerView({
+        id: viewId,
         moduleId: metaRef.moduleId,
         name: getComponentName(componentRef),
+        hydrated,
         component: componentRef,
         meta: metaRef,
         props: viewProps,
@@ -607,8 +651,9 @@ export function createViewResult(
         if (disposed || readyGeneration !== generation) {
           return;
         }
-        reportError(error, component, options);
+        reportError(error, component, options, "resolve");
         renderError(start, end, error);
+        streamRegion?.resolve();
       }
     })();
 

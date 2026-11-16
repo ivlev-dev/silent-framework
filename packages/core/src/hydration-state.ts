@@ -1,3 +1,5 @@
+import { emitDevtoolsError } from "./devtools-events.js";
+
 export class HydrationMismatchError extends Error {
   constructor(message: string) {
     super(message);
@@ -31,6 +33,14 @@ export const SUSPENSE = "silent-suspense";
 export const HYDRATE_START = "silent-hydrate";
 export const HYDRATE_END = "silent-hydrate-end";
 
+export interface HydrationStats {
+  readonly active: boolean;
+  readonly depth: number;
+  readonly windows: number;
+  readonly sessions: number;
+  readonly mismatches: number;
+}
+
 export interface HydrationRuntime {
   claimNext(): Node | null;
   isMarker(node: Node | null | undefined, data: string): node is Comment;
@@ -54,6 +64,18 @@ export interface HydrationRuntime {
 const contexts: HydrationContext[] = [];
 let current: HydrationContext | null = null;
 let runtime: HydrationRuntime | null = null;
+let sessions = 0;
+let mismatches = 0;
+
+export function getHydrationStats(): HydrationStats {
+  return {
+    active: current !== null,
+    depth: contexts.length,
+    windows: current?.windows.length ?? 0,
+    sessions,
+    mismatches,
+  };
+}
 
 function refreshContext(): void {
   current = contexts.length === 0 ? null : contexts[contexts.length - 1] ?? null;
@@ -83,6 +105,7 @@ export function beginHydration(
   };
   contexts.push(context);
   current = context;
+  sessions += 1;
   return context;
 }
 
@@ -140,6 +163,13 @@ export function mismatch(message: string): never {
 }
 
 export function reportMismatch(error: HydrationMismatchError): void {
+  mismatches += 1;
+  emitDevtoolsError({
+    name: null,
+    moduleId: null,
+    phase: "hydration",
+    message: error.message,
+  });
   const listener = current?.listener ?? null;
   if (listener !== null) {
     listener(error);

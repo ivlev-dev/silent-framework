@@ -129,11 +129,67 @@ const { html } = await renderToString(App, { container: app });
 ```
 
 
+## Прогрессивный стриминг
+
+`renderToStream(app, options)` возвращает `ReadableStream<string>` с телом документа. В отличие от нарезки готовой строки, первый чанк — это синхронный shell, который отдаётся до завершения `Suspense`, `lazy` и асинхронных ViewModel. `head` отдаётся через `onHead` сразу вместе с shell.
+
+```ts
+import { renderToStream } from "@ivlev-dev/silent-server";
+
+const stream = renderToStream(App, {
+  onHead(head, info) {
+    if (info.final) {
+      replaceHead(head);
+      return;
+    }
+    documentHead = head;
+  },
+  onShell(shell) {
+    shellLength = shell.length;
+  },
+});
+
+for await (const chunk of stream) {
+  response.write(chunk);
+}
+response.end();
+```
+
+Протокол:
+
+1. Первый чанк — shell: итоговая разметка синхронной части дерева и fallback-содержимое незавершённых границ. Незавершённая граница обёрнута комментариями `<!--silent-stream:ID-->…<!--silent-stream-end:ID-->`.
+2. Когда граница `Suspense`, `lazy` или асинхронная ViewModel готова, сервер дописывает чанк `<template data-silent-stream="ID">…</template><script>window.__silentStream.patch(ID)</script>`. Минимальный inline-runtime приходит один раз перед первым патчем и сам удаляет служебные узлы.
+3. Патч заменяет содержимое между маркерами и удаляет сами маркеры. Итоговый DOM совпадает с разметкой `renderToString`, поэтому `hydrate` принимает её без изменений. Вложенные границы патчатся независимо; порядок чанков сохраняется.
+4. `onHead(head, { final: false })` вызывается до первого чанка тела, `onHead(head, { final: true })` — только если асинхронная часть добавила метаданные. При `final: true` замените ранее отданный head.
+
+Опции:
+
+| Опция | Назначение |
+| --- | --- |
+| `onHead(head, info)` | Head доступен сразу после синхронного shell; `info.final` сообщает, что пришло финальное значение. |
+| `onShell(html)` | Синхронный shell до начала асинхронных патчей. |
+| `onChunk(chunk)` | Каждый фактически записанный чанк тела. |
+| `chunkSize` | Максимальный размер чанка; по умолчанию 16 КиБ. Патчи также режутся по этому лимиту. |
+| `nonce` | Nonce для inline-runtime и скриптов патчей (CSP). |
+| `signal` | Отмена доставки. Рендер завершается и освобождает ресурсы, но новые чанки не пишутся. |
+
+Ограничения протокола:
+
+- `head` с асинхронных границ не может попасть в HTTP-заголовки: используйте `onHead(..., { final: true })` и обновляйте head на клиенте.
+- Патч вставляется через `<template>`; содержимое парсится в контексте body. Фрагменты, допустимые только внутри таблицы/`select`, требуют собственного контейнера.
+- Inline-runtime требует разрешённых inline-скриптов или `nonce`. Без JS остаётся shell с fallback-содержимым.
+- Ошибка после отправки shell закрывает поток ошибкой: соединение обрывается, fallback остаётся видимым. Ошибки до shell отклоняют поток без отправки тела.
+- Backpressure не учитывается: чанки буферизуются в `ReadableStream`, пока читатель их не заберёт.
+- Поток удерживает внутреннюю очередь SSR до завершения рендера: другие `renderToString`/`renderToStream` ждут.
+
+`renderToString` не изменился: он по-прежнему ждёт всё дерево и возвращает `{ html, head }` без служебных маркеров стриминга.
+
 ## API
 
 | Символ | Назначение |
 | --- | --- |
 | `renderToString(app, options?)` | Рендерит корневой компонент в `Promise<RenderResult>`; вызовы сериализуются внутренней очередью. |
+| `renderToStream(app, options?)` | Возвращает `ReadableStream<string>` с прогрессивным shell и патчами границ. |
 | `RenderResult` | Результат рендера: `{ html, head }`. |
 | `RenderResult.html` | Сериализованная разметка приложения без `<title>`, с якорями и маркерами для гидрации. |
 | `RenderResult.head` | HTML метаданных, вынесенных из дерева, в первую очередь `<title>`. |

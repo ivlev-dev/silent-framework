@@ -916,7 +916,6 @@ const page = `<!doctype html><html><head>${head}</head><body><div id="app">${htm
 
 Ограничения SSR:
 
-- только строковый результат: `renderToStream` отдаёт готовое тело чанками, прогрессивная отдача по границам `Suspense` не поддерживается;
 - серверный мини-DOM не реализует события и `replaceChildren` — интерактивные эффекты выполняются, но ничего не делают;
 - произвольный HTML в `template()` не поддерживается: парсер рассчитан на подмножество, которое генерирует компилятор.
 
@@ -931,23 +930,46 @@ function renderToStream(
 ): ReadableStream<string>;
 ```
 
-Рендерит приложение и отдаёт тело чанками. `head` передаётся в `onHead` перед первым чанком; чанки склеиваются в тот же `html`, что возвращает `renderToString`.
+Отдаёт прогрессивное тело документа. Первый чанк — синхронный shell с fallback-содержимым незавершённых границ; готовые `Suspense`, `lazy` и асинхронные ViewModel дописываются чанками-патчами. `head` передаётся в `onHead` до первого чанка тела.
 
 ```ts
 import { renderToStream } from "@ivlev-dev/silent-server";
 
 const stream = renderToStream(App, {
   chunkSize: 16 * 1024,
-  onHead: (head) => res.write(`<!doctype html><html><head>${head}</head><body>`),
+  onHead: (head) =>
+    res.write(`<!doctype html><html><head>${head}</head><body><div id="app">`),
 });
 
 for await (const chunk of stream) {
   res.write(chunk);
 }
-res.end("</body></html>");
+res.end("</div></body></html>");
 ```
 
-Асинхронные ViewModel, `Suspense` и `lazy` дожидаются до начала выдачи — поток отдаёт уже итоговую разметку.
+Незавершённая граница в shell обёрнута комментариями `<!--silent-stream:ID-->…<!--silent-stream-end:ID-->`. По готовности сервер пишет патч:
+
+```html
+<template data-silent-stream="ID">…итоговая разметка…</template>
+<script>window.__silentStream.patch(ID)</script>
+```
+
+Минимальный inline-runtime приходит один раз перед первым патчем, заменяет fallback на содержимое и удаляет служебные узлы. Итоговый DOM совпадает с разметкой `renderToString`, поэтому `hydrate` принимает его без изменений. Вложенные границы патчатся независимо.
+
+`head` синхронной части доступен сразу. Если асинхронная граница добавила метаданные, `onHead` вызывается повторно с `info.final === true`; замените ранее отданный head.
+
+### `HeadStreamInfo`
+
+*Стабильность: public.*
+
+```ts
+interface HeadStreamInfo {
+  readonly final: boolean;
+}
+```
+
+- `final: false` — head собран из синхронного shell и может быть неполным.
+- `final: true` — head изменился после завершения асинхронных границ; значение заменяет предыдущее.
 
 ### `StreamOptions`
 
@@ -956,13 +978,31 @@ res.end("</body></html>");
 ```ts
 interface StreamOptions extends RenderOptions {
   readonly chunkSize?: number;
-  readonly onHead?: (head: string) => void;
+  readonly onHead?: (head: string, info: HeadStreamInfo) => void;
+  readonly onShell?: (html: string) => void;
+  readonly onChunk?: (chunk: string) => void;
+  readonly nonce?: string;
+  readonly signal?: AbortSignal;
 }
 ```
 
-- `chunkSize` — размер чанка, по умолчанию 16 KiB; неположительные значения заменяются умолчанием.
-- `onHead` — получает сериализованный `head` один раз, до первого чанка тела.
+- `chunkSize` — максимальный размер чанка, по умолчанию 16 KiB; неположительные значения заменяются умолчанием. Патчи также режутся по лимиту.
+- `onHead` — head синхронного shell до первого чанка тела; повторный вызов только при изменении (`info.final === true`).
+- `onShell` — синхронный shell до асинхронных патчей.
+- `onChunk` — каждый фактически записанный чанк.
+- `nonce` — nonce для inline-runtime и скриптов патчей.
+- `signal` — отмена доставки; рендер завершается и освобождает ресурсы, новые чанки не пишутся.
 - Остальные поля совпадают с `RenderOptions`.
+
+Ограничения стриминга:
+
+- head, добавленный асинхронной границей, нельзя отправить в HTTP-заголовки: обработайте `info.final` на клиенте;
+- патч вставляется через `<template>` и парсится в контексте body: фрагменты, допустимые только внутри таблицы или `select`, требуют собственного контейнера;
+- inline-runtime требует разрешённых inline-скриптов или `nonce`; без JS остаётся shell с fallback;
+- ошибка после отправки shell закрывает поток ошибкой (соединение обрывается, fallback остаётся видимым);
+- backpressure не учитывается: чанки буферизуются, пока читатель их не заберёт;
+- поток удерживает внутреннюю очередь SSR до завершения рендера.
+
 
 ## JSX
 
@@ -1840,6 +1880,409 @@ const COMPONENT_DISPOSE: unique symbol; // Symbol.for("silent.dispose")
 
 Ключ функции dispose на стартовом комментарий-маркере view-компонента (`<!--silent-view-->`). Позволяет интеграциям демонтировать компонент, не имея `ComponentResult`.
 
+## Server streaming
+
+Низкоуровневый интерфейс сбора прогрессивных регионов SSR. Серверный рендерер регистрирует коллектор через `setServerStreamCollector`; view и `Suspense` открывают регионы через `openServerStreamRegion` и закрывают их вызовом `resolve()`.
+
+### `STREAM_REGION_START`
+
+```ts
+const STREAM_REGION_START = "silent-stream:";
+```
+
+Префикс комментария-маркера начала стримингового региона.
+
+### `STREAM_REGION_END`
+
+```ts
+const STREAM_REGION_END = "silent-stream-end:";
+```
+
+Префикс комментария-маркера конца стримингового региона.
+
+### `ServerStreamRegion`
+
+```ts
+interface ServerStreamRegion {
+  readonly id: number;
+  readonly start: Comment;
+  readonly end: Comment;
+  resolve(): void;
+}
+```
+
+Открытый регион: маркеры границ и функция завершения.
+
+### `ServerStreamCollector`
+
+```ts
+interface ServerStreamCollector {
+  openRegion(): ServerStreamRegion | null;
+}
+```
+
+Коллектор регионов, который предоставляет серверный рендерер.
+
+### `setServerStreamCollector`
+
+```ts
+function setServerStreamCollector(next: ServerStreamCollector | null): void;
+```
+
+Устанавливает или сбрасывает (`null`) глобальный коллектор регионов.
+
+### `getServerStreamCollector`
+
+```ts
+function getServerStreamCollector(): ServerStreamCollector | null;
+```
+
+Возвращает текущий коллектор или `null`.
+
+### `openServerStreamRegion`
+
+```ts
+function openServerStreamRegion(): ServerStreamRegion | null;
+```
+
+Открывает регион через текущий коллектор. Возвращает `null`, если коллектор не установлен или рендер не потоковый.
+
+## DevTools
+
+Публичный снимок рантайма и поток событий для инструментов разработки. Модуль доступен из основного entry и как сабпуть `@ivlev-dev/silent-core/devtools`. В production установка не создаёт глобальных объектов и не буферизует события: проверяется `globalThis.__SILENT_DEV__`, `import.meta.env.PROD` и `process.env.NODE_ENV`.
+
+### `getDevtoolsSnapshot`
+
+```ts
+function getDevtoolsSnapshot(): DevtoolsSnapshot;
+```
+
+Возвращает снимок текущего состояния: активные view-инстансы, количество незавершённых async-задач, дерево DI-контейнеров, состояние гидрации, счётчики реестра, подписчиков и реактивности. В снимок попадают только примитивы и имена — ссылки на компоненты, ViewModel, props и DOM-узлы не удерживаются.
+
+```ts
+import { getDevtoolsSnapshot } from "@ivlev-dev/silent-core/devtools";
+
+const snapshot = getDevtoolsSnapshot();
+console.log(snapshot.views, snapshot.pending.async, snapshot.di.scopes);
+```
+
+### `subscribeDevtools`
+
+```ts
+function subscribeDevtools(listener: DevtoolsSubscriber): () => void;
+```
+
+Подписывает слушатель на события `mount`, `unmount`, `error`, `hmr` и `navigate`. Возвращает идемпотентную функцию отписки. Исключение слушателя не прерывает рантайм и выводится через `console.error`. Подписка без установки DevTools разрешена; буфер очищается после отписки последнего слушателя.
+
+```ts
+const unsubscribe = subscribeDevtools((event) => {
+  if (event.type === "error") console.warn(event.phase, event.message);
+});
+unsubscribe();
+```
+
+### `installDevtools`
+
+```ts
+function installDevtools(options?: DevtoolsInstallOptions): DevtoolsHandle;
+```
+
+Устанавливает `globalThis.__SILENT_DEVTOOLS__` с методами `snapshot`, `subscribe`, `events`, `clear` и `uninstall`. Повторный вызов возвращает handle уже установленного объекта. `enabled: false` или production-режим возвращают no-op handle без побочных эффектов. `eventLimit` ограничивает буфер (1–1000 событий, по умолчанию `DEVTOOLS_EVENT_LIMIT`).
+
+```ts
+import { installDevtools } from "@ivlev-dev/silent-core/devtools";
+
+const devtools = installDevtools({ eventLimit: 50 });
+globalThis.__SILENT_DEVTOOLS__?.snapshot();
+```
+
+### `uninstallDevtools`
+
+```ts
+function uninstallDevtools(): void;
+```
+
+Удаляет `globalThis.__SILENT_DEVTOOLS__`, отписывает всех слушателей, очищает буфер и сбрасывает счётчики. Вызов без установки безопасен.
+
+```ts
+uninstallDevtools();
+```
+
+### `getDevtoolsEvents`
+
+```ts
+function getDevtoolsEvents(): readonly DevtoolsEvent[];
+```
+
+Возвращает текущий буфер событий (не более лимита). Буфер пополняется только при установленном DevTools или наличии подписчиков.
+
+### `devtoolsNavigate`
+
+```ts
+function devtoolsNavigate(to: string, from?: string | null): void;
+```
+
+Публикует событие `navigate`. Router не изменяется: интеграция может вызывать помощник самостоятельно.
+
+```ts
+devtoolsNavigate("/users/42", "/users");
+```
+
+### `isDevtoolsProduction`
+
+```ts
+function isDevtoolsProduction(): boolean;
+```
+
+Возвращает `true`, если рантайм считается production-средой. Явный `globalThis.__SILENT_DEV__` имеет приоритет над `import.meta.env` и `NODE_ENV`.
+
+### `DEVTOOLS_EVENT_LIMIT`
+
+```ts
+const DEVTOOLS_EVENT_LIMIT = 100;
+```
+
+Лимит буфера событий по умолчанию.
+
+### `DevtoolsSnapshot`
+
+```ts
+interface DevtoolsSnapshot {
+  readonly installed: boolean;
+  readonly production: boolean;
+  readonly timestamp: number;
+  readonly views: readonly DevtoolsViewInfo[];
+  readonly pending: DevtoolsPendingSnapshot;
+  readonly di: ContainerSnapshot;
+  readonly hydration: DevtoolsHydrationSnapshot;
+  readonly registry: DevtoolsRegistrySnapshot;
+  readonly listeners: DevtoolsEventStats;
+  readonly reactivity: ReactivityStats;
+}
+```
+
+Корневой снимок. `di` описывает `Container.snapshot()` корневого контейнера; `reactivity` — счётчики из `getReactivityStats()`.
+
+### `DevtoolsViewInfo`
+
+```ts
+interface DevtoolsViewInfo {
+  readonly id: number | null;
+  readonly moduleId: string;
+  readonly name: string;
+  readonly hydrated: boolean;
+}
+```
+
+Краткое описание view-инстанса без ссылок на компонент, VM и props.
+
+### `DevtoolsPendingSnapshot`
+
+```ts
+interface DevtoolsPendingSnapshot {
+  readonly async: number;
+}
+```
+
+Количество промисов, отслеживаемых `trackAsyncWork` / `trackPending`.
+
+### `DevtoolsHydrationSnapshot`
+
+```ts
+interface DevtoolsHydrationSnapshot {
+  readonly active: boolean;
+  readonly depth: number;
+  readonly windows: number;
+  readonly sessions: number;
+  readonly mismatches: number;
+}
+```
+
+Состояние гидрации: активность, глубина вложенных контекстов, окна текущего контекста, число сессий и несовпадений.
+
+### `DevtoolsRegistrySnapshot`
+
+```ts
+interface DevtoolsRegistrySnapshot {
+  readonly modules: number;
+  readonly views: number;
+}
+```
+
+Количество модулей и активных view в HMR-реестре.
+
+### `DevtoolsEventStats`
+
+```ts
+interface DevtoolsEventStats {
+  readonly active: boolean;
+  readonly installed: boolean;
+  readonly subscribers: number;
+  readonly buffered: number;
+  readonly capacity: number;
+  readonly emitted: number;
+  readonly dropped: number;
+  readonly mounts: number;
+  readonly unmounts: number;
+  readonly errors: number;
+  readonly hmr: number;
+  readonly navigations: number;
+}
+```
+
+Счётчики шины событий. `dropped` увеличивается при вытеснении событий из ограниченного буфера.
+
+### `DevtoolsEvent`
+
+```ts
+type DevtoolsEvent =
+  | DevtoolsMountEvent
+  | DevtoolsUnmountEvent
+  | DevtoolsErrorEvent
+  | DevtoolsHmrEvent
+  | DevtoolsNavigateEvent;
+```
+
+Объединение всех событий. Каждое событие содержит `type`, `sequence` и `timestamp`.
+
+### `DevtoolsEventBase`
+
+```ts
+interface DevtoolsEventBase {
+  readonly type: DevtoolsEventType;
+  readonly sequence: number;
+  readonly timestamp: number;
+}
+```
+
+Общие поля события.
+
+### `DevtoolsEventType`
+
+```ts
+type DevtoolsEventType = "mount" | "unmount" | "error" | "hmr" | "navigate";
+```
+
+Тип события.
+
+### `DevtoolsMountEvent`
+
+```ts
+interface DevtoolsMountEvent extends DevtoolsEventBase {
+  readonly type: "mount";
+  readonly viewId: number;
+  readonly name: string;
+  readonly moduleId: string | null;
+  readonly hydrated: boolean;
+  readonly props: readonly string[];
+}
+```
+
+Событие успешного монтирования view. `props` содержит только имена ключей (не более 32).
+
+### `DevtoolsUnmountEvent`
+
+```ts
+interface DevtoolsUnmountEvent extends DevtoolsEventBase {
+  readonly type: "unmount";
+  readonly viewId: number;
+  readonly name: string;
+  readonly moduleId: string | null;
+  readonly lifetimeMs: number;
+}
+```
+
+Событие демонтажа view с временем жизни инстанса.
+
+### `DevtoolsErrorEvent`
+
+```ts
+interface DevtoolsErrorEvent extends DevtoolsEventBase {
+  readonly type: "error";
+  readonly name: string | null;
+  readonly moduleId: string | null;
+  readonly phase: string;
+  readonly message: string;
+}
+```
+
+Ошибка резолва VM, прелоадера или гидрации. `message` обрезается до 512 символов.
+
+### `DevtoolsHmrEvent`
+
+```ts
+interface DevtoolsHmrEvent extends DevtoolsEventBase {
+  readonly type: "hmr";
+  readonly moduleId: string;
+  readonly kind: "update" | "invalidate";
+  readonly views: number;
+}
+```
+
+HMR-обновление (`hmrUpdate`) или инвалидация (`hmrInvalidate`).
+
+### `DevtoolsNavigateEvent`
+
+```ts
+interface DevtoolsNavigateEvent extends DevtoolsEventBase {
+  readonly type: "navigate";
+  readonly to: string;
+  readonly from: string | null;
+}
+```
+
+Событие навигации, опубликованное через `devtoolsNavigate`.
+
+### `DevtoolsSubscriber`
+
+```ts
+type DevtoolsSubscriber = (event: DevtoolsEvent) => void;
+```
+
+Функция-слушатель событий.
+
+### `DevtoolsInstallOptions`
+
+```ts
+interface DevtoolsInstallOptions {
+  readonly enabled?: boolean;
+  readonly eventLimit?: number;
+}
+```
+
+Опции установки. `enabled: true` принудительно включает DevTools даже при production-признаках.
+
+### `DevtoolsHandle`
+
+```ts
+interface DevtoolsHandle {
+  readonly installed: boolean;
+  readonly global: DevtoolsGlobal | null;
+  snapshot(): DevtoolsSnapshot;
+  subscribe(listener: DevtoolsSubscriber): () => void;
+  events(): readonly DevtoolsEvent[];
+  clear(): void;
+  uninstall(): void;
+}
+```
+
+Handle установки. В production-режиме возвращается no-op handle с `installed: false` и `global: null`.
+
+### `DevtoolsGlobal`
+
+```ts
+interface DevtoolsGlobal {
+  readonly version: 1;
+  snapshot(): DevtoolsSnapshot;
+  subscribe(listener: DevtoolsSubscriber): () => void;
+  events(): readonly DevtoolsEvent[];
+  clear(): void;
+  uninstall(): void;
+}
+```
+
+Форма `globalThis.__SILENT_DEVTOOLS__`.
+
 ## Ограничения
 
 - **Синхронные компоненты.** Функция без метаданных silent.view с `vm` считается синхронной: у неё нет `this.vm`, рантайм не создаёт для неё scope и не ждёт готовности. По соглашению синхронными остаются прелоадеры и простые UI-листья.
@@ -1848,3 +2291,6 @@ const COMPONENT_DISPOSE: unique symbol; // Symbol.for("silent.dispose")
 - **Рендер без компилятора.** Метаданные silent.view формирует компилятор; «голый» jsx-рантайм при попытке отрендерить такой компонент бросает ошибку, так как асинхронный резолв VM вне рантайма не поддерживается.
 - **Поведение при ошибках.** Ошибка резолва VM или загрузки `lazy` не приводит к неразрешимому `ready` (промисы готовности не отклоняются); пользователь видит текст `Error: <message>` и сообщение из обработчика ошибок. Обработчик по умолчанию — `console.error`.
 - **`mount` ожидает элемент.** Строковый `target` без совпадения в DOM приводит к выброшенной ошибке синхронно в момент вызова.
+- **DevTools и кастомный DI-корень.** `getDevtoolsSnapshot().di` описывает только корневой `container` из `@ivlev-dev/silent-di`; scope-ы, созданные от отдельного `new Container()`, в снимок не попадают.
+- **DevTools и синхронные компоненты.** События `mount` / `unmount` публикуются для view-компонентов с метаданными `silent.view`; синхронные компоненты без ViewModel в реестр не попадают.
+- **Буфер событий.** Размер буфера ограничен (`DEVTOOLS_EVENT_LIMIT`, максимум 1000); старые события вытесняются, счётчик `dropped` растёт. Буфер и подписчики очищаются при `uninstallDevtools()`.

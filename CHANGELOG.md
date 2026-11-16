@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.10.0
+
+Платформенная волна: progressive streaming SSR, devtools и инфраструктура качества.
+
+### Streaming SSR
+
+- `renderToStream` стал настоящим progressive streaming: shell и `head` уходят до завершения async VM/`Suspense`/`lazy`; готовые границы дописываются патч-чанками с inline-runtime.
+- Протокол регионов `silent-stream:*`, вложенные границы, `onHead`/`onShell`/`onChunk`, `nonce`, `AbortSignal`, отмена.
+- Итоговый DOM совпадает с `renderToString`, `hydrate` принимает стриминговую разметку; `ssr-e2e` проверяет stream-маршрут в браузере.
+- `renderToStream` с async-границами больше не обещает, что простая склейка чанков без браузера равна финальному HTML.
+
+### Devtools
+
+- `@ivlev-dev/silent-core/devtools`: снимок view/pending/DI/hydration/registry/reactivity, события mount/unmount/error/hmr/navigate, `installDevtools`/`uninstallDevtools`, production no-op.
+- `Container.snapshot()` и `getReactivityStats()`; буфер событий ограничен и не удерживает компоненты/VM/props.
+
+### Инфраструктура
+
+- Firefox/WebKit e2e-матрица в CI, `test:e2e:firefox`/`webkit`; Firefox-прогон подтверждён.
+- API-signature snapshot (`scripts/api-signatures.json`), `api:check:self` в CI.
+- Стартовый JS: 34.95 → 35.14 KB, gzip: 12.07 → 12.18 KB; VM gzip: 13.68 → 14.15 KB. Baseline обновлён под 0.10.0.
+
 ## 0.9.1
 
 Платформенная оптимизация: стартовый бандл, браузерная матрица и API-сигнатуры.

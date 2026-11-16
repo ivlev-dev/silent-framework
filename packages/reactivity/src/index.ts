@@ -20,11 +20,14 @@ export {
   createSignalHandle,
   flushSync,
   getOwner,
+  getReactivityStats,
   onCleanup,
   runWithOwner,
   setEffectErrorHandler,
   untrack,
 } from "./graph.js";
+
+export type { ReactivityStats } from "./graph.js";
 
 export { on } from "./on.js";
 

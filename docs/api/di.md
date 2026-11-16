@@ -75,6 +75,7 @@ class Container {
   peek<T = unknown>(token: unknown): T | undefined;
   has(token: unknown): boolean;
   createScope(name?: string): Container;
+  snapshot(): ContainerSnapshot;
   clearCache(token?: unknown): void;
   onDispose(fn: () => void): void;
   dispose(): void;
@@ -96,6 +97,35 @@ const value = await scope.resolve(token);
 ```
 
 Ограничения: `resolve` никогда не бросает синхронно — ошибки disposed-контейнера, неизвестного токена и `undefined` приходят отклонённым промисом. `resolveSync` читает только уже разрешённое значение и выбрасывает синхронно, если оно ещё не готово. Контейнер не потокобезопасен в смысле реентерабельности — вызовы должны быть асинхронными через промисы.
+
+### `ContainerSnapshot`
+
+Сигнатура:
+
+```ts
+interface ContainerSnapshot {
+  readonly name: string;
+  readonly disposed: boolean;
+  readonly parent: string | null;
+  readonly scopes: number;
+  readonly bindings: number;
+  readonly resolved: number;
+  readonly resolving: number;
+  readonly children: readonly ContainerSnapshot[];
+}
+```
+
+Описание: снимок контейнера и его дочерних скоупов, который возвращает `Container.snapshot()`. Поля `scopes`, `bindings`, `resolved` и `resolving` агрегируют значения по всему поддереву. Снимок содержит только имена и числа: ссылки на контейнеры, токены и инстансы не удерживаются, поэтому он безопасен для DevTools и диагностики.
+
+Пример:
+
+```ts
+const root = new Container("root");
+root.createScope("request");
+console.log(root.snapshot().scopes); // 1
+```
+
+Ограничения: глубина обхода ограничена 64 уровнями; для disposed-контейнера возвращается пустое дерево и нулевые счётчики.
 
 ### `container`
 

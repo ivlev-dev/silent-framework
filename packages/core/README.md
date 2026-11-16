@@ -248,6 +248,26 @@ const handle = await hydrate("#app", App, {
 
 При несовпадении формы узла бросается `HydrationMismatchError`; ближайший view отказывается от адоптации и рендерится клиентски, ошибка передаётся в `onMismatch`. Для SSR-сборки Vite держите рантайм внешним (`ssr.external`), иначе приложение получит вторую копию рантайма.
 
+## DevTools
+
+Диагностика доступна из основного entry и из сабпути `@ivlev-dev/silent-core/devtools`:
+
+```ts
+import {
+  getDevtoolsSnapshot,
+  installDevtools,
+  subscribeDevtools,
+} from "@ivlev-dev/silent-core/devtools";
+
+const devtools = installDevtools({ eventLimit: 50 });
+const stop = subscribeDevtools((event) => {
+  if (event.type === "mount") console.log("mount", event.name);
+});
+console.log(getDevtoolsSnapshot().views);
+```
+
+Снимок содержит view-инстансы, счётчик pending async-задач, дерево DI, состояние гидрации, счётчики реестра и реактивности. События `mount`, `unmount`, `error`, `hmr` и `navigate` кладутся в ограниченный буфер; ссылки на компоненты, VM, props и DOM не удерживаются. `installDevtools()` выставляет `globalThis.__SILENT_DEVTOOLS__`, а в production (или при `enabled: false`) возвращает no-op handle без побочных эффектов. `uninstallDevtools()` удаляет глобальный объект, отписывает слушателей и очищает буфер.
+
 ## API
 
 | Символ | Назначение |
@@ -271,6 +291,10 @@ const handle = await hydrate("#app", App, {
 | `getReady` | Промис готовности узла, в том числе для вручную вставленных компонентов. |
 | `whenIdle` | Ждёт завершения всех отслеживаемых рантаймом промисов. |
 | `HydrationMismatchError` | Ошибка несовпадения серверной и клиентской разметки. |
+| `getDevtoolsSnapshot` | Снимок view, pending async, DI, гидрации, реестра и реактивности без сильных ссылок. |
+| `subscribeDevtools` | Подписка на события `mount`, `unmount`, `error`, `hmr`, `navigate`; возвращает отписку. |
+| `installDevtools`, `uninstallDevtools` | Установка/снятие `globalThis.__SILENT_DEVTOOLS__`; в production — no-op. |
+| `devtoolsNavigate` | Публикация события `navigate` без изменения Router. |
 | `createSignal`, `createMemo`, `createEffect`, `batch`, `untrack`, `onCleanup`, `createRoot` | Примитивы реактивности, реэкспорт из `@ivlev-dev/silent-reactivity`. |
 | `deepReactive`, `isReactive`, `unwrap` | Работа с глубокими реактивными прокси. |
 | `Container`, `container`, `createToken`, `DI_CREATE`, `CircularDependencyError` | DI, реэкспорт из `@ivlev-dev/silent-di`. |

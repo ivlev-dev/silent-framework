@@ -10,8 +10,9 @@ import {
   trackAsyncWork,
   withRuntimeOptions,
 } from "./component.js";
-import { collectNodes, createMountPoint, disposeNode } from "./dom.js";
+import { collectNodes, createMountPoint, disposeNode, isServerMode } from "./dom.js";
 import { settleNodes } from "./dom-hydration-state.js";
+import { openServerStreamRegion } from "./server-stream.js";
 import { beginRegion, regionMatches, settleWindow } from "./hydration-cursor.js";
 import { getCurrentBoundary, runWithBoundary, type AsyncBoundary } from "./boundary.js";
 import {
@@ -88,7 +89,14 @@ export function Suspense(props: SuspenseProps): Node {
   }
   const container = document.createDocumentFragment();
   const anchor = document.createComment("silent-suspense");
-  container.appendChild(anchor);
+  const streamRegion = isServerMode() ? openServerStreamRegion() : null;
+  if (streamRegion !== null) {
+    container.appendChild(streamRegion.start);
+    container.appendChild(anchor);
+    container.appendChild(streamRegion.end);
+  } else {
+    container.appendChild(anchor);
+  }
   const mount = createMountPoint(container, anchor);
 
   const pending = new Set<Promise<unknown>>();
@@ -110,6 +118,7 @@ export function Suspense(props: SuspenseProps): Node {
     }
     showingChildren = true;
     mount.render(childrenValue);
+    streamRegion?.resolve();
   };
 
   const controller = new AbortController();

@@ -182,6 +182,88 @@
         "type": "() => number",
         "signature": "export declare function currentIdCount(): number;"
       },
+      "DEVTOOLS_EVENT_LIMIT": {
+        "kind": "variable",
+        "type": "100",
+        "signature": "export declare const DEVTOOLS_EVENT_LIMIT = 100;"
+      },
+      "DevtoolsErrorEvent": {
+        "kind": "interface",
+        "signature": "export interface DevtoolsErrorEvent extends DevtoolsEventBase { readonly type: \"error\"; readonly name: string | null; readonly moduleId: string | null; readonly phase: string; readonly message: string; }"
+      },
+      "DevtoolsEvent": {
+        "kind": "type",
+        "signature": "export type DevtoolsEvent = DevtoolsMountEvent | DevtoolsUnmountEvent | DevtoolsErrorEvent | DevtoolsHmrEvent | DevtoolsNavigateEvent;"
+      },
+      "DevtoolsEventBase": {
+        "kind": "interface",
+        "signature": "export interface DevtoolsEventBase { readonly type: DevtoolsEventType; readonly sequence: number; readonly timestamp: number; }"
+      },
+      "DevtoolsEventStats": {
+        "kind": "interface",
+        "signature": "export interface DevtoolsEventStats { readonly active: boolean; readonly installed: boolean; readonly subscribers: number; readonly buffered: number; readonly capacity: number; readonly emitted: number; readonly dropped: number; readonly mounts: number; readonly unmounts: number; readonly errors: number; readonly hmr: number; readonly navigations: number; }"
+      },
+      "DevtoolsEventType": {
+        "kind": "type",
+        "signature": "export type DevtoolsEventType = \"mount\" | \"unmount\" | \"error\" | \"hmr\" | \"navigate\";"
+      },
+      "DevtoolsGlobal": {
+        "kind": "interface",
+        "signature": "export interface DevtoolsGlobal { readonly version: 1; snapshot(): DevtoolsSnapshot; subscribe(listener: DevtoolsSubscriber): () => void; events(): readonly DevtoolsEvent[]; clear(): void; uninstall(): void; }"
+      },
+      "DevtoolsHandle": {
+        "kind": "interface",
+        "signature": "export interface DevtoolsHandle { readonly installed: boolean; readonly global: DevtoolsGlobal | null; snapshot(): DevtoolsSnapshot; subscribe(listener: DevtoolsSubscriber): () => void; events(): readonly DevtoolsEvent[]; clear(): void; uninstall(): void; }"
+      },
+      "DevtoolsHmrEvent": {
+        "kind": "interface",
+        "signature": "export interface DevtoolsHmrEvent extends DevtoolsEventBase { readonly type: \"hmr\"; readonly moduleId: string; readonly kind: \"update\" | \"invalidate\"; readonly views: number; }"
+      },
+      "DevtoolsHydrationSnapshot": {
+        "kind": "interface",
+        "signature": "export interface DevtoolsHydrationSnapshot { readonly active: boolean; readonly depth: number; readonly windows: number; readonly sessions: number; readonly mismatches: number; }"
+      },
+      "DevtoolsInstallOptions": {
+        "kind": "interface",
+        "signature": "export interface DevtoolsInstallOptions { readonly enabled?: boolean; readonly eventLimit?: number; }"
+      },
+      "DevtoolsMountEvent": {
+        "kind": "interface",
+        "signature": "export interface DevtoolsMountEvent extends DevtoolsEventBase { readonly type: \"mount\"; readonly viewId: number; readonly name: string; readonly moduleId: string | null; readonly hydrated: boolean; readonly props: readonly string[]; }"
+      },
+      "devtoolsNavigate": {
+        "kind": "function",
+        "type": "(to: string, from?: string | null) => void",
+        "signature": "export declare function devtoolsNavigate(to: string, from?: string | null): void;"
+      },
+      "DevtoolsNavigateEvent": {
+        "kind": "interface",
+        "signature": "export interface DevtoolsNavigateEvent extends DevtoolsEventBase { readonly type: \"navigate\"; readonly to: string; readonly from: string | null; }"
+      },
+      "DevtoolsPendingSnapshot": {
+        "kind": "interface",
+        "signature": "export interface DevtoolsPendingSnapshot { readonly async: number; }"
+      },
+      "DevtoolsRegistrySnapshot": {
+        "kind": "interface",
+        "signature": "export interface DevtoolsRegistrySnapshot { readonly modules: number; readonly views: number; }"
+      },
+      "DevtoolsSnapshot": {
+        "kind": "interface",
+        "signature": "export interface DevtoolsSnapshot { readonly installed: boolean; readonly production: boolean; readonly timestamp: number; readonly views: readonly DevtoolsViewInfo[]; readonly pending: DevtoolsPendingSnapshot; readonly di: ContainerSnapshot; readonly hydration: DevtoolsHydrationSnapshot; readonly registry: DevtoolsRegistrySnapshot; readonly listeners: DevtoolsEventStats; readonly reactivity: ReactivityStats; }"
+      },
+      "DevtoolsSubscriber": {
+        "kind": "type",
+        "signature": "export type DevtoolsSubscriber = (event: DevtoolsEvent) => void;"
+      },
+      "DevtoolsUnmountEvent": {
+        "kind": "interface",
+        "signature": "export interface DevtoolsUnmountEvent extends DevtoolsEventBase { readonly type: \"unmount\"; readonly viewId: number; readonly name: string; readonly moduleId: string | null; readonly lifetimeMs: number; }"
+      },
+      "DevtoolsViewInfo": {
+        "kind": "interface",
+        "signature": "export interface DevtoolsViewInfo { readonly id: number | null; readonly moduleId: string; readonly name: string; readonly hydrated: boolean; }"
+      },
       "disposeNode": {
         "kind": "function",
         "type": "(node: Node) => void",
@@ -235,6 +317,16 @@
         "type": "() => Preloader | null",
         "signature": "export declare function getDefaultPreloader(): Preloader | null;"
       },
+      "getDevtoolsEvents": {
+        "kind": "function",
+        "type": "() => readonly DevtoolsEvent[]",
+        "signature": "export declare function getDevtoolsEvents(): readonly DevtoolsEvent[];"
+      },
+      "getDevtoolsSnapshot": {
+        "kind": "function",
+        "type": "() => DevtoolsSnapshot",
+        "signature": "export declare function getDevtoolsSnapshot(): DevtoolsSnapshot;"
+      },
       "getErrorHandler": {
         "kind": "function",
         "type": "() => (error: unknown, component: AnyComponent) => void",
@@ -259,6 +351,11 @@
         "kind": "function",
         "type": "() => RuntimeOptions",
         "signature": "export declare function getRuntimeOptions(): RuntimeOptions;"
+      },
+      "getServerStreamCollector": {
+        "kind": "function",
+        "type": "() => ServerStreamCollector | null",
+        "signature": "export declare function getServerStreamCollector(): ServerStreamCollector | null;"
       },
       "getViewMeta": {
         "kind": "function",
@@ -330,6 +427,16 @@
         "kind": "function",
         "type": "(parent: Node, accessor: () => unknown, marker?: Node | ServerHole) => void",
         "signature": "export declare function insert(parent: Node, accessor: () => unknown, marker?: Node | ServerHole): void;"
+      },
+      "installDevtools": {
+        "kind": "function",
+        "type": "(options?: DevtoolsInstallOptions) => DevtoolsHandle",
+        "signature": "export declare function installDevtools(options?: DevtoolsInstallOptions): DevtoolsHandle;"
+      },
+      "isDevtoolsProduction": {
+        "kind": "function",
+        "type": "() => boolean",
+        "signature": "export declare function isDevtoolsProduction(): boolean;"
       },
       "isServerMode": {
         "kind": "function",
@@ -421,6 +528,11 @@
         "kind": "function",
         "type": "(el: Element, name: string, accessor: () => unknown) => void",
         "signature": "export declare function on(el: Element, name: string, accessor: () => unknown): void;"
+      },
+      "openServerStreamRegion": {
+        "kind": "function",
+        "type": "() => ServerStreamRegion | null",
+        "signature": "export declare function openServerStreamRegion(): ServerStreamRegion | null;"
       },
       "Portal": {
         "kind": "function",
@@ -532,6 +644,14 @@
         "kind": "interface",
         "signature": "export interface ServerHole { readonly parentNode: unknown; set(value: string): void; }"
       },
+      "ServerStreamCollector": {
+        "kind": "interface",
+        "signature": "export interface ServerStreamCollector { openRegion(): ServerStreamRegion | null; }"
+      },
+      "ServerStreamRegion": {
+        "kind": "interface",
+        "signature": "export interface ServerStreamRegion { readonly id: number; readonly start: Comment; readonly end: Comment; resolve(): void; }"
+      },
       "ServerTemplate": {
         "kind": "interface",
         "signature": "export interface ServerTemplate { readonly node: unknown; readonly holes: readonly ServerHole[]; readonly attrs: readonly unknown[]; }"
@@ -576,6 +696,11 @@
         "type": "(enabled: boolean) => void",
         "signature": "export declare function setServerMode(enabled: boolean): void;"
       },
+      "setServerStreamCollector": {
+        "kind": "function",
+        "type": "(next: ServerStreamCollector | null) => void",
+        "signature": "export declare function setServerStreamCollector(next: ServerStreamCollector | null): void;"
+      },
       "sharedResourceCache": {
         "kind": "variable",
         "type": "ResourceCache",
@@ -594,6 +719,16 @@
         "kind": "function",
         "type": "(el: Element, accessor: () => unknown) => void",
         "signature": "export declare function spread(el: Element, accessor: () => unknown): void;"
+      },
+      "STREAM_REGION_END": {
+        "kind": "variable",
+        "type": "\"silent-stream-end:\"",
+        "signature": "export declare const STREAM_REGION_END = \"silent-stream-end:\";"
+      },
+      "STREAM_REGION_START": {
+        "kind": "variable",
+        "type": "\"silent-stream:\"",
+        "signature": "export declare const STREAM_REGION_START = \"silent-stream:\";"
       },
       "style": {
         "kind": "function",
@@ -616,6 +751,11 @@
         "kind": "variable",
         "type": "(...values: readonly StyleInput[]) => string",
         "signature": "export declare const styleValue: typeof normalizeStyle;"
+      },
+      "subscribeDevtools": {
+        "kind": "function",
+        "type": "(listener: DevtoolsSubscriber) => () => void",
+        "signature": "export declare function subscribeDevtools(listener: DevtoolsSubscriber): () => void;"
       },
       "Suspense": {
         "kind": "function",
@@ -681,6 +821,11 @@
       "TransitionProps": {
         "kind": "interface",
         "signature": "export interface TransitionProps { readonly show?: unknown | (() => unknown); readonly when?: unknown | (() => unknown); readonly children?: unknown; readonly enterClass?: string; readonly leaveClass?: string; readonly duration?: number; readonly fallback?: unknown; readonly unmount?: boolean; }"
+      },
+      "uninstallDevtools": {
+        "kind": "function",
+        "type": "() => void",
+        "signature": "export declare function uninstallDevtools(): void;"
       },
       "updateProps": {
         "kind": "function",
@@ -767,7 +912,11 @@
       },
       "Container": {
         "kind": "class",
-        "signature": "export declare class Container { readonly name: string; constructor(name?: string, parent?: Container); bind<T = unknown>(token: unknown, factory?: unknown): BindingBuilder; createScope(name?: string): Container; resolve<T = unknown>(token: unknown): Promise<T>; resolveSync<T = unknown>(token: unknown): T; peek<T = unknown>(token: unknown): T | undefined; has(token: unknown): boolean; clearCache(token?: unknown): void; onDispose(fn: () => void): void; dispose(): void; }"
+        "signature": "export declare class Container { readonly name: string; constructor(name?: string, parent?: Container); bind<T = unknown>(token: unknown, factory?: unknown): BindingBuilder; createScope(name?: string): Container; resolve<T = unknown>(token: unknown): Promise<T>; resolveSync<T = unknown>(token: unknown): T; peek<T = unknown>(token: unknown): T | undefined; has(token: unknown): boolean; snapshot(): ContainerSnapshot; clearCache(token?: unknown): void; onDispose(fn: () => void): void; dispose(): void; }"
+      },
+      "ContainerSnapshot": {
+        "kind": "interface",
+        "signature": "export interface ContainerSnapshot { readonly name: string; readonly disposed: boolean; readonly parent: string | null; readonly scopes: number; readonly bindings: number; readonly resolved: number; readonly resolving: number; readonly children: readonly ContainerSnapshot[]; }"
       },
       "createToken": {
         "kind": "function",
@@ -874,6 +1023,11 @@
         "type": "() => Owner | null",
         "signature": "export declare function getOwner(): Owner | null;"
       },
+      "getReactivityStats": {
+        "kind": "function",
+        "type": "() => ReactivityStats",
+        "signature": "export declare function getReactivityStats(): ReactivityStats;"
+      },
       "isRaw": {
         "kind": "function",
         "type": "(value: unknown) => boolean",
@@ -929,6 +1083,10 @@
       "ReactiveStore": {
         "kind": "interface",
         "signature": "export interface ReactiveStore { readonly disposed: boolean; dispose(): void; }"
+      },
+      "ReactivityStats": {
+        "kind": "interface",
+        "signature": "export interface ReactivityStats { readonly signalsCreated: number; readonly effectsCreated: number; readonly renderEffectsCreated: number; readonly memosCreated: number; readonly effectRuns: number; readonly activeEffects: number; readonly activeMemos: number; readonly activeOwners: number; readonly pendingEffects: number; readonly batchDepth: number; }"
       },
       "readField": {
         "kind": "function",
@@ -1143,6 +1301,10 @@
       }
     },
     "@ivlev-dev/silent-server": {
+      "HeadStreamInfo": {
+        "kind": "interface",
+        "signature": "export interface HeadStreamInfo { readonly final: boolean; }"
+      },
       "RenderOptions": {
         "kind": "interface",
         "signature": "export interface RenderOptions { readonly props?: Record<string, unknown> | undefined; readonly container?: Container | undefined; readonly preloader?: Preloader | undefined; readonly onError?: ((error: unknown, component: AnyComponent) => void) | undefined; }"
@@ -1163,7 +1325,7 @@
       },
       "StreamOptions": {
         "kind": "interface",
-        "signature": "export interface StreamOptions extends RenderOptions { readonly chunkSize?: number; readonly onHead?: (head: string) => void; }"
+        "signature": "export interface StreamOptions extends RenderOptions { readonly chunkSize?: number; readonly onHead?: ((head: string, info: HeadStreamInfo) => void) | undefined; readonly onShell?: ((html: string) => void) | undefined; readonly onChunk?: ((chunk: string) => void) | undefined; readonly nonce?: string | undefined; readonly signal?: AbortSignal | undefined; }"
       }
     },
     "@ivlev-dev/silent-swc": {

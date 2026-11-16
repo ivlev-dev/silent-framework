@@ -1,24 +1,16 @@
-import { container as rootContainer } from "@ivlev-dev/silent-di";
-import type { Container } from "@ivlev-dev/silent-di";
+import type { AnyComponent } from "@ivlev-dev/silent-core";
 import {
-  createComponent,
   getReady,
   hasPendingWork,
-  resetIds,
-  setMetadataCollector,
-  setServerBackend,
-  setServerMode,
   whenIdle,
-  type AnyComponent,
   type ComponentResult,
   type Preloader,
-  type RuntimeOptions,
 } from "@ivlev-dev/silent-core";
-import { createRoot, flushSync } from "@ivlev-dev/silent-reactivity";
-import { createDocument, installDomGlobals } from "./dom/document.js";
-import { acquireParts, pushNode, releaseParts, serializeNode } from "./dom/serializer.js";
-import { createServerBackend } from "./string-backend.js";
+import type { Container } from "@ivlev-dev/silent-di";
+import { flushSync } from "@ivlev-dev/silent-reactivity";
+import { serializeNode } from "./dom/serializer.js";
 import type { DomNode } from "./dom/types.js";
+import { beginRenderSession } from "./session.js";
 
 export interface RenderOptions {
   readonly props?: Record<string, unknown> | undefined;
@@ -32,42 +24,14 @@ export interface RenderResult {
   readonly head: string;
 }
 
-const SERVER_DOCUMENT = createDocument();
-const SERVER_BACKEND = createServerBackend();
-
 let queue: Promise<void> = Promise.resolve();
 let pendingTasks = 0;
-let requestSeq = 0;
 
 function finishTask(): void {
   pendingTasks -= 1;
 }
 
-function noop(): void {}
-
-function serializeHead(nodes: readonly Element[]): string {
-  if (nodes.length === 0) {
-    return "";
-  }
-  const parts = acquireParts();
-  try {
-    for (let index = 0; index < nodes.length; index += 1) {
-      const node = nodes[index];
-      if (node !== undefined) {
-        pushNode(node as unknown as DomNode, parts);
-      }
-    }
-    const only = parts[0];
-    if (only === undefined) {
-      return "";
-    }
-    return parts.length === 1 ? only : parts.join("");
-  } finally {
-    releaseParts(parts);
-  }
-}
-
-function enqueue<T>(task: () => Promise<T>): Promise<T> {
+export function enqueueRenderTask<T>(task: () => Promise<T>): Promise<T> {
   pendingTasks += 1;
   if (pendingTasks === 1) {
     const run = task();
@@ -83,111 +47,53 @@ export function renderToString(
   app: AnyComponent,
   options: RenderOptions = {},
 ): Promise<RenderResult> {
-  return enqueue(() => renderOnce(app, options));
+  return enqueueRenderTask(() => renderOnce(app, options));
 }
 
-async function renderOnce(app: AnyComponent, options: RenderOptions): Promise<RenderResult> {
-  const baseContainer = options.container ?? rootContainer;
-  requestSeq += 1;
-  resetIds();
-  const requestScope = baseContainer.createScope(`request:${requestSeq}`);
+export async function settleRender(
+  result: ComponentResult,
+): Promise<void> {
+  const ready = result.ready;
+  const synchronous = ready === getReady(result.node);
+  const idleAfterCreate = !hasPendingWork();
 
-  const document = SERVER_DOCUMENT;
-  const restore = installDomGlobals(document, { keepShape: true });
-  setServerMode(true);
-  setServerBackend(SERVER_BACKEND);
-
-  let disposeRoot: () => void = noop;
-  let failure: unknown = null;
-  let failed = false;
-  const headNodes: Element[] = [];
-
-  setMetadataCollector((node) => {
-    headNodes.push(node);
-  });
-
-  const handleError = (error: unknown, component: AnyComponent): void => {
-    if (options.onError !== undefined) {
-      options.onError(error, component);
-      return;
+  if (!synchronous) {
+    await ready;
+  }
+  flushSync();
+  if (!synchronous || !idleAfterCreate || hasPendingWork()) {
+    while (hasPendingWork()) {
+      await whenIdle();
+      flushSync();
     }
-    if (!failed) {
-      failed = true;
-      failure = error;
-    }
-  };
+    await Promise.resolve();
+    flushSync();
+  }
+}
 
-  const runtimeOptions: RuntimeOptions = {
-    container: requestScope,
-    preloader: options.preloader,
-    onError: handleError,
-  };
-
-  let result: ComponentResult | null = null;
+async function renderOnce(
+  app: AnyComponent,
+  options: RenderOptions,
+): Promise<RenderResult> {
+  const session = beginRenderSession(app, options);
   let rendered: RenderResult | null = null;
   let renderError: unknown = null;
   let renderFailed = false;
 
   try {
-    result = createRoot((dispose) => {
-      disposeRoot = dispose;
-      return createComponent(app, options.props ?? {}, runtimeOptions);
-    });
-
-    if (result === null) {
-      throw new Error("Не удалось создать корневой компонент");
-    }
-
-    const ready = result.ready;
-    const synchronous = ready === getReady(result.node);
-    const idleAfterCreate = !hasPendingWork();
-
-    if (!synchronous) {
-      await ready;
-    }
-    flushSync();
-    if (!synchronous || !idleAfterCreate || hasPendingWork()) {
-      while (hasPendingWork()) {
-        await whenIdle();
-        flushSync();
-      }
-      await Promise.resolve();
-      flushSync();
-    }
-
-    if (failed) {
-      throw failure;
-    }
-
-    const head = serializeHead(headNodes);
-    rendered = { html: serializeNode(result.node as unknown as DomNode), head };
+    await settleRender(session.result);
+    session.throwIfFailed();
+    const head = session.serializeHead();
+    rendered = {
+      html: serializeNode(session.result.node as unknown as DomNode),
+      head,
+    };
   } catch (error) {
     renderFailed = true;
     renderError = error;
   } finally {
-    setMetadataCollector(null);
-    setServerBackend(null);
-    restore();
-    setServerMode(false);
-
     try {
-      result?.dispose();
-    } catch (error) {
-      if (!renderFailed) {
-        renderFailed = true;
-        renderError = error;
-      }
-    }
-    try {
-      disposeRoot();
-    } catch (error) {
-      if (!renderFailed) {
-        renderFailed = true;
-        renderError = error;
-      }
-    }
-    try {
-      requestScope.dispose();
+      session.dispose();
     } catch (error) {
       if (!renderFailed) {
         renderFailed = true;

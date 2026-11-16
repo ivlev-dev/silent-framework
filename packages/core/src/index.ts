@@ -7,6 +7,7 @@ export * from "./component.js";
 export * from "./mount.js";
 export * from "./hydrate.js";
 export { HydrationMismatchError } from "./hydration-state.js";
+export * from "./devtools.js";
 export { setMetadataCollector } from "./metadata.js";
 export {
   setServerBackend,
@@ -14,6 +15,15 @@ export {
   type ServerHole,
   type ServerTemplate,
 } from "./server-backend.js";
+export {
+  STREAM_REGION_END,
+  STREAM_REGION_START,
+  getServerStreamCollector,
+  openServerStreamRegion,
+  setServerStreamCollector,
+  type ServerStreamCollector,
+  type ServerStreamRegion,
+} from "./server-stream.js";
 export * from "./types.js";
 export {
   classNames,

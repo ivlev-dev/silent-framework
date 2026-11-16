@@ -338,6 +338,46 @@ import { getOwner } from "@ivlev-dev/silent-reactivity";
 const owner = getOwner();
 ```
 
+#### `getReactivityStats`
+
+Стабильность: public
+
+```ts
+function getReactivityStats(): ReactivityStats;
+```
+
+Возвращает счётчики графа: сколько сигналов, эффектов и мемо создано, сколько эффектов и мемо активно, сколько раз запускались эффекты, сколько эффектов ждёт flush, глубину текущего батча и число активных владельцев. Счётчики только читаются и не удерживают ссылки на узлы графа.
+
+```ts
+import { createSignal, getReactivityStats } from "@ivlev-dev/silent-reactivity";
+
+createSignal(0);
+console.log(getReactivityStats().signalsCreated);
+```
+
+#### `ReactivityStats`
+
+Стабильность: public
+
+```ts
+interface ReactivityStats {
+  readonly signalsCreated: number;
+  readonly effectsCreated: number;
+  readonly renderEffectsCreated: number;
+  readonly memosCreated: number;
+  readonly effectRuns: number;
+  readonly activeEffects: number;
+  readonly activeMemos: number;
+  readonly activeOwners: number;
+  readonly pendingEffects: number;
+  readonly batchDepth: number;
+}
+```
+
+Снимок счётчиков реактивности, используемый `getReactivityStats()` и DevTools. `signalsCreated`, `effectsCreated`, `renderEffectsCreated` и `memosCreated` — монотонные счётчики за время жизни процесса; `activeEffects`, `activeMemos` и `activeOwners` уменьшаются при dispose соответствующего узла.
+
+Примечание: сигналы не имеют явного dispose, поэтому для них доступен только счётчик созданных экземпляров.
+
 #### `onCleanup`
 
 Стабильность: public

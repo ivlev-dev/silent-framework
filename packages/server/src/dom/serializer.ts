@@ -168,3 +168,17 @@ export function serializeChildren(node: DomNode): string {
     releaseParts(parts);
   }
 }
+
+export function serializeBetween(start: DomNode, end: DomNode): string {
+  const parts = acquireParts();
+  try {
+    let node = start.nextSibling;
+    while (node !== null && node !== end) {
+      pushNode(node, parts);
+      node = node.nextSibling;
+    }
+    return parts.join("");
+  } finally {
+    releaseParts(parts);
+  }
+}

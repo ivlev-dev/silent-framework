@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { createServer } from "vite";
-import { renderToString } from "@ivlev-dev/silent-server";
+import { renderToStream, renderToString } from "@ivlev-dev/silent-server";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const example = join(root, "examples", "counter");
@@ -53,6 +53,29 @@ function pageTemplate(ssrHtml, head) {
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>`;
+}
+
+async function renderStreaming(app, props) {
+  let head = "";
+  let finalHead = false;
+  const stream = renderToStream(app, {
+    props,
+    onHead(value, info) {
+      if (info.final) {
+        finalHead = true;
+        head = value;
+        return;
+      }
+      if (!finalHead) {
+        head = value;
+      }
+    },
+  });
+  let html = "";
+  for await (const chunk of stream) {
+    html += chunk;
+  }
+  return { html, head };
 }
 
 async function main() {
@@ -105,14 +128,37 @@ async function main() {
       "заголовок не должен попадать в body",
     );
 
+    const streamed = await renderStreaming(module.App, {
+      title: "Silent Framework",
+    });
+    assert.ok(
+      streamed.html.includes("data-silent-stream"),
+      "стриминг не отдал патч-чанк для view",
+    );
+    const streamedHtml = streamed.html.replace("<h1", '<h1 data-ssr="1"');
+    assert.match(
+      streamed.head,
+      /<title>Silent Framework: счётчик<\/title>/,
+      `стриминговый head не содержит заголовок: ${streamed.head}`,
+    );
+
     const html = await vite.transformIndexHtml(
       "/",
       pageTemplate(ssrHtml, rendered.head),
+    );
+    const streamPageHtml = await vite.transformIndexHtml(
+      "/",
+      pageTemplate(streamedHtml, streamed.head),
     );
     http = createHttpServer((request, response) => {
       if (request.url === "/favicon.ico") {
         response.statusCode = 204;
         response.end();
+        return;
+      }
+      if (request.url === "/?stream=1") {
+        response.setHeader("content-type", "text/html; charset=utf-8");
+        response.end(streamPageHtml);
         return;
       }
       if (request.url === "/" || request.url?.startsWith("/?")) {
@@ -226,6 +272,52 @@ async function main() {
     assert.ok(state.adoptedMain);
     assert.equal(state.titles, 1, "в head остался дубликат заголовка");
     assert.deepEqual(errors, [], `ошибки в консоли: ${errors.join(" | ")}`);
+
+    const streamPage = await browser.newPage();
+    const streamErrors = [];
+    streamPage.on("console", (message) => {
+      if (message.type() === "error") {
+        streamErrors.push(message.text());
+      }
+    });
+    streamPage.on("pageerror", (error) => {
+      streamErrors.push(error.message);
+    });
+    await streamPage.goto(`${url}?stream=1`, { waitUntil: "load" });
+    await streamPage.waitForFunction(
+      () => globalThis.__silentReady === true,
+      undefined,
+      { timeout: 10_000 },
+    );
+    await streamPage.waitForFunction(
+      () => !document.body.innerHTML.includes("silent-stream"),
+      undefined,
+      { timeout: 10_000 },
+    );
+    const streamState = await streamPage.evaluate(() => ({
+      apps: document.querySelectorAll("main.app").length,
+      markers: document.body.innerHTML.includes("data-silent-"),
+      value: document.querySelector("strong.value")?.textContent ?? null,
+      adopted: document.querySelectorAll("[data-ssr]").length,
+      titles: document.head.querySelectorAll("title").length,
+    }));
+    assert.equal(streamState.value, "0", "стриминг изменил начальное значение счётчика");
+    assert.equal(streamState.apps, 1, "после стриминга осталось несколько копий приложения");
+    assert.equal(streamState.markers, false, "маркеры data-silent-* остались в DOM");
+    assert.equal(streamState.adopted, 1, "стриминговая разметка не была адоптирована");
+    assert.equal(streamState.titles, 1, "в head остался дубликат заголовка");
+    await streamPage.click('button:has-text("+")');
+    await streamPage.waitForFunction(
+      () => Number(document.querySelector("strong.value")?.textContent ?? 0) > 0,
+      undefined,
+      { timeout: 5_000 },
+    );
+    assert.deepEqual(
+      streamErrors,
+      [],
+      `ошибки в консоли стриминга: ${streamErrors.join(" | ")}`,
+    );
+    await streamPage.close();
 
     const source = readFileSync(join(example, "src", "main.tsx"), "utf8");
     assert.ok(source.includes("hydrate"), "main.tsx не использует hydrate");
