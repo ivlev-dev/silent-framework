@@ -1436,6 +1436,76 @@ function resolveEventName(name: string): ParsedEvent {
   return parsed;
 }
 
+const DOM_EVENT_NAMES: ReadonlySet<string> = new Set([
+  "animationcancel",
+  "animationend",
+  "animationiteration",
+  "animationstart",
+  "auxclick",
+  "beforeinput",
+  "blur",
+  "change",
+  "click",
+  "compositionend",
+  "compositionstart",
+  "compositionupdate",
+  "contextmenu",
+  "copy",
+  "cut",
+  "dblclick",
+  "drag",
+  "dragend",
+  "dragenter",
+  "dragleave",
+  "dragover",
+  "dragstart",
+  "drop",
+  "focus",
+  "focusin",
+  "focusout",
+  "gotpointercapture",
+  "input",
+  "invalid",
+  "keydown",
+  "keypress",
+  "keyup",
+  "lostpointercapture",
+  "mousedown",
+  "mouseenter",
+  "mouseleave",
+  "mousemove",
+  "mouseout",
+  "mouseover",
+  "mouseup",
+  "paste",
+  "pointercancel",
+  "pointerdown",
+  "pointerenter",
+  "pointerleave",
+  "pointermove",
+  "pointerout",
+  "pointerover",
+  "pointerup",
+  "reset",
+  "resize",
+  "scroll",
+  "select",
+  "submit",
+  "touchend",
+  "touchmove",
+  "touchstart",
+  "touchcancel",
+  "transitioncancel",
+  "transitionend",
+  "transitionrun",
+  "transitionstart",
+  "wheel",
+]);
+
+const DOM_EVENT_ALIASES: ReadonlyMap<string, string> = new Map([
+  ["doubleclick", "dblclick"],
+]);
+
 function buildEventName(name: string): ParsedEvent {
   if (name.startsWith("on:")) {
     const event = name.slice(3);
@@ -1445,6 +1515,11 @@ function buildEventName(name: string): ParsedEvent {
   const capture = event.endsWith("Capture");
   if (capture) {
     event = event.slice(0, -7);
+  }
+  const lower = event.toLowerCase();
+  const canonical = DOM_EVENT_ALIASES.get(lower) ?? lower;
+  if (DOM_EVENT_NAMES.has(canonical)) {
+    return { event: canonical, capture, key: (capture ? "c:" : "e:") + canonical };
   }
   const first = event.charAt(0);
   event = first === "" ? event : first.toLowerCase() + event.slice(1);

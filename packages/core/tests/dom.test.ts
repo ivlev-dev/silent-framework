@@ -961,4 +961,18 @@ describe("parseEventName", () => {
     first.event = "changed";
     expect(parseEventName("onInput").event).toBe("input");
   });
+
+  it("приводит camelCase к именам DOM-событий", () => {
+    expect(parseEventName("onKeyDown")).toEqual({ event: "keydown", capture: false });
+    expect(parseEventName("onKeyUp")).toEqual({ event: "keyup", capture: false });
+    expect(parseEventName("onPointerDown")).toEqual({ event: "pointerdown", capture: false });
+    expect(parseEventName("onDoubleClick")).toEqual({ event: "dblclick", capture: false });
+    expect(parseEventName("onDblClick")).toEqual({ event: "dblclick", capture: false });
+    expect(parseEventName("onTouchStart")).toEqual({ event: "touchstart", capture: false });
+    expect(parseEventName("onKeyDownCapture")).toEqual({ event: "keydown", capture: true });
+  });
+
+  it("оставляет нестандартные имена без изменений", () => {
+    expect(parseEventName("on:CustomEvent")).toEqual({ event: "CustomEvent", capture: false });
+  });
 });
