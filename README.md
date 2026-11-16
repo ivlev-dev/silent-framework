@@ -337,7 +337,7 @@ SSR Silent медленнее: собственный мини-DOM разбир�
 - [Dependency Injection](./docs/guides/di.md)
 - [Миграция с SolidJS](./docs/guides/migration-from-solid.md)
 - [Справочник API](./docs/api/index.md)
-- Примеры: [`examples/counter`](./examples/counter), [`examples/ssr-counter`](./examples/ssr-counter)
+- Примеры: [`examples/counter`](./examples/counter) (счётчик, ViewModel, DI, списки и HMR), [`examples/todo`](./examples/todo) (задачи: VM + DI-хранилище, keyed-список, фильтры, localStorage) и [`examples/ssr-counter`](./examples/ssr-counter) (SSR и гидрация)
 
 ## Разработка
 

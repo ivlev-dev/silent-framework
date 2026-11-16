@@ -11,6 +11,17 @@ import { renderToString } from "@ivlev-dev/silent-server";
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const example = join(root, "examples", "counter");
 
+function chromiumEnv() {
+  const env = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined) {
+      env[key] = value;
+    }
+  }
+  delete env["LD_PRELOAD"];
+  return env;
+}
+
 function findChrome() {
   const base = join(homedir(), ".cache", "ms-playwright");
   for (const entry of readdirSync(base)) {
@@ -121,6 +132,7 @@ async function main() {
       executablePath: findChrome(),
       headless: true,
       args: ["--no-sandbox"],
+      env: chromiumEnv(),
     });
 
     const page = await browser.newPage();

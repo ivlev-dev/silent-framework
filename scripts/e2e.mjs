@@ -7,11 +7,8 @@ import { chromium } from "playwright-core";
 import { createServer } from "vite";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const example = join(root, "examples", "counter");
-const viewFile = join(example, "src", "counter.tsx");
-const vmFile = join(example, "src", "counter.vm.ts");
-const viewSource = readFileSync(viewFile, "utf8");
-const vmSource = readFileSync(vmFile, "utf8");
+const counterDir = join(root, "examples", "counter");
+const todoDir = join(root, "examples", "todo");
 
 function findChrome() {
   const base = join(homedir(), ".cache", "ms-playwright");
@@ -31,11 +28,22 @@ function findChrome() {
   throw new Error("Chromium не найден в ~/.cache/ms-playwright");
 }
 
-async function main() {
-  process.chdir(example);
+function chromiumEnv() {
+  const env = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined) {
+      env[key] = value;
+    }
+  }
+  delete env["LD_PRELOAD"];
+  return env;
+}
+
+async function startServer(directory) {
+  process.chdir(directory);
   const server = await createServer({
-    configFile: join(example, "vite.config.ts"),
-    root: example,
+    configFile: join(directory, "vite.config.ts"),
+    root: directory,
     logLevel: "error",
     server: { host: "127.0.0.1", port: 0 },
   });
@@ -44,14 +52,15 @@ async function main() {
   if (address === null || typeof address === "string") {
     throw new Error("Не удалось определить порт Vite");
   }
-  const url = `http://127.0.0.1:${address.port}/`;
+  return {
+    url: `http://127.0.0.1:${String(address.port)}/`,
+    close: async () => {
+      await server.close();
+    },
+  };
+}
 
-  const browser = await chromium.launch({
-    executablePath: findChrome(),
-    headless: true,
-    args: ["--no-sandbox"],
-  });
-  const page = await browser.newPage();
+function collectErrors(page) {
   const errors = [];
   page.on("console", (message) => {
     if (message.type() === "error") {
@@ -61,9 +70,20 @@ async function main() {
   page.on("pageerror", (error) => {
     errors.push(error.message);
   });
+  return errors;
+}
+
+async function runCounter(browser) {
+  const viewFile = join(counterDir, "src", "counter.tsx");
+  const vmFile = join(counterDir, "src", "counter.vm.ts");
+  const viewSource = readFileSync(viewFile, "utf8");
+  const vmSource = readFileSync(vmFile, "utf8");
+  const server = await startServer(counterDir);
+  const page = await browser.newPage();
+  const errors = collectErrors(page);
 
   try {
-    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await page.goto(server.url, { waitUntil: "domcontentloaded" });
     await page.locator(".value").waitFor();
     assert.equal((await page.locator(".value").textContent())?.trim(), "0");
     assert.equal(
@@ -98,13 +118,101 @@ async function main() {
     assert.equal((await page.locator(".items li").first().textContent())?.trim(), "item-1");
 
     assert.deepEqual(errors, []);
-    console.log("e2e: ok");
   } finally {
     writeFileSync(viewFile, viewSource);
     writeFileSync(vmFile, vmSource);
     await page.waitForTimeout(300);
-    await browser.close();
+    await page.close();
     await server.close();
+  }
+}
+
+async function addTodo(page, text) {
+  await page.locator(".draft").fill(text);
+  await page.getByRole("button", { name: "Добавить" }).click();
+}
+
+async function runTodo(browser) {
+  const server = await startServer(todoDir);
+  const page = await browser.newPage();
+  const errors = collectErrors(page);
+
+  try {
+    await page.goto(server.url, { waitUntil: "domcontentloaded" });
+    await page.locator(".todo").waitFor();
+    assert.equal(await page.title(), "Silent Framework: задачи");
+    assert.equal(await page.locator(".items li").count(), 0);
+
+    await page.locator(".draft").fill("первая");
+    await page.locator(".draft").press("Enter");
+    await page.locator(".items li").first().waitFor();
+    await addTodo(page, "вторая");
+    assert.equal(await page.locator(".items li").count(), 2);
+    assert.equal((await page.locator(".remaining").textContent())?.trim(), "2");
+    assert.equal((await page.locator(".completed").textContent())?.trim(), "0");
+
+    await page.locator(".items li").first().locator("input").check();
+    assert.equal((await page.locator(".completed").textContent())?.trim(), "1");
+    assert.equal((await page.locator(".remaining").textContent())?.trim(), "1");
+    assert.equal(
+      (await page.locator(".items li").first().getAttribute("class"))?.trim(),
+      "done",
+    );
+
+    await page.locator(".filters .chip").filter({ hasText: /^Активные$/ }).click();
+    assert.equal(await page.locator(".items li").count(), 1);
+    assert.equal(
+      (await page.locator(".items li .title").first().textContent())?.trim(),
+      "вторая",
+    );
+
+    await page.locator(".filters .chip").filter({ hasText: /^Выполненные$/ }).click();
+    assert.equal(await page.locator(".items li").count(), 1);
+    assert.equal(
+      (await page.locator(".items li .title").first().textContent())?.trim(),
+      "первая",
+    );
+
+    await page.locator(".filters .chip").filter({ hasText: /^Все$/ }).click();
+    assert.equal(await page.locator(".items li").count(), 2);
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.locator(".items li").first().waitFor();
+    assert.equal(await page.locator(".items li").count(), 2);
+    assert.equal((await page.locator(".completed").textContent())?.trim(), "1");
+
+    await page.locator(".items li").first().locator(".remove").click();
+    assert.equal(await page.locator(".items li").count(), 1);
+    assert.equal((await page.locator(".completed").textContent())?.trim(), "0");
+
+    await page.locator(".filters .chip").filter({ hasText: /^Выполненные$/ }).click();
+    assert.equal(await page.locator(".items li").count(), 0);
+    await page.locator(".filters .chip").filter({ hasText: /^Все$/ }).click();
+    await page.locator(".items li").first().locator("input").check();
+    await page.getByRole("button", { name: "Очистить выполненные" }).click();
+    assert.equal(await page.locator(".items li").count(), 0);
+    assert.equal((await page.locator(".remaining").textContent())?.trim(), "0");
+
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+    await server.close();
+  }
+}
+
+async function main() {
+  const browser = await chromium.launch({
+    executablePath: findChrome(),
+    headless: true,
+    args: ["--no-sandbox"],
+    env: chromiumEnv(),
+  });
+  try {
+    await runCounter(browser);
+    await runTodo(browser);
+    console.log("e2e: ok");
+  } finally {
+    await browser.close();
   }
 }
 
