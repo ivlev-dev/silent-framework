@@ -1,10 +1,10 @@
 {
   "build": {
-    "startJsKb": 38.79,
-    "startGzipKb": 13.06,
+    "startJsKb": 34.95,
+    "startGzipKb": 12.07,
     "warmMs": 43.36,
     "coldMs": 66.93,
-    "vmStartGzipKb": 14.64,
+    "vmStartGzipKb": 13.68,
     "solidColdMs": 124.32,
     "solidWarmMs": 31.75,
     "coldRatio": 0.538368725868726,

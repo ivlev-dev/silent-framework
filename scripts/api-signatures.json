@@ -1,0 +1,1202 @@
+{
+  "version": 1,
+  "packages": {
+    "@ivlev-dev/silent-core": {
+      "adoptContextValues": {
+        "kind": "function",
+        "type": "(owner: Owner | null, values: Map<object, unknown> | null) => void",
+        "signature": "export declare function adoptContextValues(owner: Owner | null, values: Map<object, unknown> | null): void;"
+      },
+      "AnyComponent": {
+        "kind": "type",
+        "signature": "export type AnyComponent = (...args: never[]) => unknown;"
+      },
+      "applyProps": {
+        "kind": "function",
+        "type": "(el: Element, props: Record<string, unknown> | undefined) => void",
+        "signature": "export declare function applyProps(el: Element, props: Record<string, unknown> | undefined): void;"
+      },
+      "attachDisposer": {
+        "kind": "function",
+        "type": "(node: Node, dispose: () => void) => void",
+        "signature": "export declare function attachDisposer(node: Node, dispose: () => void): void;"
+      },
+      "attr": {
+        "kind": "function",
+        "type": "(el: Element, name: string, accessor: () => unknown) => void",
+        "signature": "export declare function attr(el: Element, name: string, accessor: () => unknown): void;"
+      },
+      "BindAccessor": {
+        "kind": "type",
+        "signature": "export type BindAccessor<T = unknown> = () => T;"
+      },
+      "bindChecked": {
+        "kind": "function",
+        "type": "(el: Element, accessor: BindAccessor<unknown>, setter?: BindSetter<unknown>) => void",
+        "signature": "export declare function bindChecked(el: Element, accessor: BindAccessor<unknown>, setter?: BindSetter<unknown>): void;"
+      },
+      "BindSetter": {
+        "kind": "type",
+        "signature": "export type BindSetter<T = unknown> = (value: T) => void;"
+      },
+      "bindSource": {
+        "kind": "function",
+        "type": "(value: unknown) => readonly [BindAccessor<unknown>, BindSetter<unknown> | undefined]",
+        "signature": "export declare function bindSource(value: unknown): readonly [BindAccessor<unknown>, BindSetter<unknown> | undefined];"
+      },
+      "bindValue": {
+        "kind": "function",
+        "type": "(el: Element, accessor: BindAccessor<unknown>, setter?: BindSetter<unknown>) => void",
+        "signature": "export declare function bindValue(el: Element, accessor: BindAccessor<unknown>, setter?: BindSetter<unknown>): void;"
+      },
+      "BoundContext": {
+        "kind": "interface",
+        "signature": "export interface BoundContext<T> { readonly context: Context<T>; get(): T; has(): boolean; }"
+      },
+      "captureContextValues": {
+        "kind": "function",
+        "type": "() => Map<object, unknown> | null",
+        "signature": "export declare function captureContextValues(): Map<object, unknown> | null;"
+      },
+      "Child": {
+        "kind": "type",
+        "signature": "export type Child = Node | string | number | bigint | boolean | null | undefined | Iterable<Child>;"
+      },
+      "Children": {
+        "kind": "type",
+        "signature": "export type Children = Child | Child[] | (() => Children);"
+      },
+      "ClassDictionary": {
+        "kind": "type",
+        "signature": "export type ClassDictionary = { readonly [name: string]: ClassNameValue; };"
+      },
+      "classNames": {
+        "kind": "function",
+        "type": "(...values: readonly ClassNameValue[]) => string",
+        "signature": "export declare function classNames(...values: readonly ClassNameValue[]): string;"
+      },
+      "ClassNameValue": {
+        "kind": "type",
+        "signature": "export type ClassNameValue = string | number | bigint | boolean | null | undefined | readonly ClassNameValue[] | ClassDictionary | (() => ClassNameValue);"
+      },
+      "clearResourceCache": {
+        "kind": "function",
+        "type": "(cache?: ResourceCache) => void",
+        "signature": "export declare function clearResourceCache(cache?: ResourceCache): void;"
+      },
+      "collectNodes": {
+        "kind": "function",
+        "type": "(value: Children | Iterable<Child>) => Node[]",
+        "signature": "export declare function collectNodes(value: Children | Iterable<Child>): Node[];"
+      },
+      "component": {
+        "kind": "function",
+        "type": "(componentFn: AnyComponent, props: Record<string, unknown>) => Node",
+        "signature": "export declare function component(componentFn: AnyComponent, props: Record<string, unknown>): Node;"
+      },
+      "Component": {
+        "kind": "type",
+        "signature": "export type Component<P = Record<string, never>> = (props: P) => JSX.Element;"
+      },
+      "COMPONENT_DISPOSE": {
+        "kind": "variable",
+        "type": "typeof COMPONENT_DISPOSE",
+        "signature": "export declare const COMPONENT_DISPOSE: unique symbol;"
+      },
+      "COMPONENT_READY": {
+        "kind": "variable",
+        "type": "typeof COMPONENT_READY",
+        "signature": "export declare const COMPONENT_READY: unique symbol;"
+      },
+      "ComponentContext": {
+        "kind": "class",
+        "signature": "export declare class ComponentContext<P = unknown> implements ComponentContextValue<P> { readonly props: P; readonly container: Container; view: Node | null; constructor(props: P, container: Container, signal: SignalSource); get signal(): AbortSignal; }"
+      },
+      "ComponentContextValue": {
+        "kind": "interface",
+        "signature": "export interface ComponentContextValue<P = unknown> { readonly props: P; readonly container: Container; readonly signal: AbortSignal; view: Node | null; }"
+      },
+      "ComponentResult": {
+        "kind": "interface",
+        "signature": "export interface ComponentResult { readonly node: Node; readonly ready: Promise<void>; readonly settled: Promise<void>; readonly update: (props: Record<string, unknown>) => void; readonly dispose: () => void; }"
+      },
+      "computed": {
+        "kind": "function",
+        "type": "<Instance extends object, Value>(target: (this: Instance) => Value, context: ClassGetterDecoratorContext<Instance, Value>) => (this: Instance) => Value",
+        "signature": "export declare function computed<Instance extends object, Value>(target: (this: Instance) => Value, context: ClassGetterDecoratorContext<Instance, Value>): (this: Instance) => Value;"
+      },
+      "Context": {
+        "kind": "class",
+        "signature": "export declare class Context<T> { constructor(options?: ContextOptions<T>); get name(): string; has(): boolean; get(): T; tryGet(): T | undefined; provide<R>(value: T, fn: () => R): R; bind(): BoundContext<T>; }"
+      },
+      "ContextMissingError": {
+        "kind": "class",
+        "signature": "export declare class ContextMissingError extends Error { constructor(name: string); }"
+      },
+      "ContextOptions": {
+        "kind": "interface",
+        "signature": "export interface ContextOptions<T> { readonly defaultValue?: T; readonly name?: string; }"
+      },
+      "createComponent": {
+        "kind": "function",
+        "type": "(component: AnyComponent, props?: Record<string, unknown>, options?: RuntimeOptions) => ComponentResult",
+        "signature": "export declare function createComponent(component: AnyComponent, props?: Record<string, unknown>, options?: RuntimeOptions): ComponentResult;"
+      },
+      "createContext": {
+        "kind": "function",
+        "type": "<T>(options?: ContextOptions<T>) => Context<T>",
+        "signature": "export declare function createContext<T>(options?: ContextOptions<T>): Context<T>;"
+      },
+      "createElement": {
+        "kind": "function",
+        "type": "(tag: string) => Element",
+        "signature": "export declare function createElement(tag: string): Element;"
+      },
+      "createId": {
+        "kind": "function",
+        "type": "(prefix?: string) => string",
+        "signature": "export declare function createId(prefix?: string): string;"
+      },
+      "createIdGenerator": {
+        "kind": "function",
+        "type": "(prefix?: string) => IdSequence",
+        "signature": "export declare function createIdGenerator(prefix?: string): IdSequence;"
+      },
+      "createMountPoint": {
+        "kind": "function",
+        "type": "(parent: Node, marker: Node | null, initial?: readonly Node[]) => MountPoint",
+        "signature": "export declare function createMountPoint(parent: Node, marker: Node | null, initial?: readonly Node[]): MountPoint;"
+      },
+      "createResource": {
+        "kind": "function",
+        "type": "<T, K = unknown>(fetcher: (context: ResourceFetchContext) => T | Promise<T>, options?: ResourceOptions<T, K>) => Resource<T>",
+        "signature": "export declare function createResource<T, K = unknown>(fetcher: (context: ResourceFetchContext) => T | Promise<T>, options?: ResourceOptions<T, K>): Resource<T>;"
+      },
+      "createResourceCache": {
+        "kind": "function",
+        "type": "() => ResourceCache",
+        "signature": "export declare function createResourceCache(): ResourceCache;"
+      },
+      "currentIdCount": {
+        "kind": "function",
+        "type": "() => number",
+        "signature": "export declare function currentIdCount(): number;"
+      },
+      "disposeNode": {
+        "kind": "function",
+        "type": "(node: Node) => void",
+        "signature": "export declare function disposeNode(node: Node): void;"
+      },
+      "dynamic": {
+        "kind": "function",
+        "type": "(tag: () => string, props: Record<string, unknown>) => Node",
+        "signature": "export declare function dynamic(tag: () => string, props: Record<string, unknown>): Node;"
+      },
+      "effect": {
+        "kind": "function",
+        "type": "(fn: () => void) => void",
+        "signature": "export declare function effect(fn: () => void): void;"
+      },
+      "ErrorBoundary": {
+        "kind": "function",
+        "type": "(props: ErrorBoundaryProps) => Node",
+        "signature": "export declare function ErrorBoundary(props: ErrorBoundaryProps): Node;"
+      },
+      "ErrorBoundaryProps": {
+        "kind": "interface",
+        "signature": "export interface ErrorBoundaryProps { readonly fallback: (error: unknown, reset: () => void) => unknown; readonly children: unknown | (() => unknown); }"
+      },
+      "For": {
+        "kind": "function",
+        "type": "<T>(props: ForProps<T>) => Node",
+        "signature": "export declare function For<T>(props: ForProps<T>): Node;"
+      },
+      "ForProps": {
+        "kind": "interface",
+        "signature": "export interface ForProps<T> { each: ListSource<T> | (() => ListSource<T>); children: (item: T, index: () => number) => Node; keyOf?: (item: T, index: number) => unknown; fallback?: unknown; }"
+      },
+      "fragment": {
+        "kind": "function",
+        "type": "(accessor: () => unknown) => Node",
+        "signature": "export declare function fragment(accessor: () => unknown): Node;"
+      },
+      "getComponentDispose": {
+        "kind": "function",
+        "type": "(node: Node) => (() => void) | null",
+        "signature": "export declare function getComponentDispose(node: Node): (() => void) | null;"
+      },
+      "getComponentName": {
+        "kind": "function",
+        "type": "(component: AnyComponent) => string",
+        "signature": "export declare function getComponentName(component: AnyComponent): string;"
+      },
+      "getDefaultPreloader": {
+        "kind": "function",
+        "type": "() => Preloader | null",
+        "signature": "export declare function getDefaultPreloader(): Preloader | null;"
+      },
+      "getErrorHandler": {
+        "kind": "function",
+        "type": "() => (error: unknown, component: AnyComponent) => void",
+        "signature": "export declare function getErrorHandler(): (error: unknown, component: AnyComponent) => void;"
+      },
+      "getOwnReady": {
+        "kind": "function",
+        "type": "(node: Node) => Promise<void>",
+        "signature": "export declare function getOwnReady(node: Node): Promise<void>;"
+      },
+      "getPropsUpdater": {
+        "kind": "function",
+        "type": "(node: Node) => PropsUpdater | null",
+        "signature": "export declare function getPropsUpdater(node: Node): PropsUpdater | null;"
+      },
+      "getReady": {
+        "kind": "function",
+        "type": "(node: Node) => Promise<void>",
+        "signature": "export declare function getReady(node: Node): Promise<void>;"
+      },
+      "getRuntimeOptions": {
+        "kind": "function",
+        "type": "() => RuntimeOptions",
+        "signature": "export declare function getRuntimeOptions(): RuntimeOptions;"
+      },
+      "getViewMeta": {
+        "kind": "function",
+        "type": "(component: AnyComponent) => ViewMeta | null",
+        "signature": "export declare function getViewMeta(component: AnyComponent): ViewMeta | null;"
+      },
+      "hasPendingWork": {
+        "kind": "function",
+        "type": "() => boolean",
+        "signature": "export declare function hasPendingWork(): boolean;"
+      },
+      "Head": {
+        "kind": "function",
+        "type": "(props: HeadProps) => Node",
+        "signature": "export declare function Head(props: HeadProps): Node;"
+      },
+      "HeadLinkProps": {
+        "kind": "interface",
+        "signature": "export interface HeadLinkProps { readonly rel: string; readonly href?: HeadValue<string>; readonly [attribute: string]: HeadValue<string> | undefined; }"
+      },
+      "HeadMetaProps": {
+        "kind": "interface",
+        "signature": "export interface HeadMetaProps { readonly name?: HeadValue<string>; readonly property?: HeadValue<string>; readonly httpEquiv?: HeadValue<string>; readonly charset?: HeadValue<string>; readonly content?: HeadValue<string>; readonly [attribute: string]: HeadValue<string> | undefined; }"
+      },
+      "HeadProps": {
+        "kind": "interface",
+        "signature": "export interface HeadProps { readonly title?: HeadValue<string>; readonly meta?: HeadMetaProps | readonly HeadMetaProps[] | undefined; readonly link?: HeadLinkProps | readonly HeadLinkProps[] | undefined; readonly style?: HeadStyleProps | readonly HeadStyleProps[] | undefined; readonly children?: Children; }"
+      },
+      "HeadStyleProps": {
+        "kind": "interface",
+        "signature": "export interface HeadStyleProps { readonly id?: HeadValue<string>; readonly css: HeadValue<string>; readonly [attribute: string]: HeadValue<string> | undefined; }"
+      },
+      "HeadValue": {
+        "kind": "type",
+        "signature": "export type HeadValue<T> = T | (() => T | null | undefined) | null | undefined;"
+      },
+      "hydrate": {
+        "kind": "function",
+        "type": "(target: Element | string, app: AnyComponent, options?: MountOptions) => Promise<MountHandle>",
+        "signature": "export declare function hydrate(target: Element | string, app: AnyComponent, options?: MountOptions): Promise<MountHandle>;"
+      },
+      "HydrationMismatchError": {
+        "kind": "class",
+        "signature": "export declare class HydrationMismatchError extends Error { constructor(message: string); }"
+      },
+      "IdGenerator": {
+        "kind": "interface",
+        "signature": "export interface IdGenerator { readonly count: number; next(prefix?: string): string; reset(): void; }"
+      },
+      "IdSequence": {
+        "kind": "class",
+        "signature": "export declare class IdSequence implements IdGenerator { constructor(prefix?: string); get count(): number; next(prefix?: string): string; reset(): void; }"
+      },
+      "Index": {
+        "kind": "function",
+        "type": "<T>(props: IndexProps<T>) => Node",
+        "signature": "export declare function Index<T>(props: IndexProps<T>): Node;"
+      },
+      "IndexProps": {
+        "kind": "interface",
+        "signature": "export interface IndexProps<T> { each: ListSource<T> | (() => ListSource<T>); children: (item: Accessor<T>, index: Accessor<number>) => Node; fallback?: unknown; }"
+      },
+      "innerHtml": {
+        "kind": "function",
+        "type": "(el: Element, accessor: () => unknown) => void",
+        "signature": "export declare function innerHtml(el: Element, accessor: () => unknown): void;"
+      },
+      "insert": {
+        "kind": "function",
+        "type": "(parent: Node, accessor: () => unknown, marker?: Node | ServerHole) => void",
+        "signature": "export declare function insert(parent: Node, accessor: () => unknown, marker?: Node | ServerHole): void;"
+      },
+      "isServerMode": {
+        "kind": "function",
+        "type": "() => boolean",
+        "signature": "export declare function isServerMode(): boolean;"
+      },
+      "isViewComponent": {
+        "kind": "function",
+        "type": "(componentFn: AnyComponent) => boolean",
+        "signature": "export declare function isViewComponent(componentFn: AnyComponent): boolean;"
+      },
+      "JSX": {
+        "kind": "namespace",
+        "signature": "export declare namespace JSX { type Element = Node; type ElementType = keyof IntrinsicElements | ((...args: never[]) => Element); interface ElementChildrenAttribute { children: {}; } interface IntrinsicAttributes { key?: string | number; } interface IntrinsicElements { a: AProps; button: ButtonProps; div: CommonProps; form: FormProps; h1: CommonProps; h2: CommonProps; h3: CommonProps; h4: CommonProps; h5: CommonProps; h6: CommonProps; img: ImgProps; input: InputProps; label: CommonProps; li: CommonProps; main: CommonProps; nav: CommonProps; ol: CommonProps; option: CommonProps; p: CommonProps; section: CommonProps; select: SelectProps; span: CommonProps; table: CommonProps; textarea: TextareaProps; ul: CommonProps; svg: CommonProps; path: CommonProps; circle: CommonProps; rect: CommonProps; line: CommonProps; g: CommonProps; defs: CommonProps; linearGradient: CommonProps; stop: CommonProps; use: CommonProps; text: CommonProps; tspan: CommonProps; ellipse: CommonProps; polyline: CommonProps; polygon: CommonProps; textPath: CommonProps; pattern: CommonProps; mask: CommonProps; clipPath: CommonProps; filter: CommonProps; feGaussianBlur: CommonProps; feOffset: CommonProps; feBlend: CommonProps; feColorMatrix: CommonProps; feComposite: CommonProps; feFlood: CommonProps; feImage: CommonProps; feMerge: CommonProps; feMergeNode: CommonProps; feMorphology: CommonProps; feTurbulence: CommonProps; symbol: CommonProps; marker: CommonProps; radialGradient: CommonProps; view: CommonProps; foreignObject: CommonProps; desc: CommonProps; metadata: CommonProps; strong: CommonProps; em: CommonProps; small: CommonProps; code: CommonProps; pre: CommonProps; header: CommonProps; footer: CommonProps; article: CommonProps; aside: CommonProps; figure: CommonProps; figcaption: CommonProps; dl: CommonProps; dt: CommonProps; dd: CommonProps; hr: CommonProps; br: CommonProps; canvas: CommonProps; video: CommonProps; audio: CommonProps; source: CommonProps; iframe: CommonProps; [tag: string]: CommonProps; } }"
+      },
+      "Keyed": {
+        "kind": "function",
+        "type": "<T>(props: KeyedProps<T>) => Node",
+        "signature": "export declare function Keyed<T>(props: KeyedProps<T>): Node;"
+      },
+      "KeyedProps": {
+        "kind": "interface",
+        "signature": "export interface KeyedProps<T> { each: ListSource<T> | (() => ListSource<T>); keyOf: KeySelector<T>; children: KeyedRender<T>; fallback?: unknown; }"
+      },
+      "KeyedRender": {
+        "kind": "type",
+        "signature": "export type KeyedRender<T> = (item: T, index: () => number) => Node;"
+      },
+      "KeySelector": {
+        "kind": "type",
+        "signature": "export type KeySelector<T> = (item: T, index: number) => unknown;"
+      },
+      "lazy": {
+        "kind": "function",
+        "type": "<P extends Record<string, unknown>>(loader: () => Promise<AnyComponent | { default: AnyComponent; }>, options?: LazyOptions) => (props: P) => Node",
+        "signature": "export declare function lazy<P extends Record<string, unknown>>(loader: () => Promise<AnyComponent | { default: AnyComponent; }>, options?: LazyOptions): (props: P) => Node;"
+      },
+      "LazyOptions": {
+        "kind": "interface",
+        "signature": "export interface LazyOptions { readonly preloader?: Preloader | null | undefined; readonly onError?: ((error: unknown) => void) | undefined; }"
+      },
+      "mapKeyed": {
+        "kind": "function",
+        "type": "<T>(each: ListSource<T> | (() => ListSource<T>), keyOf: KeySelector<T>, children: KeyedRender<T>) => Node",
+        "signature": "export declare function mapKeyed<T>(each: ListSource<T> | (() => ListSource<T>), keyOf: KeySelector<T>, children: KeyedRender<T>): Node;"
+      },
+      "Match": {
+        "kind": "function",
+        "type": "(props: MatchProps) => Node",
+        "signature": "export declare function Match(props: MatchProps): Node;"
+      },
+      "MatchProps": {
+        "kind": "interface",
+        "signature": "export interface MatchProps { readonly when: unknown | (() => unknown); readonly children?: unknown; }"
+      },
+      "mount": {
+        "kind": "function",
+        "type": "(target: Element | string, app: AnyComponent, options?: MountOptions) => Promise<MountHandle>",
+        "signature": "export declare function mount(target: Element | string, app: AnyComponent, options?: MountOptions): Promise<MountHandle>;"
+      },
+      "MountHandle": {
+        "kind": "interface",
+        "signature": "export interface MountHandle { readonly ready: Promise<void>; readonly settled: Promise<void>; updateProps(props: Record<string, unknown>): void; dispose(): void; }"
+      },
+      "MountOptions": {
+        "kind": "interface",
+        "signature": "export interface MountOptions { readonly container?: Container | undefined; readonly preloader?: Preloader | undefined; readonly onError?: ((error: unknown, component: AnyComponent) => void) | undefined; readonly props?: Record<string, unknown> | undefined; readonly clear?: boolean | undefined; readonly onMismatch?: ((error: HydrationMismatchError) => void) | undefined; }"
+      },
+      "MountPoint": {
+        "kind": "interface",
+        "signature": "export interface MountPoint { render(value: unknown): void; clear(): void; nodes(): readonly Node[]; }"
+      },
+      "NODE_DISPOSER": {
+        "kind": "variable",
+        "type": "typeof NODE_DISPOSER",
+        "signature": "export declare const NODE_DISPOSER: unique symbol;"
+      },
+      "normalizeClass": {
+        "kind": "function",
+        "type": "(value: ClassNameValue) => string",
+        "signature": "export declare function normalizeClass(value: ClassNameValue): string;"
+      },
+      "normalizeStyle": {
+        "kind": "function",
+        "type": "(...values: readonly StyleInput[]) => string",
+        "signature": "export declare function normalizeStyle(...values: readonly StyleInput[]): string;"
+      },
+      "on": {
+        "kind": "function",
+        "type": "(el: Element, name: string, accessor: () => unknown) => void",
+        "signature": "export declare function on(el: Element, name: string, accessor: () => unknown): void;"
+      },
+      "Portal": {
+        "kind": "function",
+        "type": "(props: PortalProps) => Node",
+        "signature": "export declare function Portal(props: PortalProps): Node;"
+      },
+      "PORTAL_MARKER": {
+        "kind": "variable",
+        "type": "\"silent-portal\"",
+        "signature": "export declare const PORTAL_MARKER = \"silent-portal\";"
+      },
+      "PortalProps": {
+        "kind": "interface",
+        "signature": "export interface PortalProps { readonly target: PortalTarget; readonly children?: Children; }"
+      },
+      "PortalTarget": {
+        "kind": "type",
+        "signature": "export type PortalTarget = Element | string | (() => Element | null);"
+      },
+      "Preloader": {
+        "kind": "type",
+        "signature": "export type Preloader = (...args: never[]) => unknown;"
+      },
+      "PRELOADER": {
+        "kind": "variable",
+        "type": "typeof PRELOADER",
+        "signature": "export declare const PRELOADER: unique symbol;"
+      },
+      "Presence": {
+        "kind": "variable",
+        "type": "(props: TransitionProps) => Node",
+        "signature": "export declare const Presence: typeof Transition;"
+      },
+      "prop": {
+        "kind": "function",
+        "type": "(el: Element, name: string, accessor: () => unknown) => void",
+        "signature": "export declare function prop(el: Element, name: string, accessor: () => unknown): void;"
+      },
+      "PropsUpdater": {
+        "kind": "type",
+        "signature": "export type PropsUpdater = (props: Record<string, unknown>) => void;"
+      },
+      "Provider": {
+        "kind": "function",
+        "type": "<T>(props: ProviderProps<T>) => Node",
+        "signature": "export declare function Provider<T>(props: ProviderProps<T>): Node;"
+      },
+      "ProviderChildren": {
+        "kind": "type",
+        "signature": "export type ProviderChildren = unknown | (() => unknown);"
+      },
+      "ProviderProps": {
+        "kind": "interface",
+        "signature": "export interface ProviderProps<T> { readonly context: Context<T>; readonly value: T; readonly children?: ProviderChildren; }"
+      },
+      "reactive": {
+        "kind": "function",
+        "type": "<Instance extends object, Value>(target: ClassAccessorDecoratorTarget<Instance, Value>, context: ClassAccessorDecoratorContext<Instance, Value>) => ClassAccessorDecoratorResult<Instance, Value>",
+        "signature": "export declare function reactive<Instance extends object, Value>(target: ClassAccessorDecoratorTarget<Instance, Value>, context: ClassAccessorDecoratorContext<Instance, Value>): ClassAccessorDecoratorResult<Instance, Value>;"
+      },
+      "ref": {
+        "kind": "function",
+        "type": "(el: Element, accessor: () => unknown) => void",
+        "signature": "export declare function ref(el: Element, accessor: () => unknown): void;"
+      },
+      "registerPropsUpdater": {
+        "kind": "function",
+        "type": "(node: Node | null | undefined, updater: PropsUpdater) => void",
+        "signature": "export declare function registerPropsUpdater(node: Node | null | undefined, updater: PropsUpdater): void;"
+      },
+      "resetIds": {
+        "kind": "function",
+        "type": "() => void",
+        "signature": "export declare function resetIds(): void;"
+      },
+      "Resource": {
+        "kind": "interface",
+        "signature": "export interface Resource<T> { readonly data: Accessor<T | undefined>; readonly error: Accessor<unknown>; readonly pending: Accessor<boolean>; readonly status: Accessor<ResourceStatus>; readonly ready: Promise<void>; readonly key: Accessor<unknown>; read(): T | undefined; refetch(): Promise<T | undefined>; set(value: T): void; mutate(updater: (previous: T | undefined) => T): void; abort(reason?: unknown): void; dispose(): void; }"
+      },
+      "ResourceCache": {
+        "kind": "class",
+        "signature": "export declare class ResourceCache { get size(): number; has(key: unknown): boolean; read<T>(key: unknown): { readonly data: T; readonly at: number; } | undefined; get<T>(key: unknown): T | undefined; set<T>(key: unknown, data: T): void; delete(key: unknown): boolean; clear(): void; inflightFor<T>(key: unknown): Promise<T | undefined> | undefined; trackInflight<T>(key: unknown, promise: Promise<T>): Promise<T>; }"
+      },
+      "ResourceFetchContext": {
+        "kind": "interface",
+        "signature": "export interface ResourceFetchContext { readonly signal: AbortSignal; readonly key: unknown; }"
+      },
+      "ResourceFetcher": {
+        "kind": "type",
+        "signature": "export type ResourceFetcher<T> = (context: ResourceFetchContext) => T | Promise<T>;"
+      },
+      "ResourceOptions": {
+        "kind": "interface",
+        "signature": "export interface ResourceOptions<T, K = unknown> { readonly key?: K | (() => K) | undefined; readonly initialValue?: T | undefined; readonly cache?: ResourceCache | false | undefined; readonly cacheTime?: number | undefined; readonly dedupe?: boolean | undefined; readonly immediate?: boolean | undefined; readonly throwOnError?: boolean | undefined; readonly onError?: ((error: unknown) => void) | undefined; readonly boundary?: AsyncBoundary | null | undefined; readonly signal?: AbortSignal | undefined; readonly disposeOnCleanup?: boolean | undefined; }"
+      },
+      "ResourceStatus": {
+        "kind": "type",
+        "signature": "export type ResourceStatus = \"idle\" | \"pending\" | \"success\" | \"error\";"
+      },
+      "RuntimeOptions": {
+        "kind": "interface",
+        "signature": "export interface RuntimeOptions { readonly container?: Container | undefined; readonly preloader?: Preloader | null | undefined; readonly onError?: ((error: unknown, component: AnyComponent) => void) | undefined; readonly boundary?: AsyncBoundary | null | undefined; }"
+      },
+      "ServerBackend": {
+        "kind": "interface",
+        "signature": "export interface ServerBackend { createTemplate(html: string): ServerTemplate | null; createRaw?(html: string): unknown; serialize(value: unknown): string; createFragment?(parts: readonly string[], values: readonly unknown[]): ServerFragment | null; }"
+      },
+      "ServerHole": {
+        "kind": "interface",
+        "signature": "export interface ServerHole { readonly parentNode: unknown; set(value: string): void; }"
+      },
+      "ServerTemplate": {
+        "kind": "interface",
+        "signature": "export interface ServerTemplate { readonly node: unknown; readonly holes: readonly ServerHole[]; readonly attrs: readonly unknown[]; }"
+      },
+      "setDefaultPreloader": {
+        "kind": "function",
+        "type": "(preloader: Preloader | null) => void",
+        "signature": "export declare function setDefaultPreloader(preloader: Preloader | null): void;"
+      },
+      "setErrorHandler": {
+        "kind": "function",
+        "type": "(handler: ((error: unknown, component: AnyComponent) => void) | null) => void",
+        "signature": "export declare function setErrorHandler(handler: ((error: unknown, component: AnyComponent) => void) | null): void;"
+      },
+      "setFallback": {
+        "kind": "variable",
+        "type": "<C extends AnyComponent>(component: C, preloader: Preloader) => C",
+        "signature": "export declare const setFallback: typeof setPreloader;"
+      },
+      "setMetadataCollector": {
+        "kind": "function",
+        "type": "(next: ((node: Element) => void) | null) => void",
+        "signature": "export declare function setMetadataCollector(next: ((node: Element) => void) | null): void;"
+      },
+      "setPreloader": {
+        "kind": "function",
+        "type": "<C extends AnyComponent>(component: C, preloader: Preloader) => C",
+        "signature": "export declare function setPreloader<C extends AnyComponent>(component: C, preloader: Preloader): C;"
+      },
+      "setReady": {
+        "kind": "function",
+        "type": "(node: Node, ready: Promise<void>) => void",
+        "signature": "export declare function setReady(node: Node, ready: Promise<void>): void;"
+      },
+      "setServerBackend": {
+        "kind": "function",
+        "type": "(next: ServerBackend | null) => void",
+        "signature": "export declare function setServerBackend(next: ServerBackend | null): void;"
+      },
+      "setServerMode": {
+        "kind": "function",
+        "type": "(enabled: boolean) => void",
+        "signature": "export declare function setServerMode(enabled: boolean): void;"
+      },
+      "sharedResourceCache": {
+        "kind": "variable",
+        "type": "ResourceCache",
+        "signature": "export declare const sharedResourceCache: ResourceCache;"
+      },
+      "Show": {
+        "kind": "function",
+        "type": "(props: ShowProps) => Node",
+        "signature": "export declare function Show(props: ShowProps): Node;"
+      },
+      "SignalSource": {
+        "kind": "type",
+        "signature": "export type SignalSource = AbortSignal | (() => AbortSignal);"
+      },
+      "spread": {
+        "kind": "function",
+        "type": "(el: Element, accessor: () => unknown) => void",
+        "signature": "export declare function spread(el: Element, accessor: () => unknown): void;"
+      },
+      "style": {
+        "kind": "function",
+        "type": "{ (el: Element, accessor: () => unknown): void; (...values: readonly StyleInput[]): string; }",
+        "signature": "export declare function style(el: Element, accessor: () => unknown): void; export declare function style(...values: readonly StyleInput[]): string;"
+      },
+      "StyleInput": {
+        "kind": "type",
+        "signature": "export type StyleInput = string | StyleObject | readonly StyleInput[] | null | undefined | false;"
+      },
+      "StyleObject": {
+        "kind": "interface",
+        "signature": "export interface StyleObject { readonly [property: string]: StylePrimitive; }"
+      },
+      "StylePrimitive": {
+        "kind": "type",
+        "signature": "export type StylePrimitive = string | number | boolean | null | undefined;"
+      },
+      "styleValue": {
+        "kind": "variable",
+        "type": "(...values: readonly StyleInput[]) => string",
+        "signature": "export declare const styleValue: typeof normalizeStyle;"
+      },
+      "Suspense": {
+        "kind": "function",
+        "type": "(props: SuspenseProps) => Node",
+        "signature": "export declare function Suspense(props: SuspenseProps): Node;"
+      },
+      "SuspenseProps": {
+        "kind": "interface",
+        "signature": "export interface SuspenseProps { readonly fallback?: unknown; readonly children: unknown; }"
+      },
+      "Switch": {
+        "kind": "function",
+        "type": "(props: SwitchProps) => Node",
+        "signature": "export declare function Switch(props: SwitchProps): Node;"
+      },
+      "SwitchProps": {
+        "kind": "interface",
+        "signature": "export interface SwitchProps { readonly fallback?: unknown; readonly children: unknown | (() => unknown); }"
+      },
+      "SyncComponent": {
+        "kind": "type",
+        "signature": "export type SyncComponent<P> = (props: P) => JSX.Element;"
+      },
+      "Teleport": {
+        "kind": "variable",
+        "type": "(props: PortalProps) => Node",
+        "signature": "export declare const Teleport: typeof Portal;"
+      },
+      "template": {
+        "kind": "function",
+        "type": "(html: string) => () => Node",
+        "signature": "export declare function template(html: string): () => Node;"
+      },
+      "TemplateClone": {
+        "kind": "interface",
+        "signature": "export interface TemplateClone { readonly node: Node; readonly holes: readonly (Comment | ServerHole)[]; readonly attrs: readonly Element[]; }"
+      },
+      "templateHoles": {
+        "kind": "function",
+        "type": "(html: string, plan?: TemplatePlan, namespace?: TemplateNamespace) => () => TemplateClone",
+        "signature": "export declare function templateHoles(html: string, plan?: TemplatePlan, namespace?: TemplateNamespace): () => TemplateClone;"
+      },
+      "text": {
+        "kind": "function",
+        "type": "(node: Text, accessor: () => unknown) => void",
+        "signature": "export declare function text(node: Text, accessor: () => unknown): void;"
+      },
+      "trackAsyncWork": {
+        "kind": "function",
+        "type": "<T>(promise: Promise<T>, signal?: AbortSignal | null) => Promise<T>",
+        "signature": "export declare function trackAsyncWork<T>(promise: Promise<T>, signal?: AbortSignal | null): Promise<T>;"
+      },
+      "Transition": {
+        "kind": "function",
+        "type": "(props: TransitionProps) => Node",
+        "signature": "export declare function Transition(props: TransitionProps): Node;"
+      },
+      "TRANSITION_MARKER": {
+        "kind": "variable",
+        "type": "\"silent-transition\"",
+        "signature": "export declare const TRANSITION_MARKER = \"silent-transition\";"
+      },
+      "TransitionProps": {
+        "kind": "interface",
+        "signature": "export interface TransitionProps { readonly show?: unknown | (() => unknown); readonly when?: unknown | (() => unknown); readonly children?: unknown; readonly enterClass?: string; readonly leaveClass?: string; readonly duration?: number; readonly fallback?: unknown; readonly unmount?: boolean; }"
+      },
+      "updateProps": {
+        "kind": "function",
+        "type": "(node: Node, props: Record<string, unknown>) => boolean",
+        "signature": "export declare function updateProps(node: Node, props: Record<string, unknown>): boolean;"
+      },
+      "useId": {
+        "kind": "function",
+        "type": "(prefix?: string) => string",
+        "signature": "export declare function useId(prefix?: string): string;"
+      },
+      "VIEW_META": {
+        "kind": "variable",
+        "type": "typeof VIEW_META",
+        "signature": "export declare const VIEW_META: unique symbol;"
+      },
+      "ViewComponent": {
+        "kind": "type",
+        "signature": "export type ViewComponent<P, VM extends object, Preloader extends Component<never>> = (this: ViewContext<VM, Preloader>, props: P) => JSX.Element;"
+      },
+      "ViewContext": {
+        "kind": "type",
+        "signature": "export type ViewContext<VM extends object, Preloader extends Component<never> = Component<never>> = { vm: VM; preloader: Preloader; };"
+      },
+      "ViewMeta": {
+        "kind": "interface",
+        "signature": "export interface ViewMeta { readonly vm: unknown; readonly preloader?: Preloader | undefined; readonly preloaderName?: string | undefined; readonly name?: string | undefined; readonly moduleId?: string | undefined; }"
+      },
+      "ViewModel": {
+        "kind": "class",
+        "signature": "export declare abstract class ViewModel<P = unknown> { props: P; view: Node; created?(): void; beforeMount?(): void; mounted?(): void; updated?(): void; beforeUnmount?(): void; unmounted?(): void; dispose(): void; }"
+      },
+      "ViewRuntimeContext": {
+        "kind": "interface",
+        "signature": "export interface ViewRuntimeContext { readonly vm: object; readonly preloader: Preloader | null; }"
+      },
+      "watch": {
+        "kind": "function",
+        "type": "<C extends object, R>(selector: (vm: C) => R, options?: WatchOptions<R>) => WatchMethodDecorator<C, R>",
+        "signature": "export declare function watch<C extends object, R>(selector: (vm: C) => R, options?: WatchOptions<R>): WatchMethodDecorator<C, R>;"
+      },
+      "WatchOptions": {
+        "kind": "interface",
+        "signature": "export interface WatchOptions<R> { immediate?: boolean; equals?: (a: R, b: R) => boolean; defer?: boolean; }"
+      },
+      "whenIdle": {
+        "kind": "function",
+        "type": "() => Promise<void>",
+        "signature": "export declare function whenIdle(): Promise<void>;"
+      },
+      "whenSettled": {
+        "kind": "function",
+        "type": "(node: Node) => Promise<void>",
+        "signature": "export declare function whenSettled(node: Node): Promise<void>;"
+      },
+      "withIdScope": {
+        "kind": "function",
+        "type": "<T>(fn: () => T) => T",
+        "signature": "export declare function withIdScope<T>(fn: () => T): T;"
+      },
+      "withRuntimeOptions": {
+        "kind": "function",
+        "type": "<T>(options: RuntimeOptions, fn: () => T) => T",
+        "signature": "export declare function withRuntimeOptions<T>(options: RuntimeOptions, fn: () => T): T;"
+      }
+    },
+    "@ivlev-dev/silent-di": {
+      "Binding": {
+        "kind": "interface",
+        "signature": "export interface Binding<T = unknown> { readonly factory: Factory<T>; scope: ScopeName; }"
+      },
+      "BindingBuilder": {
+        "kind": "interface",
+        "signature": "export interface BindingBuilder { inSingletonScope(): BindingBuilder; inTransientScope(): BindingBuilder; inScopedScope(): BindingBuilder; }"
+      },
+      "CircularDependencyError": {
+        "kind": "class",
+        "signature": "export declare class CircularDependencyError extends Error { readonly path: unknown[]; constructor(path: readonly unknown[]); }"
+      },
+      "container": {
+        "kind": "variable",
+        "type": "Container",
+        "signature": "export declare const container: Container;"
+      },
+      "Container": {
+        "kind": "class",
+        "signature": "export declare class Container { readonly name: string; constructor(name?: string, parent?: Container); bind<T = unknown>(token: unknown, factory?: unknown): BindingBuilder; createScope(name?: string): Container; resolve<T = unknown>(token: unknown): Promise<T>; resolveSync<T = unknown>(token: unknown): T; peek<T = unknown>(token: unknown): T | undefined; has(token: unknown): boolean; clearCache(token?: unknown): void; onDispose(fn: () => void): void; dispose(): void; }"
+      },
+      "createToken": {
+        "kind": "function",
+        "type": "<T>(name: string) => Token<T>",
+        "signature": "export declare function createToken<T>(name: string): Token<T>;"
+      },
+      "DI_CREATE": {
+        "kind": "variable",
+        "type": "typeof DI_CREATE",
+        "signature": "export declare const DI_CREATE: unique symbol;"
+      },
+      "Factory": {
+        "kind": "type",
+        "signature": "export type Factory<T> = (container: Container) => T | Promise<T>;"
+      },
+      "InvalidScopeError": {
+        "kind": "class",
+        "signature": "export declare class InvalidScopeError extends Error { readonly singletonToken: unknown; readonly scopedToken: unknown; readonly owner: Container; constructor(singletonToken: unknown, owner: Container, scopedToken: unknown); }"
+      },
+      "ScopeName": {
+        "kind": "type",
+        "signature": "export type ScopeName = \"singleton\" | \"transient\" | \"scoped\";"
+      },
+      "Token": {
+        "kind": "type",
+        "signature": "export type Token<T> = symbol & { readonly __type?: T; };"
+      }
+    },
+    "@ivlev-dev/silent-reactivity": {
+      "Accessor": {
+        "kind": "type",
+        "signature": "export type Accessor<T> = () => T;"
+      },
+      "batch": {
+        "kind": "function",
+        "type": "<T>(fn: () => T) => T",
+        "signature": "export declare function batch<T>(fn: () => T): T;"
+      },
+      "CircularComputationError": {
+        "kind": "class",
+        "signature": "export declare class CircularComputationError extends Error { readonly path: readonly string[]; constructor(path: readonly string[]); }"
+      },
+      "copyReactiveState": {
+        "kind": "function",
+        "type": "(source: object, target: object) => void",
+        "signature": "export declare function copyReactiveState(source: object, target: object): void;"
+      },
+      "createEffect": {
+        "kind": "function",
+        "type": "(fn: () => void) => void",
+        "signature": "export declare function createEffect(fn: () => void): void;"
+      },
+      "createMemo": {
+        "kind": "function",
+        "type": "<T>(fn: () => T, options?: MemoOptions<T>) => Accessor<T>",
+        "signature": "export declare function createMemo<T>(fn: () => T, options?: MemoOptions<T>): Accessor<T>;"
+      },
+      "createReactiveStore": {
+        "kind": "function",
+        "type": "() => ReactiveStore",
+        "signature": "export declare function createReactiveStore(): ReactiveStore;"
+      },
+      "createRenderEffect": {
+        "kind": "function",
+        "type": "(fn: () => void) => void",
+        "signature": "export declare function createRenderEffect(fn: () => void): void;"
+      },
+      "createRoot": {
+        "kind": "function",
+        "type": "<T>(fn: (dispose: () => void) => T) => T",
+        "signature": "export declare function createRoot<T>(fn: (dispose: () => void) => T): T;"
+      },
+      "createSignal": {
+        "kind": "function",
+        "type": "<T>(value: T, options?: SignalOptions<T>) => [Accessor<T>, Setter<T>]",
+        "signature": "export declare function createSignal<T>(value: T, options?: SignalOptions<T>): [Accessor<T>, Setter<T>];"
+      },
+      "createSignalHandle": {
+        "kind": "function",
+        "type": "<T>(value: T, equals?: (a: T, b: T) => boolean) => SignalHandle<T>",
+        "signature": "export declare function createSignalHandle<T>(value: T, equals?: (a: T, b: T) => boolean): SignalHandle<T>;"
+      },
+      "deepReactive": {
+        "kind": "function",
+        "type": "<T>(value: T) => T",
+        "signature": "export declare function deepReactive<T>(value: T): T;"
+      },
+      "EffectErrorHandler": {
+        "kind": "type",
+        "signature": "export type EffectErrorHandler = (error: unknown) => void;"
+      },
+      "flushSync": {
+        "kind": "function",
+        "type": "() => void",
+        "signature": "export declare function flushSync(): void;"
+      },
+      "getComputed": {
+        "kind": "function",
+        "type": "<T>(instance: object, key: PropertyKey, compute: () => T) => T",
+        "signature": "export declare function getComputed<T>(instance: object, key: PropertyKey, compute: () => T): T;"
+      },
+      "getOwner": {
+        "kind": "function",
+        "type": "() => Owner | null",
+        "signature": "export declare function getOwner(): Owner | null;"
+      },
+      "isRaw": {
+        "kind": "function",
+        "type": "(value: unknown) => boolean",
+        "signature": "export declare function isRaw(value: unknown): boolean;"
+      },
+      "isReactive": {
+        "kind": "function",
+        "type": "(value: unknown) => boolean",
+        "signature": "export declare function isReactive(value: unknown): boolean;"
+      },
+      "isReactiveClass": {
+        "kind": "function",
+        "type": "(value: unknown) => boolean",
+        "signature": "export declare function isReactiveClass(value: unknown): boolean;"
+      },
+      "isReadonly": {
+        "kind": "function",
+        "type": "(value: unknown) => boolean",
+        "signature": "export declare function isReadonly(value: unknown): boolean;"
+      },
+      "markRaw": {
+        "kind": "function",
+        "type": "<T>(value: T) => T",
+        "signature": "export declare function markRaw<T>(value: T): T;"
+      },
+      "markReactiveClass": {
+        "kind": "function",
+        "type": "(ctor: Function) => void",
+        "signature": "export declare function markReactiveClass(ctor: Function): void;"
+      },
+      "MemoOptions": {
+        "kind": "interface",
+        "signature": "export interface MemoOptions<T> extends SignalOptions<T> { name?: string; }"
+      },
+      "on": {
+        "kind": "function",
+        "type": "<T>(deps: Accessor<T> | Accessor<T>[], fn: (value: T, prev: T) => void, options?: OnOptions) => void",
+        "signature": "export declare function on<T>(deps: Accessor<T> | Accessor<T>[], fn: (value: T, prev: T) => void, options?: OnOptions): void;"
+      },
+      "onCleanup": {
+        "kind": "function",
+        "type": "(fn: () => void) => void",
+        "signature": "export declare function onCleanup(fn: () => void): void;"
+      },
+      "OnOptions": {
+        "kind": "interface",
+        "signature": "export interface OnOptions { defer?: boolean; }"
+      },
+      "Owner": {
+        "kind": "interface",
+        "signature": "export interface Owner { readonly disposed: boolean; dispose(): void; }"
+      },
+      "ReactiveStore": {
+        "kind": "interface",
+        "signature": "export interface ReactiveStore { readonly disposed: boolean; dispose(): void; }"
+      },
+      "readField": {
+        "kind": "function",
+        "type": "<T>(instance: object, key: PropertyKey, getRaw: () => T) => T",
+        "signature": "export declare function readField<T>(instance: object, key: PropertyKey, getRaw: () => T): T;"
+      },
+      "readonly": {
+        "kind": "function",
+        "type": "<T>(value: T) => T",
+        "signature": "export declare function readonly<T>(value: T): T;"
+      },
+      "ReadonlyMutationError": {
+        "kind": "class",
+        "signature": "export declare class ReadonlyMutationError extends TypeError { readonly key: PropertyKey | undefined; constructor(kind: string, key?: PropertyKey); }"
+      },
+      "registerCleanup": {
+        "kind": "function",
+        "type": "(store: ReactiveStore, fn: () => void) => void",
+        "signature": "export declare function registerCleanup(store: ReactiveStore, fn: () => void): void;"
+      },
+      "runWithOwner": {
+        "kind": "function",
+        "type": "<T>(owner: Owner | null, fn: () => T) => T",
+        "signature": "export declare function runWithOwner<T>(owner: Owner | null, fn: () => T): T;"
+      },
+      "setEffectErrorHandler": {
+        "kind": "function",
+        "type": "(handler: EffectErrorHandler | null) => EffectErrorHandler | null",
+        "signature": "export declare function setEffectErrorHandler(handler: EffectErrorHandler | null): EffectErrorHandler | null;"
+      },
+      "Setter": {
+        "kind": "type",
+        "signature": "export type Setter<T> = (value: T | ((prev: T) => T)) => T;"
+      },
+      "SignalOptions": {
+        "kind": "interface",
+        "signature": "export interface SignalOptions<T> { equals?: (a: T, b: T) => boolean; }"
+      },
+      "storeFor": {
+        "kind": "function",
+        "type": "(instance: object) => ReactiveStore",
+        "signature": "export declare function storeFor(instance: object): ReactiveStore;"
+      },
+      "untrack": {
+        "kind": "function",
+        "type": "<T>(fn: () => T) => T",
+        "signature": "export declare function untrack<T>(fn: () => T): T;"
+      },
+      "unwrap": {
+        "kind": "function",
+        "type": "<T>(value: T) => T",
+        "signature": "export declare function unwrap<T>(value: T): T;"
+      },
+      "writeField": {
+        "kind": "function",
+        "type": "<T>(instance: object, key: PropertyKey, value: T, setRaw: (value: T) => void) => T",
+        "signature": "export declare function writeField<T>(instance: object, key: PropertyKey, value: T, setRaw: (value: T) => void): T;"
+      }
+    },
+    "@ivlev-dev/silent-router": {
+      "BrowserHistory": {
+        "kind": "class",
+        "signature": "export declare class BrowserHistory implements RouterHistory { constructor(win?: Window); get location(): HistoryLocation; push(to: string, state?: unknown): void; replace(to: string, state?: unknown): void; back(): void; forward(): void; listen(listener: HistoryListener): () => void; dispose(): void; }"
+      },
+      "createBrowserHistory": {
+        "kind": "function",
+        "type": "(win?: Window) => BrowserHistory",
+        "signature": "export declare function createBrowserHistory(win?: Window): BrowserHistory;"
+      },
+      "createMemoryHistory": {
+        "kind": "function",
+        "type": "(initial?: string | { url: string; state?: unknown; }) => MemoryHistory",
+        "signature": "export declare function createMemoryHistory(initial?: string | { url: string; state?: unknown; }): MemoryHistory;"
+      },
+      "HistoryListener": {
+        "kind": "type",
+        "signature": "export type HistoryListener = (location: HistoryLocation) => void;"
+      },
+      "HistoryLocation": {
+        "kind": "interface",
+        "signature": "export interface HistoryLocation { readonly pathname: string; readonly search: string; readonly hash: string; readonly state: unknown; }"
+      },
+      "Link": {
+        "kind": "function",
+        "type": "(props: LinkProps) => Node",
+        "signature": "export declare function Link(props: LinkProps): Node;"
+      },
+      "LinkProps": {
+        "kind": "interface",
+        "signature": "export interface LinkProps { readonly to: RouteTarget | (() => RouteTarget); readonly replace?: boolean; readonly activeClass?: string; readonly exactActiveClass?: string; readonly class?: ClassNameValue; readonly children?: Children; readonly router?: Router; }"
+      },
+      "MatchedRoute": {
+        "kind": "interface",
+        "signature": "export interface MatchedRoute { readonly record: RouteRecord; readonly path: string; readonly name: string | null; readonly params: RouteParams; readonly component?: AnyComponent; }"
+      },
+      "MemoryHistory": {
+        "kind": "class",
+        "signature": "export declare class MemoryHistory implements RouterHistory { constructor(initial?: string | { url: string; state?: unknown; }); get length(): number; get position(): number; get location(): HistoryLocation; push(to: string, state?: unknown): void; replace(to: string, state?: unknown): void; back(): void; forward(): void; listen(listener: HistoryListener): () => void; dispose(): void; }"
+      },
+      "QueryInput": {
+        "kind": "type",
+        "signature": "export type QueryInput = string | number | boolean | null | undefined | readonly (string | number)[];"
+      },
+      "RouteGuard": {
+        "kind": "type",
+        "signature": "export type RouteGuard = (to: RouteLocation, from: RouteLocation | null, signal: AbortSignal) => RouteGuardResult | Promise<RouteGuardResult>;"
+      },
+      "RouteGuardResult": {
+        "kind": "type",
+        "signature": "export type RouteGuardResult = boolean | void | string | RouteLocationTargetObject;"
+      },
+      "RouteLoader": {
+        "kind": "type",
+        "signature": "export type RouteLoader = (to: RouteLocation, signal: AbortSignal) => RouteLoaderResult | Promise<RouteLoaderResult>;"
+      },
+      "RouteLoaderResult": {
+        "kind": "type",
+        "signature": "export type RouteLoaderResult = AnyComponent | { readonly default: AnyComponent; };"
+      },
+      "RouteLocation": {
+        "kind": "interface",
+        "signature": "export interface RouteLocation { readonly path: string; readonly fullPath: string; readonly name: string | null; readonly params: RouteParams; readonly query: RouteQuery; readonly hash: string; readonly matched: readonly MatchedRoute[]; }"
+      },
+      "RouteLocationTargetObject": {
+        "kind": "interface",
+        "signature": "export interface RouteLocationTargetObject { readonly path?: string; readonly name?: string; readonly params?: Readonly<Record<string, string | number>>; readonly query?: Readonly<Record<string, QueryInput>>; readonly hash?: string; }"
+      },
+      "RouteMeta": {
+        "kind": "type",
+        "signature": "export type RouteMeta = Readonly<Record<string, unknown>>;"
+      },
+      "RouteParams": {
+        "kind": "type",
+        "signature": "export type RouteParams = Readonly<Record<string, string>>;"
+      },
+      "RouteQuery": {
+        "kind": "type",
+        "signature": "export type RouteQuery = Readonly<Record<string, RouteQueryValue>>;"
+      },
+      "RouteQueryValue": {
+        "kind": "type",
+        "signature": "export type RouteQueryValue = string | readonly string[];"
+      },
+      "Router": {
+        "kind": "class",
+        "signature": "export declare class Router { readonly base: string; readonly state: Accessor<RouterState>; constructor(options: RouterOptions); static current(): Router | null; get route(): RouteLocation | null; get params(): RouteParams; get query(): RouteQuery; get hash(): string; get matched(): readonly MatchedRoute[]; resolve(to: RouteTarget): RouteLocation; href(to: RouteTarget): string; push(to: RouteTarget): Promise<void>; replace(to: RouteTarget): Promise<void>; back(): void; forward(): void; start(): Promise<void>; stop(): void; dispose(): void; }"
+      },
+      "RouterAbortError": {
+        "kind": "class",
+        "signature": "export declare class RouterAbortError extends RouterNavigationError { constructor(to?: string, message?: string); }"
+      },
+      "RouteRecord": {
+        "kind": "interface",
+        "signature": "export interface RouteRecord { readonly path: string; readonly name?: string; readonly component?: AnyComponent; readonly children?: readonly RouteRecord[]; readonly redirect?: RouteRedirect; readonly beforeEnter?: RouteGuard; readonly load?: RouteLoader; readonly meta?: RouteMeta; }"
+      },
+      "RouteRedirect": {
+        "kind": "type",
+        "signature": "export type RouteRedirect = string | RouteLocationTargetObject | ((to: RouteLocation) => string | RouteLocationTargetObject);"
+      },
+      "RouterErrorCode": {
+        "kind": "type",
+        "signature": "export type RouterErrorCode = \"abort\" | \"guard\" | \"load\" | \"no-match\" | \"redirect\" | \"resolve\";"
+      },
+      "RouterHistory": {
+        "kind": "interface",
+        "signature": "export interface RouterHistory { readonly location: HistoryLocation; push(to: string, state?: unknown): void; replace(to: string, state?: unknown): void; back(): void; forward(): void; listen(listener: HistoryListener): () => void; dispose(): void; }"
+      },
+      "RouterMissingError": {
+        "kind": "class",
+        "signature": "export declare class RouterMissingError extends Error { constructor(message?: string); }"
+      },
+      "RouterNavigationError": {
+        "kind": "class",
+        "signature": "export declare class RouterNavigationError extends Error { readonly code: RouterErrorCode; readonly to: string; constructor(message: string, code: RouterErrorCode, to?: string, cause?: unknown); }"
+      },
+      "RouterOptions": {
+        "kind": "interface",
+        "signature": "export interface RouterOptions { readonly routes: readonly RouteRecord[]; readonly base?: string; readonly history?: RouterHistory; readonly scrollBehavior?: ScrollBehavior; }"
+      },
+      "RouterState": {
+        "kind": "interface",
+        "signature": "export interface RouterState { readonly route: RouteLocation | null; readonly params: RouteParams; readonly query: RouteQuery; readonly hash: string; readonly matched: readonly MatchedRoute[]; readonly pending: boolean; readonly error: unknown; }"
+      },
+      "RouterView": {
+        "kind": "function",
+        "type": "(props: RouterViewProps) => Node",
+        "signature": "export declare function RouterView(props: RouterViewProps): Node;"
+      },
+      "RouterViewComponentProps": {
+        "kind": "interface",
+        "signature": "export interface RouterViewComponentProps { readonly route: RouteLocation | null; readonly params: RouteParams; readonly query: RouteQuery; readonly hash: string; readonly router: Router; }"
+      },
+      "RouterViewProps": {
+        "kind": "interface",
+        "signature": "export interface RouterViewProps { readonly router?: Router; readonly depth?: number; readonly fallback?: unknown; }"
+      },
+      "RouteTarget": {
+        "kind": "type",
+        "signature": "export type RouteTarget = string | RouteLocationTargetObject;"
+      },
+      "ScrollBehavior": {
+        "kind": "type",
+        "signature": "export type ScrollBehavior = (to: RouteLocation, from: RouteLocation | null, savedPosition: ScrollPosition | null) => ScrollBehaviorResult | Promise<ScrollBehaviorResult>;"
+      },
+      "ScrollBehaviorResult": {
+        "kind": "type",
+        "signature": "export type ScrollBehaviorResult = ScrollPosition | null | void | false;"
+      },
+      "ScrollPosition": {
+        "kind": "interface",
+        "signature": "export interface ScrollPosition { readonly left: number; readonly top: number; }"
+      }
+    },
+    "@ivlev-dev/silent-server": {
+      "RenderOptions": {
+        "kind": "interface",
+        "signature": "export interface RenderOptions { readonly props?: Record<string, unknown> | undefined; readonly container?: Container | undefined; readonly preloader?: Preloader | undefined; readonly onError?: ((error: unknown, component: AnyComponent) => void) | undefined; }"
+      },
+      "RenderResult": {
+        "kind": "interface",
+        "signature": "export interface RenderResult { readonly html: string; readonly head: string; }"
+      },
+      "renderToStream": {
+        "kind": "function",
+        "type": "(app: AnyComponent, options?: StreamOptions) => ReadableStream<string>",
+        "signature": "export declare function renderToStream(app: AnyComponent, options?: StreamOptions): ReadableStream<string>;"
+      },
+      "renderToString": {
+        "kind": "function",
+        "type": "(app: AnyComponent, options?: RenderOptions) => Promise<RenderResult>",
+        "signature": "export declare function renderToString(app: AnyComponent, options?: RenderOptions): Promise<RenderResult>;"
+      },
+      "StreamOptions": {
+        "kind": "interface",
+        "signature": "export interface StreamOptions extends RenderOptions { readonly chunkSize?: number; readonly onHead?: (head: string) => void; }"
+      }
+    },
+    "@ivlev-dev/silent-swc": {
+      "NativeTransformResult": {
+        "kind": "interface",
+        "signature": "export interface NativeTransformResult { code: string; map: string | null; diagnostics: string[]; }"
+      },
+      "scan": {
+        "kind": "function",
+        "type": "(root: string) => string",
+        "signature": "export function scan(root: string): string;"
+      },
+      "transform": {
+        "kind": "function",
+        "type": "(source: string, filename: string, optionsJson: string, indexJson: string) => string",
+        "signature": "export function transform( source: string, filename: string, optionsJson: string, indexJson: string, ): string;"
+      },
+      "version": {
+        "kind": "function",
+        "type": "() => string",
+        "signature": "export function version(): string;"
+      }
+    },
+    "@ivlev-dev/silent-vite": {
+      "silent": {
+        "kind": "function",
+        "type": "(options?: SilentOptions) => Plugin",
+        "signature": "export declare function silent(options?: SilentOptions): Plugin;"
+      },
+      "SilentOptions": {
+        "kind": "interface",
+        "signature": "export interface SilentOptions { include?: RegExp; exclude?: RegExp; root?: string; swc?: Record<string, unknown>; requirePreloader?: boolean; runtime?: string; hmr?: boolean; index?: boolean; view?: boolean; }"
+      }
+    }
+  }
+}

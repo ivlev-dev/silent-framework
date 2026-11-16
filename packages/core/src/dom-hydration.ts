@@ -10,6 +10,8 @@ import {
   resolvePath,
   resolveValue,
   stringOf,
+  type TemplateClone,
+  type TemplateHydrationSource,
   type TemplatePlan,
 } from "./dom.js";
 import { registerDomHydrationRuntime } from "./dom-hydration-state.js";
@@ -17,13 +19,16 @@ import { createEffectUnlessStatic } from "./static-effect.js";
 import {
   INSERT_END,
   INSERT_START,
+  claimNext,
   collectBetween,
   findInsertWindow,
+  mergeTopLevelMetadata,
   mismatch,
+  shapeMatches,
   withWindow,
   type HydrationWindow,
 } from "./hydration.js";
-import { extractMetadata } from "./metadata.js";
+import { extractMetadata, isMetadataElement, markMetadataFree } from "./metadata.js";
 import type { Children } from "./jsx.js";
 
 
@@ -595,6 +600,127 @@ export function writeRegion(start: Node, end: Node, value: unknown): void {
   writeNodes(state, value);
 }
 
+function claimTemplateRoots(plan: TemplatePlan): Node {
+  if (plan.roots === 1) {
+    const next = claimNext();
+    if (next === null) {
+      return mismatch("шаблон не совпал с серверной разметкой");
+    }
+    markMetadataFree(next);
+    return next;
+  }
+  const claimed: Node[] = [];
+  for (let index = 0; index < plan.roots; index += 1) {
+    const next = claimNext();
+    if (next === null) {
+      return mismatch("шаблон не совпал с серверной разметкой");
+    }
+    markMetadataFree(next);
+    claimed.push(next);
+  }
+  const container = document.createDocumentFragment();
+  for (const node of claimed) {
+    container.appendChild(node);
+  }
+  markMetadataFree(container);
+  return container;
+}
+
+export function hydrateTemplate(source: TemplateHydrationSource): TemplateClone {
+  const providedPlan = source.providedPlan;
+  if (providedPlan !== undefined) {
+    const node = claimTemplateRoots(providedPlan);
+    const clone: { node: Node; holes: Comment[]; attrs: Element[] } = {
+      node,
+      holes: NO_HOLES,
+      attrs: NO_ATTRIBUTES,
+    };
+    adoptPartsPlan(node, providedPlan, clone);
+    return clone;
+  }
+  const current = source.parse();
+  const metadata = current.metadata;
+  const simple = current.simple;
+  const rootCount = current.rootCount;
+  if (!metadata) {
+    if (rootCount === 0) {
+      const empty = document.createDocumentFragment();
+      markMetadataFree(empty);
+      return { node: empty, holes: NO_HOLES, attrs: NO_ATTRIBUTES };
+    }
+    const expected = collectPartsMany([source.cloneNode()]);
+    if (rootCount === 1) {
+      const node = claimNext();
+      if (node === null) {
+        return mismatch("шаблон не совпал с серверной разметкой");
+      }
+      markMetadataFree(node);
+      const collected = collectPartsMany([node]);
+      if (
+        collected.holes.length !== expected.holes.length ||
+        collected.attrs.length !== expected.attrs.length
+      ) {
+        return mismatch("шаблон не совпал с серверной разметкой");
+      }
+      return { node, ...collected };
+    }
+    const claimed: Node[] = [];
+    let cursor = current.content.firstChild;
+    while (cursor !== null) {
+      const next = cursor.nextSibling;
+      const node = claimNext();
+      if (node === null) {
+        return mismatch("шаблон не совпал с серверной разметкой");
+      }
+      markMetadataFree(node);
+      claimed.push(node);
+      cursor = next;
+    }
+    const collected = collectPartsMany(claimed);
+    if (
+      collected.holes.length !== expected.holes.length ||
+      collected.attrs.length !== expected.attrs.length
+    ) {
+      return mismatch("шаблон не совпал с серверной разметкой");
+    }
+    const container = document.createDocumentFragment();
+    for (const node of claimed) {
+      container.appendChild(node);
+    }
+    markMetadataFree(container);
+    return { node: container, ...collected };
+  }
+  const fresh = source.cloneNode();
+  const roots =
+    fresh instanceof DocumentFragment ? Array.from(fresh.childNodes) : [fresh];
+  if (roots.length === 1 && isMetadataElement(roots[0])) {
+    const title = roots[0]!;
+    return { node: title, ...collectPartsMany([title]) };
+  }
+  const claimed: Node[] = [];
+  for (const root of roots) {
+    if (isMetadataElement(root)) {
+      claimed.push(root);
+      continue;
+    }
+    const node = claimNext();
+    if (node === null || !shapeMatches(root, node, true, simple)) {
+      return mismatch("шаблон не совпал с серверной разметкой");
+    }
+    mergeTopLevelMetadata(root, node);
+    claimed.push(node);
+  }
+  const collected = collectPartsMany(claimed);
+  if (claimed.length === 1 && !(fresh instanceof DocumentFragment)) {
+    return { node: claimed[0]!, ...collected };
+  }
+  const container = document.createDocumentFragment();
+  for (const node of claimed) {
+    container.appendChild(node);
+  }
+  return { node: container, ...collected };
+}
+
 export function insertHydrated(
   parent: Node,
   accessor: () => unknown,
@@ -643,6 +769,7 @@ export function insertHydrated(
 
 export function installDomHydrationRuntime(): void {
   registerDomHydrationRuntime({
+    hydrateTemplate,
     settleNodes,
     writeRegion,
     insertHydrated,

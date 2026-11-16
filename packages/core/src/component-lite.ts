@@ -15,7 +15,7 @@ import { isMatchNode } from "./match-node.js";
 import { bindOwnerRuntimeOptions } from "./runtime-context.js";
 import { createPropsProxy, type PropsProxy } from "./props-proxy.js";
 import { registerPropsUpdater } from "./props-update.js";
-import { adoptContextValues, captureContextValues } from "./context.js";
+import { adoptContextValues, captureContextValues, type ContextValues } from "./context-link.js";
 import {
   COMPONENT_DISPOSE,
   PRELOADER,
@@ -148,7 +148,7 @@ interface LightInstance {
   readonly props: PropsProxy;
   readonly whenDisposed: Promise<void>;
   readonly options: RuntimeOptions;
-  readonly contextValues: Map<object, unknown> | null;
+  readonly contextValues: ContextValues | null;
   node: Node;
   single: boolean;
   readonly entries: LightNodeEntry[];

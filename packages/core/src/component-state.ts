@@ -29,8 +29,8 @@ interface ReadyHost {
   [COMPONENT_READY]?: Promise<void>;
 }
 
-export const pending = new Set<Promise<unknown>>();
-export const RESOLVED_READY: Promise<void> = Promise.resolve();
+export const pending = /*#__PURE__*/ new Set<Promise<unknown>>();
+export const RESOLVED_READY: Promise<void> = /*#__PURE__*/ Promise.resolve();
 export let defaultPreloader: Preloader | null = null;
 export let defaultErrorHandler: (error: unknown, component: AnyComponent) => void = (
   error,

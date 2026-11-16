@@ -1,9 +1,23 @@
 import { createRoot, getOwner, type Owner } from "@ivlev-dev/silent-reactivity";
 import { collectNodes } from "./dom.js";
+import { registerContextLink } from "./context-link.js";
 import type { Children } from "./jsx.js";
 
 const NO_DEFAULT: unique symbol = Symbol("silent.context.none");
 const MISSING: unique symbol = Symbol("silent.context.missing");
+
+let linked = false;
+
+function ensureContextLink(): void {
+  if (linked) {
+    return;
+  }
+  linked = true;
+  registerContextLink({
+    capture: captureContextValues,
+    adopt: adoptContextValues,
+  });
+}
 
 export class ContextMissingError extends Error {
   constructor(name: string) {
@@ -128,6 +142,7 @@ export class Context<T> {
   readonly #defaultValue: T | typeof NO_DEFAULT;
 
   constructor(options: ContextOptions<T> = {}) {
+    ensureContextLink();
     this.#name = options.name ?? "Context";
     this.#defaultValue =
       "defaultValue" in options ? (options.defaultValue as T) : NO_DEFAULT;

@@ -3,32 +3,97 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium } from "playwright-core";
+import { chromium, firefox, webkit } from "playwright-core";
 import { createServer } from "vite";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const counterDir = join(root, "examples", "counter");
 const todoDir = join(root, "examples", "todo");
+const cacheDir = join(homedir(), ".cache", "ms-playwright");
 
-function findChrome() {
-  const base = join(homedir(), ".cache", "ms-playwright");
-  for (const entry of readdirSync(base)) {
-    if (!entry.startsWith("chromium-")) {
-      continue;
-    }
-    for (const candidate of [
-      join(base, entry, "chrome-linux64", "chrome"),
-      join(base, entry, "chrome-linux", "chrome"),
-    ]) {
+const BROWSER_TYPES = { chromium, firefox, webkit };
+
+const BROWSER_LAYOUTS = {
+  chromium: [
+    ["chrome-linux64", "chrome"],
+    ["chrome-linux", "chrome"],
+    ["chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium"],
+  ],
+  firefox: [
+    ["firefox", "firefox"],
+    ["firefox", "firefox-bin"],
+  ],
+  webkit: [
+    ["pw_run.sh"],
+    ["minibrowser-gtk", "bin", "MiniBrowser"],
+    ["minibrowser-wpe", "bin", "MiniBrowser"],
+  ],
+};
+
+function selectBrowserName() {
+  const raw = (process.env.SILENT_E2E_BROWSER ?? "chromium").trim().toLowerCase();
+  if (!Object.hasOwn(BROWSER_TYPES, raw)) {
+    throw new Error(
+      `SILENT_E2E_BROWSER="${raw}" не поддерживается. Допустимо: chromium, firefox, webkit.`,
+    );
+  }
+  return raw;
+}
+
+function expectedRevision(browserName) {
+  try {
+    const manifest = JSON.parse(
+      readFileSync(join(root, "node_modules", "playwright-core", "browsers.json"), "utf8"),
+    );
+    return manifest.browsers?.find((entry) => entry.name === browserName)?.revision;
+  } catch {
+    return undefined;
+  }
+}
+
+function installedRevisions(browserName) {
+  if (!existsSync(cacheDir)) {
+    return [];
+  }
+  const expected = expectedRevision(browserName);
+  return readdirSync(cacheDir)
+    .filter((entry) => entry.startsWith(`${browserName}-`))
+    .sort((left, right) => {
+      if (expected !== undefined) {
+        const leftMatches = left.endsWith(`-${expected}`) ? 0 : 1;
+        const rightMatches = right.endsWith(`-${expected}`) ? 0 : 1;
+        if (leftMatches !== rightMatches) {
+          return leftMatches - rightMatches;
+        }
+      }
+      const leftRevision = Number(left.slice(browserName.length + 1));
+      const rightRevision = Number(right.slice(browserName.length + 1));
+      return rightRevision - leftRevision;
+    });
+}
+
+function findExecutable(browserName) {
+  const revisions = installedRevisions(browserName);
+  for (const revision of revisions) {
+    for (const layout of BROWSER_LAYOUTS[browserName]) {
+      const candidate = join(cacheDir, revision, ...layout);
       if (existsSync(candidate)) {
         return candidate;
       }
     }
   }
-  throw new Error("Chromium не найден в ~/.cache/ms-playwright");
+  throw new Error(
+    [
+      `${browserName}: исполняемый файл не найден в ${cacheDir}.`,
+      `Установите браузер: pnpm exec playwright-core install --with-deps ${browserName}`,
+      revisions.length === 0
+        ? "Установленных ревизий для этого браузера нет."
+        : `Проверены ревизии: ${revisions.join(", ")}.`,
+    ].join(" "),
+  );
 }
 
-function chromiumEnv() {
+function sanitizedEnv() {
   const env = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined) {
@@ -37,6 +102,28 @@ function chromiumEnv() {
   }
   delete env["LD_PRELOAD"];
   return env;
+}
+
+async function launchBrowser(browserName) {
+  const browserType = BROWSER_TYPES[browserName];
+  const executablePath = findExecutable(browserName);
+  const options = {
+    executablePath,
+    headless: true,
+    env: sanitizedEnv(),
+  };
+  if (browserName === "chromium") {
+    options.args = ["--no-sandbox"];
+  }
+  try {
+    return await browserType.launch(options);
+  } catch (error) {
+    throw new Error(
+      `${browserName}: не удалось запустить ${executablePath}. ` +
+        `Проверьте зависимости: pnpm exec playwright-core install --with-deps ${browserName}\n` +
+        `${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 async function startServer(directory) {
@@ -204,7 +291,23 @@ async function runTodo(browser) {
   }
 }
 
-async function runRegressions(browser) {
+async function selectDomState(page) {
+  return page.locator(".native-select").evaluate((element) => {
+    const select = element;
+    return {
+      tagName: select.tagName,
+      type: select.type,
+      multiple: select.multiple,
+      optionValues: Array.from(select.options).map((option) => option.value),
+      selectedIndex: select.selectedIndex,
+      value: select.value,
+      disabled: select.disabled,
+      detachedFromForm: select.form === null,
+    };
+  });
+}
+
+async function runRegressions(browser, browserName) {
   const server = await startServer(counterDir);
   const page = await browser.newPage();
   const errors = collectErrors(page);
@@ -251,6 +354,17 @@ async function runRegressions(browser) {
     );
 
     const select = page.locator(".native-select");
+    assert.deepEqual(await selectDomState(page), {
+      tagName: "SELECT",
+      type: "select-one",
+      multiple: false,
+      optionValues: ["a", "b", "c"],
+      selectedIndex: 1,
+      value: "b",
+      disabled: false,
+      detachedFromForm: true,
+    });
+
     await select.focus();
     await page.evaluate(() => globalThis.__silentTick?.());
     assert.equal(await select.inputValue(), "b");
@@ -258,8 +372,29 @@ async function runRegressions(browser) {
       await page.evaluate(() => document.activeElement?.classList.contains("native-select")),
       true,
     );
-    await select.selectOption("c");
-    assert.equal(await select.inputValue(), "c");
+    assert.deepEqual(await selectDomState(page), {
+      tagName: "SELECT",
+      type: "select-one",
+      multiple: false,
+      optionValues: ["a", "b", "c"],
+      selectedIndex: 1,
+      value: "b",
+      disabled: false,
+      detachedFromForm: true,
+    });
+
+    if (browserName === "firefox") {
+      await select.selectOption("c");
+      const afterSelect = await selectDomState(page);
+      assert.equal(afterSelect.value, "c");
+      assert.equal(afterSelect.selectedIndex, 2);
+      assert.deepEqual(afterSelect.optionValues, ["a", "b", "c"]);
+      assert.equal(afterSelect.multiple, false);
+      assert.equal(afterSelect.tagName, "SELECT");
+    } else {
+      await select.selectOption("c");
+      assert.equal(await select.inputValue(), "c");
+    }
 
     assert.equal((await page.locator(".greeting").textContent())?.trim(), "Ann");
     await page.locator(".rename").click();
@@ -272,18 +407,22 @@ async function runRegressions(browser) {
   }
 }
 
+const SUITES = {
+  chromium: [runCounter, runTodo, runRegressions],
+  firefox: [runCounter, runTodo, runRegressions],
+  webkit: [runCounter, runTodo, runRegressions],
+};
+
 async function main() {
-  const browser = await chromium.launch({
-    executablePath: findChrome(),
-    headless: true,
-    args: ["--no-sandbox"],
-    env: chromiumEnv(),
-  });
+  const browserName = selectBrowserName();
+  const executablePath = findExecutable(browserName);
+  console.log(`e2e: ${browserName} (${executablePath})`);
+  const browser = await launchBrowser(browserName);
   try {
-    await runCounter(browser);
-    await runTodo(browser);
-    await runRegressions(browser);
-    console.log("e2e: ok");
+    for (const suite of SUITES[browserName]) {
+      await suite(browser, browserName);
+    }
+    console.log(`e2e: ok (${browserName})`);
   } finally {
     await browser.close();
   }

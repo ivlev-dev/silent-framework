@@ -33,7 +33,7 @@ import type { AnyComponent } from "./types.js";
 
 let runtimes: Promise<void> | null = null;
 let runtimesReady = false;
-let hydrationQueue: Promise<void> = Promise.resolve();
+let hydrationQueue: Promise<void> = /*#__PURE__*/ Promise.resolve();
 
 async function settle(): Promise<void> {
   flushSync();

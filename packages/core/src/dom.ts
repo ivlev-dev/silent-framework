@@ -24,7 +24,6 @@ import {
   currentWindow,
   isHydrating,
   isMarker,
-  countSignificantChildren,
   mergeTopLevelMetadata,
   mismatch,
   shapeMatches,
@@ -33,7 +32,7 @@ import {
   withWindow,
 } from "./hydration-proxy.js";
 import {
-  adoptPartsPlan,
+  getDomHydrationRuntime,
   hydratedEffect,
   insertHydrated,
   settleNodes,
@@ -75,12 +74,6 @@ export interface StripPlan {
   readonly names: readonly string[];
 }
 
-interface PartsPlan {
-  readonly holes: readonly PartPath[];
-  readonly attrs: readonly PartPath[];
-  readonly strips: readonly StripPlan[];
-}
-
 export interface TemplatePlan {
   readonly roots: number;
   readonly holes: readonly PartPath[];
@@ -90,13 +83,12 @@ export interface TemplatePlan {
 
 export type TemplateNamespace = "svg";
 
-interface TemplateParse {
+export interface TemplateParse {
   readonly content: DocumentFragment;
   readonly rootCount: number;
   readonly singleRoot: Node | null;
   readonly metadata: boolean;
   readonly simple: boolean;
-  parts: PartsPlan | null;
 }
 
 interface ParsedEvent {
@@ -588,7 +580,6 @@ function readTemplate(html: string, namespace?: TemplateNamespace): TemplatePars
     singleRoot: rootCount === 1 ? content.firstChild : null,
     metadata,
     simple: !metadata && !html.includes("silent-insert"),
-    parts: null,
   };
   parseCache.set(key, parsed);
   return parsed;
@@ -658,6 +649,12 @@ export interface TemplateClone {
   readonly node: Node;
   readonly holes: readonly (Comment | ServerHole)[];
   readonly attrs: readonly Element[];
+}
+
+export interface TemplateHydrationSource {
+  readonly providedPlan: TemplatePlan | undefined;
+  readonly parse: () => TemplateParse;
+  readonly cloneNode: () => Node;
 }
 
 export function markerIndex(value: string, prefix: string): number | null {
@@ -762,94 +759,6 @@ export function collectPartsMany(nodes: readonly Node[]): { holes: Comment[]; at
   return { holes: denseParts(holesByIndex), attrs: denseParts(attrsByIndex) };
 }
 
-function collectPartsPlan(content: DocumentFragment): PartsPlan {
-  const holesByIndex: (number[] | undefined)[] = [];
-  const attrsByIndex: (number[] | undefined)[] = [];
-  const strips: { readonly path: readonly number[]; readonly names: readonly string[] }[] = [];
-  const path: number[] = [];
-
-  const visit = (node: Node): void => {
-    const nodeType = node.nodeType;
-    if (nodeType === Node.COMMENT_NODE) {
-      const index = markerIndex((node as Comment).data, HOLE_MARKER);
-      if (index !== null) {
-        holesByIndex[index] = path.slice();
-      }
-    } else if (nodeType === Node.ELEMENT_NODE) {
-      const element = node as Element;
-      const names: string[] = [];
-      const attributes = element.attributes;
-      for (let position = attributes.length - 1; position >= 0; position -= 1) {
-        const attribute = attributes.item(position);
-        if (attribute === null) {
-          continue;
-        }
-        const name = attribute.name;
-        if (name === TEXT_MARKER) {
-          names.push(name);
-          continue;
-        }
-        const index = markerIndex(name, ATTR_MARKER);
-        if (index !== null) {
-          attrsByIndex[index] = path.slice();
-          names.push(name);
-        }
-      }
-      if (names.length > 0) {
-        strips.push({ path: path.slice(), names });
-      }
-    }
-    forEachPartChild(node, visitChild);
-  };
-
-  const visitChild = (child: Node, index: number): void => {
-    path.push(index);
-    visit(child);
-    path.pop();
-  };
-
-  if (content.childNodes.length === 1) {
-    const root = content.firstChild;
-    if (root !== null) {
-      visitChild(root, 0);
-    }
-  } else if (content.childNodes.length > 1) {
-    forEachPartChild(content, visitChild);
-  }
-
-  return {
-    holes: denseParts(holesByIndex).map((entry) => measurePath(content, entry)),
-    attrs: denseParts(attrsByIndex).map((entry) => measurePath(content, entry)),
-    strips: strips.map((entry) => ({
-      ...measurePath(content, entry.path),
-      names: entry.names,
-    })),
-  };
-}
-
-function measurePath(root: Node, path: readonly number[]): PartPath {
-  const counts: number[] = [];
-  let node: Node | null;
-  if (root instanceof DocumentFragment) {
-    counts.push(countSignificantChildren(root));
-    const first = path[0];
-    node = first === undefined ? null : significantChildren(root, first);
-  } else {
-    counts.push(0);
-    node = path[0] === 0 ? root : null;
-  }
-  for (let index = 1; index < path.length; index += 1) {
-    if (node === null) {
-      counts.push(0);
-      continue;
-    }
-    counts.push(countSignificantChildren(node));
-    const childIndex = path[index];
-    node = childIndex === undefined ? null : significantChildren(node, childIndex);
-  }
-  return { path, counts };
-}
-
 function pickSignificantChild(
   parent: Node,
   index: number,
@@ -909,7 +818,7 @@ export function resolvePath(
 
 function applyPartsPlan(
   root: Node,
-  plan: PartsPlan,
+  plan: TemplatePlan,
   strip: boolean,
   significant: boolean,
 ): { holes: Comment[]; attrs: Element[] } {
@@ -964,9 +873,6 @@ export function templateHoles(
   };
 }
 
-const NO_HOLES: Comment[] = [];
-const NO_ATTRIBUTES: Element[] = [];
-
 function createClientTemplateHoles(
   html: string,
   providedPlan?: TemplatePlan,
@@ -992,137 +898,26 @@ function createClientTemplateHoles(
     const clone = parse().content.cloneNode(true) as DocumentFragment;
     return clone.childNodes.length === 1 ? clone.firstChild ?? clone : clone;
   };
-  const parts = (): PartsPlan => {
-    const current = parse();
-    if (current.parts === null) {
-      current.parts = collectPartsPlan(current.content);
-    }
-    return current.parts;
-  };
   const create = (): TemplateClone => {
     const node = mark(cloneNode());
+    if (providedPlan === undefined) {
+      return { node, ...collectPartsMany([node]) };
+    }
     return {
       node,
-      ...applyPartsPlan(node, providedPlan ?? parts(), !isServerMode(), true),
+      ...applyPartsPlan(node, providedPlan, !isServerMode(), true),
     };
   };
-  const claimRoots = (plan: TemplatePlan): Node => {
-    if (plan.roots === 1) {
-      const next = claimNext();
-      if (next === null) {
-        return mismatch("шаблон не совпал с серверной разметкой");
-      }
-      markMetadataFree(next);
-      return next;
-    }
-    const claimed: Node[] = [];
-    for (let index = 0; index < plan.roots; index += 1) {
-      const next = claimNext();
-      if (next === null) {
-        return mismatch("шаблон не совпал с серверной разметкой");
-      }
-      markMetadataFree(next);
-      claimed.push(next);
-    }
-    const container = document.createDocumentFragment();
-    for (const node of claimed) {
-      container.appendChild(node);
-    }
-    markMetadataFree(container);
-    return container;
+  const source: TemplateHydrationSource = {
+    providedPlan,
+    parse,
+    cloneNode,
   };
   return () => {
-    if (!isHydrating()) {
-      return create();
+    if (isHydrating()) {
+      return getDomHydrationRuntime().hydrateTemplate(source);
     }
-    if (providedPlan !== undefined) {
-      const node = claimRoots(providedPlan);
-      const clone = { node, holes: NO_HOLES, attrs: NO_ATTRIBUTES };
-      adoptPartsPlan(node, providedPlan, clone);
-      return clone;
-    }
-    const current = parse();
-    const content = current.content;
-    const metadata = current.metadata;
-    const simple = current.simple;
-    const rootCount = current.rootCount;
-    if (!metadata) {
-      if (rootCount === 0) {
-        const empty = document.createDocumentFragment();
-        markMetadataFree(empty);
-        return { node: empty, holes: NO_HOLES, attrs: NO_ATTRIBUTES };
-      }
-      const expected = parts();
-      if (rootCount === 1) {
-        const node = claimNext();
-        if (node === null) {
-          return mismatch("шаблон не совпал с серверной разметкой");
-        }
-        markMetadataFree(node);
-        const collected = collectPartsMany([node]);
-        if (
-          collected.holes.length !== expected.holes.length ||
-          collected.attrs.length !== expected.attrs.length
-        ) {
-          return mismatch("шаблон не совпал с серверной разметкой");
-        }
-        return { node, ...collected };
-      }
-      const claimed: Node[] = [];
-      let cursor = content.firstChild;
-      while (cursor !== null) {
-        const next = cursor.nextSibling;
-        const node = claimNext();
-        if (node === null) {
-          return mismatch("шаблон не совпал с серверной разметкой");
-        }
-        markMetadataFree(node);
-        claimed.push(node);
-        cursor = next;
-      }
-      const collected = collectPartsMany(claimed);
-      if (
-        collected.holes.length !== expected.holes.length ||
-        collected.attrs.length !== expected.attrs.length
-      ) {
-        return mismatch("шаблон не совпал с серверной разметкой");
-      }
-      const container = document.createDocumentFragment();
-      for (const node of claimed) {
-        container.appendChild(node);
-      }
-      markMetadataFree(container);
-      return { node: container, ...collected };
-    }
-    const fresh = cloneNode();
-    const roots =
-      fresh instanceof DocumentFragment ? Array.from(fresh.childNodes) : [fresh];
-    if (roots.length === 1 && isMetadataElement(roots[0])) {
-      const title = roots[0]!;
-      return { node: title, ...collectPartsMany([title]) };
-    }
-    const claimed: Node[] = [];
-    for (const root of roots) {
-      if (isMetadataElement(root)) {
-        claimed.push(root);
-        continue;
-      }
-      const node = claimNext();
-      if (node === null || !shapeMatches(root, node, true, simple)) {
-        return mismatch("шаблон не совпал с серверной разметкой");
-      }
-      mergeTopLevelMetadata(root, node);
-      claimed.push(node);
-    }
-    const collected = collectPartsMany(claimed);
-    if (claimed.length === 1 && !(fresh instanceof DocumentFragment)) {
-      return { node: claimed[0]!, ...collected };
-    }
-    const container = document.createDocumentFragment();
-    for (const node of claimed) {
-      container.appendChild(node);
-    }
-    return { node: container, ...collected };
+    return create();
   };
 }
 
@@ -1223,26 +1018,25 @@ export function insert(
   accessor: () => unknown,
   marker?: Node | ServerHole,
 ): void {
-  if (isServerHole(marker)) {
-    if (SERVER) {
-      const value = accessor();
-      if (!setServerHoleValue(marker, value)) {
-        marker.set(
-          `<!--${INSERT_START}-->${serializeServerValue(value)}<!--${INSERT_END}-->`,
-        );
-      }
+  if (SERVER && isServerHole(marker)) {
+    const value = accessor();
+    if (!setServerHoleValue(marker, value)) {
+      marker.set(
+        `<!--${INSERT_START}-->${serializeServerValue(value)}<!--${INSERT_END}-->`,
+      );
     }
     return;
   }
+  const nodeMarker: Node | null = (marker as Node | null | undefined) ?? null;
   if (SERVER && isServerMode()) {
-    insertServer(parent, accessor, marker ?? null);
+    insertServer(parent, accessor, nodeMarker);
     return;
   }
   if (isHydrating()) {
-    insertHydrated(parent, accessor, marker ?? null);
+    insertHydrated(parent, accessor, nodeMarker);
     return;
   }
-  const mount = createMountPoint(parent, marker ?? null);
+  const mount = createMountPoint(parent, nodeMarker);
   createRenderEffect(() => {
     mount.render(accessor());
   });

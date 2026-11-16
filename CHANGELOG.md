@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.9.1
+
+Платформенная оптимизация: стартовый бандл, браузерная матрица и API-сигнатуры.
+
+### Размер и гидрация
+
+- Гидратация шаблонов вынесена в lazy-чанк `dom-hydration`: `dom.ts` больше не несёт claim/adopt/metadata-логику.
+- `context` отделён от `component-lite` через dependency-free link; Context не попадает в стартовый чанк без использования.
+- Удалён `collectPartsPlan`/`measurePath` для `templateHoles` без плана; `insert` больше не тянет server-proxy в клиент; добавлены PURE-аннотации.
+- Стартовый JS: 38.79 → 34.95 KB, gzip: 13.06 → 12.07 KB; VM gzip: 14.64 → 13.68 KB. `dom-hydration` растёт только при `hydrate()`.
+
+### Инфраструктура
+
+- `pnpm test:e2e:firefox`/`webkit`/`chromium`; CI-матрица Firefox/WebKit, DOM-инварианты нативного select.
+- API-signature snapshot (`scripts/api-signatures.json`, `api:check:self`) с нормализованными TypeScript-сигнатурами и стабильным JSON; CI проверяет имена, сигнатуры и стабильность снимка.
+- Документация API и changelog обновлены.
+
 ## 0.9.0
 
 Новый пакет `@ivlev-dev/silent-router`.

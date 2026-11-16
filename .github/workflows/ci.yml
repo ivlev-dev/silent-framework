@@ -37,6 +37,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm api:check
+      - run: pnpm api:check:self
       - run: pnpm install:check
       - run: pnpm --filter @ivlev-dev/silent-example-counter build
       - run: pnpm --filter @ivlev-dev/silent-example-ssr-counter build
@@ -46,3 +47,28 @@ jobs:
       - run: pnpm pack:check
       - run: pnpm bench:guard --only=build
       - run: pnpm bench:guard --only=browser
+
+  e2e:
+    name: e2e (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [firefox, webkit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm exec playwright-core install --with-deps firefox webkit
+      - run: pnpm test:e2e
+        env:
+          SILENT_E2E_BROWSER: ${{ matrix.browser }}

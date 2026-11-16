@@ -1,7 +1,12 @@
 import { isHydrating } from "./hydration-state.js";
-import type { TemplatePlan } from "./dom.js";
+import type {
+  TemplateClone,
+  TemplateHydrationSource,
+  TemplatePlan,
+} from "./dom.js";
 
 export interface DomHydrationRuntime {
+  hydrateTemplate(source: TemplateHydrationSource): TemplateClone;
   settleNodes(end: Node | null, value: unknown): void;
   writeRegion(start: Node, end: Node, value: unknown): void;
   insertHydrated(parent: Node, accessor: () => unknown, marker: Node | null): void;
@@ -17,6 +22,13 @@ let runtime: DomHydrationRuntime | null = null;
 
 export function registerDomHydrationRuntime(next: DomHydrationRuntime): void {
   runtime = next;
+}
+
+export function getDomHydrationRuntime(): DomHydrationRuntime {
+  if (runtime === null) {
+    throw new Error("Hydration DOM runtime не загружен");
+  }
+  return runtime;
 }
 
 function requireRuntime(): DomHydrationRuntime {

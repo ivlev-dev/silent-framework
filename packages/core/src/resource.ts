@@ -55,7 +55,7 @@ interface CacheEntry {
 
 const NO_ERROR = Symbol("silent.resource.noError");
 const NO_KEY = Symbol("silent.resource.noKey");
-const RESOLVED_READY: Promise<void> = Promise.resolve();
+const RESOLVED_READY: Promise<void> = /*#__PURE__*/ Promise.resolve();
 
 function noop(): void {}
 
@@ -114,7 +114,7 @@ export class ResourceCache {
   }
 }
 
-export const sharedResourceCache = new ResourceCache();
+export const sharedResourceCache = /*#__PURE__*/ new ResourceCache();
 
 export function createResourceCache(): ResourceCache {
   return new ResourceCache();
