@@ -30,6 +30,7 @@
     "deprecate:legacy": "node scripts/deprecate-legacy.mjs",
     "version:bump": "node scripts/version.mjs",
     "version:check": "node scripts/verify-versions.mjs",
+    "published:check": "node scripts/verify-published.mjs",
     "bench:guard": "node scripts/bench-cpus.mjs node scripts/bench-guard.mjs"
   },
   "devDependencies": {

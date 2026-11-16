@@ -15,5 +15,8 @@
     "solidOps": 26809.65,
     "ratio": 0.83,
     "p50Ms": 0.04
+  },
+  "alloc": {
+    "totalKb": 5041.6
   }
 }

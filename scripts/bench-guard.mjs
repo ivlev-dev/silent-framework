@@ -11,7 +11,7 @@ const update = rawArgs.includes("--update");
 const strict = rawArgs.includes("--strict");
 const onlyArg = rawArgs.find((value) => value.startsWith("--only="));
 const only = new Set(
-  onlyArg === undefined ? ["build", "browser"] : onlyArg.slice("--only=".length).split(","),
+  onlyArg === undefined ? ["build", "browser", "alloc"] : onlyArg.slice("--only=".length).split(","),
 );
 
 const LIMITS = {
@@ -20,6 +20,7 @@ const LIMITS = {
   warmMs: 40,
   ratioDrop: 15,
   opsDrop: 25,
+  allocGrowth: 8,
 };
 
 function run(name, jsonPath, script) {
@@ -77,6 +78,10 @@ function collect() {
     }
     if (only.has("browser")) {
       metrics.browser = collectBrowser();
+    }
+    if (only.has("alloc")) {
+      const data = run("alloc", join(directory, "alloc.json"), "bench:alloc");
+      metrics.alloc = { totalKb: data.totalKb };
     }
     if (only.has("ssr")) {
       const data = run("ssr", join(directory, "ssr.json"), "bench:ssr");
@@ -161,6 +166,19 @@ function buildChecks(metrics, baseline) {
         current: browser.silentOps,
         limit: LIMITS.opsDrop,
         kind: "drop",
+      });
+    }
+  }
+  const alloc = metrics.alloc;
+  const baseAlloc = baseline.alloc;
+  if (alloc !== undefined && baseAlloc !== undefined) {
+    if (typeof alloc.totalKb === "number" && typeof baseAlloc.totalKb === "number") {
+      checks.push({
+        name: "alloc.totalKb",
+        base: baseAlloc.totalKb,
+        current: alloc.totalKb,
+        limit: LIMITS.allocGrowth,
+        kind: "growth",
       });
     }
   }

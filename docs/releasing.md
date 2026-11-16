@@ -54,7 +54,8 @@
    - проверяет совпадение тега с версиями всех 7 пакетов;
    - собирает нативные бинарники (Linux/Windows);
    - прогоняет `build`, `typecheck`, `cargo fmt`, `cargo test`, `pnpm test`, `pnpm api:check`, `pnpm pack:check`, `pnpm install:check`;
-   - публикует пакеты в npm (требуется секрет `NPM_TOKEN`).
+   - публикует пакеты в npm (требуется секрет `NPM_TOKEN`);
+   - проверяет, что `dist-tags` всех 7 пакетов в реестре совпадают с версией (`pnpm published:check`, до 10 попыток по 10 с — npm отдаёт обновление не сразу).
 
 ## Требования к релизу
 

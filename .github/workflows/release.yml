@@ -71,3 +71,6 @@ jobs:
       - run: pnpm -r --filter "./packages/**" publish --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Verify all packages are published
+        run: pnpm published:check
+        timeout-minutes: 10

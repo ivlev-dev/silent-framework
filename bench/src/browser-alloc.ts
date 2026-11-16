@@ -5,10 +5,13 @@ import { extname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium } from "playwright-core";
 import { build } from "vite";
+import { resolveBenchJsonPath, round2, writeBenchJson } from "./cli";
 
 const benchRoot = join(import.meta.dirname, "..");
 const cacheRoot = join(benchRoot, "node_modules", ".silent-bench", "browser");
-const APP = process.argv[2] ?? "silent";
+const jsonPath = resolveBenchJsonPath();
+const positional = process.argv.slice(2).filter((value) => !value.startsWith("-") && value !== jsonPath);
+const APP = positional[0] ?? "silent";
 const appRoot = join(benchRoot, "browser", APP);
 const clientDir = join(cacheRoot, APP, "client");
 const ssrDir = join(cacheRoot, APP, "ssr");
@@ -158,6 +161,15 @@ try {
   for (const [key, value] of rows) {
     console.log(`${((value / total) * 100).toFixed(1).padStart(5)}%  ${(value / 1024).toFixed(0).padStart(6)} KB  ${key}`);
   }
+  writeBenchJson(jsonPath, {
+    app: APP,
+    totalKb: round2(total / 1024),
+    sites: rows.map(([key, value]) => ({
+      key,
+      kb: round2(value / 1024),
+      share: round2((value / total) * 100),
+    })),
+  });
 } finally {
   await browser.close();
   await server.close();
