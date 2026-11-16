@@ -39,6 +39,8 @@ import {
   readMeta,
   toNode,
 } from "./component-lite.js";
+import { createPropsProxy } from "./props-proxy.js";
+import { registerPropsUpdater } from "./props-update.js";
 import {
   COMPONENT_DISPOSE,
   PRELOADER,
@@ -194,6 +196,8 @@ export function createViewResult(
 ): ComponentResult {
   let fragment: DocumentFragment | null = null;
   const hydrated = isHydrating();
+  const propsProxy = createPropsProxy(props);
+  const viewProps = propsProxy.value;
   let adoptPending = hydrated;
   let start: Comment;
   let end: Comment;
@@ -231,7 +235,7 @@ export function createViewResult(
   const scope = (options.container ?? rootContainer).createScope(
     `view:${getComponentName(component)}`,
   );
-  const context = new ComponentContext(props, scope, getSignal);
+  const context = new ComponentContext(viewProps, scope, getSignal);
   scope.bind(ComponentContext, () => context);
   const runtimeOptions: RuntimeOptions = {
     ...options,
@@ -328,10 +332,30 @@ export function createViewResult(
   attachDisposer(start, disposeInstance);
   (start as unknown as DisposeHost)[COMPONENT_DISPOSE] = disposeInstance;
 
+  const updateProps = (next: Record<string, unknown>): void => {
+    if (disposed) {
+      return;
+    }
+    propsProxy.update(next);
+    if (vmInstance === null) {
+      return;
+    }
+    propsAssign(vmInstance, viewProps);
+    if (createdCalled) {
+      callHook(vmInstance, "updated");
+    }
+  };
+  registerPropsUpdater(start, updateProps);
+
   const finishRender = (nextVm: object, initial: boolean): void => {
     const rootNode = currentNodes[0] ?? start;
-    assignVm(nextVm, props, rootNode);
+    assignVm(nextVm, viewProps, rootNode);
     context.view = rootNode;
+    registerPropsUpdater(rootNode, updateProps);
+    registerPropsUpdater(start, updateProps);
+    for (const node of currentNodes) {
+      registerPropsUpdater(node, updateProps);
+    }
     if (initial) {
       callHook(nextVm, "mounted");
     } else {
@@ -361,7 +385,7 @@ export function createViewResult(
                   this: unknown,
                   props: Record<string, unknown>,
                 ) => unknown
-              ).call(viewContext, props),
+              ).call(viewContext, viewProps),
             ),
           );
           const nodes = normalizeNodes(output);
@@ -410,7 +434,7 @@ export function createViewResult(
               this: unknown,
               props: Record<string, unknown>,
             ) => unknown
-          ).call(viewContext, props),
+          ).call(viewContext, viewProps),
         );
         if (disposed) {
           return null;
@@ -431,7 +455,7 @@ export function createViewResult(
     if (!adopt) {
       clearView();
     }
-    propsAssign(nextVm, props);
+    propsAssign(nextVm, viewProps);
     if (initial) {
       callHook(nextVm, "created");
       createdCalled = true;
@@ -473,7 +497,7 @@ export function createViewResult(
         name: getComponentName(componentRef),
         component: componentRef,
         meta: metaRef,
-        props,
+        props: viewProps,
         rerender: (nextComponent, nextMeta) => {
           componentRef = nextComponent;
           metaRef = nextMeta;
@@ -596,7 +620,7 @@ export function createViewResult(
   void root;
 
   const ownReady = getOwnReady(start);
-  return {
+  const result: ComponentResult = {
     node: hydrated ? start : fragment!,
     ready: ownReady,
     settled: Promise.race([
@@ -608,8 +632,11 @@ export function createViewResult(
       }),
       disposedGate,
     ]),
+    update: updateProps,
     dispose: disposeInstance,
   };
+  registerPropsUpdater(result.node, updateProps);
+  return result;
 }
 
 export function createComponentView(

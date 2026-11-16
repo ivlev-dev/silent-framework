@@ -43,6 +43,7 @@ const noopCleanup = (): void => {};
 
 interface ItemState<T> {
   item: T;
+  key: unknown;
   index: Accessor<number>;
   setIndex: Setter<number>;
   anchor: Comment | null;
@@ -64,6 +65,7 @@ interface MutableWindow {
 
 class KeyedState<T> implements ItemState<T> {
   item: T;
+  key: unknown;
   anchor: Comment | null;
   nodes: Node[];
   nodesEnd: Node | null;
@@ -75,8 +77,15 @@ class KeyedState<T> implements ItemState<T> {
   private handle: [Accessor<number>, Setter<number>] | null = null;
   private position: number;
 
-  constructor(item: T, anchor: Comment | null, itemEnd: Node | null, position: number) {
+  constructor(
+    item: T,
+    key: unknown,
+    anchor: Comment | null,
+    itemEnd: Node | null,
+    position: number,
+  ) {
     this.item = item;
+    this.key = key;
     this.anchor = anchor;
     this.nodes = itemEnd === null ? [] : NO_NODES;
     this.nodesEnd = itemEnd;
@@ -105,7 +114,45 @@ class KeyedState<T> implements ItemState<T> {
 export interface ForProps<T> {
   each: ListSource<T> | (() => ListSource<T>);
   children: (item: T, index: () => number) => Node;
+  keyOf?: (item: T, index: number) => unknown;
   fallback?: unknown;
+}
+
+function sameItem(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) {
+    return true;
+  }
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) {
+    return false;
+  }
+  const tag = Object.prototype.toString.call(a);
+  if (tag !== Object.prototype.toString.call(b)) {
+    return false;
+  }
+  if (tag === "[object Date]") {
+    return (a as Date).getTime() === (b as Date).getTime();
+  }
+  if (tag === "[object RegExp]") {
+    return String(a) === String(b);
+  }
+  if (tag !== "[object Object]" && tag !== "[object Array]") {
+    return false;
+  }
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  const keys = Object.keys(left);
+  if (keys.length !== Object.keys(right).length) {
+    return false;
+  }
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(right, key)) {
+      return false;
+    }
+    if (!Object.is(left[key], right[key])) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export interface ShowProps {
@@ -268,6 +315,14 @@ export function For<T>(props: ForProps<T>): Node {
   let container: DocumentFragment | null = null;
   const fallback = props.fallback;
   const hasFallback = fallback !== undefined;
+  const keyOf = props.keyOf;
+  const keyAt = (item: T, index: number): unknown => {
+    if (keyOf === undefined) {
+      return item;
+    }
+    const key = untrack(() => keyOf(item, index));
+    return key === undefined || key === null ? item : key;
+  };
   let states: ItemState<T>[] = [];
   let spare: ItemState<T>[] = [];
   const createdBuffer: ItemState<T>[] = [];
@@ -438,7 +493,7 @@ export function For<T>(props: ForProps<T>): Node {
     position: number,
     mountParent: Node | null = null,
   ): ItemState<T> => {
-    const state = new KeyedState<T>(item, anchor, itemEnd, position);
+    const state = new KeyedState<T>(item, keyAt(item, position), anchor, itemEnd, position);
     let initialMount: Node | null = mountParent;
     let seeded = itemEnd !== null;
     const run = (): void => {
@@ -473,6 +528,23 @@ export function For<T>(props: ForProps<T>): Node {
       attachDisposer(anchor, () => removeState(state));
     }
     return state;
+  };
+
+  const updateStateItem = (state: ItemState<T>, item: T): void => {
+    if (state.item === item) {
+      return;
+    }
+    const previous = state.item;
+    state.item = item;
+    if (keyOf === undefined) {
+      return;
+    }
+    if (untrack(() => sameItem(previous, item))) {
+      return;
+    }
+    runWithOwner(parentOwner, () => {
+      renderItem(state, props.children(item, state.index));
+    });
   };
 
   const createState = (
@@ -570,13 +642,24 @@ export function For<T>(props: ForProps<T>): Node {
     const previous = states;
     const previousLength = previous.length;
     const nextLength = items.length;
+    const desired = keyOf === undefined ? null : new Array<unknown>(nextLength);
+    if (desired !== null) {
+      for (let position = 0; position < nextLength; position += 1) {
+        desired[position] = keyAt(items[position] as T, position);
+      }
+    }
+    const desiredKey = (position: number): unknown =>
+      desired === null ? items[position] : desired[position];
     const shared = previousLength < nextLength ? previousLength : nextLength;
     let prefix = 0;
-    while (prefix < shared && previous[prefix]!.item === items[prefix]) {
+    while (prefix < shared && previous[prefix]!.key === desiredKey(prefix)) {
       prefix += 1;
     }
 
     if (prefix === shared) {
+      for (let position = 0; position < shared; position += 1) {
+        updateStateItem(previous[position]!, items[position] as T);
+      }
       if (nextLength >= previousLength) {
         if (nextLength > previousLength) {
           const batch = document.createDocumentFragment();
@@ -600,17 +683,17 @@ export function For<T>(props: ForProps<T>): Node {
 
     generation += 1;
     const currentGeneration = generation;
-    const pool = new Map<T, ItemState<T> | ItemState<T>[]>();
+    const pool = new Map<unknown, ItemState<T> | ItemState<T>[]>();
     for (let index = 0; index < previousLength; index += 1) {
       const state = previous[index]!;
       state.previousIndex = index;
-      const existing = pool.get(state.item);
+      const existing = pool.get(state.key);
       if (existing === undefined) {
-        pool.set(state.item, state);
+        pool.set(state.key, state);
       } else if (Array.isArray(existing)) {
         existing.push(state);
       } else {
-        pool.set(state.item, [existing, state]);
+        pool.set(state.key, [existing, state]);
       }
     }
 
@@ -623,18 +706,19 @@ export function For<T>(props: ForProps<T>): Node {
     runWithOwner(parentOwner, () => {
       for (let position = 0; position < nextLength; position += 1) {
         const item = items[position] as T;
-        const entry = pool.get(item);
+        const key = desiredKey(position);
+        const entry = pool.get(key);
         let state: ItemState<T> | undefined;
         if (entry === undefined) {
           state = undefined;
         } else if (Array.isArray(entry)) {
           state = entry.length === 0 ? undefined : entry.shift();
           if (entry.length === 0) {
-            pool.delete(item);
+            pool.delete(key);
           }
         } else {
           state = entry;
-          pool.delete(item);
+          pool.delete(key);
         }
         if (state === undefined) {
           if (batch === null) {
@@ -645,6 +729,7 @@ export function For<T>(props: ForProps<T>): Node {
           next.push(fresh);
           continue;
         }
+        updateStateItem(state, item);
         state.generation = currentGeneration;
         next.push(state);
       }

@@ -17,6 +17,7 @@ export {
   createRenderEffect,
   createRoot,
   createSignal,
+  createSignalHandle,
   flushSync,
   getOwner,
   onCleanup,
@@ -29,9 +30,14 @@ export { on } from "./on.js";
 
 export {
   deepReactive,
+  isRaw,
   isReactive,
   isReactiveClass,
+  isReadonly,
+  markRaw,
   markReactiveClass,
+  readonly,
+  ReadonlyMutationError,
   unwrap,
 } from "./deep.js";
 

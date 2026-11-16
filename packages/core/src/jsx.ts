@@ -1,3 +1,5 @@
+import type { ClassNameValue, StyleInput } from "./class-style.js";
+
 export type Child =
   | Node
   | string
@@ -113,10 +115,10 @@ export namespace JSX {
 }
 
 interface CommonProps {
-  class?: string;
-  className?: string;
+  class?: ClassNameValue;
+  className?: ClassNameValue;
   id?: string;
-  style?: string | Record<string, string | number | null | undefined>;
+  style?: StyleInput;
   ref?: unknown;
   children?: Children;
   dangerouslySetInnerHTML?: { __html: string };
@@ -138,6 +140,11 @@ interface CommonProps {
 interface InputProps extends CommonProps {
   value?: string | number | readonly string[] | undefined;
   checked?: boolean;
+  defaultValue?: string | number | readonly string[] | undefined;
+  defaultChecked?: boolean;
+  bindValue?: unknown;
+  bindChecked?: unknown;
+  indeterminate?: boolean | "mixed";
   disabled?: boolean;
   placeholder?: string;
   type?: string;
@@ -146,6 +153,8 @@ interface InputProps extends CommonProps {
 
 interface TextareaProps extends CommonProps {
   value?: string | number | readonly string[] | undefined;
+  defaultValue?: string | number | readonly string[] | undefined;
+  bindValue?: unknown;
   disabled?: boolean;
   placeholder?: string;
   name?: string;
@@ -153,6 +162,9 @@ interface TextareaProps extends CommonProps {
 
 interface SelectProps extends CommonProps {
   value?: string | number | readonly string[] | undefined;
+  defaultValue?: string | number | readonly string[] | undefined;
+  bindValue?: unknown;
+  multiple?: boolean;
   disabled?: boolean;
   name?: string;
 }

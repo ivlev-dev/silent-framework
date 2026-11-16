@@ -36,6 +36,9 @@ export function handleFor(result: ComponentResult, rootDispose: () => void): Mou
   return {
     ready: result.ready,
     settled: result.settled,
+    updateProps: (props: Record<string, unknown>) => {
+      result.update(props);
+    },
     dispose: () => {
       if (disposed) {
         return;

@@ -18,6 +18,7 @@ import {
   setErrorHandler,
   type RuntimeOptions,
 } from "./component-state.js";
+import { resetIds } from "./id.js";
 import {
   componentFactoryFor,
   createRootResult,
@@ -113,6 +114,7 @@ async function hydrateWith(
   create: ComponentFactory,
   forceFresh = false,
 ): Promise<MountHandle> {
+  resetIds();
   const boundaryStart = document.createComment(HYDRATE_START);
   const boundaryEnd = document.createComment(HYDRATE_END);
   element.insertBefore(boundaryStart, element.firstChild);

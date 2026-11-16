@@ -15,16 +15,67 @@ export {
   type ServerTemplate,
 } from "./server-backend.js";
 export * from "./types.js";
+export {
+  classNames,
+  normalizeClass,
+  normalizeStyle,
+  styleValue,
+  type ClassDictionary,
+  type ClassNameValue,
+  type StyleInput,
+  type StyleObject,
+  type StylePrimitive,
+} from "./class-style.js";
+export { registerPropsUpdater, getPropsUpdater, updateProps, type PropsUpdater } from "./props-update.js";
 export * from "./jsx.js";
-export { For, Show } from "./control-flow.js";
+export * from "./context.js";
+export * from "./id.js";
+export { For, Show, type ForProps } from "./control-flow.js";
+export { Keyed, mapKeyed, type KeyedProps, type KeyedRender, type KeySelector } from "./keyed.js";
 export { Index, type IndexProps } from "./index-list.js";
 export { Match, Switch, type MatchProps, type SwitchProps } from "./switch.js";
 export { ErrorBoundary, type ErrorBoundaryProps } from "./error-boundary.js";
+export {
+  Presence,
+  Transition,
+  TRANSITION_MARKER,
+  type TransitionProps,
+} from "./transition.js";
+export {
+  Portal,
+  Teleport,
+  PORTAL_MARKER,
+  type PortalProps,
+  type PortalTarget,
+} from "./portal.js";
 export { Suspense, lazy, type SuspenseProps, type LazyOptions } from "./suspense.js";
+export {
+  Head,
+  type HeadProps,
+  type HeadMetaProps,
+  type HeadLinkProps,
+  type HeadStyleProps,
+  type HeadValue,
+} from "./head.js";
+export {
+  ResourceCache,
+  clearResourceCache,
+  createResource,
+  createResourceCache,
+  sharedResourceCache,
+  type Resource,
+  type ResourceFetchContext,
+  type ResourceFetcher,
+  type ResourceOptions,
+  type ResourceStatus,
+} from "./resource.js";
 export {
   applyProps,
   attachDisposer,
   attr,
+  bindChecked,
+  bindSource,
+  bindValue,
   collectNodes,
   createElement,
   createMountPoint,
@@ -45,6 +96,8 @@ export {
   templateHoles,
   text,
   NODE_DISPOSER,
+  type BindAccessor,
+  type BindSetter,
   type MountPoint,
   type TemplateClone,
 } from "./dom.js";

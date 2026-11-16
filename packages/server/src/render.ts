@@ -4,6 +4,7 @@ import {
   createComponent,
   getReady,
   hasPendingWork,
+  resetIds,
   setMetadataCollector,
   setServerBackend,
   setServerMode,
@@ -88,6 +89,7 @@ export function renderToString(
 async function renderOnce(app: AnyComponent, options: RenderOptions): Promise<RenderResult> {
   const baseContainer = options.container ?? rootContainer;
   requestSeq += 1;
+  resetIds();
   const requestScope = baseContainer.createScope(`request:${requestSeq}`);
 
   const document = SERVER_DOCUMENT;

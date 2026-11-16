@@ -1,5 +1,12 @@
 import type { Child, Children } from "./jsx.js";
-import { createRenderEffect, onCleanup } from "@ivlev-dev/silent-reactivity";
+import { createRenderEffect, onCleanup, untrack } from "@ivlev-dev/silent-reactivity";
+import {
+  normalizeClass,
+  normalizeStyle,
+  styleDeclarations,
+  type ClassNameValue,
+  type StyleInput,
+} from "./class-style.js";
 import { createEffectUnlessStatic } from "./static-effect.js";
 import { extractMetadata, isMetadataElement, markMetadataFree } from "./metadata.js";
 import type { ServerHole } from "./server-backend.js";
@@ -104,17 +111,159 @@ const listenerRegistry = new WeakMap<Element, ListenerHolder | Map<string, Liste
 const delegatedInstalled = new Set<string>();
 const DELEGATED_EVENTS =
   /^(?:change|click|contextmenu|dblclick|input|keydown|keyup|mousedown|mouseup|pointerdown|pointerup|submit|touchend|touchstart)$/;
-const styleStates = new WeakMap<Element, StyleState>();
 const hyphenCache = new Map<string, string>();
 const eventNameCache = new Map<string, ParsedEvent>();
 
-interface StyleState {
-  readonly snapshot: Set<string>;
+interface ClassState {
+  readonly values: Map<object, string>;
+  applied: string | null;
+}
+
+interface StyleSlot {
+  declarations: Map<string, string>;
+}
+
+interface StyleRegistry {
+  readonly slots: Map<object, StyleSlot>;
   readonly applied: Map<string, string>;
 }
 
-function createStyleState(): StyleState {
-  return { snapshot: new Set<string>(), applied: new Map<string, string>() };
+const classStates = new WeakMap<Element, ClassState>();
+const styleRegistries = new WeakMap<Element, StyleRegistry>();
+const STATIC_CLASS_TOKEN: object = {};
+const STATIC_STYLE_TOKEN: object = {};
+
+function classStateFor(el: Element): ClassState {
+  let state = classStates.get(el);
+  if (state === undefined) {
+    state = { values: new Map<object, string>(), applied: null };
+    classStates.set(el, state);
+  }
+  return state;
+}
+
+function styleRegistryFor(el: Element): StyleRegistry {
+  let registry = styleRegistries.get(el);
+  if (registry === undefined) {
+    registry = { slots: new Map<object, StyleSlot>(), applied: new Map<string, string>() };
+    styleRegistries.set(el, registry);
+  }
+  return registry;
+}
+
+function mergedClass(state: ClassState): string {
+  const names = new Set<string>();
+  for (const value of state.values.values()) {
+    if (value === "") {
+      continue;
+    }
+    for (const name of value.split(/\s+/)) {
+      if (name !== "") {
+        names.add(name);
+      }
+    }
+  }
+  return [...names].join(" ");
+}
+
+function writeClass(el: Element, value: string): void {
+  if (value === "") {
+    el.removeAttribute("class");
+    return;
+  }
+  el.setAttribute("class", value);
+}
+
+function recomputeClass(el: Element, state: ClassState): void {
+  const next = mergedClass(state);
+  if (next === state.applied) {
+    return;
+  }
+  state.applied = next;
+  writeClass(el, next);
+}
+
+export function applyClass(
+  el: Element,
+  value: unknown,
+  token: object = STATIC_CLASS_TOKEN,
+): void {
+  const state = classStateFor(el);
+  const next = normalizeClass(value as ClassNameValue);
+  if (state.values.has(token) && state.values.get(token) === next) {
+    return;
+  }
+  state.values.set(token, next);
+  recomputeClass(el, state);
+}
+
+export function releaseClass(el: Element, token: object): void {
+  const state = classStates.get(el);
+  if (state === undefined || !state.values.delete(token)) {
+    return;
+  }
+  recomputeClass(el, state);
+}
+
+function mergedStyle(registry: StyleRegistry): Map<string, string> {
+  const merged = new Map<string, string>();
+  for (const slot of registry.slots.values()) {
+    for (const [property, value] of slot.declarations) {
+      merged.set(property, value);
+    }
+  }
+  return merged;
+}
+
+function recomputeStyle(el: Element, registry: StyleRegistry): void {
+  const style = (el as HTMLElement).style;
+  const merged = mergedStyle(registry);
+  const applied = registry.applied;
+  for (const [property, value] of merged) {
+    if (applied.get(property) !== value) {
+      style.setProperty(property, value);
+    }
+  }
+  for (const property of applied.keys()) {
+    if (!merged.has(property)) {
+      style.removeProperty(property);
+    }
+  }
+  applied.clear();
+  for (const [property, value] of merged) {
+    applied.set(property, value);
+  }
+}
+
+export function applyStyle(
+  el: Element,
+  value: unknown,
+  token: object = STATIC_STYLE_TOKEN,
+): void {
+  const registry = styleRegistryFor(el);
+  let slot = registry.slots.get(token);
+  if (slot === undefined) {
+    slot = { declarations: new Map<string, string>() };
+    registry.slots.set(token, slot);
+  }
+  slot.declarations = styleDeclarations(value as StyleInput);
+  recomputeStyle(el, registry);
+}
+
+export function releaseStyle(el: Element, token: object): void {
+  const registry = styleRegistries.get(el);
+  if (registry === undefined || !registry.slots.delete(token)) {
+    return;
+  }
+  recomputeStyle(el, registry);
+}
+
+function styleTarget(value: unknown): value is Element {
+  return (
+    typeof value === "object"
+    && value !== null
+    && typeof (value as { setAttribute?: unknown }).setAttribute === "function"
+  );
 }
 
 export const HOLE_MARKER = "silent-hole-";
@@ -136,7 +285,7 @@ export function isServerMode(): boolean {
   return serverMode;
 }
 
-const propertyNames = new Set<string>(["value", "checked", "selected", "disabled"]);
+const propertyNames = new Set<string>(["value", "checked", "selected", "disabled", "indeterminate"]);
 
 const booleanNames = new Set<string>([
   "hidden",
@@ -1118,31 +1267,81 @@ function isSvgElement(el: Element): boolean {
   return el instanceof SVGElement;
 }
 
-function setClass(el: Element, value: unknown): void {
-  if (value === null || value === undefined || value === false || value === "") {
-    el.removeAttribute("class");
-    return;
-  }
-  el.setAttribute("class", stringOf(value));
-}
-
 interface ServerAttribute {
   setAttribute(name: string, value: unknown): void;
+  removeAttribute?(name: string): void;
 }
 
 function serverAttribute(el: Element): ServerAttribute | null {
   return el instanceof Element ? null : (el as unknown as ServerAttribute);
 }
 
+function removeServerAttribute(server: ServerAttribute, name: string): void {
+  if (typeof server.removeAttribute === "function") {
+    server.removeAttribute(name);
+    return;
+  }
+  server.setAttribute(name, "");
+}
+
+function applyServerClass(server: ServerAttribute, value: unknown): void {
+  const next = normalizeClass(value as ClassNameValue);
+  if (next === "") {
+    removeServerAttribute(server, "class");
+    return;
+  }
+  server.setAttribute("class", next);
+}
+
+function applyServerStyle(server: ServerAttribute, value: unknown): void {
+  if (value === null || value === undefined || value === false) {
+    removeServerAttribute(server, "style");
+    return;
+  }
+  if (typeof value === "string") {
+    if (value === "") {
+      removeServerAttribute(server, "style");
+      return;
+    }
+    server.setAttribute("style", value);
+    return;
+  }
+  if (typeof value !== "object") {
+    server.setAttribute("style", String(value));
+    return;
+  }
+  const declarations = styleDeclarations(value as StyleInput);
+  if (declarations.size === 0) {
+    removeServerAttribute(server, "style");
+    return;
+  }
+  const record: Record<string, string> = {};
+  for (const [property, target] of declarations) {
+    record[property] = target;
+  }
+  server.setAttribute("style", record);
+}
+
 export function attr(el: Element, name: string, accessor: () => unknown): void {
   const server = serverAttribute(el);
   if (server !== null) {
     createEffectUnlessStatic(() => {
-      server.setAttribute(name, accessor());
+      const value = accessor();
+      if (name === "class" || name === "className") {
+        applyServerClass(server, value);
+        return;
+      }
+      if (name === "style") {
+        applyServerStyle(server, value);
+        return;
+      }
+      server.setAttribute(name, value);
     });
     return;
   }
   const svg = isSvgElement(el);
+  const classToken: object = {};
+  const styleToken: object = {};
   let prev: unknown;
   let initialized = false;
   const apply = (): void => {
@@ -1152,30 +1351,48 @@ export function attr(el: Element, name: string, accessor: () => unknown): void {
     }
     initialized = true;
     prev = value;
+    if (name === "class" || name === "className") {
+      applyClass(el, value, classToken);
+      return;
+    }
+    if (name === "style") {
+      applyStyle(el, value, styleToken);
+      return;
+    }
     applyAttr(el, name, value, svg);
   };
   if (isHydrating()) {
     hydratedEffect(apply);
-    return;
+  } else {
+    createRenderEffect(apply);
   }
-  createRenderEffect(apply);
+  onCleanup(() => {
+    if (name === "class" || name === "className") {
+      releaseClass(el, classToken);
+      return;
+    }
+    if (name === "style") {
+      releaseStyle(el, styleToken);
+    }
+  });
 }
 
 export function applyAttr(el: Element, name: string, value: unknown, svg: boolean): void {
+  const server = serverAttribute(el);
   if (name === "class" || name === "className") {
-    setClass(el, value);
+    if (server !== null) {
+      applyServerClass(server, value);
+      return;
+    }
+    applyClass(el, value);
     return;
   }
   if (name === "style") {
-    if (typeof value === "object" && value !== null) {
-      applyStyle(el, value, elementStyleState(el));
+    if (server !== null) {
+      applyServerStyle(server, value);
       return;
     }
-    if (value === null || value === undefined) {
-      applyStyle(el, value, elementStyleState(el));
-      return;
-    }
-    el.setAttribute("style", stringOf(value));
+    applyStyle(el, value);
     return;
   }
   if (!svg && propertyNames.has(name)) {
@@ -1274,6 +1491,13 @@ function removeSvgAttribute(el: Element, target: SvgAttributeTarget): void {
 
 function applyProperty(el: Element, name: string, value: unknown): void {
   const target = el as unknown as Record<string, unknown>;
+  if (name === "indeterminate") {
+    const enabled = value === "mixed" || Boolean(value);
+    if (target["indeterminate"] !== enabled) {
+      target["indeterminate"] = enabled;
+    }
+    return;
+  }
   if (name === "value") {
     if (el.localName === "select" && isServerMode()) {
       return;
@@ -1326,10 +1550,20 @@ export function spread(el: Element, accessor: () => unknown): void {
           key === "ref"
           || key === "children"
           || key === "key"
+          || key === "bindValue"
+          || key === "bindChecked"
           || key === "innerHTML"
           || key === "dangerouslySetInnerHTML"
           || isEventName(key)
         ) {
+          continue;
+        }
+        if (key === "class" || key === "className") {
+          applyServerClass(server, item);
+          continue;
+        }
+        if (key === "style") {
+          applyServerStyle(server, item);
           continue;
         }
         server.setAttribute(key, item);
@@ -1338,6 +1572,8 @@ export function spread(el: Element, accessor: () => unknown): void {
     return;
   }
   const svg = isSvgElement(el);
+  const classToken: object = {};
+  const styleToken: object = {};
   let prev: Record<string, unknown> | null = null;
   let prevKeys: readonly string[] | null = null;
   let currentRef: ((node: Element | null) => void) | null = null;
@@ -1355,11 +1591,15 @@ export function spread(el: Element, accessor: () => unknown): void {
       releaseRef();
       return;
     }
-    if (key === "children" || key === "key") {
+    if (key === "children" || key === "key" || key === "bindValue" || key === "bindChecked") {
+      return;
+    }
+    if (key === "class" || key === "className") {
+      applyClass(el, null, classToken);
       return;
     }
     if (key === "style") {
-      applyStyle(el, null, elementStyleState(el));
+      applyStyle(el, null, styleToken);
       return;
     }
     if (key === "innerHTML" || key === "dangerouslySetInnerHTML") {
@@ -1412,7 +1652,7 @@ export function spread(el: Element, accessor: () => unknown): void {
         }
         continue;
       }
-      if (key === "children" || key === "key") {
+      if (key === "children" || key === "key" || key === "bindValue" || key === "bindChecked") {
         continue;
       }
       if (key === "innerHTML" || key === "dangerouslySetInnerHTML") {
@@ -1424,11 +1664,11 @@ export function spread(el: Element, accessor: () => unknown): void {
         continue;
       }
       if (key === "class" || key === "className") {
-        setClass(el, next);
+        applyClass(el, next, classToken);
         continue;
       }
       if (key === "style") {
-        applyStyle(el, next, elementStyleState(el));
+        applyStyle(el, next, styleToken);
         continue;
       }
       applyAttr(el, key, next, svg);
@@ -1438,6 +1678,10 @@ export function spread(el: Element, accessor: () => unknown): void {
   });
 
   onCleanup(releaseRef);
+  onCleanup(() => {
+    releaseClass(el, classToken);
+    releaseStyle(el, styleToken);
+  });
 }
 
 function applyInnerHtml(el: Element, value: unknown): void {
@@ -1497,123 +1741,554 @@ export function prop(el: Element, name: string, accessor: () => unknown): void {
   });
 }
 
-export function style(el: Element, accessor: () => unknown): void {
-  const server = serverAttribute(el);
-  if (server !== null) {
-    createEffectUnlessStatic(() => {
-      server.setAttribute("style", accessor());
-    });
+export type BindAccessor<T = unknown> = () => T;
+
+export type BindSetter<T = unknown> = (value: T) => void;
+
+const MISSING = Symbol("silent.missing");
+
+type ValueControl = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+
+type NormalizedValue = string | readonly string[];
+
+interface ValueBinding {
+  read: BindAccessor<unknown> | null;
+  setter: BindSetter<unknown> | null;
+  applied: NormalizedValue | typeof MISSING;
+  initialized: boolean;
+  writing: boolean;
+  composing: boolean;
+  deferred: unknown;
+  hasDeferred: boolean;
+  pending: NormalizedValue | null;
+  observer: MutationObserver | null;
+  detached: boolean;
+}
+
+interface CheckBinding {
+  read: BindAccessor<unknown> | null;
+  setter: BindSetter<unknown> | null;
+  checked: boolean | typeof MISSING;
+  mixed: boolean;
+  initialized: boolean;
+  writing: boolean;
+  detached: boolean;
+}
+
+const valueBindings = new WeakMap<Element, ValueBinding>();
+const checkBindings = new WeakMap<Element, CheckBinding>();
+
+function isTextControl(el: ValueControl): boolean {
+  if (el.localName === "textarea") {
+    return true;
+  }
+  if (el.localName !== "input") {
+    return false;
+  }
+  const type = (el as HTMLInputElement).type;
+  return type !== "checkbox" && type !== "radio" && type !== "file" && type !== "hidden";
+}
+
+function supportsSelection(el: ValueControl): boolean {
+  try {
+    return (
+      el.localName === "textarea"
+      || (el.localName === "input" && (el as HTMLInputElement).selectionStart !== null)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function normalizeText(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (Array.isArray(value)) {
+    return value.length === 0 ? "" : String(value[0]);
+  }
+  return String(value);
+}
+
+function normalizeList(value: unknown): readonly string[] {
+  if (value === null || value === undefined) {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    const out: string[] = [];
+    for (const item of value) {
+      if (item !== null && item !== undefined) {
+        out.push(String(item));
+      }
+    }
+    return out;
+  }
+  if (typeof (value as Iterable<unknown>)[Symbol.iterator] === "function") {
+    const out: string[] = [];
+    for (const item of value as Iterable<unknown>) {
+      if (item !== null && item !== undefined) {
+        out.push(String(item));
+      }
+    }
+    return out;
+  }
+  return [String(value)];
+}
+
+function sameNormalized(a: NormalizedValue, b: NormalizedValue): boolean {
+  if (typeof a === "string" || typeof b === "string") {
+    return a === b;
+  }
+  if (a.length !== b.length) {
+    return false;
+  }
+  for (let index = 0; index < a.length; index += 1) {
+    if (a[index] !== b[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function writeValue(control: ValueControl, value: NormalizedValue): void {
+  if (control.localName === "select") {
+    const select = control as HTMLSelectElement;
+    if (select.multiple && typeof value !== "string") {
+      const wanted = new Set(value);
+      const options = Array.from(select.options);
+      for (const option of options) {
+        option.selected = wanted.has(option.value);
+      }
+      return;
+    }
+    select.value = typeof value === "string" ? value : value[0] ?? "";
     return;
   }
-  const state = createStyleState();
-  createRenderEffect(() => {
-    applyStyle(el, accessor(), state);
+  (control as HTMLInputElement).value = typeof value === "string" ? value : value[0] ?? "";
+}
+
+function readValue(control: ValueControl): NormalizedValue {
+  if (control.localName === "select") {
+    const select = control as HTMLSelectElement;
+    if (select.multiple) {
+      const values: string[] = [];
+      for (const option of Array.from(select.options)) {
+        if (option.selected) {
+          values.push(option.value);
+        }
+      }
+      return values;
+    }
+    return select.value;
+  }
+  return control.value;
+}
+
+function flushSelect(control: HTMLSelectElement, state: ValueBinding): void {
+  const pending = state.pending;
+  if (pending === null || state.detached) {
+    return;
+  }
+  if (control.options.length === 0) {
+    return;
+  }
+  state.pending = null;
+  const observer = state.observer;
+  state.observer = null;
+  observer?.disconnect();
+  state.applied = pending;
+  state.initialized = true;
+  state.writing = true;
+  try {
+    writeValue(control, pending);
+  } finally {
+    state.writing = false;
+  }
+}
+
+function scheduleSelect(control: HTMLSelectElement, state: ValueBinding, value: NormalizedValue): void {
+  state.pending = value;
+  if (state.observer === null && typeof MutationObserver !== "undefined") {
+    const observer = new MutationObserver(() => flushSelect(control, state));
+    observer.observe(control, { childList: true, subtree: true });
+    state.observer = observer;
+  }
+  queueMicrotask(() => flushSelect(control, state));
+}
+
+function ensureDefaultValue(control: ValueControl, text: string): void {
+  if (!isTextControl(control) || text === "") {
+    return;
+  }
+  const field = control as HTMLInputElement;
+  if (field.defaultValue === "") {
+    field.defaultValue = text;
+  }
+}
+
+function captureSelection(
+  control: ValueControl,
+): readonly [number | null, number | null, "forward" | "backward" | "none"] | null {
+  if (!supportsSelection(control)) {
+    return null;
+  }
+  const field = control as HTMLInputElement;
+  if (field.ownerDocument.activeElement !== control) {
+    return null;
+  }
+  return [field.selectionStart, field.selectionEnd, field.selectionDirection ?? "none"];
+}
+
+function restoreSelection(
+  control: ValueControl,
+  selection: readonly [number | null, number | null, "forward" | "backward" | "none"] | null,
+): void {
+  if (selection === null || !supportsSelection(control)) {
+    return;
+  }
+  const field = control as HTMLInputElement;
+  const start = selection[0];
+  const end = selection[1];
+  if (start === null || end === null) {
+    return;
+  }
+  try {
+    const length = field.value.length;
+    field.setSelectionRange(Math.min(start, length), Math.min(end, length), selection[2]);
+  } catch {
+    return;
+  }
+}
+
+function syncFromControl(control: ValueControl, state: ValueBinding): void {
+  if (state.writing || state.composing) {
+    return;
+  }
+  if (!isTextControl(control) && control.localName === "input") {
+    return;
+  }
+  const value = readValue(control);
+  state.applied = value;
+  state.initialized = true;
+  const setter = state.setter;
+  if (setter !== null) {
+    untrack(() => setter(value));
+  }
+}
+
+function attachValueListeners(control: ValueControl, state: ValueBinding): void {
+  const onInput = (): void => {
+    syncFromControl(control, state);
+  };
+  const onCompositionStart = (): void => {
+    state.composing = true;
+  };
+  const onCompositionEnd = (): void => {
+    state.composing = false;
+    if (state.hasDeferred) {
+      const deferred = state.deferred;
+      state.hasDeferred = false;
+      state.deferred = undefined;
+      applyValue(control, state, deferred);
+      return;
+    }
+    syncFromControl(control, state);
+  };
+  const onReset = (): void => {
+    const read = state.read;
+    if (read === null) {
+      return;
+    }
+    queueMicrotask(() => {
+      if (state.detached || read === null) {
+        return;
+      }
+      state.initialized = false;
+      state.applied = MISSING;
+      applyValue(control, state, untrack(read));
+    });
+  };
+  control.addEventListener("input", onInput);
+  control.addEventListener("compositionstart", onCompositionStart);
+  control.addEventListener("compositionend", onCompositionEnd);
+  const form = control.form;
+  form?.addEventListener("reset", onReset);
+  onCleanup(() => {
+    state.detached = true;
+    state.observer?.disconnect();
+    state.observer = null;
+    control.removeEventListener("input", onInput);
+    control.removeEventListener("compositionstart", onCompositionStart);
+    control.removeEventListener("compositionend", onCompositionEnd);
+    form?.removeEventListener("reset", onReset);
   });
 }
 
-function elementStyleState(el: Element): StyleState {
-  let state = styleStates.get(el);
+function applyValue(control: ValueControl, state: ValueBinding, raw: unknown): void {
+  const multiple = control.localName === "select" && (control as HTMLSelectElement).multiple;
+  const value: NormalizedValue = multiple ? normalizeList(raw) : normalizeText(raw);
+  if (state.initialized && state.applied !== MISSING && sameNormalized(state.applied, value)) {
+    return;
+  }
+  if (state.composing) {
+    state.deferred = raw;
+    state.hasDeferred = true;
+    return;
+  }
+  if (!multiple) {
+    ensureDefaultValue(control, value as string);
+  }
+  if (
+    control.localName === "select"
+    && (control as HTMLSelectElement).options.length === 0
+    && (typeof value === "string" ? value !== "" : value.length > 0)
+  ) {
+    scheduleSelect(control as HTMLSelectElement, state, value);
+    return;
+  }
+  state.initialized = true;
+  state.applied = value;
+  if (control.localName !== "select" && control.value === (typeof value === "string" ? value : value[0] ?? "")) {
+    return;
+  }
+  const selection = captureSelection(control);
+  state.writing = true;
+  try {
+    writeValue(control, value);
+  } finally {
+    state.writing = false;
+  }
+  restoreSelection(control, selection);
+  if (control.localName === "select" && !multiple) {
+    const select = control as HTMLSelectElement;
+    const desired = value as string;
+    if (desired !== "" && select.value !== desired) {
+      scheduleSelect(select, state, desired);
+    }
+  }
+}
+
+export function bindValue(
+  el: Element,
+  accessor: BindAccessor<unknown>,
+  setter?: BindSetter<unknown>,
+): void {
+  const server = serverAttribute(el);
+  if (server !== null) {
+    createEffectUnlessStatic(() => {
+      server.setAttribute("value", accessor());
+    });
+    return;
+  }
+  if (isServerMode()) {
+    createEffectUnlessStatic(() => {
+      applyAttr(el, "value", accessor(), false);
+    });
+    return;
+  }
+  if (el.localName !== "input" && el.localName !== "textarea" && el.localName !== "select") {
+    attr(el, "value", accessor);
+    return;
+  }
+  const control = el as ValueControl;
+  let state = valueBindings.get(control);
   if (state === undefined) {
-    state = createStyleState();
-    styleStates.set(el, state);
+    state = {
+      read: null,
+      setter: setter ?? null,
+      applied: MISSING,
+      initialized: false,
+      writing: false,
+      composing: false,
+      deferred: undefined,
+      hasDeferred: false,
+      pending: null,
+      observer: null,
+      detached: false,
+    };
+    valueBindings.set(control, state);
+    attachValueListeners(control, state);
+  } else if (setter !== undefined) {
+    state.setter = setter;
   }
-  return state;
+  state.read = accessor;
+  const apply = (): void => {
+    applyValue(control, state as ValueBinding, accessor());
+  };
+  if (isHydrating()) {
+    hydratedEffect(apply);
+    return;
+  }
+  createRenderEffect(apply);
 }
 
-function applyStyle(el: Element, value: unknown, state: StyleState): void {
-  const style = (el as HTMLElement).style;
-  const applied = state.applied;
-  const snapshot = state.snapshot;
-  if (value === null || value === undefined) {
-    for (const key of snapshot) {
-      style.removeProperty(key);
-    }
-    snapshot.clear();
-    applied.clear();
+function applyChecked(control: HTMLInputElement, state: CheckBinding, raw: unknown): void {
+  const mixed = raw === "mixed";
+  const checked = mixed ? false : Boolean(raw);
+  if (state.initialized && state.checked === checked && state.mixed === mixed) {
     return;
   }
-  if (typeof value === "string") {
-    const keys = new Set<string>();
-    for (const [key, target] of parseStyleString(value)) {
-      keys.add(key);
-      if (target === "") {
-        if (applied.get(key) !== "") {
-          style.removeProperty(key);
-          applied.delete(key);
-        }
-        snapshot.delete(key);
-        continue;
-      }
-      if (applied.get(key) !== target) {
-        style.setProperty(key, target);
-        applied.set(key, target);
-      }
-      snapshot.add(key);
-    }
-    for (const key of snapshot) {
-      if (!keys.has(key)) {
-        style.removeProperty(key);
-        snapshot.delete(key);
-        applied.delete(key);
-      }
-    }
-    return;
+  if (!state.initialized) {
+    control.defaultChecked = checked;
   }
-  if (typeof value !== "object") {
-    return;
-  }
-  const props = value as Record<string, string | number | null | undefined>;
-  const keys = new Set<string>();
-  for (const raw of Object.keys(props)) {
-    const next = props[raw];
-    const key = hyphen(raw);
-    const target = next === null || next === undefined ? "" : String(next);
-    keys.add(key);
-    if (target === "") {
-      if (applied.get(key) !== "") {
-        style.removeProperty(key);
-        applied.delete(key);
-      }
-      snapshot.delete(key);
-      continue;
-    }
-    if (applied.get(key) !== target) {
-      style.setProperty(key, target);
-      applied.set(key, target);
-    }
-    snapshot.add(key);
-  }
-  for (const key of snapshot) {
-    if (!keys.has(key)) {
-      style.removeProperty(key);
-      snapshot.delete(key);
-      applied.delete(key);
-    }
+  state.initialized = true;
+  state.checked = checked;
+  state.mixed = mixed;
+  state.writing = true;
+  try {
+    control.indeterminate = mixed;
+    control.checked = checked;
+  } finally {
+    state.writing = false;
   }
 }
 
-function parseStyleString(value: string): Array<[string, string]> {
-  const entries: Array<[string, string]> = [];
-  let cursor = 0;
-  while (cursor <= value.length) {
-    const limit = value.indexOf(";", cursor);
-    const entryEnd = limit === -1 ? value.length : limit;
-    const separator = value.indexOf(":", cursor);
-    const keyEnd = separator !== -1 && separator < entryEnd ? separator : entryEnd;
-    const key = value.slice(cursor, keyEnd).trim();
-    if (key !== "") {
-      const target =
-        separator !== -1 && separator < entryEnd
-          ? value.slice(separator + 1, entryEnd).trim()
-          : "";
-      entries.push([key, target]);
+function attachCheckListeners(control: HTMLInputElement, state: CheckBinding): void {
+  const onChange = (): void => {
+    if (state.writing) {
+      return;
     }
-    if (limit === -1) {
-      break;
+    if (control.type === "radio") {
+      if (!control.checked) {
+        return;
+      }
+      control.indeterminate = false;
+      state.checked = true;
+      state.mixed = false;
+      state.initialized = true;
+      const setter = state.setter;
+      if (setter !== null) {
+        untrack(() => setter(true));
+      }
+      return;
     }
-    cursor = limit + 1;
+    control.indeterminate = false;
+    state.checked = control.checked;
+    state.mixed = false;
+    state.initialized = true;
+    const setter = state.setter;
+    if (setter !== null) {
+      untrack(() => setter(control.checked));
+    }
+  };
+  const onReset = (): void => {
+    const read = state.read;
+    if (read === null) {
+      return;
+    }
+    queueMicrotask(() => {
+      if (state.detached || read === null) {
+        return;
+      }
+      state.initialized = false;
+      state.checked = MISSING;
+      applyChecked(control, state, untrack(read));
+    });
+  };
+  control.addEventListener("change", onChange);
+  const form = control.form;
+  form?.addEventListener("reset", onReset);
+  onCleanup(() => {
+    state.detached = true;
+    control.removeEventListener("change", onChange);
+    form?.removeEventListener("reset", onReset);
+  });
+}
+
+export function bindChecked(
+  el: Element,
+  accessor: BindAccessor<unknown>,
+  setter?: BindSetter<unknown>,
+): void {
+  const server = serverAttribute(el);
+  if (server !== null) {
+    createEffectUnlessStatic(() => {
+      const value = accessor();
+      server.setAttribute("checked", value === "mixed" ? false : Boolean(value));
+    });
+    return;
   }
-  return entries;
+  if (isServerMode()) {
+    createEffectUnlessStatic(() => {
+      const value = accessor();
+      applyAttr(el, "checked", value === "mixed" ? undefined : Boolean(value), false);
+    });
+    return;
+  }
+  if (el.localName !== "input") {
+    attr(el, "checked", accessor);
+    return;
+  }
+  const control = el as HTMLInputElement;
+  if (control.type !== "checkbox" && control.type !== "radio") {
+    attr(el, "checked", accessor);
+    return;
+  }
+  let state = checkBindings.get(control);
+  if (state === undefined) {
+    state = {
+      read: null,
+      setter: setter ?? null,
+      checked: MISSING,
+      mixed: false,
+      initialized: false,
+      writing: false,
+      detached: false,
+    };
+    checkBindings.set(control, state);
+    attachCheckListeners(control, state);
+  } else if (setter !== undefined) {
+    state.setter = setter;
+  }
+  state.read = accessor;
+  const apply = (): void => {
+    applyChecked(control, state as CheckBinding, accessor());
+  };
+  if (isHydrating()) {
+    hydratedEffect(apply);
+    return;
+  }
+  createRenderEffect(apply);
+}
+
+export function bindSource(
+  value: unknown,
+): readonly [BindAccessor<unknown>, BindSetter<unknown> | undefined] {
+  if (Array.isArray(value) && value.length === 2 && typeof value[0] === "function") {
+    return [value[0] as BindAccessor<unknown>, value[1] as BindSetter<unknown>];
+  }
+  if (typeof value === "function") {
+    return [value as BindAccessor<unknown>, undefined];
+  }
+  if (typeof value === "object" && value !== null && typeof (value as { get?: unknown }).get === "function") {
+    const binding = value as { get: BindAccessor<unknown>; set?: BindSetter<unknown> };
+    return [binding.get, typeof binding.set === "function" ? binding.set : undefined];
+  }
+  return [() => value, undefined];
+}
+
+export function style(el: Element, accessor: () => unknown): void;
+export function style(...values: readonly StyleInput[]): string;
+export function style(...args: unknown[]): void | string {
+  const first = args[0];
+  if (args.length >= 2 && styleTarget(first)) {
+    const el = first;
+    const accessor = args[1] as () => unknown;
+    const server = serverAttribute(el);
+    if (server !== null) {
+      createEffectUnlessStatic(() => {
+        applyServerStyle(server, accessor());
+      });
+      return;
+    }
+    const token: object = {};
+    createRenderEffect(() => {
+      applyStyle(el, accessor(), token);
+    });
+    onCleanup(() => releaseStyle(el, token));
+    return;
+  }
+  return normalizeStyle(...(args as StyleInput[]));
 }
 
 export function hyphen(raw: string): string {
@@ -2029,6 +2704,16 @@ export function applyProps(el: Element, props: Record<string, unknown> | undefin
   for (const key of Object.keys(props)) {
     const value = props[key];
     if (key === "children" || key === "key") {
+      continue;
+    }
+    if (key === "bindValue") {
+      const [accessor, setter] = bindSource(value);
+      bindValue(el, accessor, setter);
+      continue;
+    }
+    if (key === "bindChecked") {
+      const [accessor, setter] = bindSource(value);
+      bindChecked(el, accessor, setter);
       continue;
     }
     if (key === "ref") {

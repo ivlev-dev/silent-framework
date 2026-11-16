@@ -18,15 +18,52 @@ export {
   template,
   templateHoles,
   dynamic,
+  bindValue,
+  bindChecked,
+  bindSource,
   attachDisposer,
   NODE_DISPOSER,
 } from "./dom.js";
 
-export { For, Show } from "./control-flow.js";
+export {
+  classNames,
+  normalizeClass,
+  normalizeStyle,
+  styleValue,
+  type ClassDictionary,
+  type ClassNameValue,
+  type StyleInput,
+  type StyleObject,
+  type StylePrimitive,
+} from "./class-style.js";
+export { updateProps, type PropsUpdater } from "./props-update.js";
+
+export { For, Show, type ForProps } from "./control-flow.js";
+export { Keyed, mapKeyed, type KeyedProps, type KeyedRender, type KeySelector } from "./keyed.js";
 export { Index, type IndexProps } from "./index-list.js";
 export { Match, Switch, type MatchProps, type SwitchProps } from "./switch.js";
 export { ErrorBoundary, type ErrorBoundaryProps } from "./error-boundary.js";
 export { Suspense, lazy, type SuspenseProps, type LazyOptions } from "./suspense.js";
+export {
+  Head,
+  type HeadProps,
+  type HeadMetaProps,
+  type HeadLinkProps,
+  type HeadStyleProps,
+  type HeadValue,
+} from "./head.js";
+export {
+  ResourceCache,
+  clearResourceCache,
+  createResource,
+  createResourceCache,
+  sharedResourceCache,
+  type Resource,
+  type ResourceFetchContext,
+  type ResourceFetcher,
+  type ResourceOptions,
+  type ResourceStatus,
+} from "./resource.js";
 export {
   component,
   createComponent,

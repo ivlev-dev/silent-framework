@@ -262,18 +262,25 @@ describe("deepReactive", () => {
     expect(snapshots.at(-1)).toEqual(["b"]);
   });
 
-  it("does not wrap built-in objects or DOM-like values", () => {
+  it("does not wrap non-collection built-in objects or DOM-like values", () => {
     const date = new Date();
-    const map = new Map<string, number>();
-    const set = new Set<number>();
     const promise = Promise.resolve(1);
     const weak = new WeakMap<object, number>();
     expect(deepReactive(date)).toBe(date);
-    expect(deepReactive(map)).toBe(map);
-    expect(deepReactive(set)).toBe(set);
     expect(deepReactive(promise)).toBe(promise);
     expect(deepReactive(weak)).toBe(weak);
     expect(isReactive(date)).toBe(false);
+  });
+
+  it("wraps Map and Set into reactive proxies", () => {
+    const map = new Map<string, number>();
+    const set = new Set<number>();
+    expect(isReactive(deepReactive(map))).toBe(true);
+    expect(isReactive(deepReactive(set))).toBe(true);
+    expect(deepReactive(map)).toBe(deepReactive(map));
+    expect(deepReactive(set)).toBe(deepReactive(set));
+    expect(unwrap(deepReactive(map))).toBe(map);
+    expect(unwrap(deepReactive(set))).toBe(set);
   });
 
   it("does not rewrap instances of reactive classes", () => {

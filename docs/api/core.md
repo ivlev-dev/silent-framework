@@ -251,6 +251,7 @@ interface ComponentResult {
   readonly node: Node;
   readonly ready: Promise<void>;
   readonly settled: Promise<void>;
+  update(props: Record<string, unknown>): void;
   dispose(): void;
 }
 ```
@@ -258,6 +259,7 @@ interface ComponentResult {
 - `node` — корневой узел (элемент, фрагмент или фрагмент с маркерами view).
 - `ready` — готовность самого компонента: для view-компонента завершается после резолва VM и рендера; для синхронного — сразу (либо берётся `COMPONENT_READY` внутри результата).
 - `settled` — готовность всего поддерева: дочерние async VM, `lazy`, `Suspense` и `whenIdle`.
+- `update(props)` — аддитивное обновление props без пересоздания компонента: view сохраняет VM/scope и пересчитывает реактивные биндинги, вызывая `updated()`; light-компонент получает стабильный Proxy, а при отсутствии подписчиков перерисовывается с восстановлением focus.
 - `dispose()` — останавливает компонент: прерывает `signal`, снимает узлы с DOM, останавливает эффекты и scope, снимает HMR-регистрацию.
 
 ### `RuntimeOptions`
@@ -679,13 +681,29 @@ interface MountOptions {
 interface MountHandle {
   readonly ready: Promise<void>;
   readonly settled: Promise<void>;
+  updateProps(props: Record<string, unknown>): void;
   dispose(): void;
 }
 ```
 
 - `ready` — готовность корневого компонента.
 - `settled` — готовность всего дерева: дочерние async VM, `lazy`, `Suspense` и `whenIdle`. Для ожидания полного UI используйте `settled`.
+- `updateProps(props)` — обновляет props корневого компонента тем же способом, что `ComponentResult.update`: без пересоздания VM и с сохранением DOM/focus.
 - `dispose()` — демонтирует приложение (идемпотентно): dispose корневого компонента и владельца, снятие узлов; ViewModel проходит `beforeUnmount`/`unmounted`/`dispose`.
+
+### `updateProps`
+
+*Стабильность: public.*
+
+```ts
+type PropsUpdater = (props: Record<string, unknown>) => void;
+
+function updateProps(node: Node, props: Record<string, unknown>): boolean;
+function registerPropsUpdater(node: Node, updater: PropsUpdater): void;
+function getPropsUpdater(node: Node): PropsUpdater | null;
+```
+
+Реестр обновляторов props, привязанный к узлам результата. `updateProps(node, props)` находит updater по корневому узлу или отрендеренному элементу и возвращает `true`; для неизвестного узла возвращает `false`. `registerPropsUpdater`/`getPropsUpdater` позволяют встроить компонент в собственный рендерер. Публичный тип updater — `PropsUpdater`.
 
 ### `hydrate`
 
@@ -1301,6 +1319,150 @@ interface LazyOptions {
 - `preloader` — прелоадер, показываемый вне `Suspense` до загрузки модуля; `null` явно отключает глобальный.
 - `onError` — локальный обработчик ошибки загрузки; без него используется глобальный обработчик.
 
+## Прикладные примитивы
+
+Экспортируемые примитивы: `Context`, `createContext`, `captureContextValues`, `adoptContextValues`, `ContextMissingError`, `ContextOptions`, `BoundContext`, `Provider`, `ProviderProps`, `ProviderChildren`, `createId`, `useId`, `resetIds`, `currentIdCount`, `withIdScope`, `IdGenerator`, `IdSequence`, `createIdGenerator`, `Portal`, `Teleport`, `PORTAL_MARKER`, `PortalProps`, `PortalTarget`, `Transition`, `Presence`, `TRANSITION_MARKER`, `TransitionProps`, `Resource`, `createResource`, `ResourceCache`, `createResourceCache`, `clearResourceCache`, `sharedResourceCache`, `ResourceStatus`, `ResourceFetchContext`, `ResourceFetcher`, `ResourceOptions`, `Head`, `HeadProps`, `HeadMetaProps`, `HeadLinkProps`, `HeadStyleProps`, `HeadValue`, `ForProps`, `Keyed`, `mapKeyed`, `KeyedProps`, `KeyedRender`, `KeySelector`, `bindValue`, `bindChecked`, `bindSource`, `BindAccessor`, `BindSetter`.
+
+### Context и Provider
+
+```ts
+class Context<T> {
+  constructor(options?: ContextOptions<T>);
+  readonly name: string;
+  get(): T;
+  tryGet(): T | undefined;
+  has(): boolean;
+  provide<R>(value: T, fn: () => R): R;
+  bind(): BoundContext<T>;
+}
+
+function createContext<T>(options?: ContextOptions<T>): Context<T>;
+function Provider<T>(props: ProviderProps<T>): Node;
+function captureContextValues(): Map<object, unknown> | null;
+function adoptContextValues(owner: Owner, values: Map<object, unknown>): void;
+```
+
+`ContextOptions` содержит `defaultValue` и `name`; при отсутствии провайдера и default `get()` бросает `ContextMissingError`. `Provider` — обычный компонент без VM; для вычисляемых детей используйте `children`-функцию. `BoundContext` — снимок значения для кода после `await`. `ProviderProps`/`ProviderChildren` описывают props/детей провайдера.
+
+### Идентификаторы
+
+```ts
+function createId(prefix?: string): string;
+function useId(prefix?: string): string;
+function resetIds(): void;
+function currentIdCount(): number;
+function withIdScope<T>(fn: () => T): T;
+class IdSequence implements IdGenerator {
+  readonly count: number;
+  next(prefix?: string): string;
+  reset(): void;
+}
+function createIdGenerator(prefix?: string): IdSequence;
+```
+
+`useId` — плоская функция, не React-hook. `resetIds` вызывается серверным рендером и гидрацией; для детерминированных SSR/CSR id храните id в VM, если view перерисовывается.
+
+### Portal и Teleport
+
+```ts
+function Portal(props: PortalProps): Node;
+const Teleport = Portal;
+type PortalTarget = Element | string | (() => Element | null);
+const PORTAL_MARKER = "silent-portal";
+```
+
+`PortalProps`: `target`, `children`. `Portal` переносит DOM в target, поддерживает reactive target и вложенные порталы. SSR отдаёт только маркер `PORTAL_MARKER` (client-only контент); при гидрации маркер адоптируется, при отсутствии — `HydrationMismatchError`.
+
+### Transition и Presence
+
+```ts
+function Transition(props: TransitionProps): Node;
+const Presence = Transition;
+const TRANSITION_MARKER = "silent-transition";
+```
+
+`TransitionProps`: `show`/`when`, `children`, `enterClass`, `leaveClass`, `duration`, `fallback`, `unmount`. Для leave-анимации DOM сохраняется до окончания `duration`; `unmount: false` оставляет узел после анимации. SSR рендерит актуальную ветку и `TRANSITION_MARKER`.
+
+### Resource
+
+```ts
+function createResource<T, K = unknown>(
+  fetcher: ResourceFetcher<T>,
+  options?: ResourceOptions<T, K>,
+): Resource<T>;
+class ResourceCache { /* get/set/has/delete/clear, in-flight dedupe */ }
+function createResourceCache(): ResourceCache;
+function clearResourceCache(cache?: ResourceCache): void;
+const sharedResourceCache: ResourceCache;
+type ResourceStatus = "idle" | "pending" | "success" | "error";
+```
+
+`Resource` даёт accessors `data`, `error`, `pending`, `status`, `key`, промис `ready`, методы `read`, `refetch`, `set`, `mutate`, `abort`, `dispose`. `ResourceFetchContext` содержит `signal` и `key`. `ResourceFetcher` возвращает значение или Promise. `ResourceOptions` включает key/cache/cacheTime/dedupe/immediate/throwOnError/onError/boundary/signal/disposeOnCleanup.
+
+### Head
+
+```ts
+function Head(props: HeadProps): Node;
+```
+
+`HeadProps` принимает `title`, `meta`, `link`, `style` и `children`; `HeadMetaProps`, `HeadLinkProps`, `HeadStyleProps`, `HeadValue` описывают значения (значение или accessor). Head дедуплицирует теги, поддерживает стек title при unmount, SSR-head и гидрацию без дублей.
+
+### Keyed-списки
+
+```ts
+interface ForProps<T> {
+  each: ListSource<T> | (() => ListSource<T>);
+  keyOf?: KeySelector<T>;
+  children: (item: T, index: () => number) => Node;
+  fallback?: unknown;
+}
+
+function Keyed<T>(props: KeyedProps<T>): Node;
+function mapKeyed<T>(each, keyOf: KeySelector<T>, children: KeyedRender<T>): Node;
+```
+
+`KeySelector<T>` возвращает ключ, `KeyedRender<T>` — render-функцию, `KeyedProps<T>` — props компонентной формы. При `keyOf` `For` матчит строки по ключу, сохраняя DOM и фокус при новых объектах с тем же id.
+
+### Controlled bindings
+
+```ts
+function bindValue(el: Element, accessor: BindAccessor, setter?: BindSetter): void;
+function bindChecked(el: Element, accessor: BindAccessor, setter?: BindSetter): void;
+function bindSource(value: unknown): { get: BindAccessor; set?: BindSetter };
+```
+
+`BindAccessor` — accessor значения, `BindSetter` — setter. Компилятор поддерживает `bindValue={...}`/`bindChecked={...}` на `input`/`textarea`/`select`; поддерживаются IME/composition, каретка, deferred options, checkbox/radio/indeterminate, `defaultValue`, `form.reset`, multiple select.
+
+### Классы и стили
+
+```ts
+type ClassNameValue = string | number | bigint | boolean | null | undefined
+  | readonly ClassNameValue[] | ClassDictionary | (() => ClassNameValue);
+type ClassDictionary = { readonly [name: string]: ClassNameValue };
+type StyleInput = string | StyleObject | readonly StyleInput[] | null | undefined | false;
+type StyleObject = { readonly [property: string]: StylePrimitive };
+type StylePrimitive = string | number | boolean | null | undefined;
+
+function classNames(...values: readonly ClassNameValue[]): string;
+function normalizeClass(value: ClassNameValue): string;
+function styleDeclarations(value: StyleInput): Map<string, string>;
+function normalizeStyle(...values: readonly StyleInput[]): string;
+const styleValue = normalizeStyle;
+```
+
+Типы: `ClassDictionary`, `ClassNameValue`, `StylePrimitive`, `StyleObject`, `StyleInput`; функции: `classNames`, `normalizeClass`, `styleDeclarations`, `normalizeStyle`, `styleValue`. `class`/`className` принимают строку, массив, объект условий и вложенные функции. `normalizeStyle` объединяет объекты/строки, добавляет `px` для размерных числовых свойств, сохраняет CSS custom properties и unitless-свойства.
+
+### Обновление props
+
+```ts
+type PropsUpdater = (props: Record<string, unknown>) => void;
+function registerPropsUpdater(node: Node | null | undefined, updater: PropsUpdater): void;
+function getPropsUpdater(node: Node): PropsUpdater | null;
+function updateProps(node: Node, props: Record<string, unknown>): boolean;
+```
+
+`PropsUpdater`, `registerPropsUpdater` и `getPropsUpdater` обслуживают реестр обновлений; `updateProps` обновляет props существующего view/light-компонента без пересоздания DOM; `MountHandle`/`ComponentResult` также предоставляют `updateProps`. Возвращает `false`, если для узла нет зарегистрированного updater-а.
+
 ## DOM-примитивы JSX-рантайма
 
 Перечисленные функции — контракт, на который опирается вывод компилятора (`template`-клоны, холы, вставки). В прикладном коде они, как правило, напрямую не используются; все помечены как `Стабильность: internal`.
@@ -1387,6 +1549,27 @@ function text(node: Text, accessor: () => unknown): void;
 
 Обновляет `Text.data` значением `accessor` (строковое представление: `null`/`undefined`/`boolean` → пустая строка), только если оно изменилось.
 
+### `classNames`
+
+*Стабильность: public.*
+
+```ts
+function classNames(...values: readonly ClassNameValue[]): string;
+function normalizeClass(value: ClassNameValue): string;
+
+type ClassNameValue =
+  | string | number | bigint | boolean | null | undefined
+  | readonly ClassNameValue[]
+  | ClassDictionary
+  | (() => ClassNameValue);
+
+interface ClassDictionary {
+  readonly [name: string]: ClassNameValue;
+}
+```
+
+Рекурсивно собирает имена классов из строк, массивов и объектов `{ name: boolean }`, удаляет пустые значения и дубликаты. `classNames` объединяет несколько значений; `normalizeClass` нормализует одно. Публичные типы: `ClassDictionary`, `ClassNameValue`. Те же правила применяются к `class`/`className` в `attr`, `spread` и `applyProps`: обновление и удаление значений не затирает независимые class-привязки на одном элементе.
+
 ### `attr`
 
 *Стабильность: internal.*
@@ -1397,8 +1580,8 @@ function attr(el: Element, name: string, accessor: () => unknown): void;
 
 Реактивная установка атрибута. Особые значения:
 
-- `class`/`className` — `class`; `null`/`undefined`/`false`/`""` удаляют класс.
-- `style` — уход в объект/строку (см. `style`).
+- `class`/`className` — строка, массив или объект (`classNames`/`normalizeClass`); `null`/`undefined`/`false`/`""` удаляют вклад этой привязки.
+- `style` — строка, объект, массив или `null` (см. `style`).
 - `value`, `checked`, `selected`, `disabled` — записываются как свойства DOM-элемента (не как атрибуты), кроме SVG-элементов, где остаётся атрибут.
 - `null`, `undefined`, `false` — атрибут удаляется; `true` — ставится пустым значением для булевых атрибутов (`hidden`, `required`, `novalidate` и т.д.) и `"true"` иначе; прочие — `String(value)`.
 
@@ -1426,17 +1609,31 @@ function innerHtml(el: Element, accessor: () => unknown): void;
 
 ### `style`
 
-*Стабильность: internal.*
+*Стабильность: public (хелпер) / internal (привязка).*
 
 ```ts
 function style(el: Element, accessor: () => unknown): void;
+function style(...values: readonly StyleInput[]): string;
+
+function normalizeStyle(...values: readonly StyleInput[]): string;
+const styleValue: typeof normalizeStyle;
+
+type StyleInput = string | StyleObject | readonly StyleInput[] | null | undefined | false;
+
+interface StyleObject {
+  readonly [property: string]: StylePrimitive;
+}
+
+type StylePrimitive = string | number | boolean | null | undefined;
 ```
 
 Реактивная установка стиля с диффом небольших правок. Снимок принадлежит конкретной привязке, поэтому несколько независимых `style`/`spread` на одном элементе не затирают друг друга:
 
 - `null`/`undefined` — сброс свойств этой привязки.
-- Строка — обновление `cssText` и сверка ключей со снепшотом привязки.
-- Объект — свойства в kebab-case (`hyphen`); `null`/`undefined`/`""` удаляют свойство; ушедшие из объекта — тоже.
+- Строка — CSS-декларации; при обновлении сверяются ключи со снепшотом привязки.
+- Объект — свойства в kebab-case (`hyphen`); `null`/`undefined`/`false`/`""` удаляют свойство; ушедшие из объекта — тоже.
+- Числа получают `px` для размерных свойств; `opacity`, `z-index`, `line-height`, `flex`, `font-weight`, `order` и другие unitless-свойства пишутся как есть. Значения CSS custom properties (`--name`) не получают `px`.
+- Массивы нескольких объектов/строк сливаются слева направо; `normalizeStyle`/`styleValue`/вызов `style(...values)` без элемента возвращают итоговую CSS-строку. Публичные типы: `StyleInput`, `StyleObject`, `StylePrimitive`.
 
 ### `spread`
 

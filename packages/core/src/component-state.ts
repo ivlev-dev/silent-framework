@@ -21,6 +21,7 @@ export interface ComponentResult {
   readonly node: Node;
   readonly ready: Promise<void>;
   readonly settled: Promise<void>;
+  readonly update: (props: Record<string, unknown>) => void;
   readonly dispose: () => void;
 }
 

@@ -35,6 +35,13 @@ export {
   setPreloader,
 } from "./component-lite.js";
 
+export {
+  getPropsUpdater,
+  registerPropsUpdater,
+  updateProps,
+  type PropsUpdater,
+} from "./props-update.js";
+
 export function createComponent(
   component: AnyComponent,
   props: Record<string, unknown> = {},

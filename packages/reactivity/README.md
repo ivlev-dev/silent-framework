@@ -14,6 +14,7 @@
 - Ошибки эффектов изолированы: один упавший эффект не срывает flush, ошибка уходит в `setEffectErrorHandler` (по умолчанию `console.error`).
 - Ошибки мемо не кешируются: после исключения мемо пересчитывается при следующем чтении, циклические мемо дают `CircularComputationError`.
 - Глубокая реактивность: отдельный сигнал на каждое свойство, индекс и `length` массива; мутирующие методы (`push`, `splice`, `sort`, `reverse` и др.) уведомляют только затронутые индексы.
+- Реактивные `Map` и `Set`: `get`/`has`/`size` и итерация отслеживаются по ключу, `markRaw` исключает значение из проксирования, `readonly` создаёт глубокий read-only слой.
 - Владельцы (`createRoot`, `getOwner`, `runWithOwner`) и `onCleanup` для автоматической очистки эффектов и подписок.
 - Store-примитивы для привязки реактивности к экземплярам классов: `readField`, `writeField`, `getComputed`, `copyReactiveState`.
 
@@ -121,6 +122,45 @@ console.log(unwrap(state.user)); // исходный объект без про�
 on(() => state.user.name, (name, prev) => console.log(prev, name));
 ```
 
+### Map, Set и markRaw
+
+`deepReactive` оборачивает `Map` и `Set`. Зависимости точечные: `get`/`has` подписаны на конкретный ключ, `size` и итерация — на изменение состава, `values`/`entries` — ещё и на значения. Вложенные объекты в ключах и значениях оборачиваются лениво.
+
+```ts
+import { deepReactive, isReactive, markRaw, unwrap } from "@ivlev-dev/silent-reactivity";
+
+const cache = deepReactive(new Map<string, { hits: number }>());
+cache.set("page", { hits: 0 });
+cache.get("page")!.hits += 1; // обновит только наблюдателей ключа "page"
+cache.size; // отдельная зависимость
+
+const raw = markRaw({ reason: "third-party" });
+deepReactive(raw) === raw; // true, isRaw(raw) === true, isReactive(raw) === false
+unwrap(cache) instanceof Map; // true
+```
+
+`markRaw` можно применять к объектам, `Map`/`Set` и классам. Экземпляры помеченного класса `deepReactive` не оборачивает.
+
+### readonly
+
+`readonly` создаёт глубокий read-only слой над объектом, массивом, `Map` или `Set`. Вложенные значения тоже read-only, а чтения продолжают отслеживаться, поэтому эффекты обновляются при изменении исходного реактивного значения. Любая мутация (`set`, `delete`, `push`, `add`, `clear`, `Object.defineProperty` и т.п.) бросает `ReadonlyMutationError` (наследник `TypeError`).
+
+```ts
+import { deepReactive, isReadonly, readonly } from "@ivlev-dev/silent-reactivity";
+
+const state = deepReactive({ items: [1, 2], map: new Map<string, number>() });
+const view = readonly(state);
+
+view.items[0]; // 1
+view.map.has("key"); // false
+
+view.items.push(3); // ReadonlyMutationError
+isReadonly(view.items); // true
+isReactive(view); // false
+```
+
+`markRaw`-значения `readonly` не оборачивает и возвращает как есть.
+
 Компоненты store-примитивов привязывают сигналы к экземплярам классов:
 
 ```ts
@@ -198,9 +238,12 @@ stop();
 | `runWithOwner` | Выполняет функцию в контексте конкретного `Owner` |
 | `onCleanup` | Регистрирует очистку в текущем `Owner` |
 | `on` | Запускает функцию на изменение конкретных зависимостей, опция `defer` |
-| `deepReactive` | Ленивый глубокий прокси для plain-объектов и массивов |
-| `unwrap` | Возвращает исходный объект из-под прокси |
+| `deepReactive` | Ленивый глубокий прокси для plain-объектов, массивов, `Map` и `Set` |
+| `unwrap` | Возвращает исходный объект из-под прокси (включая `readonly`) |
 | `isReactive` | Проверяет, является ли значение прокси `deepReactive` |
+| `markRaw` / `isRaw` | Исключает объект, `Map`/`Set` или класс из проксирования |
+| `readonly` / `isReadonly` | Глубокий read-only прокси; мутации бросают `ReadonlyMutationError` |
+| `ReadonlyMutationError` | Ошибка попытки мутации read-only значения |
 | `markReactiveClass` / `isReactiveClass` | Управляет списком классов, которые `deepReactive` не оборачивает повторно |
 | `createReactiveStore` | Создаёт самостоятельный `ReactiveStore` |
 | `storeFor` | Привязывает store к экземпляру (WeakMap) |
@@ -216,8 +259,10 @@ stop();
 ## Ограничения и совместимость
 
 - Только ESM, Node.js >= 22, без рантайм-зависимостей.
-- `deepReactive` не оборачивает DOM-узлы, `Date`, `Map`, `Set`, `Promise`, `RegExp`, `Error`, буферы и другие не-plain объекты.
+- `deepReactive` оборачивает `Map` и `Set`, но не оборачивает DOM-узлы, `Date`, `WeakMap`, `WeakSet`, `Promise`, `RegExp`, `Error`, буферы и другие не-plain объекты.
 - Мутирующие методы массивов (`push`, `pop`, `shift`, `unshift`, `splice`, `sort`, `reverse`, `fill`, `copyWithin`) уведомляют только затронутые индексы и `length`; сигналы ключей обновляются только при изменении состава ключей.
+- При удалении свойства сигнал поля не создаётся и удаляется, если у него нет наблюдателей; повторное добавление ключа безопасно.
+- `readonly` не оборачивает уже помеченные `markRaw` значения и не-plain объекты; чтение через read-only слой отслеживается, но `isReactive` для него возвращает `false`.
 - Апдейтер `Setter` использует `peek()` и не регистрирует зависимость; запись с неизменным значением (по `equals`) не уведомляет наблюдателей.
 - `createMemo` ленивое: до первого чтения значение не вычисляется.
 

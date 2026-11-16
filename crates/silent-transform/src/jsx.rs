@@ -2,12 +2,13 @@ use super::transform::{rewrite_this, string_expr, SilentPass};
 use crate::template_plan::TemplatePlan;
 use swc_core::common::{SyntaxContext, DUMMY_SP};
 use swc_core::ecma::ast::{
-    ArrayLit, ArrowExpr, ArrowFunctionBody, BinExpr, BinaryOp, BindingIdent, Bool, CallExpr,
-    Callee, ComputedPropName, Expr, ExprOrSpread, Function, FunctionBody, GetterProp, Ident,
-    IdentName, JSXAttr, JSXAttrName, JSXAttrOrSpread, JSXAttrValue, JSXElement, JSXElementChild,
-    JSXElementName, JSXExpr, JSXExprContainer, JSXFragment, JSXObject, KeyValueProp, Lit,
-    MemberExpr, MemberProp, ObjectLit, ParenExpr, Pat, Prop, PropName, PropOrSpread, ReturnStmt,
-    SpreadElement, Stmt, Str, VarDecl, VarDeclKind, VarDeclarator,
+    ArrayLit, ArrowExpr, ArrowFunctionBody, AssignExpr, AssignOp, AssignTarget, BinExpr, BinaryOp,
+    BindingIdent, Bool, CallExpr, Callee, ComputedPropName, Expr, ExprOrSpread, Function,
+    FunctionBody, GetterProp, Ident, IdentName, JSXAttr, JSXAttrName, JSXAttrOrSpread,
+    JSXAttrValue, JSXElement, JSXElementChild, JSXElementName, JSXExpr, JSXExprContainer,
+    JSXFragment, JSXObject, KeyValueProp, Lit, MemberExpr, MemberProp, ObjectLit, ParenExpr, Pat,
+    Prop, PropName, PropOrSpread, ReturnStmt, SimpleAssignTarget, SpreadElement, Stmt, Str,
+    VarDecl, VarDeclKind, VarDeclarator,
 };
 use swc_core::ecma::visit::{Visit, VisitMutWith, VisitWith};
 
@@ -23,6 +24,7 @@ struct TemplateParts {
 struct DynamicAttr {
     kind: DynamicAttrKind,
     expr: Expr,
+    setter: Option<Expr>,
 }
 
 struct RcdataChildren {
@@ -39,6 +41,7 @@ enum DynamicAttrKind {
     InnerHtml,
     TextValue,
     TextContent,
+    Bind(String),
 }
 
 #[derive(Clone)]
@@ -275,7 +278,11 @@ impl SilentPass {
         let attrs = format!(" data-silent-a-{index}=\"\" data-silent-text=\"\"");
         parts.plan.mark_attr(&format!("data-silent-a-{index}"));
         parts.plan.mark_attr("data-silent-text");
-        parts.attrs.push(DynamicAttr { kind, expr });
+        parts.attrs.push(DynamicAttr {
+            kind,
+            expr,
+            setter: None,
+        });
         Some(RcdataChildren {
             attrs,
             text: String::new(),
@@ -288,6 +295,14 @@ impl SilentPass {
             return;
         }
         let name = normalize_attr_name(&name);
+        if name == "bindValue" || name == "bindChecked" {
+            if let Some(JSXAttrValue::JSXExprContainer(container)) = &attr.value {
+                if let JSXExpr::Expr(expr) = &container.expr {
+                    self.push_bind_attr(&name, expr, parts);
+                }
+            }
+            return;
+        }
         let static_value_only = name == "value" && tag.eq_ignore_ascii_case("select");
         let Some(value) = &attr.value else {
             if !static_value_only {
@@ -350,7 +365,47 @@ impl SilentPass {
                 other => other,
             },
             expr,
+            setter: None,
         });
+    }
+
+    fn push_bind_attr(&mut self, helper: &str, expr: &Expr, parts: &mut TemplateParts) {
+        let (accessor, setter) = self.bind_parts(expr);
+        let index = parts.attrs.len();
+        parts.html.push_str(&format!(" data-silent-a-{index}=\"\""));
+        parts.plan.mark_attr(&format!("data-silent-a-{index}"));
+        parts.attrs.push(DynamicAttr {
+            kind: DynamicAttrKind::Bind(helper.to_string()),
+            expr: accessor,
+            setter,
+        });
+    }
+
+    fn bind_parts(&mut self, expr: &Expr) -> (Expr, Option<Expr>) {
+        let target = unwrap_paren(expr);
+        if let Expr::Array(array) = target {
+            if array.elems.len() == 2
+                && array.elems.iter().all(|element| {
+                    matches!(
+                        element,
+                        Some(ExprOrSpread {
+                            spread: None,
+                            expr,
+                        }) if is_reference(expr)
+                    )
+                })
+            {
+                let compiled = self.compile_expr(expr);
+                let accessor = call_expr(computed_member((*compiled).clone(), 0), Vec::new());
+                return (accessor, Some(computed_member(*compiled, 1)));
+            }
+        }
+        if let Expr::Member(member) = target {
+            let compiled = self.compile_expr(expr);
+            let setter = assign_arrow(member.clone());
+            return (*compiled, Some(setter));
+        }
+        (*self.compile_expr(expr), None)
     }
 
     fn build_children_html(&mut self, children: &[JSXElementChild], parts: &mut TemplateParts) {
@@ -516,6 +571,13 @@ impl SilentPass {
                     Expr::Ident(self.helper("prop")),
                     vec![element, string_expr("textContent"), arrow_expr(attr.expr)],
                 ),
+                DynamicAttrKind::Bind(name) => {
+                    let mut args = vec![element, arrow_expr(attr.expr)];
+                    if let Some(setter) = attr.setter {
+                        args.push(setter);
+                    }
+                    call_expr(Expr::Ident(self.helper(&name)), args)
+                }
             };
             statements.push(Stmt::Expr(swc_core::ecma::ast::ExprStmt {
                 span: DUMMY_SP,
@@ -888,6 +950,32 @@ fn arrow_expr(body: Expr) -> Expr {
         ctxt: SyntaxContext::empty(),
         params: Vec::new(),
         body: Box::new(ArrowFunctionBody::Expr(Box::new(body))),
+        is_async: false,
+        is_generator: false,
+        type_params: None,
+        return_type: None,
+    })
+}
+
+fn is_reference(expr: &Expr) -> bool {
+    matches!(unwrap_paren(expr), Expr::Ident(_) | Expr::Member(_))
+}
+
+fn assign_arrow(member: MemberExpr) -> Expr {
+    let value = Expr::Assign(AssignExpr {
+        span: DUMMY_SP,
+        op: AssignOp::Assign,
+        left: AssignTarget::Simple(SimpleAssignTarget::Member(member)),
+        right: Box::new(ident_expr("__value$")),
+    });
+    Expr::Arrow(ArrowExpr {
+        span: DUMMY_SP,
+        ctxt: SyntaxContext::empty(),
+        params: vec![Pat::Ident(BindingIdent {
+            id: ident("__value$"),
+            type_ann: None,
+        })],
+        body: Box::new(ArrowFunctionBody::Expr(Box::new(value))),
         is_async: false,
         is_generator: false,
         type_params: None,

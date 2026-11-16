@@ -13,6 +13,9 @@ import { extractMetadata } from "./metadata.js";
 import { currentWindow, isHydrating } from "./hydration-state.js";
 import { isMatchNode } from "./match-node.js";
 import { bindOwnerRuntimeOptions } from "./runtime-context.js";
+import { createPropsProxy, type PropsProxy } from "./props-proxy.js";
+import { registerPropsUpdater } from "./props-update.js";
+import { adoptContextValues, captureContextValues } from "./context.js";
 import {
   COMPONENT_DISPOSE,
   PRELOADER,
@@ -135,45 +138,6 @@ export function component(
   return creator(componentFn, props, options).node;
 }
 
-interface PropsProxy {
-  readonly value: Record<string, unknown>;
-  update(next: Record<string, unknown>): void;
-}
-
-function createPropsProxy(initial: Record<string, unknown>): PropsProxy {
-  let current = initial;
-  const target: Record<PropertyKey, unknown> = {};
-  const value = new Proxy(target, {
-    get(_target, key, receiver): unknown {
-      return Reflect.get(current, key, receiver);
-    },
-    has(_target, key): boolean {
-      return key in current;
-    },
-    ownKeys(): ArrayLike<string | symbol> {
-      return Reflect.ownKeys(current);
-    },
-    getOwnPropertyDescriptor(_target, key): PropertyDescriptor | undefined {
-      const descriptor = Reflect.getOwnPropertyDescriptor(current, key);
-      return descriptor === undefined
-        ? undefined
-        : { ...descriptor, configurable: true };
-    },
-    set(_target, key, next): boolean {
-      return Reflect.set(current, key, next);
-    },
-    deleteProperty(_target, key): boolean {
-      return Reflect.deleteProperty(current, key);
-    },
-  }) as Record<string, unknown>;
-  return {
-    value,
-    update(next: Record<string, unknown>): void {
-      current = next;
-    },
-  };
-}
-
 interface LightNodeEntry {
   readonly node: Node;
   readonly owned: boolean;
@@ -183,13 +147,336 @@ interface LightInstance {
   readonly fn: AnyComponent;
   readonly props: PropsProxy;
   readonly whenDisposed: Promise<void>;
+  readonly options: RuntimeOptions;
+  readonly contextValues: Map<object, unknown> | null;
   node: Node;
   single: boolean;
   readonly entries: LightNodeEntry[];
   owner: Owner | null;
   disposed: boolean;
   rootDispose: (() => void) | null;
+  renderRootDispose: (() => void) | null;
+  readonly disposeMarker: () => void;
+  updateProps(props: Record<string, unknown>): void;
   dispose(): void;
+}
+
+interface LightBuilt {
+  readonly nodes: Node[];
+  readonly entries: LightNodeEntry[];
+  readonly node: Node;
+  readonly single: boolean;
+}
+
+interface FocusSnapshot {
+  readonly id: string | null;
+  readonly name: string | null;
+  readonly tag: string;
+  readonly index: number;
+  readonly selectionStart: number | null;
+  readonly selectionEnd: number | null;
+  readonly selectionDirection: string | null;
+}
+
+function collectElements(node: Node, out: Element[]): void {
+  if (node.nodeType === 1) {
+    out.push(node as Element);
+  }
+  let child = node.firstChild;
+  while (child !== null) {
+    collectElements(child, out);
+    child = child.nextSibling;
+  }
+}
+
+function selectionOf(element: Element): {
+  start: number | null;
+  end: number | null;
+  direction: string | null;
+} {
+  const candidate = element as unknown as {
+    selectionStart?: unknown;
+    selectionEnd?: unknown;
+    selectionDirection?: unknown;
+  };
+  return {
+    start: typeof candidate.selectionStart === "number" ? candidate.selectionStart : null,
+    end: typeof candidate.selectionEnd === "number" ? candidate.selectionEnd : null,
+    direction:
+      typeof candidate.selectionDirection === "string"
+        ? candidate.selectionDirection
+        : null,
+  };
+}
+
+function captureFocus(entries: readonly LightNodeEntry[]): FocusSnapshot | null {
+  if (typeof document === "undefined") {
+    return null;
+  }
+  const active = document.activeElement;
+  if (active === null || active === document.body) {
+    return null;
+  }
+  const elements: Element[] = [];
+  for (const entry of entries) {
+    collectElements(entry.node, elements);
+  }
+  const index = elements.indexOf(active as Element);
+  if (index === -1) {
+    return null;
+  }
+  const selection = selectionOf(active as Element);
+  return {
+    id: active.getAttribute("id"),
+    name: active.getAttribute("name"),
+    tag: active.tagName,
+    index,
+    selectionStart: selection.start,
+    selectionEnd: selection.end,
+    selectionDirection: selection.direction,
+  };
+}
+
+function restoreFocus(
+  snapshot: FocusSnapshot | null,
+  nodes: readonly Node[],
+): void {
+  if (snapshot === null || typeof document === "undefined") {
+    return;
+  }
+  const elements: Element[] = [];
+  for (const node of nodes) {
+    collectElements(node, elements);
+  }
+  let candidate: Element | null = null;
+  if (snapshot.id !== null) {
+    candidate = elements.find((element) => element.getAttribute("id") === snapshot.id) ?? null;
+  }
+  if (candidate === null && snapshot.name !== null) {
+    candidate =
+      elements.find((element) => element.getAttribute("name") === snapshot.name) ?? null;
+  }
+  if (candidate === null) {
+    const sameTag = elements.filter((element) => element.tagName === snapshot.tag);
+    candidate =
+      sameTag.find((_element, index) => index === snapshot.index)
+      ?? sameTag[0]
+      ?? null;
+  }
+  if (candidate === null) {
+    return;
+  }
+  const focus = (candidate as unknown as { focus?: () => void }).focus;
+  if (typeof focus === "function") {
+    focus.call(candidate);
+  }
+  if (snapshot.selectionStart === null || snapshot.selectionEnd === null) {
+    return;
+  }
+  const target = candidate as unknown as {
+    setSelectionRange?: (start: number, end: number, direction?: string) => void;
+  };
+  if (typeof target.setSelectionRange === "function") {
+    const start = snapshot.selectionStart;
+    const end = snapshot.selectionEnd;
+    target.setSelectionRange(start, end, snapshot.selectionDirection ?? undefined);
+  }
+}
+
+function disposeLightEntry(entry: LightNodeEntry): void {
+  if (entry.owned) {
+    disposeDescendants(entry.node);
+    entry.node.parentNode?.removeChild(entry.node);
+    return;
+  }
+  disposeNode(entry.node);
+}
+
+function buildLightOutput(
+  instance: LightInstance,
+  output: unknown,
+  initial: boolean,
+): LightBuilt {
+  const matchNode =
+    output instanceof Node && output instanceof Comment && isMatchNode(output);
+  let nodes: Node[];
+  if (matchNode) {
+    nodes = [output as Comment];
+  } else {
+    const normalized = normalizeNodes(output);
+    if (initial && isHydrating()) {
+      settleNodes(currentWindow()?.end ?? null, output);
+    }
+    nodes = extractMetadata(normalized);
+  }
+
+  const entries: LightNodeEntry[] = [];
+  const attachable = nodes.length === 1;
+  for (const node of nodes) {
+    const disposer = (node as unknown as Record<PropertyKey, unknown>)[NODE_DISPOSER];
+    const owned =
+      attachable
+      && (typeof disposer !== "function" || disposer === instance.disposeMarker);
+    if (owned) {
+      attachDisposer(node, instance.disposeMarker);
+    }
+    entries.push({ node, owned });
+  }
+
+  if (nodes.length === 1) {
+    return { nodes, entries, node: nodes[0]!, single: true };
+  }
+  const fragment = document.createDocumentFragment();
+  for (const child of nodes) {
+    fragment.appendChild(child);
+  }
+  return { nodes, entries, node: fragment, single: false };
+}
+
+function registerLightUpdaters(instance: LightInstance): void {
+  registerPropsUpdater(instance.node, instance.updateProps);
+  for (const entry of instance.entries) {
+    registerPropsUpdater(entry.node, instance.updateProps);
+  }
+}
+
+function refreshLightInstance(instance: LightInstance, initial: boolean): void {
+  if (instance.disposed) {
+    return;
+  }
+  const previousEntries = instance.entries.slice();
+  const previousNode = instance.node;
+  const connected = previousEntries
+    .map((entry) => entry.node)
+    .find((node) => node.parentNode !== null) ?? null;
+  const anchor =
+    connected ?? (previousNode.parentNode !== null ? previousNode : null);
+  const focus = captureFocus(previousEntries);
+
+  let output: unknown = null;
+  const previousRoot = instance.renderRootDispose;
+  instance.renderRootDispose = null;
+  previousRoot?.();
+
+  let owner: Owner | null = null;
+  runWithOwner(null, () => {
+    createRoot((dispose) => {
+      instance.renderRootDispose = dispose;
+      owner = getOwner();
+      adoptContextValues(owner, instance.contextValues);
+      output = withRuntimeOptions(instance.options, () =>
+        (instance.fn as unknown as (values: Record<string, unknown>) => unknown)(
+          instance.props.value,
+        ),
+      );
+      return null;
+    });
+  });
+  instance.owner = owner;
+
+  const built = buildLightOutput(instance, output, initial);
+  const parent = anchor === null ? null : anchor.parentNode;
+  if (parent !== null) {
+    for (const node of built.nodes) {
+      if (node.parentNode !== parent) {
+        parent.insertBefore(node, anchor);
+      }
+    }
+  }
+
+  const nextNodes = new Set(built.nodes);
+  for (const entry of previousEntries) {
+    if (!nextNodes.has(entry.node)) {
+      disposeLightEntry(entry);
+    }
+  }
+
+  instance.entries.length = 0;
+  instance.entries.push(...built.entries);
+  instance.node = built.node;
+  instance.single = built.single;
+  registerLightUpdaters(instance);
+  restoreFocus(focus, built.nodes);
+}
+
+function buildLightInstance(
+  fn: AnyComponent,
+  props: Record<string, unknown>,
+  options: RuntimeOptions,
+): LightInstance {
+  const inheritedContext = captureContextValues();
+  let instanceRootDispose: (() => void) | null = null;
+  const holder: { proxy: PropsProxy | null } = { proxy: null };
+  runWithOwner(null, () => {
+    createRoot((dispose) => {
+      instanceRootDispose = dispose;
+      holder.proxy = createPropsProxy(props);
+      return null;
+    });
+  });
+
+  let resolveDisposed: () => void = () => {};
+  const whenDisposed = new Promise<void>((resolve) => {
+    resolveDisposed = resolve;
+  });
+
+  const instance: LightInstance = {
+    fn,
+    props: holder.proxy!,
+    whenDisposed,
+    options,
+    contextValues: inheritedContext,
+    node: document.createComment("silent-empty"),
+    single: false,
+    entries: [],
+    owner: null,
+    disposed: false,
+    rootDispose: instanceRootDispose,
+    renderRootDispose: null,
+    disposeMarker: () => instance.dispose(),
+    updateProps(next: Record<string, unknown>): void {
+      if (instance.disposed) {
+        return;
+      }
+      const observed = instance.props.update(next);
+      if (!observed) {
+        refreshLightInstance(instance, false);
+      }
+    },
+    dispose(): void {
+      if (instance.disposed) {
+        return;
+      }
+      instance.disposed = true;
+      resolveDisposed();
+      const disposeRender = instance.renderRootDispose;
+      instance.renderRootDispose = null;
+      disposeRender?.();
+      const disposeRoot = instance.rootDispose;
+      instance.rootDispose = null;
+      disposeRoot?.();
+      for (const entry of instance.entries) {
+        disposeLightEntry(entry);
+      }
+      instance.entries.length = 0;
+    },
+  };
+
+  refreshLightInstance(instance, true);
+  return instance;
+}
+
+function lightResult(instance: LightInstance): ComponentResult {
+  registerLightUpdaters(instance);
+  return {
+    get node(): Node {
+      return instance.node;
+    },
+    ready: instance.single ? getOwnReady(instance.node) : RESOLVED_READY,
+    settled: Promise.race([getReady(instance.node), instance.whenDisposed]),
+    update: instance.updateProps,
+    dispose: instance.dispose,
+  };
 }
 
 interface LightSlot {
@@ -231,11 +518,6 @@ function cacheFor(owner: Owner): LightOwnerCache {
   return cache;
 }
 
-function hasDisposer(node: Node): boolean {
-  const candidate = (node as unknown as Record<PropertyKey, unknown>)[NODE_DISPOSER];
-  return typeof candidate === "function";
-}
-
 function disposeDescendants(node: Node): void {
   let child = node.firstChild;
   while (child !== null) {
@@ -243,115 +525,6 @@ function disposeDescendants(node: Node): void {
     disposeNode(child);
     child = next;
   }
-}
-
-function buildLightInstance(
-  fn: AnyComponent,
-  props: Record<string, unknown>,
-  options: RuntimeOptions,
-): LightInstance {
-  const propsProxy = createPropsProxy(props);
-  let output: unknown = null;
-  let rootDispose: (() => void) | null = null;
-  let owner: Owner | null = null;
-  let disposed = false;
-  let resolveDisposed: () => void = () => {};
-  const whenDisposed = new Promise<void>((resolve) => {
-    resolveDisposed = resolve;
-  });
-
-  runWithOwner(null, () => {
-    createRoot((dispose) => {
-      rootDispose = dispose;
-      owner = getOwner();
-      output = withRuntimeOptions(options, () =>
-        (fn as unknown as (values: Record<string, unknown>) => unknown)(
-          propsProxy.value,
-        ),
-      );
-      return null;
-    });
-  });
-
-  const instance: LightInstance = {
-    fn,
-    props: propsProxy,
-    whenDisposed,
-    node: document.createComment("silent-empty"),
-    single: false,
-    entries: [],
-    owner,
-    disposed: false,
-    rootDispose,
-    dispose(): void {
-      if (disposed) {
-        return;
-      }
-      disposed = true;
-      instance.disposed = true;
-      resolveDisposed();
-      const disposeRoot = instance.rootDispose;
-      instance.rootDispose = null;
-      disposeRoot?.();
-      for (const entry of instance.entries) {
-        if (entry.owned) {
-          disposeDescendants(entry.node);
-          entry.node.parentNode?.removeChild(entry.node);
-        } else {
-          disposeNode(entry.node);
-        }
-      }
-      instance.entries.length = 0;
-    },
-  };
-  instance.owner = owner;
-
-  const matchNode =
-    output instanceof Node && output instanceof Comment && isMatchNode(output);
-  let nodes: Node[];
-  if (matchNode) {
-    nodes = [output as Comment];
-  } else {
-    const normalized = normalizeNodes(output);
-    if (isHydrating()) {
-      settleNodes(currentWindow()?.end ?? null, output);
-    }
-    nodes = extractMetadata(normalized);
-  }
-
-  const entries: LightNodeEntry[] = [];
-  const attachable = nodes.length === 1;
-  for (const node of nodes) {
-    const owned = attachable && !hasDisposer(node);
-    if (owned) {
-      attachDisposer(node, instance.dispose);
-    }
-    entries.push({ node, owned });
-  }
-  instance.entries.push(...entries);
-
-  if (nodes.length === 1) {
-    instance.node = nodes[0]!;
-    instance.single = true;
-  } else {
-    const fragment = document.createDocumentFragment();
-    for (const child of nodes) {
-      fragment.appendChild(child);
-    }
-    instance.node = fragment;
-    instance.single = false;
-  }
-
-  return instance;
-}
-
-function lightResult(instance: LightInstance): ComponentResult {
-  return {
-    node: instance.node,
-    ready: instance.single ? getOwnReady(instance.node) : RESOLVED_READY,
-    settled: Promise.race([getReady(instance.node), instance.whenDisposed]),
-    dispose: instance.dispose,
-  };
 }
 
 function lightFromCache(
@@ -377,6 +550,7 @@ function lightFromCache(
   if (existing !== null && !existing.disposed && existing.single) {
     existing.props.update(props);
     bindOwnerRuntimeOptions(existing.owner, options);
+    adoptContextValues(existing.owner, captureContextValues());
     return lightResult(existing);
   }
   const instance = buildLightInstance(fn, props, options);

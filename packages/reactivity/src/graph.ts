@@ -113,6 +113,7 @@ export interface SignalHandle<T> {
   read(): T;
   peek(): T;
   write(value: T): T;
+  hasObservers(): boolean;
 }
 
 let currentListener: ComputationNode | null = null;
@@ -628,6 +629,10 @@ function createEffectNode(type: "effect" | "renderEffect", fn: () => void): Effe
   return node;
 }
 
+export function isTracking(): boolean {
+  return currentListener !== null;
+}
+
 export function createSignalHandle<T>(
   value: T,
   equals?: (a: T, b: T) => boolean,
@@ -645,6 +650,9 @@ export function createSignalHandle<T>(
     write(next: T): T {
       writeSource(node, next);
       return next;
+    },
+    hasObservers(): boolean {
+      return node.observers.size > 0;
     },
   };
 }

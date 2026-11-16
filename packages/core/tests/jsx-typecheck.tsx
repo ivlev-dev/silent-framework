@@ -66,8 +66,9 @@ export const IntrinsicCheck = () => (
     </a>
     <img src="/x.png" alt="x" />
     <input value={1} checked disabled placeholder="p" type="text" name="n" />
-    <textarea disabled placeholder="t" name="ta" />
-    <select disabled name="sel" />
+    <input bindValue={() => "x"} bindChecked={() => false} indeterminate />
+    <textarea bindValue={() => "t"} defaultValue="t" disabled placeholder="t" name="ta" />
+    <select bindValue={() => "s"} multiple disabled name="sel" />
     <form onSubmit={(e) => e.preventDefault()} />
     <svg>
       <path />

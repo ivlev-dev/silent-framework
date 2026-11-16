@@ -662,6 +662,60 @@ writeField(instance, "count", 5, (v) => {
 - `registerCleanup` добавляет функцию очистки в store (или вызывает синхронно, если store disposed).
 - `copyReactiveState` переносит сигналы полей между store (HMR).
 
+#### `createSignalHandle`
+
+```ts
+function createSignalHandle<T>(value: T, equals?: (a: T, b: T) => boolean): {
+  read(): T;
+  peek(): T;
+  write(next: T): T;
+};
+```
+
+Низкоуровневый handle сигнала с `read`/`peek`/`write` без tuple-обёртки.
+
+#### `markRaw`
+
+```ts
+function markRaw<T>(value: T): T;
+```
+
+Помечает объект/`Map`/`Set`/класс как необорачиваемый `deepReactive`; `deepReactive(x) === x` и вложенные значения сохраняют идентичность.
+
+#### `isRaw`
+
+```ts
+function isRaw(value: unknown): boolean;
+```
+
+Возвращает `true` для значения, помеченного `markRaw`.
+
+#### `readonly`
+
+```ts
+function readonly<T>(value: T): T;
+```
+
+Глубокий read-only слой для объектов, массивов, `Map` и `Set`; чтения продолжают отслеживаться, мутации бросают `ReadonlyMutationError`.
+
+#### `isReadonly`
+
+```ts
+function isReadonly(value: unknown): boolean;
+```
+
+Проверяет read-only обёртку.
+
+#### `ReadonlyMutationError`
+
+```ts
+class ReadonlyMutationError extends TypeError {}
+```
+
+Ошибка мутации read-only значения.
+
+`deepReactive` также поддерживает `Map` и `Set`: `get/set/delete/has/size/clear` и итераторы подписаны на ключи/состав; вложенные значения и объектные ключи оборачиваются лениво.
+
 ## Ограничения
 
 - Массивы: мутирующие методы (`push`, `pop`, `shift`, `unshift`, `splice`, `sort`, `reverse`, `fill`, `copyWithin`) уведомляют только затронутые индексы и `length`; сигналы ключей bump-ятся только при изменении состава ключей.
@@ -669,5 +723,5 @@ writeField(instance, "count", 5, (v) => {
 - Ленивость мемо: `createMemo` не вычисляется до первого чтения; dependent-эффекты уведомляются только при реальном изменении значения (с учётом `equals`).
 - Ошибки мемо не кешируются: после исключения мемо остаётся `DIRTY` и пересчитывается при следующем чтении. Циклические мемо завершаются `CircularComputationError`.
 - Ошибки эффектов изолированы и передаются в `setEffectErrorHandler`; синхронный первый запуск `createRenderEffect` по-прежнему пробрасывает исключение вызывающему.
-- `deepReactive` не оборачивает DOM-узлы, `Date`, `Map`, `Set`, `Promise`, `RegExp`, `Error`, буферы и прочие не-plain объекты.
+- `deepReactive` не оборачивает DOM-узлы, `Date`, `Promise`, `RegExp`, `Error`, буферы и прочие не-plain объекты; `Map`/`Set` оборачиваются, если не помечены `markRaw`.
 - `Setter` updater использует `peek()` и не регистрирует зависимость; запись с `equals === true` не уведомляет наблюдателей.

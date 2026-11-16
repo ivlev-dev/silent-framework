@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.8.0
+
+Волна прикладных примитивов: Context, Portal, Transition, Resource, Head, keyed-списки, controlled bindings и расширенная реактивность.
+
+### Компоненты и контекст
+
+- `Context`/`createContext`/`Provider` с owner-scoped значениями, default, `BoundContext`, `ContextMissingError`; наследование через компоненты, эффекты и async-пути.
+- `Portal`/`Teleport` с reactive target, переносом DOM, вложенными порталами и очисткой; SSR-контракт client-only через `PORTAL_MARKER`.
+- `Transition`/`Presence`: enter/leave-классы, удержание DOM до конца leave, `unmount:false`, отмена таймеров, SSR-совместимость.
+- `Head` с дедупликацией title/meta/link/style, стеком title, SSR-head и гидрацией.
+- SSR-safe `createId`/`useId`/`IdSequence`, сброс счётчика в SSR и гидрации.
+- `For.keyOf`, `Keyed`, `mapKeyed` и keyed-реконсиляция по ключу с сохранением DOM/фокуса.
+- `bindValue`/`bindChecked`/`bindSource`, compiler-биндинги, IME/composition, каретка, deferred select, checkbox/radio/indeterminate, `defaultValue`/`form.reset`.
+- `classNames`/`normalizeClass`, `styleDeclarations`/`normalizeStyle`/`styleValue`, массивы/объекты классов и px/unitless-стили.
+- `updateProps`/`registerPropsUpdater`: обновление props view/light-компонента без пересоздания DOM.
+
+### Reactivity
+
+- Реактивные `Map`/`Set` с точечными зависимостями, `markRaw`/`isRaw`, `readonly`/`isReadonly`/`ReadonlyMutationError`, очистка полей при удалении.
+- `createSignalHandle` и расширенная документация ошибок/циклов.
+
+### Тесты и бенчмарки
+
+- Добавлены контрактные тесты Context/ID/Portal/Transition/Resource/Head/keyed/bindings/class-style/props-update и SSR/hydration-сценарии.
+- Стартовый JS: 34.28 → 38.79 KB, gzip: 11.70 → 13.06 KB. Baseline `bench:guard` обновлён под 0.8.0; вынос опциональных примитивов в отдельные entrypoints запланирован на 0.9.
+
 ## 0.7.5
 
 Волна state/lifecycle reliability: готовность дерева, изоляция DI-скоупов в SSR, отмена Suspense, light-компоненты и устойчивость reactivity.

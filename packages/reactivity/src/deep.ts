@@ -1,21 +1,77 @@
-import { createSignalHandle, type SignalHandle } from "./graph.js";
+import {
+  createSignalHandle,
+  isTracking,
+  type SignalHandle,
+} from "./graph.js";
+
+type CollectionKind = "map" | "set";
+
+interface CollectionSlot {
+  readonly present: boolean;
+  readonly value: unknown;
+}
+
+const ABSENT_SLOT: CollectionSlot = { present: false, value: undefined };
 
 interface ReactiveRecord {
   readonly raw: object;
   proxy: object;
   readonly isArray: boolean;
+  readonly collection: CollectionKind | null;
   readonly fields: Map<PropertyKey, SignalHandle<unknown>>;
+  readonly slots: Map<unknown, SignalHandle<CollectionSlot>>;
   readonly keysSignal: SignalHandle<number>;
   readonly lengthSignal: SignalHandle<number> | null;
+  readonly sizeSignal: SignalHandle<number> | null;
   arrayMethods: Map<string, (...args: unknown[]) => unknown> | null;
+  collectionMethods: Map<PropertyKey, (...args: unknown[]) => unknown> | null;
   keysVersion: number;
 }
 
+interface ReadonlyRecord {
+  readonly raw: object;
+  readonly inner: object;
+  readonly kind: "object" | "array" | "map" | "set";
+  proxy: object;
+}
+
+type ReactiveMethod = (...args: unknown[]) => unknown;
+
 const MAX_ARRAY_INDEX = 4294967295;
+
+const ARRAY_MUTATORS: ReadonlySet<string> = new Set<string>([
+  "push",
+  "pop",
+  "shift",
+  "unshift",
+  "splice",
+  "sort",
+  "reverse",
+  "fill",
+  "copyWithin",
+]);
+
+const MAP_MUTATORS: ReadonlySet<PropertyKey> = new Set<PropertyKey>([
+  "set",
+  "delete",
+  "clear",
+]);
+
+const SET_MUTATORS: ReadonlySet<PropertyKey> = new Set<PropertyKey>([
+  "add",
+  "delete",
+  "clear",
+]);
 
 const rawToRecord = new WeakMap<object, ReactiveRecord>();
 const proxyToRecord = new WeakMap<object, ReactiveRecord>();
 const reactiveClasses = new WeakSet<Function>();
+const rawValues = new WeakSet<object>();
+const rawClasses = new WeakSet<Function>();
+
+const readonlyByRaw = new WeakMap<object, ReadonlyRecord>();
+const readonlyToRaw = new WeakMap<object, object>();
+const readonlyProxies = new WeakSet<object>();
 
 function hasOwn(target: object, key: PropertyKey): boolean {
   return Object.prototype.hasOwnProperty.call(target, key);
@@ -35,6 +91,21 @@ function toArrayIndex(key: string): number | null {
   return index;
 }
 
+function collectionKindOf(value: object): CollectionKind | null {
+  const tag = Object.prototype.toString.call(value);
+  if (tag === "[object Map]") {
+    return "map";
+  }
+  if (tag === "[object Set]") {
+    return "set";
+  }
+  return null;
+}
+
+function collectionSize(value: object): number {
+  return (value as Map<unknown, unknown> | Set<unknown>).size;
+}
+
 function findInheritedDescriptor(
   target: object,
   key: PropertyKey,
@@ -50,20 +121,6 @@ function findInheritedDescriptor(
   return undefined;
 }
 
-function ensureField(
-  record: ReactiveRecord,
-  key: PropertyKey,
-  initial: unknown,
-): SignalHandle<unknown> {
-  const existing = record.fields.get(key);
-  if (existing !== undefined) {
-    return existing;
-  }
-  const field = createSignalHandle<unknown>(initial);
-  record.fields.set(key, field);
-  return field;
-}
-
 function getField(record: ReactiveRecord, key: PropertyKey): SignalHandle<unknown> {
   const existing = record.fields.get(key);
   if (existing !== undefined) {
@@ -72,6 +129,34 @@ function getField(record: ReactiveRecord, key: PropertyKey): SignalHandle<unknow
   const field = createSignalHandle<unknown>(Reflect.get(record.raw, key, record.raw));
   record.fields.set(key, field);
   return field;
+}
+
+function updateField(
+  record: ReactiveRecord,
+  key: PropertyKey,
+  value: unknown,
+): void {
+  const field = record.fields.get(key);
+  if (field === undefined) {
+    return;
+  }
+  if (field.hasObservers() || isTracking()) {
+    field.write(value);
+  } else {
+    record.fields.delete(key);
+  }
+}
+
+function clearField(record: ReactiveRecord, key: PropertyKey): void {
+  const field = record.fields.get(key);
+  if (field === undefined) {
+    return;
+  }
+  if (field.hasObservers() || isTracking()) {
+    field.write(undefined);
+  } else {
+    record.fields.delete(key);
+  }
 }
 
 function bumpKeys(record: ReactiveRecord): void {
@@ -89,10 +174,10 @@ function notifyLength(record: ReactiveRecord, value: number): void {
 function writeIndex(
   record: ReactiveRecord,
   index: number,
-  oldValue: unknown,
+  _oldValue: unknown,
   newValue: unknown,
 ): void {
-  ensureField(record, index, oldValue).write(newValue);
+  updateField(record, index, newValue);
 }
 
 function notifyChangedIndices(
@@ -320,6 +405,268 @@ function createArrayMethods(
   return methods;
 }
 
+function getSlot(
+  record: ReactiveRecord,
+  key: unknown,
+): SignalHandle<CollectionSlot> {
+  const existing = record.slots.get(key);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const raw = record.raw as Map<unknown, unknown> | Set<unknown>;
+  const present = raw.has(key);
+  let value: unknown;
+  if (present && record.collection === "map") {
+    value = (raw as Map<unknown, unknown>).get(key);
+  } else if (record.collection === "set") {
+    value = key;
+  } else {
+    value = undefined;
+  }
+  const slot = createSignalHandle<CollectionSlot>({ present, value });
+  record.slots.set(key, slot);
+  return slot;
+}
+
+function readSlot(record: ReactiveRecord, key: unknown): CollectionSlot {
+  return getSlot(record, key).read();
+}
+
+function releaseSlot(record: ReactiveRecord, key: unknown): void {
+  const slot = record.slots.get(key);
+  if (slot === undefined) {
+    return;
+  }
+  if (slot.hasObservers() || isTracking()) {
+    slot.write(ABSENT_SLOT);
+  } else {
+    record.slots.delete(key);
+  }
+}
+
+function writeCollectionSize(record: ReactiveRecord): void {
+  const signal = record.sizeSignal;
+  if (signal === null) {
+    return;
+  }
+  signal.write(collectionSize(record.raw));
+}
+
+function projectIterator<T>(
+  iterator: Iterator<unknown>,
+  project: (value: unknown) => T,
+): IterableIterator<T> {
+  const projected: IterableIterator<T> = {
+    next(): IteratorResult<T> {
+      const step = iterator.next();
+      if (step.done === true) {
+        return { done: true, value: undefined };
+      }
+      return { done: false, value: project(step.value) };
+    },
+    [Symbol.iterator](): IterableIterator<T> {
+      return projected;
+    },
+  };
+  return projected;
+}
+
+function mapKeys(record: ReactiveRecord): IterableIterator<unknown> {
+  record.keysSignal.read();
+  const raw = record.raw as Map<unknown, unknown>;
+  return projectIterator(raw.keys(), (key) => deepReactive(key));
+}
+
+function mapValues(record: ReactiveRecord): IterableIterator<unknown> {
+  record.keysSignal.read();
+  const raw = record.raw as Map<unknown, unknown>;
+  return projectIterator(raw.entries(), (entry) => {
+    const pair = entry as readonly [unknown, unknown];
+    readSlot(record, pair[0]);
+    return deepReactive(pair[1]);
+  });
+}
+
+function mapEntries(record: ReactiveRecord): IterableIterator<unknown> {
+  record.keysSignal.read();
+  const raw = record.raw as Map<unknown, unknown>;
+  return projectIterator(raw.entries(), (entry) => {
+    const pair = entry as readonly [unknown, unknown];
+    readSlot(record, pair[0]);
+    return [deepReactive(pair[0]), deepReactive(pair[1])] as const;
+  });
+}
+
+function setValues(record: ReactiveRecord): IterableIterator<unknown> {
+  record.keysSignal.read();
+  const raw = record.raw as Set<unknown>;
+  return projectIterator(raw.values(), (value) => deepReactive(value));
+}
+
+function setEntries(record: ReactiveRecord): IterableIterator<unknown> {
+  record.keysSignal.read();
+  const raw = record.raw as Set<unknown>;
+  return projectIterator(raw.values(), (value) => {
+    const item = deepReactive(value);
+    return [item, item] as const;
+  });
+}
+
+function setMapEntry(
+  record: ReactiveRecord,
+  key: unknown,
+  value: unknown,
+): unknown {
+  const raw = record.raw as Map<unknown, unknown>;
+  const rawKey = unwrap(key);
+  const rawValue = unwrap(value);
+  const slot = getSlot(record, rawKey);
+  const current = slot.peek();
+  const exists = raw.has(rawKey);
+  if (current.present && exists && Object.is(current.value, rawValue)) {
+    return record.proxy;
+  }
+  const isNew = !exists;
+  raw.set(rawKey, rawValue);
+  slot.write({ present: true, value: rawValue });
+  if (isNew) {
+    bumpKeys(record);
+    writeCollectionSize(record);
+  }
+  return record.proxy;
+}
+
+function deleteMapEntry(record: ReactiveRecord, key: unknown): boolean {
+  const raw = record.raw as Map<unknown, unknown>;
+  const rawKey = unwrap(key);
+  if (!raw.delete(rawKey)) {
+    return false;
+  }
+  releaseSlot(record, rawKey);
+  bumpKeys(record);
+  writeCollectionSize(record);
+  return true;
+}
+
+function addSetValue(record: ReactiveRecord, value: unknown): unknown {
+  const raw = record.raw as Set<unknown>;
+  const rawValue = unwrap(value);
+  const slot = getSlot(record, rawValue);
+  const current = slot.peek();
+  const exists = raw.has(rawValue);
+  if (current.present && exists) {
+    return record.proxy;
+  }
+  raw.add(rawValue);
+  slot.write({ present: true, value: rawValue });
+  if (!exists) {
+    bumpKeys(record);
+    writeCollectionSize(record);
+  }
+  return record.proxy;
+}
+
+function deleteSetValue(record: ReactiveRecord, value: unknown): boolean {
+  const raw = record.raw as Set<unknown>;
+  const rawValue = unwrap(value);
+  if (!raw.delete(rawValue)) {
+    return false;
+  }
+  releaseSlot(record, rawValue);
+  bumpKeys(record);
+  writeCollectionSize(record);
+  return true;
+}
+
+function clearCollection(record: ReactiveRecord): void {
+  const raw = record.raw as Map<unknown, unknown> | Set<unknown>;
+  if (raw.size === 0) {
+    return;
+  }
+  if (record.collection === "map") {
+    for (const key of (raw as Map<unknown, unknown>).keys()) {
+      releaseSlot(record, key);
+    }
+  } else {
+    for (const value of (raw as Set<unknown>).values()) {
+      releaseSlot(record, value);
+    }
+  }
+  raw.clear();
+  bumpKeys(record);
+  writeCollectionSize(record);
+}
+
+function createCollectionMethods(
+  record: ReactiveRecord,
+): Map<PropertyKey, ReactiveMethod> {
+  const methods = new Map<PropertyKey, ReactiveMethod>();
+  if (record.collection === "map") {
+    methods.set("get", (key: unknown) => {
+      const slot = readSlot(record, unwrap(key));
+      return slot.present ? deepReactive(slot.value) : undefined;
+    });
+    methods.set("has", (key: unknown) => readSlot(record, unwrap(key)).present);
+    methods.set("set", (key: unknown, value: unknown) =>
+      setMapEntry(record, key, value),
+    );
+    methods.set("delete", (key: unknown) => deleteMapEntry(record, key));
+    methods.set("clear", () => {
+      clearCollection(record);
+    });
+    methods.set(
+      "forEach",
+      (callback: unknown, thisArg: unknown) => {
+        const fn = callback as (
+          value: unknown,
+          key: unknown,
+          map: unknown,
+        ) => void;
+        const raw = record.raw as Map<unknown, unknown>;
+        record.keysSignal.read();
+        for (const [key, value] of raw) {
+          const slot = readSlot(record, key);
+          fn.call(
+            thisArg,
+            deepReactive(slot.present ? slot.value : value),
+            deepReactive(key),
+            record.proxy,
+          );
+        }
+      },
+    );
+    methods.set("keys", () => mapKeys(record));
+    methods.set("values", () => mapValues(record));
+    methods.set("entries", () => mapEntries(record));
+    methods.set(Symbol.iterator, () => mapEntries(record));
+    return methods;
+  }
+  methods.set("add", (value: unknown) => addSetValue(record, value));
+  methods.set("has", (value: unknown) => readSlot(record, unwrap(value)).present);
+  methods.set("delete", (value: unknown) => deleteSetValue(record, value));
+  methods.set("clear", () => {
+    clearCollection(record);
+  });
+  methods.set("forEach", (callback: unknown, thisArg: unknown) => {
+    const fn = callback as (
+      value: unknown,
+      key: unknown,
+      set: unknown,
+    ) => void;
+    const raw = record.raw as Set<unknown>;
+    record.keysSignal.read();
+    for (const value of raw) {
+      const item = deepReactive(value);
+      fn.call(thisArg, item, item, record.proxy);
+    }
+  });
+  methods.set("keys", () => setValues(record));
+  methods.set("values", () => setValues(record));
+  methods.set("entries", () => setEntries(record));
+  methods.set(Symbol.iterator, () => setValues(record));
+  return methods;
+}
+
 function setObjectField(
   record: ReactiveRecord,
   key: PropertyKey,
@@ -327,12 +674,11 @@ function setObjectField(
   hadOwn: boolean,
 ): boolean {
   const raw = record.raw;
-  const previous = Reflect.get(raw, key, raw);
   const success = Reflect.set(raw, key, value, raw);
   if (!success) {
     return false;
   }
-  ensureField(record, key, previous).write(Reflect.get(raw, key, raw));
+  updateField(record, key, Reflect.get(raw, key, raw));
   if (!hadOwn) {
     bumpKeys(record);
   }
@@ -412,11 +758,25 @@ function hasReactivePrototype(value: object): boolean {
   return false;
 }
 
+function hasRawPrototype(value: object): boolean {
+  let current: object | null = Object.getPrototypeOf(value) as object | null;
+  while (current !== null) {
+    const descriptor = Reflect.getOwnPropertyDescriptor(current, "constructor");
+    if (
+      descriptor !== undefined &&
+      typeof descriptor.value === "function" &&
+      rawClasses.has(descriptor.value)
+    ) {
+      return true;
+    }
+    current = Object.getPrototypeOf(current) as object | null;
+  }
+  return false;
+}
+
 function isNonReactiveTag(tag: string): boolean {
   switch (tag) {
     case "[object Date]":
-    case "[object Map]":
-    case "[object Set]":
     case "[object WeakMap]":
     case "[object WeakSet]":
     case "[object Promise]":
@@ -438,7 +798,17 @@ function isNonReactiveTag(tag: string): boolean {
   }
 }
 
+function isRawMarked(value: object): boolean {
+  if (rawValues.has(value)) {
+    return true;
+  }
+  return hasRawPrototype(value);
+}
+
 function shouldWrap(value: object): boolean {
+  if (isRawMarked(value)) {
+    return false;
+  }
   if (hasReactivePrototype(value)) {
     return false;
   }
@@ -449,65 +819,101 @@ function shouldWrap(value: object): boolean {
     return false;
   }
   const tag = Object.prototype.toString.call(value);
+  if (tag === "[object Map]" || tag === "[object Set]") {
+    return true;
+  }
   if (isNonReactiveTag(tag)) {
     return false;
   }
   return tag === "[object Object]";
 }
 
+function objectGet(record: ReactiveRecord, key: PropertyKey): unknown {
+  const raw = record.raw;
+  const own = Reflect.getOwnPropertyDescriptor(raw, key);
+  if (own !== undefined) {
+    if (own.get !== undefined) {
+      return deepReactive(Reflect.get(raw, key, record.proxy));
+    }
+    if (
+      own.configurable === false &&
+      own.writable === false &&
+      own.set === undefined
+    ) {
+      return own.value;
+    }
+    return deepReactive(getField(record, key).read());
+  }
+  const inherited = findInheritedDescriptor(raw, key);
+  if (inherited !== undefined) {
+    if (inherited.get !== undefined) {
+      return deepReactive(Reflect.get(raw, key, record.proxy));
+    }
+    if (
+      inherited.configurable === false &&
+      inherited.writable === false &&
+      inherited.set === undefined
+    ) {
+      return inherited.value;
+    }
+  }
+  return deepReactive(getField(record, key).read());
+}
+
+function arrayGet(record: ReactiveRecord, key: PropertyKey): unknown {
+  if (key === "length") {
+    const signal = record.lengthSignal;
+    if (signal !== null) {
+      return signal.read();
+    }
+  }
+  if (typeof key === "string") {
+    const index = toArrayIndex(key);
+    if (index !== null) {
+      return deepReactive(getField(record, index).read());
+    }
+    const methods = record.arrayMethods;
+    if (methods !== null) {
+      const method = methods.get(key);
+      const raw = record.raw;
+      if (method !== undefined && !hasOwn(raw, key)) {
+        return method;
+      }
+    }
+  }
+  return objectGet(record, key);
+}
+
+function collectionGet(record: ReactiveRecord, key: PropertyKey): unknown {
+  const raw = record.raw;
+  if (key === "size" && !hasOwn(raw, key)) {
+    const signal = record.sizeSignal;
+    if (signal !== null) {
+      return signal.read();
+    }
+  }
+  if (!hasOwn(raw, key)) {
+    const methods = record.collectionMethods;
+    if (methods !== null) {
+      const method = methods.get(key);
+      if (method !== undefined) {
+        return method;
+      }
+    }
+  }
+  return objectGet(record, key);
+}
+
 function createHandler(record: ReactiveRecord): ProxyHandler<object> {
   return {
-    get(target, key, receiver): unknown {
-      const raw = record.raw;
+    get(_target, key): unknown {
       if (record.isArray) {
-        if (key === "length") {
-          const signal = record.lengthSignal;
-          if (signal !== null) {
-            return signal.read();
-          }
-        }
-        if (typeof key === "string") {
-          const index = toArrayIndex(key);
-          if (index !== null) {
-            return deepReactive(getField(record, index).read());
-          }
-          const methods = record.arrayMethods;
-          if (methods !== null) {
-            const method = methods.get(key);
-            if (method !== undefined && !hasOwn(raw, key)) {
-              return method;
-            }
-          }
-        }
+        return arrayGet(record, key);
       }
-      const own = Reflect.getOwnPropertyDescriptor(raw, key);
-      if (own !== undefined) {
-        if (own.get !== undefined) {
-          return deepReactive(Reflect.get(raw, key, record.proxy));
-        }
-        if (
-          own.configurable === false &&
-          own.writable === false &&
-          own.set === undefined
-        ) {
-          return own.value;
-        }
-        return deepReactive(getField(record, key).read());
+      if (record.collection !== null) {
+        return collectionGet(record, key);
       }
-      const inherited = findInheritedDescriptor(raw, key);
-      if (inherited !== undefined) {
-        if (inherited.get !== undefined) {
-          return deepReactive(Reflect.get(raw, key, record.proxy));
-        }
-        if (
-          inherited.configurable === false &&
-          inherited.writable === false &&
-          inherited.set === undefined
-        ) {
-          return inherited.value;
-        }
-      }
-      return deepReactive(getField(record, key).read());
+      return objectGet(record, key);
     },
     set(target, key, value, receiver): boolean {
       const raw = record.raw;
@@ -540,8 +946,12 @@ function createHandler(record: ReactiveRecord): ProxyHandler<object> {
       return setObjectField(record, key, rawValue, own !== undefined);
     },
     has(target, key): boolean {
-      record.keysSignal.read();
-      return Reflect.has(target, key);
+      const own = hasOwn(target, key);
+      const exists = Reflect.has(target, key);
+      if (own || !exists) {
+        record.keysSignal.read();
+      }
+      return exists;
     },
     ownKeys(target): ArrayLike<string | symbol> {
       record.keysSignal.read();
@@ -556,8 +966,6 @@ function createHandler(record: ReactiveRecord): ProxyHandler<object> {
       if (own === undefined) {
         return Reflect.deleteProperty(target, key);
       }
-      const previous =
-        own.get !== undefined ? Reflect.get(target, key, target) : own.value;
       const deleted = Reflect.deleteProperty(target, key);
       if (deleted) {
         let fieldKey: PropertyKey = key;
@@ -567,7 +975,7 @@ function createHandler(record: ReactiveRecord): ProxyHandler<object> {
             fieldKey = index;
           }
         }
-        ensureField(record, fieldKey, previous).write(undefined);
+        clearField(record, fieldKey);
         bumpKeys(record);
       }
       return deleted;
@@ -603,7 +1011,6 @@ function createHandler(record: ReactiveRecord): ProxyHandler<object> {
         }
       }
       const hadOwn = hasOwn(raw, key);
-      const previous = Reflect.get(raw, key, raw);
       const normalized: PropertyDescriptor =
         "value" in descriptor
           ? { ...descriptor, value: unwrapValue(descriptor.value) }
@@ -613,7 +1020,7 @@ function createHandler(record: ReactiveRecord): ProxyHandler<object> {
         return false;
       }
       if ("value" in normalized) {
-        ensureField(record, key, previous).write(Reflect.get(raw, key, raw));
+        updateField(record, key, Reflect.get(raw, key, raw));
       }
       if (!hadOwn) {
         bumpKeys(record);
@@ -624,16 +1031,24 @@ function createHandler(record: ReactiveRecord): ProxyHandler<object> {
 }
 
 function createRecord(raw: object): ReactiveRecord {
+  const collection = collectionKindOf(raw);
   const record: ReactiveRecord = {
     raw,
     proxy: raw,
     isArray: Array.isArray(raw),
+    collection,
     fields: new Map<PropertyKey, SignalHandle<unknown>>(),
+    slots: new Map<unknown, SignalHandle<CollectionSlot>>(),
     keysSignal: createSignalHandle<number>(0),
     lengthSignal: Array.isArray(raw)
-      ? createSignalHandle<number>(raw.length)
+      ? createSignalHandle<number>((raw as unknown[]).length)
       : null,
+    sizeSignal:
+      collection === null
+        ? null
+        : createSignalHandle<number>(collectionSize(raw)),
     arrayMethods: null,
+    collectionMethods: null,
     keysVersion: 0,
   };
   const proxy = new Proxy(raw, createHandler(record));
@@ -641,9 +1056,175 @@ function createRecord(raw: object): ReactiveRecord {
   if (record.isArray) {
     record.arrayMethods = createArrayMethods(record);
   }
+  if (collection !== null) {
+    record.collectionMethods = createCollectionMethods(record);
+  }
   rawToRecord.set(raw, record);
   proxyToRecord.set(proxy, record);
   return record;
+}
+
+function readonlyMutator(
+  record: ReadonlyRecord,
+  key: PropertyKey,
+): ReactiveMethod {
+  return () => {
+    throw new ReadonlyMutationError(record.kind, key);
+  };
+}
+
+function toReadonlyValue(value: unknown): unknown {
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+  return readonly(value);
+}
+
+function toReadonlyIterator(iterator: Iterator<unknown>): IterableIterator<unknown> {
+  return projectIterator(iterator, (value) => {
+    if (Array.isArray(value)) {
+      return value.map((entry) => toReadonlyValue(entry));
+    }
+    return toReadonlyValue(value);
+  });
+}
+
+function isCollectionMutator(
+  kind: "map" | "set",
+  key: PropertyKey,
+): boolean {
+  return kind === "map" ? MAP_MUTATORS.has(key) : SET_MUTATORS.has(key);
+}
+
+function readonlyGet(record: ReadonlyRecord, key: PropertyKey): unknown {
+  const inner = record.inner;
+  if (record.kind === "array" && typeof key === "string") {
+    if (ARRAY_MUTATORS.has(key)) {
+      return readonlyMutator(record, key);
+    }
+  }
+  if (record.kind === "map" || record.kind === "set") {
+    if (isCollectionMutator(record.kind, key)) {
+      return readonlyMutator(record, key);
+    }
+    if (key === "size") {
+      return Reflect.get(inner, key, inner);
+    }
+    if (key === "get" && record.kind === "map") {
+      const getter = Reflect.get(inner, key, inner) as (
+        lookup: unknown,
+      ) => unknown;
+      return (lookup: unknown) => toReadonlyValue(getter(lookup));
+    }
+    if (key === "has") {
+      return Reflect.get(inner, key, inner);
+    }
+    if (key === "forEach") {
+      const forEach = Reflect.get(inner, key, inner) as (
+        callback: (value: unknown, entryKey: unknown, container: unknown) => void,
+        thisArg?: unknown,
+      ) => void;
+      return (callback: unknown, thisArg?: unknown) => {
+        const fn = callback as (
+          value: unknown,
+          entryKey: unknown,
+          container: unknown,
+        ) => void;
+        forEach((value, entryKey) => {
+          fn.call(
+            thisArg,
+            toReadonlyValue(value),
+            toReadonlyValue(entryKey),
+            record.proxy,
+          );
+        });
+      };
+    }
+    if (
+      key === "keys" ||
+      key === "values" ||
+      key === "entries" ||
+      key === Symbol.iterator
+    ) {
+      const factory = Reflect.get(inner, key, inner) as () => Iterator<unknown>;
+      return () => toReadonlyIterator(factory());
+    }
+  }
+  const own = Reflect.getOwnPropertyDescriptor(record.raw, key);
+  if (
+    own !== undefined &&
+    own.get === undefined &&
+    own.configurable === false &&
+    own.writable === false
+  ) {
+    return own.value;
+  }
+  return toReadonlyValue(Reflect.get(inner, key, inner));
+}
+
+function createReadonlyHandler(record: ReadonlyRecord): ProxyHandler<object> {
+  return {
+    get(_target, key): unknown {
+      return readonlyGet(record, key);
+    },
+    set(_target, key): boolean {
+      throw new ReadonlyMutationError(record.kind, key);
+    },
+    deleteProperty(_target, key): boolean {
+      throw new ReadonlyMutationError(record.kind, key);
+    },
+    defineProperty(_target, key): boolean {
+      throw new ReadonlyMutationError(record.kind, key);
+    },
+    setPrototypeOf(): boolean {
+      throw new ReadonlyMutationError(record.kind);
+    },
+    preventExtensions(): boolean {
+      throw new ReadonlyMutationError(record.kind);
+    },
+    has(_target, key): boolean {
+      return Reflect.has(record.inner, key);
+    },
+    ownKeys(): ArrayLike<string | symbol> {
+      return Reflect.ownKeys(record.inner);
+    },
+    getOwnPropertyDescriptor(
+      _target,
+      key,
+    ): PropertyDescriptor | undefined {
+      return Reflect.getOwnPropertyDescriptor(record.inner, key);
+    },
+  };
+}
+
+function createReadonlyRecord(raw: object): ReadonlyRecord {
+  const collection = collectionKindOf(raw);
+  const kind: ReadonlyRecord["kind"] = Array.isArray(raw)
+    ? "array"
+    : collection ?? "object";
+  const record: ReadonlyRecord = {
+    raw,
+    inner: deepReactive(raw),
+    kind,
+    proxy: raw,
+  };
+  const proxy = new Proxy(record.inner, createReadonlyHandler(record));
+  record.proxy = proxy;
+  readonlyByRaw.set(raw, record);
+  readonlyToRaw.set(proxy, raw);
+  readonlyProxies.add(proxy);
+  return record;
+}
+
+export class ReadonlyMutationError extends TypeError {
+  readonly key: PropertyKey | undefined;
+
+  constructor(kind: string, key?: PropertyKey) {
+    const target = key === undefined ? "" : ` "${String(key)}"`;
+    super(`Cannot mutate readonly ${kind}${target}`);
+    this.name = "ReadonlyMutationError";
+    this.key = key;
+  }
 }
 
 export function markReactiveClass(ctor: Function): void {
@@ -654,24 +1235,77 @@ export function isReactiveClass(value: unknown): boolean {
   return typeof value === "function" && reactiveClasses.has(value);
 }
 
+export function markRaw<T>(value: T): T {
+  if (typeof value === "function") {
+    rawClasses.add(value);
+  } else if (typeof value === "object" && value !== null) {
+    rawValues.add(value);
+  }
+  return value;
+}
+
+export function isRaw(value: unknown): boolean {
+  if (typeof value === "function") {
+    return rawClasses.has(value);
+  }
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  if (proxyToRecord.has(value)) {
+    return false;
+  }
+  return isRawMarked(value);
+}
+
 export function isReactive(value: unknown): boolean {
   return typeof value === "object" && value !== null && proxyToRecord.has(value);
+}
+
+export function isReadonly(value: unknown): boolean {
+  return typeof value === "object" && value !== null && readonlyProxies.has(value);
+}
+
+export function readonly<T>(value: T): T {
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+  if (readonlyProxies.has(value)) {
+    return value;
+  }
+  const raw = unwrap(value);
+  const existing = readonlyByRaw.get(raw);
+  if (existing !== undefined) {
+    return existing.proxy as T;
+  }
+  if (!shouldWrap(raw)) {
+    return value;
+  }
+  return createReadonlyRecord(raw).proxy as T;
 }
 
 export function unwrap<T>(value: T): T {
   let current: unknown = value;
   while (typeof current === "object" && current !== null) {
     const record = proxyToRecord.get(current);
-    if (record === undefined) {
-      break;
+    if (record !== undefined) {
+      current = record.raw;
+      continue;
     }
-    current = record.raw;
+    const raw = readonlyToRaw.get(current);
+    if (raw !== undefined) {
+      current = raw;
+      continue;
+    }
+    break;
   }
   return current as T;
 }
 
 export function deepReactive<T>(value: T): T {
   if (value === null || typeof value !== "object") {
+    return value;
+  }
+  if (readonlyProxies.has(value)) {
     return value;
   }
   const existingProxy = proxyToRecord.get(value);

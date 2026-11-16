@@ -31,6 +31,23 @@ export function setMetadataCollector(
   collector = next;
 }
 
+export function getMetadataCollector(): ((node: Element) => void) | null {
+  return collector;
+}
+
+export function hoistNode(node: Element): () => void {
+  node.parentNode?.removeChild(node);
+  stripMarkers(node);
+  if (collector !== null) {
+    collector(node);
+    return () => {};
+  }
+  if (node.tagName === "TITLE") {
+    return registerTitle(node);
+  }
+  return registerAsset(node);
+}
+
 export function isMetadataElement(node: Node | null | undefined): node is Element {
   if (!(node instanceof Element)) {
     return false;
@@ -97,17 +114,10 @@ function stripMarkers(node: Element): void {
 }
 
 function hoist(node: Element): void {
-  node.parentNode?.removeChild(node);
-  stripMarkers(node);
-  if (collector !== null) {
-    collector(node);
-    return;
+  const dispose = hoistNode(node);
+  if (collector === null) {
+    onCleanup(dispose);
   }
-  if (node.tagName === "TITLE") {
-    onCleanup(registerTitle(node));
-    return;
-  }
-  onCleanup(registerAsset(node));
 }
 
 function registerAsset(node: Element): () => void {
@@ -124,7 +134,9 @@ function registerAsset(node: Element): () => void {
 }
 
 function registerTitle(node: Element): () => void {
-  titles.push(node);
+  if (!titles.includes(node)) {
+    titles.push(node);
+  }
   syncTitles();
   let active = true;
   const dispose = (): void => {
