@@ -397,6 +397,11 @@
         "type": "(target: Element | string, app: AnyComponent, options?: MountOptions) => Promise<MountHandle>",
         "signature": "export declare function hydrate(target: Element | string, app: AnyComponent, options?: MountOptions): Promise<MountHandle>;"
       },
+      "hydrateIslands": {
+        "kind": "function",
+        "type": "(islands: readonly IslandMount[]) => Promise<MountHandle[]>",
+        "signature": "export declare function hydrateIslands(islands: readonly IslandMount[]): Promise<MountHandle[]>;"
+      },
       "HydrationMismatchError": {
         "kind": "class",
         "signature": "export declare class HydrationMismatchError extends Error { constructor(message: string); }"
@@ -437,6 +442,10 @@
         "kind": "function",
         "type": "() => boolean",
         "signature": "export declare function isDevtoolsProduction(): boolean;"
+      },
+      "IslandMount": {
+        "kind": "interface",
+        "signature": "export interface IslandMount { readonly target: Element | string; readonly app: AnyComponent; readonly options?: MountOptions | undefined; }"
       },
       "isServerMode": {
         "kind": "function",

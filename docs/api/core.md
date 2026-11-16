@@ -705,6 +705,22 @@ function getPropsUpdater(node: Node): PropsUpdater | null;
 
 Реестр обновляторов props, привязанный к узлам результата. `updateProps(node, props)` находит updater по корневому узлу или отрендеренному элементу и возвращает `true`; для неизвестного узла возвращает `false`. `registerPropsUpdater`/`getPropsUpdater` позволяют встроить компонент в собственный рендерер. Публичный тип updater — `PropsUpdater`.
 
+### `hydrateIslands`
+
+*Стабильность: public.*
+
+```ts
+interface IslandMount {
+  readonly target: Element | string;
+  readonly app: AnyComponent;
+  readonly options?: MountOptions;
+}
+
+async function hydrateIslands(islands: readonly IslandMount[]): Promise<MountHandle[]>;
+```
+
+`IslandMount` описывает target/app/options одного острова. Частичная гидрация на уровне независимых SSR-островов: каждый `target` содержит отдельно отрендеренную серверную разметку, гидратируется своим `app`, остальная статическая оболочка не трогается. Острова обрабатываются последовательно; возвращённые handles освобождают только свои узлы. Для одного общего дерева с выборочной гидрацией используйте отдельные SSR-корни/острова.
+
 ### `hydrate`
 
 *Стабильность: public.*

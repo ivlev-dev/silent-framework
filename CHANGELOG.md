@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.1
+
+### Partial hydration
+
+- Добавлен `hydrateIslands`/`IslandMount`: независимая гидрация SSR-островов с сохранением статической оболочки и отдельным dispose каждого острова.
+- Документация и API-снимки обновлены.
+
 ## 0.10.0
 
 Платформенная волна: progressive streaming SSR, devtools и инфраструктура качества.

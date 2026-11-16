@@ -253,3 +253,19 @@ export async function hydrate(
 ): Promise<MountHandle> {
   return serialized(() => hydrateRoot(target, app, options));
 }
+
+export interface IslandMount {
+  readonly target: Element | string;
+  readonly app: AnyComponent;
+  readonly options?: MountOptions | undefined;
+}
+
+export async function hydrateIslands(
+  islands: readonly IslandMount[],
+): Promise<MountHandle[]> {
+  const handles: MountHandle[] = [];
+  for (const island of islands) {
+    handles.push(await hydrate(island.target, island.app, island.options ?? {}));
+  }
+  return handles;
+}
