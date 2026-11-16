@@ -284,37 +284,39 @@ silent({
 
 | Сценарий | ops/s |
 | --- | ---: |
-| SSR: silent renderToString | 99 900 |
-| SSR: solid renderToString | 206 300 |
-| Гидрация: silent hydrate (20 шаблонов) | 1 368 |
+| SSR: silent renderToString | 113 022 |
+| SSR: solid renderToString | 113 704 |
+| Гидрация: silent hydrate (20 шаблонов) | 1 430 |
+
+На скомпилированном приложении с `For` SSR идёт на паритете: 0.93–1.00× от Solid в соседних прогонах.
 
 `pnpm bench:hydrate` сравнивает гидрацию Silent и Solid в одном jsdom (20 строк, SSR-разметка Solid скомпилирована с `data-hk`):
 
 | Сценарий | ops/s | к Solid |
 | --- | ---: | ---: |
-| Silent hydrate | 1 368 | 0.61x |
-| Solid hydrate | 2 249 | 1.00x |
+| Silent hydrate | 1 510 | 0.66x |
+| Solid hydrate | 2 292 | 1.00x |
 
 `pnpm bench:browser` повторяет сравнение в реальном Chromium (20 строк, 300 замеров по 20 гидраций). Из замера исключена подготовка контейнера (`innerHTML`), её стоимость показана отдельно в столбце «разбор»:
 
 | Сценарий | ops/s | к Solid |
 | --- | ---: | ---: |
-| Silent hydrate (хост, 4 CPU) | 22 189 | 0.83x |
-| Solid hydrate (хост, 4 CPU) | 26 810 | 1.00x |
-| Silent hydrate (`bench:vm`, 1 изолированный vCPU) | 6 870–10 943 | 0.53–0.70x |
+| Silent hydrate (хост, 4 CPU) | 23 641 | 0.89x |
+| Solid hydrate (хост, 4 CPU) | 26 455 | 1.00x |
+| Silent hydrate (`bench:vm`, 1 изолированный vCPU) | 6 870–10 943 | 0.53–0.80x |
 | Solid hydrate (`bench:vm`, 1 изолированный vCPU) | 9 844–19 380 | 1.00x |
 
 `pnpm bench:vm` поднимает `vng` (virtme-ng) с одним vCPU, закреплённым за изолированным ядром хоста (cgroup v2 cpuset-партиция), и внутри VM запускает ту же команду в собственном cgroup. Абсолютные числа зависят от фоновой нагрузки хоста (память, I/O, частота), поэтому сравнивать можно только прогоны подряд; на одном ядре разрыв больше, потому что маркирующий GC конкурирует с главным потоком за одно ядро, а Silent аллоцирует заметно больше Solid.
 
-Гидрация Silent требует материализации клиентского дерева и только потом переиспользует серверные узлы; Solid привязывается к готовым узлам по `data-hk`. Разбор SSR-разметки у Silent дороже (больше маркеров) и в ops/s не входит.
+Гидрация Silent адоптирует серверную разметку по сгенерированному плану без материализации клиентского дерева: статические узлы не клонируются, эффекты привязываются к существующим узлам. Solid привязывается к готовым узлам по `data-hk`; у Silent карта адоптации (пути дыр и атрибутов) приходит из компилятора. Разбор SSR-разметки у Silent дороже (больше маркеров) и в ops/s не входит.
 
 `pnpm bench:build` собирает одинаковые Vite-приложения на Silent и Solid (3 cold + 3 warm прогона):
 
 | Приложение | cold, ms | warm, ms | start JS, KB | start gzip, KB | all JS, KB | CSS, KB |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Silent (`view: false`) | 64 | 35 | 27.4 | 9.2 | 27.4 | 0.2 |
-| Silent (default, VM) | 39 | 34 | 31.2 | 10.7 | 44.6 | 0.2 |
-| Solid | 136 | 34 | 12.6 | 5.1 | 12.6 | 0.2 |
+| Silent (`view: false`) | 57 | 37 | 27.7 | 9.4 | 27.7 | 0.2 |
+| Silent (default, VM) | 33 | 33 | 31.5 | 10.9 | 44.9 | 0.2 |
+| Solid | 124 | 32 | 12.6 | 5.1 | 12.6 | 0.2 |
 
 У Silent с VM `all JS` включает lazy-чанк `component-view` (8.98 KB / 3.66 KB gzip), который загружается только при наличии ViewModel. При `view: false` lazy-чанк и `vite/preload-helper` не генерируются.
 
@@ -349,7 +351,11 @@ pnpm api:check
 pnpm dev
 pnpm bench
 pnpm bench:ssr
+pnpm bench:hydrate
+pnpm bench:browser
 pnpm bench:vm
+pnpm bench:alloc
+pnpm published:check
 pnpm test:e2e
 pnpm test:ssr
 pnpm install:check
@@ -358,11 +364,11 @@ pnpm deprecate:legacy --dry-run
 
 ## Релиз
 
-Все пакеты `@ivlev-dev/silent-*` версионируются синхронно (сейчас `0.7.0`). Правила и пошаговый процесс — [docs/releasing.md](./docs/releasing.md). Релиз запускается тегом:
+Все пакеты `@ivlev-dev/silent-*` версионируются синхронно (сейчас `0.7.1`). Правила и пошаговый процесс — [docs/releasing.md](./docs/releasing.md). Релиз запускается тегом:
 
 ```bash
-git tag v0.7.0
-git push origin v0.7.0
+git tag v0.7.1
+git push origin v0.7.1
 ```
 
 GitHub Actions `Release` соберёт нативные бинарники под Linux/Windows, прогонит тесты, проверит совпадение тега и версий, соберёт пакеты и опубликует их в npm. Для публикации нужен секрет репозитория `NPM_TOKEN`. Локальная проверка установки из tarball'ов — `pnpm install:check`.
