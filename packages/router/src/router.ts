@@ -59,6 +59,7 @@ export interface IRouter {
   readonly matched: readonly MatchedRoute[];
   resolve(to: RouteTarget): RouteLocation;
   href(to: RouteTarget): string;
+  prefetch(to: RouteTarget): Promise<void>;
   push(to: RouteTarget): Promise<void>;
   replace(to: RouteTarget): Promise<void>;
   back(): void;
@@ -192,6 +193,15 @@ export class Router implements IRouter {
 
   href(to: RouteTarget): string {
     return `${this.base}${this.resolve(to).fullPath}`;
+  }
+
+  prefetch(to: RouteTarget): Promise<void> {
+    if (this.disposed) {
+      return Promise.reject(new RouterNavigationError("Router уничтожен", "abort", targetString(to)));
+    }
+    const location = this.attachComponents(this.resolve(to));
+    const id = this.navigationId;
+    return this.runLoaders(location, new AbortController().signal, id);
   }
 
   push(to: RouteTarget): Promise<void> {

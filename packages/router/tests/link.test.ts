@@ -67,6 +67,35 @@ describe("Link", () => {
     expect(host.querySelector("a")?.getAttribute("href")).toBe("/app/users/7?tab=info");
   });
 
+  it("предзагружает lazy route по hover при prefetch", async () => {
+    let loaded = 0;
+    const lazy = (): HTMLElement => {
+      const element = document.createElement("div");
+      element.dataset.view = "lazy";
+      return element;
+    };
+    const router = track(new Router({
+      routes: [
+        { path: "/", name: "home", component: leaf("home") },
+        {
+          path: "/lazy",
+          name: "lazy",
+          load: async () => {
+            loaded += 1;
+            return lazy;
+          },
+        },
+      ],
+      history: createMemoryHistory("/"),
+    }));
+    await router.start();
+    const { host } = mount(() => Link({ to: "/lazy", prefetch: true, children: "lazy" }));
+    host.querySelector("a")?.dispatchEvent(new MouseEvent("pointerenter", { bubbles: true }));
+    await tick();
+    await tick();
+    expect(loaded).toBe(1);
+  });
+
   it("перехватывает левый клик и делает push", async () => {
     const { router } = setup();
     await router.start();

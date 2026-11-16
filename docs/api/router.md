@@ -18,7 +18,7 @@ export class PageVM {
 }
 ```
 
-`IRouter` содержит `base`, `state()`, `route`, `params`, `query`, `hash`, `matched`, `resolve`, `href`, `push`, `replace`, `back`, `forward`, `start`, `stop`, `dispose`. `Router implements IRouter`. В рантайме `IRouter` — это value-токен, совпадающий с `Router`, поэтому компилятор DI может подставить его напрямую.
+`IRouter` содержит `base`, `state()`, `route`, `params`, `query`, `hash`, `matched`, `resolve`, `href`, `prefetch`, `push`, `replace`, `back`, `forward`, `start`, `stop`, `dispose`. `Router implements IRouter`. В рантайме `IRouter` — это value-токен, совпадающий с `Router`, поэтому компилятор DI может подставить его напрямую.
 
 ## `Router`
 
@@ -174,7 +174,7 @@ const routes: RouteRecord[] = [
 <Link to={{ name: "user", params: { id: 42 }, query: { tab: "info" } }}>Профиль</Link>
 ```
 
-`LinkProps`: `to`, `replace`, `activeClass`, `exactActiveClass`, `class`, `children`, `router?: IRouter`. Рендерит настоящий `<a href>`, перехватывает только левый клик без модификаторов, active-классы реактивны.
+`LinkProps`: `to`, `replace`, `activeClass`, `exactActiveClass`, `class`, `children`, `router?: IRouter`, `prefetch?: boolean`. `prefetch` вызывает `router.prefetch` на `pointerenter`/`focus` и загружает lazy-компонент заранее. Рендерит настоящий `<a href>`, перехватывает только левый клик без модификаторов, active-классы реактивны.
 
 ## `RouterView`
 

@@ -105,7 +105,7 @@ export class PageVM {
 }
 ```
 
-`IRouter` содержит `base`, `state()`, `route`, `params`, `query`, `hash`, `matched`, `resolve`, `href`, `push`, `replace`, `back`, `forward`, `start`, `stop`, `dispose`. В рантайме `IRouter` — value-токен, совпадающий с `Router`, поэтому компилятор DI подставляет его как единственную реализацию.
+`IRouter` содержит `base`, `state()`, `route`, `params`, `query`, `hash`, `matched`, `resolve`, `href`, `prefetch`, `push`, `replace`, `back`, `forward`, `start`, `stop`, `dispose`. В рантайме `IRouter` — value-токен, совпадающий с `Router`, поэтому компилятор DI подставляет его как единственную реализацию.
 
 Зарегистрируйте роутер в контейнере:
 

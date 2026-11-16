@@ -20,6 +20,7 @@ export interface LinkProps {
   readonly class?: ClassNameValue;
   readonly children?: Children;
   readonly router?: IRouter;
+  readonly prefetch?: boolean;
 }
 
 function resolveRouter(router: IRouter | undefined): IRouter {
@@ -99,6 +100,19 @@ export function Link(props: LinkProps): Node {
     mount.render(props.children);
   });
   onCleanup(mount.clear);
+
+  if (props.prefetch === true) {
+    let started = false;
+    const prefetch = (): void => {
+      if (started) {
+        return;
+      }
+      started = true;
+      void router.prefetch(target()).catch(() => {});
+    };
+    on(element, "pointerenter", () => prefetch);
+    on(element, "focus", () => prefetch);
+  }
 
   on(element, "click", () => (event: MouseEvent): void => {
     if (event.defaultPrevented || event.button !== 0) {

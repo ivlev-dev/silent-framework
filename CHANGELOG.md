@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11.2
+
+### Router prefetch
+
+- `IRouter.prefetch(to)` загружает lazy-компоненты маршрута без навигации.
+- `Link` получил `prefetch?: boolean`: загрузка запускается на `pointerenter`/`focus` один раз.
+- Добавлены тесты prefetch для lazy route; документация и API-снимки обновлены.
+
 ## 0.11.1
 
 ### Router
