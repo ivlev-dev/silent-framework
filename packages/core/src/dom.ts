@@ -50,9 +50,16 @@ const HYDRATE =
   typeof __SILENT_HYDRATE__ === "undefined" || __SILENT_HYDRATE__;
 export const NODE_DISPOSER = Symbol("silent.disposer");
 const ITEM_DISPOSER = Symbol("silent.itemDisposer");
+export const ITEM_STATE = Symbol("silent.itemState");
 
 type DisposerHost = Node & { [NODE_DISPOSER]?: () => void };
 type ItemDisposerHost = Node & { [ITEM_DISPOSER]?: () => void };
+
+export interface DisposableItemState {
+  dispose(): void;
+}
+
+export type ItemStateHost = Node & { [ITEM_STATE]?: DisposableItemState };
 
 interface ListenerHolder {
   current: EventListener | null;
@@ -358,8 +365,13 @@ export function attachItemDisposer(node: Node, dispose: () => void): void {
   (node as ItemDisposerHost)[ITEM_DISPOSER] = dispose;
 }
 
+export function attachItemState(node: Node, state: DisposableItemState): void {
+  (node as ItemStateHost)[ITEM_STATE] = state;
+}
+
 export function clearItemDisposer(node: Node): void {
   delete (node as ItemDisposerHost)[ITEM_DISPOSER];
+  delete (node as ItemStateHost)[ITEM_STATE];
 }
 
 function readDisposer(node: Node): (() => void) | undefined {
@@ -428,6 +440,11 @@ export function collectNodes(value: Children | Iterable<Child>): Node[] {
 }
 
 export function disposeNode(node: Node): void {
+  const state = (node as ItemStateHost)[ITEM_STATE];
+  if (state !== undefined) {
+    state.dispose();
+    return;
+  }
   const itemDispose = (node as ItemDisposerHost)[ITEM_DISPOSER];
   if (typeof itemDispose === "function") {
     itemDispose();

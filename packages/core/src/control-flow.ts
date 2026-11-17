@@ -11,8 +11,7 @@ import { createEffectUnlessStatic } from "./static-effect.js";
 import { markDirectComponent } from "./match-node.js";
 import type { Children } from "./jsx.js";
 import {
-  attachDisposer,
-  attachItemDisposer,
+  attachItemState,
   clearItemDisposer,
   collectNodes,
   createMountPoint,
@@ -60,6 +59,7 @@ interface ItemState<T> {
   disposed: boolean;
   previousIndex: number;
   generation: number;
+  dispose(): void;
 }
 
 const NO_NODES: Node[] = [];
@@ -85,6 +85,7 @@ class KeyedState<T> implements ItemState<T> {
   index: Accessor<number>;
   private handle: [Accessor<number>, Setter<number>] | null = null;
   private position: number;
+  private remove: (state: ItemState<T>) => void;
 
   constructor(
     item: T,
@@ -92,7 +93,8 @@ class KeyedState<T> implements ItemState<T> {
     anchor: Comment | null,
     itemEnd: Node | null,
     position: number,
-    usesIndex = true,
+    usesIndex: boolean,
+    remove: (state: ItemState<T>) => void,
   ) {
     this.item = item;
     this.key = key;
@@ -100,6 +102,7 @@ class KeyedState<T> implements ItemState<T> {
     this.nodes = itemEnd === null ? [] : NO_NODES;
     this.nodesEnd = itemEnd;
     this.position = position;
+    this.remove = remove;
     this.index = usesIndex
       ? () => {
           let handle = this.handle;
@@ -110,6 +113,10 @@ class KeyedState<T> implements ItemState<T> {
           return handle[0]();
         }
       : NO_INDEX;
+  }
+
+  dispose(): void {
+    this.remove(this);
   }
 
   setIndex(value: number | ((previous: number) => number)): number {
@@ -339,6 +346,7 @@ export function For<T>(props: ForProps<T>): Node {
   const fallback = props.fallback;
   const hasFallback = fallback !== undefined;
   const keyOf = props.keyOf;
+  const usesIndex = props.index !== false;
   const keyAt = (item: T, index: number): unknown => {
     if (keyOf === undefined) {
       return item;
@@ -401,10 +409,6 @@ export function For<T>(props: ForProps<T>): Node {
     return collected;
   };
 
-  const applyItemDisposer = (state: ItemState<T>, node: Node): void => {
-    attachItemDisposer(node, () => removeState(state));
-  };
-
   const renderItem = (
     state: ItemState<T>,
     value: unknown,
@@ -448,7 +452,7 @@ export function For<T>(props: ForProps<T>): Node {
           parent.insertBefore(anchor, tail);
         }
         state.anchor = anchor;
-        applyItemDisposer(state, anchor);
+        attachItemState(anchor, state);
       }
       return;
     }
@@ -456,7 +460,7 @@ export function For<T>(props: ForProps<T>): Node {
       parent.insertBefore(placed[index]!, tail);
     }
     state.nodes = placed;
-    applyItemDisposer(state, placed[0]!);
+    attachItemState(placed[0]!, state);
   };
 
   const removeState = (state: ItemState<T>): void => {
@@ -504,7 +508,7 @@ export function For<T>(props: ForProps<T>): Node {
       const anchor = document.createComment(ITEM);
       parent.insertBefore(anchor, first);
       state.anchor = anchor;
-      applyItemDisposer(state, anchor);
+      attachItemState(anchor, state);
     }
   };
 
@@ -517,15 +521,17 @@ export function For<T>(props: ForProps<T>): Node {
     position: number,
     mountParent: Node | null = null,
     tail: Node | null = null,
+    providedChildren: ForProps<T>["children"] | undefined = undefined,
   ): ItemState<T> => {
-    const children = untrack(() => props.children);
+    const children = providedChildren ?? untrack(() => props.children);
     const state = new KeyedState<T>(
       item,
       keyAt(item, position),
       anchor,
       itemEnd,
       position,
-      props.index !== false,
+      usesIndex,
+      removeState,
     );
     let initialMount: Node | null = mountParent;
     let seeded = itemEnd !== null;
@@ -560,7 +566,7 @@ export function For<T>(props: ForProps<T>): Node {
       : createEffectUnlessStatic(run) ?? noopCleanup;
 
     if (anchor !== null) {
-      attachDisposer(anchor, () => removeState(state));
+      attachItemState(anchor, state);
     }
     return state;
   };
@@ -587,7 +593,8 @@ export function For<T>(props: ForProps<T>): Node {
     position: number,
     sink: Node,
     tail: Node | null = null,
-  ): ItemState<T> => makeState(item, null, null, position, sink, tail);
+    children: ForProps<T>["children"] | undefined = undefined,
+  ): ItemState<T> => makeState(item, null, null, position, sink, tail, children);
 
   let fallbackSeed: Node[] = [];
   let skipFirst = hydrating;
@@ -618,6 +625,7 @@ export function For<T>(props: ForProps<T>): Node {
     }
     let cursor: Node | null = items.length === 0 ? endAnchor : outer.start.nextSibling;
     let position = 0;
+    const children = untrack(() => props.children);
     runWithOwner(parentOwner, () => {
       while (cursor !== null && cursor !== endAnchor) {
         if (cursor.nodeType !== Node.COMMENT_NODE || (cursor as Comment).data !== ITEM) {
@@ -635,7 +643,7 @@ export function For<T>(props: ForProps<T>): Node {
         if (item === undefined) {
           return mismatch("лишний элемент списка");
         }
-        states.push(makeState(item, anchor, node ?? endAnchor, position));
+        states.push(makeState(item, anchor, node ?? endAnchor, position, null, null, children));
         position += 1;
         cursor = node;
       }
@@ -708,17 +716,18 @@ export function For<T>(props: ForProps<T>): Node {
       }
       if (nextLength >= previousLength) {
         if (nextLength > previousLength) {
+          const children = untrack(() => props.children);
           if (previousLength === 0 && target !== null) {
             runWithOwner(parentOwner, () => {
               for (let position = 0; position < nextLength; position += 1) {
-                previous.push(createState(items[position] as T, position, target, endAnchor));
+                previous.push(createState(items[position] as T, position, target, endAnchor, children));
               }
             });
           } else {
             const batch = document.createDocumentFragment();
             runWithOwner(parentOwner, () => {
               for (let position = previousLength; position < nextLength; position += 1) {
-                previous.push(createState(items[position] as T, position, batch));
+                previous.push(createState(items[position] as T, position, batch, null, children));
               }
             });
             parent.insertBefore(batch, endAnchor);
@@ -757,6 +766,7 @@ export function For<T>(props: ForProps<T>): Node {
     created.length = 0;
     let batch: DocumentFragment | null = null;
 
+    const children = untrack(() => props.children);
     runWithOwner(parentOwner, () => {
       for (let position = 0; position < nextLength; position += 1) {
         const item = items[position] as T;
@@ -778,7 +788,7 @@ export function For<T>(props: ForProps<T>): Node {
           if (batch === null) {
             batch = document.createDocumentFragment();
           }
-          const fresh = createState(item, position, batch);
+          const fresh = createState(item, position, batch, null, children);
           created.push(fresh);
           next.push(fresh);
           continue;

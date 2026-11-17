@@ -11,8 +11,7 @@ import { createEffectUnlessStatic } from "./static-effect.js";
 import { markDirectComponent } from "./match-node.js";
 import type { Children } from "./jsx.js";
 import {
-  attachDisposer,
-  attachItemDisposer,
+  attachItemState,
   clearItemDisposer,
   collectNodes,
   createMountPoint,
@@ -60,6 +59,7 @@ interface IndexState<T> {
   nodes: Node[];
   cleanup: () => void;
   disposed: boolean;
+  dispose(): void;
 }
 
 interface MutableWindow {
@@ -81,12 +81,21 @@ class IndexedState<T> implements IndexState<T> {
   private indexHandle: [Accessor<number>, Setter<number>] | null = null;
   private currentItem: T;
   private position: number;
+  private remove: (state: IndexState<T>) => void;
 
-  constructor(value: T, anchor: Comment | null, nodes: Node[], position: number, usesIndex = true) {
+  constructor(
+    value: T,
+    anchor: Comment | null,
+    nodes: Node[],
+    position: number,
+    usesIndex: boolean,
+    remove: (state: IndexState<T>) => void,
+  ) {
     this.anchor = anchor;
     this.nodes = nodes;
     this.currentItem = value;
     this.position = position;
+    this.remove = remove;
     this.item = () => {
       let handle = this.itemHandle;
       if (handle === null) {
@@ -105,6 +114,10 @@ class IndexedState<T> implements IndexState<T> {
           return handle[0]();
         }
       : NO_INDEX;
+  }
+
+  dispose(): void {
+    this.remove(this);
   }
 
   setItem(value: T | ((previous: T) => T)): T {
@@ -249,6 +262,7 @@ export function Index<T>(props: IndexProps<T>): Node {
   const fallback = props.fallback;
   const hasFallback = fallback !== undefined;
   const parentOwner = getOwner();
+  const usesIndex = props.index !== false;
   let states: IndexState<T>[] = [];
   let endAnchor: Comment;
   let fallbackSeed: Node[] = [];
@@ -296,14 +310,16 @@ export function Index<T>(props: IndexProps<T>): Node {
     position: number,
     mountParent: Node | null = null,
     mountTail: Node | null = null,
+    providedChildren: IndexProps<T>["children"] | undefined = undefined,
   ): IndexState<T> => {
-    const children = untrack(() => props.children);
+    const children = providedChildren ?? untrack(() => props.children);
     const state = new IndexedState<T>(
       value,
       anchor,
       nodes,
       position,
-      props.index !== false,
+      usesIndex,
+      removeState,
     );
     let initialMount = mountParent;
     let initialTail = mountTail;
@@ -365,7 +381,7 @@ export function Index<T>(props: IndexProps<T>): Node {
             parent.insertBefore(marker, tail);
           }
           state.anchor = marker;
-          attachItemDisposer(marker, () => removeState(state));
+          attachItemState(marker, state);
         }
         return;
       }
@@ -373,11 +389,11 @@ export function Index<T>(props: IndexProps<T>): Node {
         parent.insertBefore(placed[index]!, tail);
       }
       state.nodes = placed;
-      attachItemDisposer(placed[0]!, () => removeState(state));
+      attachItemState(placed[0]!, state);
     }) ?? noopCleanup;
 
     if (anchor !== null) {
-      attachDisposer(anchor, () => removeState(state));
+      attachItemState(anchor, state);
     }
     return state;
   };
@@ -387,7 +403,8 @@ export function Index<T>(props: IndexProps<T>): Node {
     sink: Node,
     position: number,
     tail: Node | null = null,
-  ): IndexState<T> => makeState(value, null, [], null, position, sink, tail);
+    children: IndexProps<T>["children"] | undefined = undefined,
+  ): IndexState<T> => makeState(value, null, [], null, position, sink, tail, children);
 
   if (hydrating) {
     if (outer === null) {
@@ -413,6 +430,7 @@ export function Index<T>(props: IndexProps<T>): Node {
     }
     let cursor: Node | null = items.length === 0 ? endAnchor : outer.start.nextSibling;
     let position = 0;
+    const children = untrack(() => props.children);
     runWithOwner(parentOwner, () => {
       while (cursor !== null && cursor !== endAnchor) {
         if (!isItemMarker(cursor)) {
@@ -429,7 +447,7 @@ export function Index<T>(props: IndexProps<T>): Node {
         if (item === undefined) {
           return mismatch("лишний элемент списка");
         }
-        states.push(makeState(item, anchor, nodes, node ?? endAnchor, position));
+        states.push(makeState(item, anchor, nodes, node ?? endAnchor, position, null, null, children));
         position += 1;
         cursor = node;
       }
@@ -489,9 +507,10 @@ export function Index<T>(props: IndexProps<T>): Node {
     }
     if (items.length > previousLength) {
       const batch = document.createDocumentFragment();
+      const children = untrack(() => props.children);
       runWithOwner(parentOwner, () => {
         for (let position = previousLength; position < items.length; position += 1) {
-          states.push(createState(items[position] as T, batch, position));
+          states.push(createState(items[position] as T, batch, position, null, children));
         }
       });
       parent.insertBefore(batch, endAnchor);
