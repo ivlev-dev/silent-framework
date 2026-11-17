@@ -37,6 +37,7 @@ import type { AnyComponent } from "./types.js";
 let runtimes: Promise<void> | null = null;
 let runtimesReady = false;
 let hydrationQueue: Promise<void> = /*#__PURE__*/ Promise.resolve();
+let hydrationRunning = false;
 
 async function settle(): Promise<void> {
   flushSync();
@@ -259,7 +260,20 @@ export async function hydrate(
   app: AnyComponent,
   options: MountOptions = {},
 ): Promise<MountHandle> {
-  return serialized(() => hydrateRoot(target, app, options));
+  if (hydrationRunning) {
+    return serialized(() => hydrateRoot(target, app, options));
+  }
+  hydrationRunning = true;
+  let release: () => void = () => {};
+  hydrationQueue = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    return await hydrateRoot(target, app, options);
+  } finally {
+    hydrationRunning = false;
+    release();
+  }
 }
 
 export interface IslandMount {

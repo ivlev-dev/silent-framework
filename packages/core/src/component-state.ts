@@ -91,6 +91,16 @@ export function withRuntimeOptions<T>(options: RuntimeOptions, fn: () => T): T {
   }
 }
 
+export function hasRuntimeOptions(options: RuntimeOptions): boolean {
+  return (
+    options.container !== undefined ||
+    options.preloader !== undefined ||
+    options.onError !== undefined ||
+    options.boundary !== undefined ||
+    options.hydrate !== undefined
+  );
+}
+
 export function setDefaultPreloader(preloader: Preloader | null): void {
   defaultPreloader = preloader;
 }

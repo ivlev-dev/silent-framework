@@ -26,6 +26,7 @@ import {
   getOwnReady,
   getReady,
   getRuntimeOptions,
+  hasRuntimeOptions,
   withRuntimeOptions,
   type ComponentResult,
   type RuntimeOptions,
@@ -368,11 +369,13 @@ function refreshLightInstance(instance: LightInstance, initial: boolean): void {
       instance.renderRootDispose = dispose;
       owner = getOwner();
       adoptContextValues(owner, instance.contextValues);
-      output = withRuntimeOptions(instance.options, () =>
+      const render = (): unknown =>
         (instance.fn as unknown as (values: Record<string, unknown>) => unknown)(
           instance.props.value,
-        ),
-      );
+        );
+      output = hasRuntimeOptions(instance.options)
+        ? withRuntimeOptions(instance.options, render)
+        : render();
       return null;
     });
   });
@@ -409,15 +412,8 @@ function buildLightInstance(
   options: RuntimeOptions,
 ): LightInstance {
   const inheritedContext = captureContextValues();
+  const propsProxy = createPropsProxy(props);
   let instanceRootDispose: (() => void) | null = null;
-  const holder: { proxy: PropsProxy | null } = { proxy: null };
-  runWithOwner(null, () => {
-    createRoot((dispose) => {
-      instanceRootDispose = dispose;
-      holder.proxy = createPropsProxy(props);
-      return null;
-    });
-  });
 
   let resolveDisposed: () => void = () => {};
   const whenDisposed = new Promise<void>((resolve) => {
@@ -426,7 +422,7 @@ function buildLightInstance(
 
   const instance: LightInstance = {
     fn,
-    props: holder.proxy!,
+    props: propsProxy,
     whenDisposed,
     options,
     contextValues: inheritedContext,

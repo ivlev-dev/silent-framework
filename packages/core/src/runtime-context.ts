@@ -6,6 +6,7 @@ interface OwnerNodeLink {
 }
 
 const ownerOptions = new WeakMap<object, RuntimeOptions>();
+let hasBoundOptions = false;
 
 function nodeOf(owner: Owner): OwnerNodeLink | null {
   const candidate = (owner as unknown as { node?: unknown }).node;
@@ -25,6 +26,7 @@ export function bindOwnerRuntimeOptions(
   if (owner === null || owner.disposed) {
     return;
   }
+  hasBoundOptions = true;
   ownerOptions.set(owner, options);
   const node = nodeOf(owner);
   if (node !== null) {
@@ -35,7 +37,7 @@ export function bindOwnerRuntimeOptions(
 export function findOwnerRuntimeOptions(
   owner: Owner | null,
 ): RuntimeOptions | undefined {
-  if (owner === null) {
+  if (!hasBoundOptions || owner === null) {
     return undefined;
   }
   const direct = ownerOptions.get(owner);
