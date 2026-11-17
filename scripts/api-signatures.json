@@ -1207,7 +1207,7 @@
       },
       "LinkProps": {
         "kind": "interface",
-        "signature": "export interface LinkProps { readonly to: RouteTarget | (() => RouteTarget); readonly replace?: boolean; readonly activeClass?: string; readonly exactActiveClass?: string; readonly class?: ClassNameValue; readonly children?: Children; readonly router?: IRouter; readonly prefetch?: boolean; }"
+        "signature": "export interface LinkProps { readonly to: RouteTarget | (() => RouteTarget); readonly replace?: boolean; readonly activeClass?: string; readonly exactActiveClass?: string; readonly class?: ClassNameValue; readonly children?: Children; readonly router?: IRouter; readonly prefetch?: boolean | \"hover\" | \"visible\"; }"
       },
       "MatchedRoute": {
         "kind": "interface",

@@ -102,13 +102,14 @@ void mount(document.querySelector("#app")!, App, { container });
 - `activeClass` — префиксное совпадение, `exactActiveClass` — точное;
 - на точный активный маршрут ставит `aria-current="page"`;
 - внешние URL (`http(s)://`, `mailto:`, `tel:`, `//`) и hash-ссылки не перехватываются;
-- `prefetch` заранее загружает lazy-маршрут на `pointerenter`, `pointerdown` и `focus`.
+- `prefetch: true | "hover"` заранее загружает lazy-маршрут на `pointerenter`, `pointerdown` и `focus`, `prefetch: "visible"` — при появлении во viewport.
 
 ```tsx
 <Link to={{ name: "user", params: { id: 42 }, query: { tab: "posts" } }}>
   Профиль
 </Link>
 <Link to="/lazy" prefetch>Ленивый маршрут</Link>
+<Link to="/users" prefetch="visible">Пользователи</Link>
 ```
 
 Повторный переход на текущий `fullPath` (с учётом query и hash) не создаёт запись в истории и не перезапускает guards/loaders — клик по активной ссылке безопасен.

@@ -174,7 +174,7 @@ const routes: RouteRecord[] = [
 <Link to={{ name: "user", params: { id: 42 }, query: { tab: "info" } }}>Профиль</Link>
 ```
 
-`LinkProps`: `to`, `replace`, `activeClass`, `exactActiveClass`, `class`, `children`, `router?: IRouter`, `prefetch?: boolean`. `prefetch` вызывает `router.prefetch` на `pointerenter`, `pointerdown` и `focus`, поэтому работает и на touch-устройствах. Рендерит настоящий `<a href>`, перехватывает только левый клик без модификаторов, active-классы реактивны, а на точный активный маршрут ставит `aria-current="page"`. Внешние `http(s)://`, `mailto:`, `tel:`, `//` и hash-ссылки не перехватываются и не prefetch-ятся.
+`LinkProps`: `to`, `replace`, `activeClass`, `exactActiveClass`, `class`, `children`, `router?: IRouter`, `prefetch?: boolean | "hover" | "visible"`. `prefetch: true` и `"hover"` вызывают `router.prefetch` на `pointerenter`, `pointerdown` и `focus`; `"visible"` — когда ссылка появляется во viewport (`IntersectionObserver`), а без него сразу после монтирования (на сервере не срабатывает). Рендерит настоящий `<a href>`, перехватывает только левый клик без модификаторов, active-классы реактивны, а на точный активный маршрут ставит `aria-current="page"`. Внешние `http(s)://`, `mailto:`, `tel:`, `//` и hash-ссылки не перехватываются и не prefetch-ятся.
 
 ## `RouterView`
 

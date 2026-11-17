@@ -6,6 +6,7 @@ import {
   createMemoryHistory,
   type RouteRecord,
 } from "../src/index";
+import { setServerMode } from "@ivlev-dev/silent-core";
 import { leaf, render, tick, type Rendered } from "./support";
 
 const routers: Router[] = [];
@@ -31,6 +32,7 @@ afterEach(() => {
   }
   document.body.replaceChildren();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 const routes: readonly RouteRecord[] = [
@@ -123,6 +125,139 @@ describe("Link", () => {
     await tick();
     await tick();
     expect(loaded).toBe(1);
+  });
+
+  it("предзагружает lazy route при появлении во viewport", async () => {
+    let loaded = 0;
+    const lazy = (): HTMLElement => {
+      const element = document.createElement("div");
+      element.dataset.view = "lazy-visible";
+      return element;
+    };
+    const instances: MockIntersectionObserver[] = [];
+    class MockIntersectionObserver {
+      readonly callback: IntersectionObserverCallback;
+      target: Element | null = null;
+      disconnected = false;
+
+      constructor(callback: IntersectionObserverCallback) {
+        this.callback = callback;
+        instances.push(this);
+      }
+
+      observe(target: Element): void {
+        this.target = target;
+      }
+
+      disconnect(): void {
+        this.disconnected = true;
+      }
+
+      trigger(isIntersecting: boolean): void {
+        this.callback(
+          [{ isIntersecting, target: this.target } as IntersectionObserverEntry],
+          this as unknown as IntersectionObserver,
+        );
+      }
+    }
+    vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
+
+    const router = track(new Router({
+      routes: [
+        { path: "/", name: "home", component: leaf("home") },
+        {
+          path: "/lazy-visible",
+          name: "lazy-visible",
+          load: async () => {
+            loaded += 1;
+            return lazy;
+          },
+        },
+      ],
+      history: createMemoryHistory("/"),
+    }));
+    await router.start();
+    const { host } = mount(() =>
+      Link({ to: "/lazy-visible", prefetch: "visible", children: "lazy" }),
+    );
+    expect(host.querySelector("a")).not.toBeNull();
+    expect(loaded).toBe(0);
+
+    const observer = instances[0];
+    expect(observer?.target).toBe(host.querySelector("a"));
+    observer?.trigger(false);
+    await tick();
+    expect(loaded).toBe(0);
+
+    observer?.trigger(true);
+    await tick();
+    await tick();
+    expect(loaded).toBe(1);
+    expect(observer?.disconnected).toBe(true);
+
+    observer?.trigger(true);
+    await tick();
+    expect(loaded).toBe(1);
+  });
+
+  it("предзагружает visible-ссылку сразу без IntersectionObserver", async () => {
+    let loaded = 0;
+    const lazy = (): HTMLElement => {
+      const element = document.createElement("div");
+      element.dataset.view = "lazy-fallback";
+      return element;
+    };
+    vi.stubGlobal("IntersectionObserver", undefined);
+    const router = track(new Router({
+      routes: [
+        { path: "/", name: "home", component: leaf("home") },
+        {
+          path: "/lazy-fallback",
+          name: "lazy-fallback",
+          load: async () => {
+            loaded += 1;
+            return lazy;
+          },
+        },
+      ],
+      history: createMemoryHistory("/"),
+    }));
+    await router.start();
+    mount(() => Link({ to: "/lazy-fallback", prefetch: "visible", children: "lazy" }));
+    await tick();
+    await tick();
+    expect(loaded).toBe(1);
+  });
+
+  it("не запускает visible-prefetch во время SSR", async () => {
+    let loaded = 0;
+    const lazy = (): HTMLElement => document.createElement("div");
+    vi.stubGlobal("IntersectionObserver", undefined);
+    const router = track(new Router({
+      routes: [
+        { path: "/", name: "home", component: leaf("home") },
+        {
+          path: "/lazy-server",
+          name: "lazy-server",
+          load: async () => {
+            loaded += 1;
+            return lazy;
+          },
+        },
+      ],
+      history: createMemoryHistory("/"),
+    }));
+    await router.start();
+    const prefetch = vi.spyOn(router, "prefetch");
+    setServerMode(true);
+    try {
+      mount(() => Link({ to: "/lazy-server", prefetch: "visible", children: "lazy" }));
+      await tick();
+    } finally {
+      setServerMode(false);
+    }
+    expect(prefetch).not.toHaveBeenCalled();
+    expect(loaded).toBe(0);
   });
 
   it("не перехватывает внешние ссылки", async () => {

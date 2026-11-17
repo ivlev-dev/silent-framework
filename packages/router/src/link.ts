@@ -3,6 +3,7 @@ import {
   createElement,
   createMountPoint,
   getRuntimeOptions,
+  isServerMode,
   normalizeClass,
   on,
   type Children,
@@ -20,7 +21,7 @@ export interface LinkProps {
   readonly class?: ClassNameValue;
   readonly children?: Children;
   readonly router?: IRouter;
-  readonly prefetch?: boolean;
+  readonly prefetch?: boolean | "hover" | "visible";
 }
 
 function resolveRouter(router: IRouter | undefined): IRouter {
@@ -131,7 +132,8 @@ export function Link(props: LinkProps): Node {
   });
   onCleanup(mount.clear);
 
-  if (props.prefetch === true) {
+  const prefetchMode = props.prefetch;
+  if (prefetchMode === true || prefetchMode === "hover" || prefetchMode === "visible") {
     let started = false;
     const prefetch = (): void => {
       if (started) {
@@ -144,9 +146,29 @@ export function Link(props: LinkProps): Node {
       }
       void router.prefetch(value).catch(() => {});
     };
-    on(element, "pointerenter", () => prefetch);
-    on(element, "pointerdown", () => prefetch);
-    on(element, "focus", () => prefetch);
+    if (prefetchMode === "visible") {
+      if (typeof IntersectionObserver === "function") {
+        const observer = new IntersectionObserver((entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) {
+              prefetch();
+              observer.disconnect();
+              return;
+            }
+          }
+        });
+        observer.observe(element);
+        onCleanup(() => {
+          observer.disconnect();
+        });
+      } else if (!isServerMode()) {
+        prefetch();
+      }
+    } else {
+      on(element, "pointerenter", () => prefetch);
+      on(element, "pointerdown", () => prefetch);
+      on(element, "focus", () => prefetch);
+    }
   }
 
   on(element, "click", () => (event: MouseEvent): void => {
