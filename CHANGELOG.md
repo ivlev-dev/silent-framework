@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.15
+
+### Link: prefetch по видимости
+
+- `prefetch` принимает `boolean | "hover" | "visible"`. Режим `"visible"` запускает `router.prefetch`, когда ссылка появляется во viewport через `IntersectionObserver`, и отключает наблюдатель после первой загрузки.
+- Без `IntersectionObserver` prefetch выполняется сразу после монтирования; на сервере (`isServerMode`) не запускается.
+- Добавлены тесты на viewport-триггер, отсутствие повторной загрузки, fallback без observer и SSR-режим.
+- Документация и гайд по роутеру обновлены.
+
 ## 0.11.14
 
 ### Исправления гидрации
