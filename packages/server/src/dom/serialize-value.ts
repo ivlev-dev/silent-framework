@@ -1,12 +1,12 @@
-import { escapeText, pushNode } from "./serializer.js";
+import { escapeText, pushNode, type PartSink } from "./serializer.js";
 import type { DomNode } from "./types.js";
 
 interface RenderableValue {
   readonly render?: () => string;
-  readonly renderInto?: (parts: string[]) => void;
+  readonly renderInto?: (parts: import("./serializer.js").PartSink) => void;
 }
 
-export function pushValue(value: unknown, parts: string[]): void {
+export function pushValue(value: unknown, parts: PartSink): void {
   const type = typeof value;
   if (type === "string") {
     if (value !== "") {

@@ -10,7 +10,7 @@ import { flushSync } from "@ivlev-dev/silent-reactivity";
 import type { RenderOptions } from "./render.js";
 import { enqueueRenderTask, settleRender } from "./render.js";
 import { beginRenderSession, type RenderSession } from "./session.js";
-import { serializeBetween, serializeNode } from "./dom/serializer.js";
+import { serializeBetween, serializeNode, serializeNodeChunks } from "./dom/serializer.js";
 import type { DomNode } from "./dom/types.js";
 import {
   STREAM_RUNTIME_SCRIPT,
@@ -206,10 +206,15 @@ async function runStream(
     if (trackHead) {
       options.onHead?.(shellHead, { final: false });
     }
-    const shell = serializeNode(session.result.node as unknown as DomNode);
-    options.onShell?.(shell);
+    const node = session.result.node as unknown as DomNode;
+    if (options.onShell === undefined) {
+      serializeNodeChunks(node, chunkSize, emit);
+    } else {
+      const shell = serializeNode(node);
+      options.onShell(shell);
+      emit(shell);
+    }
     shellEmitted = true;
-    emit(shell);
 
     await settleRender(session.result);
     await drainSettles();

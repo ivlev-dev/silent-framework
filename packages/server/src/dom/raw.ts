@@ -164,7 +164,7 @@ export class RawText extends NodeImpl {
     return this.text;
   }
 
-  renderInto(parts: string[]): void {
+  renderInto(parts: import("./serializer.js").PartSink): void {
     parts.push(this.text);
   }
 
@@ -340,7 +340,7 @@ export class RawNode extends NodeImpl {
     return this.holeList[position];
   }
 
-  renderInto(parts: string[]): void {
+  renderInto(parts: import("./serializer.js").PartSink): void {
     const source = this.parts;
     const count = this.indexes.length;
     const head = source[0];
@@ -372,7 +372,7 @@ export class RawNode extends NodeImpl {
     }
   }
 
-  private pushSlot(position: number, parts: string[]): void {
+  private pushSlot(position: number, parts: import("./serializer.js").PartSink): void {
     const slot = this.slots[position];
     if (slot === undefined) {
       return;

@@ -24,6 +24,10 @@ const ESCAPE_ATTRIBUTE = /[&<>"]/;
 const REPLACE_TEXT = /[&<>]/g;
 const REPLACE_ATTRIBUTE = /[&<>"]/g;
 
+export interface PartSink {
+  push(...values: string[]): void;
+}
+
 const partsPool: string[][] = [];
 let partsDepth = 0;
 
@@ -76,7 +80,7 @@ export function escapeAttribute(value: string): string {
   return value.replace(REPLACE_ATTRIBUTE, replaceAttribute);
 }
 
-function pushAttributes(element: ElementImpl, parts: string[]): void {
+function pushAttributes(element: ElementImpl, parts: PartSink): void {
   if (element.attributeCount === 0) {
     return;
   }
@@ -85,7 +89,7 @@ function pushAttributes(element: ElementImpl, parts: string[]): void {
   }
 }
 
-function pushElement(element: ElementImpl, parts: string[]): void {
+function pushElement(element: ElementImpl, parts: PartSink): void {
   const tag = element.localName;
   parts.push("<", tag);
   pushAttributes(element, parts);
@@ -98,11 +102,11 @@ function pushElement(element: ElementImpl, parts: string[]): void {
 }
 
 interface RenderableNode {
-  renderInto?: (parts: string[]) => void;
+  renderInto?: (parts: PartSink) => void;
   render?: () => string;
 }
 
-export function pushNode(node: DomNode, parts: string[]): void {
+export function pushNode(node: DomNode, parts: PartSink): void {
   const raw = node as unknown as RenderableNode;
   const render = raw.render;
   if (typeof render === "function") {
@@ -138,10 +142,50 @@ export function pushNode(node: DomNode, parts: string[]): void {
   }
 }
 
-function pushChildren(node: DomNode, parts: string[]): void {
+function pushChildren(node: DomNode, parts: PartSink): void {
   for (const child of node.childNodes) {
     pushNode(child, parts);
   }
+}
+
+export function serializeNodeChunks(
+  node: DomNode,
+  chunkSize: number,
+  emit: (chunk: string) => void,
+): void {
+  const buffer: string[] = [];
+  let length = 0;
+  const flush = (): void => {
+    if (length === 0) {
+      return;
+    }
+    const text = buffer.join("");
+    buffer.length = 0;
+    length = 0;
+    if (text.length <= chunkSize) {
+      emit(text);
+      return;
+    }
+    for (let index = 0; index < text.length; index += chunkSize) {
+      emit(text.slice(index, index + chunkSize));
+    }
+  };
+  const sink: PartSink = {
+    push(...values: string[]): void {
+      for (const value of values) {
+        if (value.length === 0) {
+          continue;
+        }
+        buffer.push(value);
+        length += value.length;
+      }
+      if (length >= chunkSize) {
+        flush();
+      }
+    },
+  };
+  pushNode(node, sink);
+  flush();
 }
 
 export function serializeNode(node: DomNode): string {
