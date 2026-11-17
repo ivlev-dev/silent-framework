@@ -15,6 +15,7 @@ export interface RuntimeOptions {
   readonly preloader?: Preloader | null | undefined;
   readonly onError?: ((error: unknown, component: AnyComponent) => void) | undefined;
   readonly boundary?: AsyncBoundary | null | undefined;
+  readonly hydrate?: boolean | undefined;
 }
 
 export interface ComponentResult {

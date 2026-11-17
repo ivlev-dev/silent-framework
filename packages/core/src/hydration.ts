@@ -71,7 +71,7 @@ export function findInsertWindow(marker: Node | null, parent: Node): HydrationWi
     return mismatch("не найден конец региона вставки");
   }
   const first = parent.firstChild;
-  if (isMarker(first, INSERT_START)) {
+  if (isMarker(first, INSERT_START) && first.nextSibling === end) {
     return { start: first, end, cursor: first.nextSibling };
   }
   const adjacent = end.previousSibling;

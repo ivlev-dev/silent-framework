@@ -272,6 +272,7 @@ interface RuntimeOptions {
   readonly preloader?: Preloader | null | undefined;
   readonly onError?: ((error: unknown, component: AnyComponent) => void) | undefined;
   readonly boundary?: AsyncBoundary | null | undefined;
+  readonly hydrate?: boolean | undefined;
 }
 ```
 
@@ -281,6 +282,7 @@ interface RuntimeOptions {
 - `preloader` — локальный прелоадер, перекрывающий глобальный.
 - `onError` — локальный обработчик ошибок, перекрывающий глобальный.
 - `boundary` — граница `Suspense` (внутренний тип); создаётся `Suspense` и передаётся вниз автоматически.
+- `hydrate: false` — отключает адоптацию серверной разметки для поддерева; используется `RouterView`, который рендерит маршрут заново.
 
 ### `getRuntimeOptions`
 

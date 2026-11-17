@@ -648,7 +648,7 @@
       },
       "RuntimeOptions": {
         "kind": "interface",
-        "signature": "export interface RuntimeOptions { readonly container?: Container | undefined; readonly preloader?: Preloader | null | undefined; readonly onError?: ((error: unknown, component: AnyComponent) => void) | undefined; readonly boundary?: AsyncBoundary | null | undefined; }"
+        "signature": "export interface RuntimeOptions { readonly container?: Container | undefined; readonly preloader?: Preloader | null | undefined; readonly onError?: ((error: unknown, component: AnyComponent) => void) | undefined; readonly boundary?: AsyncBoundary | null | undefined; readonly hydrate?: boolean | undefined; }"
       },
       "ServerBackend": {
         "kind": "interface",

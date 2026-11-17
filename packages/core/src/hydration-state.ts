@@ -1,4 +1,6 @@
+import { getOwner } from "@ivlev-dev/silent-reactivity";
 import { emitDevtoolsError } from "./devtools-events.js";
+import { findOwnerRuntimeOptions } from "./runtime-context.js";
 
 export class HydrationMismatchError extends Error {
   constructor(message: string) {
@@ -93,7 +95,11 @@ export function getHydrationRuntime(): HydrationRuntime {
 }
 
 export function isHydrating(): boolean {
-  return current !== null;
+  if (current === null) {
+    return false;
+  }
+  const options = findOwnerRuntimeOptions(getOwner());
+  return options?.hydrate !== false;
 }
 
 export function beginHydration(

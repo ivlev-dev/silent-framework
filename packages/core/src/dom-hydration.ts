@@ -534,11 +534,17 @@ export function settleNodes(end: Node | null, value: unknown): void {
     return;
   }
   if (value instanceof DocumentFragment) {
+    let child = value.firstChild;
+    while (child !== null) {
+      clientNodes.add(child);
+      child = child.nextSibling;
+    }
     if (value.firstChild !== null) {
       parent.insertBefore(value, end);
     }
     return;
   }
+  clientNodes.add(value);
   if (value.parentNode !== parent) {
     parent.insertBefore(value, end);
   }
@@ -764,6 +770,8 @@ export function hydrateTemplate(source: TemplateHydrationSource): TemplateClone 
   return { node: container, ...collected };
 }
 
+const clientNodes = new WeakSet<Node>();
+
 function flattenNodes(value: unknown, out: Node[]): void {
   if (value instanceof Node) {
     if (value.nodeType === 11) {
@@ -784,12 +792,14 @@ function flattenNodes(value: unknown, out: Node[]): void {
   }
 }
 
-function clearRegion(start: Node, end: Node): void {
+function keepRegion(start: Node, end: Node, keep: ReadonlySet<Node>): void {
   let node = start.nextSibling;
   while (node !== null && node !== end) {
     const next = node.nextSibling;
-    disposeNode(node);
-    node.parentNode?.removeChild(node);
+    if (!keep.has(node)) {
+      disposeNode(node);
+      node.parentNode?.removeChild(node);
+    }
     node = next;
   }
 }
@@ -822,12 +832,8 @@ export function insertHydrated(
       const value = resolveValue(withWindow(window, accessor));
       const produced: Node[] = [];
       flattenNodes(value, produced);
-      if (
-        produced.length > 0
-        && !produced.some((node) => node.nodeType === 8)
-        && !produced.some((node) => node.parentNode === window.start.parentNode)
-      ) {
-        clearRegion(window.start, window.end);
+      if (produced.some((node) => clientNodes.has(node))) {
+        keepRegion(window.start, window.end, new Set(produced));
       }
       settleNodes(window.end, value);
       if (

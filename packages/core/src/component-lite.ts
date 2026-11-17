@@ -303,10 +303,10 @@ function buildLightOutput(
   if (matchNode) {
     nodes = [output as Comment];
   } else {
-    const normalized = normalizeNodes(output);
     if (initial && isHydrating()) {
       settleNodes(currentWindow()?.end ?? null, output);
     }
+    const normalized = normalizeNodes(output);
     nodes = extractMetadata(normalized);
   }
 
