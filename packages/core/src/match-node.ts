@@ -1,4 +1,13 @@
 export const MATCH_DESCRIPTOR = Symbol.for("silent.match.descriptor");
+export const MARKER_COMPONENT = Symbol.for("silent.markerComponent");
+
+export function markMarkerComponent(component: unknown): void {
+  (component as Record<PropertyKey, unknown>)[MARKER_COMPONENT] = true;
+}
+
+export function isMarkerComponent(component: unknown): boolean {
+  return (component as Record<PropertyKey, unknown>)[MARKER_COMPONENT] === true;
+}
 
 export interface MatchDescriptor {
   readonly when: () => unknown;

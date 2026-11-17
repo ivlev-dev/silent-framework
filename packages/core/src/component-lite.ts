@@ -11,7 +11,7 @@ import { NODE_DISPOSER, attachDisposer, collectNodes, disposeNode } from "./dom.
 import { settleNodes } from "./dom-hydration-state.js";
 import { extractMetadata } from "./metadata.js";
 import { currentWindow, isHydrating } from "./hydration-state.js";
-import { isMatchNode } from "./match-node.js";
+import { isMarkerComponent, isMatchNode } from "./match-node.js";
 import { bindOwnerRuntimeOptions } from "./runtime-context.js";
 import { createPropsProxy, type PropsProxy } from "./props-proxy.js";
 import { registerPropsUpdater } from "./props-update.js";
@@ -129,6 +129,9 @@ export function component(
   props: Record<string, unknown>,
   runtimeOptions?: RuntimeOptions,
 ): Node {
+  if (isMarkerComponent(componentFn)) {
+    return (componentFn as unknown as (values: Record<string, unknown>) => Node)(props);
+  }
   const options =
     runtimeOptions === undefined
       ? getRuntimeOptions()
@@ -564,6 +567,16 @@ export function createComponentLight(
   props: Record<string, unknown>,
   options: RuntimeOptions,
 ): ComponentResult {
+  if (isMarkerComponent(component)) {
+    const node = (component as unknown as (values: Record<string, unknown>) => Node)(props);
+    return {
+      node,
+      ready: RESOLVED_READY,
+      settled: RESOLVED_READY,
+      update: () => {},
+      dispose: () => {},
+    };
+  }
   const owner = getOwner();
   if (owner === null) {
     return lightResult(buildLightInstance(component, props, options));

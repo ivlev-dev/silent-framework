@@ -1,6 +1,11 @@
 import { createRenderEffect, createSignal, onCleanup } from "@ivlev-dev/silent-reactivity";
 import type { Children } from "./jsx.js";
-import { MATCH_DESCRIPTOR, attachMatch, isMatchNode } from "./match-node.js";
+import {
+  MATCH_DESCRIPTOR,
+  attachMatch,
+  isMatchNode,
+  markMarkerComponent,
+} from "./match-node.js";
 import { collectNodes, createMountPoint, isServerMode } from "./dom.js";
 import { extractMetadata } from "./metadata.js";
 import { settleNodes } from "./dom-hydration-state.js";
@@ -118,6 +123,8 @@ export function Match(props: MatchProps): Node {
   });
   return node;
 }
+
+markMarkerComponent(Match);
 
 export function Switch(props: SwitchProps): Node {
   if (SERVER && isServerMode()) {
