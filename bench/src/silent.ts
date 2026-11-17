@@ -198,6 +198,19 @@ const createIndexList: BenchTask = {
   },
 };
 
+const createIndexListDirect: BenchTask = {
+  name: "index list: create 1000 direct",
+  fn: () => {
+    const host = createHost();
+    const dispose = createRoot((disposeRoot) => {
+      Index({ parent: host, each: indexItems, children: renderIndexRow });
+      return disposeRoot;
+    });
+    flushSync();
+    dispose();
+  },
+};
+
 const appendList = setupKeyedList(createRows(LIST_SIZE));
 const appendRows = createRows(APPEND_SIZE);
 const appendTask: BenchTask = {
@@ -292,6 +305,7 @@ export const silentSuite: BenchSuite = {
     textUpdates,
     createList,
     createIndexList,
+    createIndexListDirect,
     createListDirect,
     appendTask,
     createBigList,

@@ -127,6 +127,8 @@ export interface IndexProps<T> {
   each: ListSource<T> | (() => ListSource<T>);
   children: (item: Accessor<T>, index: Accessor<number>) => Node;
   fallback?: unknown;
+  parent?: Node;
+  marker?: Node | null;
 }
 
 function resolve(value: unknown): unknown {
@@ -229,7 +231,8 @@ export function Index<T>(props: IndexProps<T>): Node {
   }
   const hydrating = HYDRATE && isHydrating();
   const outer = hydrating ? currentWindow() : null;
-  const container = document.createDocumentFragment();
+  const target = props.parent ?? null;
+  let container: Node | null = null;
   const fallback = props.fallback;
   const hasFallback = fallback !== undefined;
   const parentOwner = getOwner();
@@ -279,9 +282,11 @@ export function Index<T>(props: IndexProps<T>): Node {
     itemEnd: Node | null,
     position: number,
     mountParent: Node | null = null,
+    mountTail: Node | null = null,
   ): IndexState<T> => {
     const state = new IndexedState<T>(value, anchor, nodes, position);
     let initialMount = mountParent;
+    let initialTail = mountTail;
     const children = untrack(() => props.children);
     state.cleanup = createEffectUnlessStatic(() => {
       if (itemEnd !== null) {
@@ -303,9 +308,10 @@ export function Index<T>(props: IndexProps<T>): Node {
         return;
       }
       const current = state.nodes;
-      let tail: Node | null = null;
+      let tail: Node | null = initialTail;
       let parent: Node | null = initialMount;
       initialMount = null;
+      initialTail = null;
       if (current.length > 0) {
         tail = current[current.length - 1]!.nextSibling;
         parent ??= current[0]!.parentNode;
@@ -359,9 +365,10 @@ export function Index<T>(props: IndexProps<T>): Node {
 
   const createState = (
     value: T,
-    sink: DocumentFragment,
+    sink: Node,
     position: number,
-  ): IndexState<T> => makeState(value, null, [], null, position, sink);
+    tail: Node | null = null,
+  ): IndexState<T> => makeState(value, null, [], null, position, sink, tail);
 
   if (hydrating) {
     if (outer === null) {
@@ -414,7 +421,18 @@ export function Index<T>(props: IndexProps<T>): Node {
     settleWindow(outer, endAnchor);
   } else {
     endAnchor = document.createComment(LIST_END);
-    container.appendChild(endAnchor);
+    if (target !== null) {
+      const marker = props.marker ?? null;
+      if (marker !== null) {
+        target.insertBefore(endAnchor, marker);
+      } else {
+        target.appendChild(endAnchor);
+      }
+      container = target;
+    } else {
+      const sink = container ?? (container = document.createDocumentFragment());
+      sink.appendChild(endAnchor);
+    }
   }
 
   const fallbackParent = hydrating ? endAnchor.parentNode : null;
@@ -423,7 +441,7 @@ export function Index<T>(props: IndexProps<T>): Node {
   }
   const fallbackMount = hydrating
     ? createMountPoint(fallbackParent as Node, endAnchor, fallbackSeed)
-    : createMountPoint(container, endAnchor);
+    : createMountPoint(target ?? (container ??= document.createDocumentFragment()), endAnchor);
 
   createRenderEffect(() => {
     const parent = endAnchor.parentNode;
@@ -465,7 +483,9 @@ export function Index<T>(props: IndexProps<T>): Node {
 
   onCleanup(removeAll);
 
-  return hydrating ? document.createDocumentFragment() : container;
+  return hydrating || target !== null
+    ? document.createDocumentFragment()
+    : (container ??= document.createDocumentFragment());
 }
 
 markDirectComponent(Index);

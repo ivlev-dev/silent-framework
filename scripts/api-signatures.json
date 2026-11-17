@@ -430,7 +430,7 @@
       },
       "IndexProps": {
         "kind": "interface",
-        "signature": "export interface IndexProps<T> { each: ListSource<T> | (() => ListSource<T>); children: (item: Accessor<T>, index: Accessor<number>) => Node; fallback?: unknown; }"
+        "signature": "export interface IndexProps<T> { each: ListSource<T> | (() => ListSource<T>); children: (item: Accessor<T>, index: Accessor<number>) => Node; fallback?: unknown; parent?: Node; marker?: Node | null; }"
       },
       "innerHtml": {
         "kind": "function",

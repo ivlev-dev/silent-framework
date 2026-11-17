@@ -5,7 +5,7 @@
 ### Производительность
 
 - `extractMetadataNode` не обходит поддерево, если у элемента нет элементных детей: строки списка из текстовых узлов больше не платят за поиск `<title>/<meta>/<link>`. `keyed list: create 1000` ~146 → 150 ops/s, `index list` ~127 → 130.
-- `For` получил low-level режим `parent`/`marker`: строки вставляются прямо в контейнер без промежуточного fragment. `keyed list: create 1000 direct` 152 → 205 ops/s (0.62× Solid), 10k — 15 → 20 (0.68×); обычный `For` без изменений.
+- `For` и `Index` получили low-level режим `parent`/`marker`: строки вставляются прямо в контейнер без промежуточного fragment. `keyed list: create 1000 direct` 152 → 216 ops/s (0.63× Solid), 10k — 15 → 20 (0.66×), `index list: create 1000 direct` 137 → 158 (0.47×); обычные `For`/`Index` без изменений.
 - `reconcileDependencies` получил fast path для одной зависимости: если набор зависимостей не изменился, обновляется только версия, без пересборки массивов и обхода `Map`. Бенчмарки: signal 10k writes 263 → 433 ops/s (1.52× Solid), memo chain 143 → 253 (1.60×), effect → textContent 159 → 220 (1.41×), batched writes 6 927 → 7 259 (2.05×).
 
 ## 0.11.18

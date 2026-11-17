@@ -204,6 +204,18 @@ const createIndexList: BenchTask = {
   },
 };
 
+const createIndexListDirect: BenchTask = {
+  name: "index list: create 1000 direct",
+  fn: () => {
+    const host = createHost();
+    const dispose = createRoot((disposeRoot) => {
+      insert(host, SolidIndex({ each: indexItems, children: renderIndexRow }));
+      return disposeRoot;
+    });
+    dispose();
+  },
+};
+
 const appendList = setupKeyedList(createRows(LIST_SIZE));
 const appendRows = createRows(APPEND_SIZE);
 const appendTask: BenchTask = {
@@ -292,6 +304,7 @@ export const solidSuite: BenchSuite = {
     textUpdates,
     createList,
     createIndexList,
+    createIndexListDirect,
     createListDirect,
     appendTask,
     createBigList,

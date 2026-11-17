@@ -1255,6 +1255,8 @@ interface IndexProps<T> {
   each: ListSource<T> | (() => ListSource<T>);
   children: (item: () => T, index: () => number) => Node;
   fallback?: unknown;
+  parent?: Node;
+  marker?: Node | null;
 }
 ```
 
@@ -1262,6 +1264,7 @@ interface IndexProps<T> {
 - Позиции не переставляются: при смене порядка значений обновляются значения на местах.
 - Добавление и удаление затрагивает только хвост списка.
 - `fallback` — значение или функция; показывается при пустом массиве.
+- `parent` и `marker` — low-level режим прямой вставки строк без wrapper-fragment; `Index` возвращает пустой fragment, добавлять его в DOM не нужно.
 
 ```tsx
 <ul class="items">
@@ -1273,7 +1276,7 @@ interface IndexProps<T> {
 
 ### `IndexProps`
 
-См. сигнатуру выше: `each`, `children` (accessor элемента и accessor индекса), необязательный `fallback`.
+См. сигнатуру выше: `each`, `children` (accessor элемента и accessor индекса), необязательные `fallback`, `parent`/`marker`.
 
 ### `Switch`
 

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Accessor } from "@ivlev-dev/silent-reactivity";
-import { createSignal, flushSync } from "@ivlev-dev/silent-reactivity";
+import { createRoot, createSignal, flushSync } from "@ivlev-dev/silent-reactivity";
 import { insert } from "../src/dom";
 import { Index } from "../src/index-list";
 
@@ -190,5 +190,33 @@ describe("Index", () => {
     flushSync();
     expect(cells(host)).toEqual(["0:a", "1:b", "2:c"]);
     expect(host.querySelectorAll("span")[0]).toBe(before[0]);
+  });
+});
+
+describe("Index: parent/marker", () => {
+  it("рендерит строки прямо в parent и очищает их при dispose", () => {
+    const [items, setItems] = createSignal<string[]>(["a"]);
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const marker = document.createElement("hr");
+    host.appendChild(marker);
+
+    const dispose = createRoot((disposeRoot) => {
+      Index({ parent: host, marker, each: items, children: row });
+      return disposeRoot;
+    });
+    flushSync();
+
+    expect(cells(host)).toEqual(["a"]);
+    expect(host.lastChild).toBe(marker);
+
+    setItems(["a", "b"]);
+    flushSync();
+    expect(cells(host)).toEqual(["a", "b"]);
+    expect(host.lastChild).toBe(marker);
+
+    dispose();
+    expect(cells(host)).toEqual([]);
+    expect(host.lastChild).toBe(marker);
   });
 });
