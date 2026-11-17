@@ -124,8 +124,6 @@ export function beginRenderSession(
   function cleanup(created: ComponentResult | null): void {
     setMetadataCollector(null);
     setServerBackend(null);
-    restore();
-    setServerMode(false);
 
     let disposalError: unknown = null;
     let disposalFailed = false;
@@ -140,11 +138,16 @@ export function beginRenderSession(
       }
     };
 
-    if (created !== null) {
-      capture(() => created.dispose());
+    try {
+      if (created !== null) {
+        capture(() => created.dispose());
+      }
+      capture(disposeRoot);
+      capture(() => requestScope.dispose());
+    } finally {
+      restore();
+      setServerMode(false);
     }
-    capture(disposeRoot);
-    capture(() => requestScope.dispose());
 
     if (disposalFailed) {
       throw disposalError;
