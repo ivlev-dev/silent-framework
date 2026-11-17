@@ -61,6 +61,7 @@ interface AppMetrics {
 const WARMUP = 20;
 const ITERATIONS = 300;
 const BATCH = 20;
+const ROUNDS = 3;
 const MEMORY_ITERATIONS = 100;
 const benchRoot = join(import.meta.dirname, "..");
 const cacheRoot = join(benchRoot, "node_modules", ".silent-bench", "browser");
@@ -517,31 +518,67 @@ async function main(): Promise<void> {
   const browser = await launchChromium();
 
   const metrics: AppMetrics[] = [];
+  const aggregates = new Map<
+    AppName,
+    { samples: number[]; baseline: number[]; checks: number; heaps: number[] }
+  >();
+  const roundRatios: number[] = [];
   try {
+    for (let round = 0; round < ROUNDS; round += 1) {
+      const order = round % 2 === 0 ? APPS : [...APPS].reverse();
+      const roundOps = new Map<AppName, number>();
+      for (const app of order) {
+        const html = ssrHtml.get(app.name);
+        if (html === undefined) {
+          throw new Error(`Нет SSR-разметки для ${app.name}`);
+        }
+        const server = await startStaticServer(clientDirectory(app));
+        try {
+          const result = await runInBrowser(browser, app.name, server.url, {
+            ssrHtml: html,
+            warmup: WARMUP,
+            iterations: ITERATIONS,
+            rows: ROWS,
+            batch: BATCH,
+          });
+          const aggregate = aggregates.get(app.name) ?? {
+            samples: [],
+            baseline: [],
+            checks: 0,
+            heaps: [],
+          };
+          aggregate.samples.push(...result.samples);
+          aggregate.baseline.push(...result.baseline);
+          aggregate.checks += result.checks;
+          if (result.heapKbPerHydration !== null) {
+            aggregate.heaps.push(result.heapKbPerHydration);
+          }
+          aggregates.set(app.name, aggregate);
+          roundOps.set(app.name, (1000 * BATCH) / mean(result.samples));
+        } finally {
+          await server.close();
+        }
+      }
+      const roundSilent = roundOps.get("silent") ?? 0;
+      const roundSolid = roundOps.get("solid") ?? 0;
+      if (roundSolid !== 0) {
+        roundRatios.push(roundSilent / roundSolid);
+      }
+    }
+
     for (const app of APPS) {
-      const html = ssrHtml.get(app.name);
-      if (html === undefined) {
-        throw new Error(`Нет SSR-разметки для ${app.name}`);
+      const aggregate = aggregates.get(app.name);
+      if (aggregate === undefined) {
+        throw new Error(`Нет замеров для ${app.name}`);
       }
-      const server = await startStaticServer(clientDirectory(app));
-      try {
-        const result = await runInBrowser(browser, app.name, server.url, {
-          ssrHtml: html,
-          warmup: WARMUP,
-          iterations: ITERATIONS,
-          rows: ROWS,
-          batch: BATCH,
-        });
-        metrics.push({
-          app,
-          samples: result.samples,
-          baseline: result.baseline,
-          checks: result.checks,
-          heapKbPerHydration: result.heapKbPerHydration,
-        });
-      } finally {
-        await server.close();
-      }
+      metrics.push({
+        app,
+        samples: aggregate.samples,
+        baseline: aggregate.baseline,
+        checks: aggregate.checks,
+        heapKbPerHydration:
+          aggregate.heaps.length === 0 ? null : median(aggregate.heaps),
+      });
     }
 
     const silent = metrics.find((entry) => entry.app.name === "silent");
@@ -552,9 +589,14 @@ async function main(): Promise<void> {
 
     const silentOps = (1000 * BATCH) / mean(silent.samples);
     const solidOps = (1000 * BATCH) / mean(solid.samples);
-    const ratioValue = solidOps === 0 ? 0 : silentOps / solidOps;
+    const ratioValue =
+      roundRatios.length === 0
+        ? solidOps === 0
+          ? 0
+          : silentOps / solidOps
+        : median(roundRatios);
     const ratio =
-      solidOps === 0 ? "n/a" : `${format(ratioValue, 2)}x`;
+      ratioValue === 0 ? "n/a" : `${format(ratioValue, 2)}x`;
 
     const rows = metrics.map((entry) => {
       const average = mean(entry.samples) / BATCH;
@@ -589,7 +631,7 @@ async function main(): Promise<void> {
     });
 
     console.log(
-      `Гидрация в Chromium: ${String(ROWS)} строк, ${String(ITERATIONS)} замеров по ${String(BATCH)} гидраций, warmup ${String(WARMUP)} замеров`,
+      `Гидрация в Chromium: ${String(ROWS)} строк, ${String(ITERATIONS)} замеров по ${String(BATCH)} гидраций, ${String(ROUNDS)} чередующихся раундов, warmup ${String(WARMUP)} замеров`,
     );
     console.log(
       `Chromium ${browser.version()}, Node.js ${process.version}, CPU: ${cpus()[0]?.model ?? "unknown"}`,
