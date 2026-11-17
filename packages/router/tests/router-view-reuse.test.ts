@@ -168,3 +168,67 @@ describe("RouterView: переиспользование view", () => {
     expect(events).toEqual(["create", "updated"]);
   });
 });
+
+class ParentVM {}
+
+function parentView(
+  this: { vm: ParentVM },
+  props: RouterViewComponentProps,
+): HTMLElement {
+  void this.vm;
+  const section = document.createElement("section");
+  attr(section, "data-parent", () => props.params["id"] ?? "");
+  section.appendChild(RouterView({ depth: 1, router: props.router }));
+  return section;
+}
+
+(parentView as unknown as Record<PropertyKey, unknown>)[VIEW] = {
+  vm: ParentVM,
+  name: "ParentView",
+};
+
+class ChildVM {}
+
+function childView(
+  this: { vm: ChildVM },
+  props: RouterViewComponentProps,
+): HTMLElement {
+  void this.vm;
+  const article = document.createElement("article");
+  attr(article, "data-child", () => props.params["postId"] ?? "");
+  return article;
+}
+
+(childView as unknown as Record<PropertyKey, unknown>)[VIEW] = {
+  vm: ChildVM,
+  name: "ChildView",
+};
+
+describe("RouterView: вложенный reuse", () => {
+  it("обновляет parent и child без пересоздания", async () => {
+    const { router, host } = await setup(
+      [
+        {
+          path: "/u/:id",
+          component: parentView as unknown as AnyComponent,
+          children: [
+            { path: "posts/:postId", component: childView as unknown as AnyComponent },
+          ],
+        },
+      ],
+      "/u/1/posts/8",
+    );
+    const section = host.querySelector("section");
+    const article = host.querySelector("article");
+    expect(section?.dataset.parent).toBe("1");
+    expect(article?.dataset.child).toBe("8");
+
+    await router.push("/u/2/posts/9");
+    await tick();
+
+    expect(host.querySelector("section")).toBe(section);
+    expect(host.querySelector("article")).toBe(article);
+    expect(section?.dataset.parent).toBe("2");
+    expect(article?.dataset.child).toBe("9");
+  });
+});
