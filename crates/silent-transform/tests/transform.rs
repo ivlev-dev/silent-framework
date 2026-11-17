@@ -66,6 +66,32 @@ fn merges_adjacent_static_text_children() {
 }
 
 #[test]
+fn preserves_significant_spaces_around_expressions() {
+    let code = run(
+        "const el = <p>Привет, {name}!</p>;",
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(code.contains("<p>Привет, <!--silent-hole-0-->!</p>"), "{code}");
+}
+
+#[test]
+fn keeps_inline_spaces_and_trims_indentation() {
+    let inline = run(
+        "const el = <p> hello </p>;",
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(inline.contains("<p> hello </p>"), "{inline}");
+    let multiline = run(
+        "const el = <p>\n  hello\n  world\n</p>;",
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(multiline.contains("<p>hello world</p>"), "{multiline}");
+}
+
+#[test]
 fn passes_adoption_plan_to_template_holes() {
     let code = run(
         "const el = <div><span>{name}</span></div>;",

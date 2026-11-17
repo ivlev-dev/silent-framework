@@ -1208,16 +1208,31 @@ fn is_component_name(name: &JSXElementName) -> bool {
 }
 
 fn process_text(text: &str) -> String {
+    let lines: Vec<&str> = text.split('\n').collect();
+    let last_non_empty = lines
+        .iter()
+        .rposition(|line| line.chars().any(|ch| ch != ' ' && ch != '\t' && ch != '\r'));
+    let Some(last_non_empty) = last_non_empty else {
+        return String::new();
+    };
     let mut result = String::new();
-    for line in text.split('\n') {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
+    let last_index = lines.len() - 1;
+    for (index, raw) in lines.iter().enumerate() {
+        let mut line = raw.replace('\t', " ");
+        if index > 0 {
+            line = line.trim_start_matches(' ').to_string();
+        }
+        if index < last_index {
+            line = line.trim_end_matches(' ').to_string();
+        }
+        let line = line.trim_end_matches('\r');
+        if line.is_empty() {
             continue;
         }
-        if !result.is_empty() {
+        result.push_str(line);
+        if index != last_non_empty {
             result.push(' ');
         }
-        result.push_str(trimmed);
     }
     result
 }
