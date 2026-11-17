@@ -4,6 +4,8 @@ import { findOwnerRuntimeOptions } from "./runtime-context.js";
 export interface AsyncBoundary {
   register(promise: Promise<void>): void;
   readonly signal?: AbortSignal;
+  readonly showing?: boolean;
+  readonly fallback?: unknown;
 }
 
 let currentBoundary: AsyncBoundary | null = null;

@@ -124,6 +124,12 @@ export function Suspense(props: SuspenseProps): Node {
   const controller = new AbortController();
   const boundary: AsyncBoundary = {
     signal: controller.signal,
+    get showing(): boolean {
+      return showingChildren;
+    },
+    get fallback(): unknown {
+      return props.fallback;
+    },
     register(promise: Promise<void>): void {
       if (disposed || showingChildren || controller.signal.aborted) {
         return;
@@ -213,7 +219,11 @@ export function lazy<P extends Record<string, unknown>>(
       loading = (async () => {
         const module = await loader();
         loaded = typeof module === "function" ? module : module.default;
-      })();
+      })().catch((error: unknown) => {
+        loading = null;
+        loaded = null;
+        throw error;
+      });
     }
     return loading;
   };
@@ -296,8 +306,24 @@ export function lazy<P extends Record<string, unknown>>(
       return container;
     }
 
-    if (boundary === null && preloader !== null) {
-      mount.render(withRuntimeOptions(runtimeOptions, () => component(preloader, {})));
+    const showInitialFallback = (): void => {
+      if (preloader !== null) {
+        mount.render(withRuntimeOptions(runtimeOptions, () => component(preloader, {})));
+        return;
+      }
+      if (boundary === null || boundary.showing !== true) {
+        return;
+      }
+      const fallback = boundary.fallback;
+      if (typeof fallback !== "function") {
+        return;
+      }
+      mount.render((fallback as () => unknown)());
+    };
+    if (boundary === null) {
+      showInitialFallback();
+    } else if (boundary.showing === true) {
+      showInitialFallback();
     }
 
     const promise = trackAsyncWork(ensure(), boundary?.signal ?? null);
