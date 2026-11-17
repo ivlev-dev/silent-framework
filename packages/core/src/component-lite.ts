@@ -348,23 +348,32 @@ function registerLightUpdaters(instance: LightInstance): void {
   }
 }
 
+const EMPTY_ENTRIES: readonly LightNodeEntry[] = [];
+
 function refreshLightInstance(instance: LightInstance, initial: boolean): void {
   if (instance.disposed) {
     return;
   }
-  const previousEntries = instance.entries.slice();
-  const previousNode = instance.node;
-  const connected = previousEntries
-    .map((entry) => entry.node)
-    .find((node) => node.parentNode !== null) ?? null;
-  const anchor =
-    connected ?? (previousNode.parentNode !== null ? previousNode : null);
-  const focus = captureFocus(previousEntries);
+  let previousEntries: readonly LightNodeEntry[] = EMPTY_ENTRIES;
+  let anchor: Node | null = null;
+  let focus: FocusSnapshot | null = null;
+  if (!initial) {
+    previousEntries = instance.entries.slice();
+    const previousNode = instance.node;
+    const connected = previousEntries
+      .map((entry) => entry.node)
+      .find((node) => node.parentNode !== null) ?? null;
+    anchor =
+      connected ?? (previousNode.parentNode !== null ? previousNode : null);
+    focus = captureFocus(previousEntries);
+  }
 
   let output: unknown = null;
-  const previousRoot = instance.renderRootDispose;
-  instance.renderRootDispose = null;
-  previousRoot?.();
+  if (!initial) {
+    const previousRoot = instance.renderRootDispose;
+    instance.renderRootDispose = null;
+    previousRoot?.();
+  }
 
   let owner: Owner | null = null;
   runWithOwner(null, () => {
@@ -385,28 +394,34 @@ function refreshLightInstance(instance: LightInstance, initial: boolean): void {
   instance.owner = owner;
 
   const built = buildLightOutput(instance, output, initial);
-  const parent = anchor === null ? null : anchor.parentNode;
-  if (parent !== null) {
-    for (const node of built.nodes) {
-      if (node.parentNode !== parent) {
-        parent.insertBefore(node, anchor);
+  if (!initial) {
+    const parent = anchor === null ? null : anchor.parentNode;
+    if (parent !== null) {
+      for (const node of built.nodes) {
+        if (node.parentNode !== parent) {
+          parent.insertBefore(node, anchor);
+        }
+      }
+    }
+
+    const nextNodes = new Set(built.nodes);
+    for (const entry of previousEntries) {
+      if (!nextNodes.has(entry.node)) {
+        disposeLightEntry(entry);
       }
     }
   }
 
-  const nextNodes = new Set(built.nodes);
-  for (const entry of previousEntries) {
-    if (!nextNodes.has(entry.node)) {
-      disposeLightEntry(entry);
-    }
-  }
-
   instance.entries.length = 0;
-  instance.entries.push(...built.entries);
+  for (const entry of built.entries) {
+    instance.entries.push(entry);
+  }
   instance.node = built.node;
   instance.single = built.single;
   registerLightUpdaters(instance);
-  restoreFocus(focus, built.nodes);
+  if (!initial) {
+    restoreFocus(focus, built.nodes);
+  }
 }
 
 function buildLightInstance(
