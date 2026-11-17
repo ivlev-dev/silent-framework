@@ -1,6 +1,6 @@
 {
   "name": "@ivlev-dev/silent-swc",
-  "version": "0.11.15",
+  "version": "0.11.16",
   "type": "module",
   "sideEffects": false,
   "main": "./index.js",

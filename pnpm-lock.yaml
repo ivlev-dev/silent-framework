@@ -344,14 +344,13 @@ importers:
         version: 8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)
 
   packages/core:
-    dependencies:
+    devDependencies:
       '@ivlev-dev/silent-di':
         specifier: workspace:*
         version: link:../di
       '@ivlev-dev/silent-reactivity':
         specifier: workspace:*
         version: link:../reactivity
-    devDependencies:
       '@ivlev-dev/silent-vite':
         specifier: workspace:*
         version: link:../vite
@@ -384,7 +383,7 @@ importers:
         version: 5.1.0(@types/node@26.6.6)(jsdom@31.0.0)(vite@8.3.7(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15))
 
   packages/router:
-    dependencies:
+    devDependencies:
       '@ivlev-dev/silent-core':
         specifier: workspace:*
         version: link:../core
@@ -394,7 +393,6 @@ importers:
       '@ivlev-dev/silent-reactivity':
         specifier: workspace:*
         version: link:../reactivity
-    devDependencies:
       '@ivlev-dev/silent-server':
         specifier: workspace:*
         version: link:../server
@@ -412,7 +410,7 @@ importers:
         version: 5.1.0(@types/node@26.6.6)(jsdom@31.0.0)(vite@8.3.7(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15))
 
   packages/server:
-    dependencies:
+    devDependencies:
       '@ivlev-dev/silent-core':
         specifier: workspace:*
         version: link:../core
@@ -422,7 +420,6 @@ importers:
       '@ivlev-dev/silent-reactivity':
         specifier: workspace:*
         version: link:../reactivity
-    devDependencies:
       jsdom:
         specifier: ^31.0.0
         version: 31.0.0
@@ -436,16 +433,22 @@ importers:
   packages/silent:
     dependencies:
       '@ivlev-dev/silent-core':
-        specifier: workspace:*
+        specifier: '>=0.11.0 <0.12.0'
         version: link:../core
       '@ivlev-dev/silent-di':
-        specifier: workspace:*
+        specifier: '>=0.11.0 <0.12.0'
         version: link:../di
       '@ivlev-dev/silent-reactivity':
-        specifier: workspace:*
+        specifier: '>=0.11.0 <0.12.0'
         version: link:../reactivity
+      '@ivlev-dev/silent-router':
+        specifier: '>=0.11.0 <0.12.0'
+        version: link:../router
+      '@ivlev-dev/silent-swc':
+        specifier: '>=0.11.0 <0.12.0'
+        version: link:../swc
       '@ivlev-dev/silent-vite':
-        specifier: workspace:*
+        specifier: '>=0.11.0 <0.12.0'
         version: link:../vite
       vite:
         specifier: '>=8'
@@ -464,11 +467,10 @@ importers:
         version: 5.1.0(@types/node@26.6.6)(jsdom@31.0.0)(vite@8.3.7(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15))
 
   packages/vite:
-    dependencies:
+    devDependencies:
       '@ivlev-dev/silent-swc':
         specifier: workspace:*
         version: link:../swc
-    devDependencies:
       typescript:
         specifier: ^7.0.2
         version: 7.0.2

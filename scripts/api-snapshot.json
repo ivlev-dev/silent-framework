@@ -58,6 +58,7 @@
       "DevtoolsNavigateEvent",
       "DevtoolsPendingSnapshot",
       "DevtoolsRegistrySnapshot",
+      "DevtoolsResolveEvent",
       "DevtoolsSnapshot",
       "DevtoolsSubscriber",
       "DevtoolsUnmountEvent",
@@ -208,12 +209,18 @@
       "CircularDependencyError",
       "container",
       "Container",
+      "ContainerOptions",
+      "ContainerResolutionEvent",
+      "ContainerResolutionInspector",
       "ContainerSnapshot",
       "createToken",
       "DI_CREATE",
       "Factory",
+      "ImplicitBindingMode",
       "InvalidScopeError",
+      "MissingBindingError",
       "ScopeName",
+      "setContainerResolutionInspector",
       "Token"
     ],
     "@ivlev-dev/silent-reactivity": [
@@ -265,7 +272,9 @@
       "AnyRouteLoader",
       "BrowserHistory",
       "createBrowserHistory",
+      "createGuard",
       "createMemoryHistory",
+      "createTestRouter",
       "HistoryListener",
       "HistoryLocation",
       "IRouter",
@@ -284,6 +293,7 @@
       "RouteComponent",
       "RouteDefinition",
       "RouteGuard",
+      "RouteGuardContext",
       "RouteGuardResult",
       "RouteInput",
       "RouteLoadContext",
@@ -298,6 +308,8 @@
       "RouteQueryValue",
       "Router",
       "RouterAbortError",
+      "RouterComponentLoadContext",
+      "RouterComponentLoader",
       "RouteRecord",
       "RouteRedirect",
       "RouterErrorCode",
@@ -314,6 +326,7 @@
       "ScrollBehavior",
       "ScrollBehaviorResult",
       "ScrollPosition",
+      "TestRouterOptions",
       "TypedRouteLocation"
     ],
     "@ivlev-dev/silent-server": [
@@ -331,6 +344,7 @@
       "version"
     ],
     "@ivlev-dev/silent-vite": [
+      "DiMode",
       "silent",
       "SilentOptions"
     ]

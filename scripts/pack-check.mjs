@@ -169,11 +169,12 @@ for (const [name, required] of Object.entries(expectations)) {
   }
   const dependencies = {
     ...(manifest.dependencies ?? {}),
+    ...(manifest.peerDependencies ?? {}),
     ...(manifest.optionalDependencies ?? {}),
   };
   assert.ok(
     !Object.values(dependencies).some((value) => String(value).startsWith("workspace:")),
-    `@ivlev-dev/silent-${name}: workspace-зависимость не заменена версией`,
+    `@ivlev-dev/silent-${name}: workspace-зависимость не заменена версией (dependencies/peerDependencies/optionalDependencies)`,
   );
   console.log(`pack: @ivlev-dev/silent-${name} ${tarball}`);
 }

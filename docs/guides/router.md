@@ -253,3 +253,176 @@ expect(router.query).toEqual({ tab: "posts" });
 ```
 
 `Router.dispose()` снимает подписку на историю и убирает экземпляр из `Router.current()`; переданную извне историю роутер не освобождает.
+
+## Установка (peer-зависимости)
+
+```bash
+pnpm add @ivlev-dev/silent-router
+```
+
+`@ivlev-dev/silent-core`, `@ivlev-dev/silent-di` и `@ivlev-dev/silent-reactivity` — peer-зависимости с диапазоном `>=0.11.0 <0.12.0`. Пакет ESM-only, Node.js 22+.
+
+## Рецепт: Router + DI + layout + lazy pages + login guard
+
+### 1. Сервисы и контейнер
+
+```ts
+import { Container } from "@ivlev-dev/silent-di";
+import { Router, createMemoryHistory } from "@ivlev-dev/silent-router";
+import { Session } from "./session";
+import { routes } from "./routes";
+
+export function createAppServices(url = "/") {
+  const container = new Container("app", undefined, { implicitBindings: "error" });
+  const session = new Session(null);
+  const router = new Router({ routes, history: createMemoryHistory(url) });
+
+  container.bindValue(Session, session);
+  container.bindValue(Router, router);
+
+  return { container, session, router };
+}
+```
+
+Контейнер работает в строгом режиме: любая зависимость без явного биндинга бросает `MissingBindingError`. `Router` и `Session` регистрируются через `bindValue`, чтобы `peek` работал синхронно в `Link`, `RouterView` и view-model.
+
+### 2. Маршруты, layout и lazy child
+
+```ts
+import { Route, type RouteInput } from "@ivlev-dev/silent-router";
+import { requireAuth } from "./guards";
+import { HomeView, CabinetLayout, NotFoundView } from "./views";
+
+export class HomeRoute extends Route {
+  readonly path = "/";
+  readonly name = "home";
+  readonly component = HomeView;
+  readonly meta = { title: "Главная" };
+}
+
+export class ProfileRoute extends Route {
+  readonly path = "profile";
+  readonly name = "profile";
+  readonly meta = { title: "Профиль" };
+
+  async load() {
+    const module = await import("./profile");
+    return module.default;
+  }
+}
+
+export class CabinetRoute extends Route {
+  readonly path = "/cabinet";
+  readonly name = "cabinet";
+  readonly component = CabinetLayout;
+  readonly beforeEnter = requireAuth;
+  readonly meta = { title: "Кабинет" };
+  readonly children: readonly RouteInput[] = [ProfileRoute];
+}
+
+export class NotFoundRoute extends Route<"*"> {
+  readonly path = "*";
+  readonly name = "not-found";
+  readonly component = NotFoundView;
+}
+
+export const routes: readonly RouteInput[] = [HomeRoute, CabinetRoute, NotFoundRoute];
+```
+
+`ProfileRoute` загружается лениво через `load()`. Альтернатива — глобальный загрузчик в `RouterOptions.load`/`resolveComponent`, если ленивых страниц много.
+
+### 3. Guard через `createGuard` и `context.container`
+
+```ts
+import { createGuard } from "@ivlev-dev/silent-router";
+import { Session } from "./session";
+
+export const requireAuth = createGuard(({ container, to }) => {
+  const session = container?.peek<Session>(Session);
+  if (session === undefined) {
+    throw new Error("Session не забинжена в контейнер");
+  }
+  if (session.authenticated) {
+    return true;
+  }
+  return `/login?next=${encodeURIComponent(to.fullPath)}`;
+});
+```
+
+Guard не обращается к глобальному состоянию: контейнер приходит из `RouteGuardContext`.
+
+### 4. App и layout
+
+```tsx
+import { Link, RouterView } from "@ivlev-dev/silent-router";
+
+export function App() {
+  return (
+    <main>
+      <RouterView
+        fallback={<p>Загрузка…</p>}
+        notFound={<NotFoundView />}
+        error={(error) => <ErrorView error={error} />}
+      />
+    </main>
+  );
+}
+
+export function CabinetLayout() {
+  return (
+    <section>
+      <h1>Кабинет</h1>
+      <RouterView depth={1} fallback={<p>Выберите раздел</p>} />
+    </section>
+  );
+}
+```
+
+`App` использует `RouterView` без `router` prop: роутер разрешается из контейнера runtime-опций. `CabinetLayout` рендерит дочерний маршрут через `RouterView depth={1}` тоже без `router` prop.
+
+### 5. `navigate()` в обработчиках
+
+```ts
+import type { IRouter } from "@ivlev-dev/silent-router";
+
+export class LoginVM {
+  constructor(
+    private readonly router: IRouter,
+    private readonly session: Session,
+  ) {}
+
+  async submit(next: string): Promise<void> {
+    this.session.login("Алиса");
+    await this.router.navigate(next);
+  }
+}
+```
+
+```tsx
+<button onClick={() => void router.navigate("/cabinet")}>В кабинет</button>
+```
+
+`push()`/`replace()` бросают `RouterNavigationError` при guard/load/no-match, поэтому в `onClick` без обработки промиса возникает unhandled rejection. В обработчиках используйте `navigate()`, а `push()` — в async-функциях с `try/catch`.
+
+### 6. Тестовый рецепт с `createTestRouter`
+
+```ts
+import { createTestRouter } from "@ivlev-dev/silent-router";
+
+const { container, router } = createAppServices("/");
+await router.start();
+
+const testRouter = createTestRouter({
+  routes,
+  initial: "/",
+  load: (context) => import("./profile").then((m) => m.default),
+});
+
+expect(testRouter.hasRoute("/cabinet/profile")).toBe(true);
+expect(testRouter.isLoaded("/cabinet/profile")).toBe(false);
+
+await testRouter.navigate("/cabinet/profile");
+expect(testRouter.isLoaded("/cabinet/profile")).toBe(true);
+```
+
+`createTestRouter` принимает `routes`, `initial?`, `history?` и остальные `RouterOptions`; по умолчанию использует `MemoryHistory`.

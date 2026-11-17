@@ -10,7 +10,9 @@ import {
   type AnyComponent,
   type Children,
   type ComponentResult,
+  type RuntimeOptions,
 } from "@ivlev-dev/silent-core";
+import type { Container } from "@ivlev-dev/silent-di";
 import {
   createMemo,
   createRenderEffect,
@@ -20,8 +22,10 @@ import {
 } from "@ivlev-dev/silent-reactivity";
 import {
   RouterMissingError,
+  RouterNavigationError,
   type MatchedRoute,
   type RouteLocation,
+  type RouteMeta,
   type RouteQuery,
 } from "./match.js";
 import type { RouteViewProps, TypedRouteLocation } from "./route.js";
@@ -33,6 +37,9 @@ export interface RouterViewProps {
   readonly router?: IRouter;
   readonly depth?: number;
   readonly fallback?: unknown;
+  readonly container?: Container;
+  readonly error?: unknown | ((error: unknown) => unknown);
+  readonly notFound?: unknown | ((error: unknown) => unknown);
 }
 
 export type RouterViewComponentProps<
@@ -45,15 +52,31 @@ interface ViewSelection {
   readonly route: RouteLocation | null;
   readonly query: RouteQuery;
   readonly hash: string;
+  readonly error: unknown;
 }
 
-function resolveRouter(router: IRouter | undefined): IRouter {
+const EMPTY_META: RouteMeta = Object.freeze({});
+
+function resolveRouter(
+  router: IRouter | undefined,
+  container: Container | undefined,
+): IRouter {
   if (router !== undefined) {
     return router;
   }
-  const injected = getRuntimeOptions().container?.peek<IRouter>(Router);
-  if (injected !== undefined) {
-    return injected;
+  if (container !== undefined) {
+    const injected = container.peek<IRouter>(Router);
+    if (injected !== undefined) {
+      return injected;
+    }
+    if (container.hasExplicit(Router)) {
+      throw new RouterMissingError(
+        "Router зарегистрирован, но ещё не разрешён; используйте bindValue/provide",
+      );
+    }
+    throw new RouterMissingError(
+      "RouterView не нашёл Router в контейнере: передайте router или зарегистрируйте Router",
+    );
   }
   const resolved = Router.current();
   if (resolved === null) {
@@ -69,6 +92,7 @@ function selectView(router: IRouter, depth: number): ViewSelection {
     route: state.route,
     query: state.query,
     hash: state.hash,
+    error: state.error,
   };
 }
 
@@ -76,13 +100,22 @@ function sameSelection(left: ViewSelection, right: ViewSelection): boolean {
   return left.entry === right.entry
     && left.route === right.route
     && left.query === right.query
-    && left.hash === right.hash;
+    && left.hash === right.hash
+    && left.error === right.error;
+}
+
+function selectionKey(selection: ViewSelection): string | number | undefined {
+  if (selection.entry === undefined || selection.route === null) {
+    return undefined;
+  }
+  return selection.entry.record.key?.(selection.route);
 }
 
 function renderSelection(
   router: IRouter,
   props: RouterViewProps,
   selection: ViewSelection,
+  viewOptions: RuntimeOptions,
 ): unknown {
   const entry = selection.entry;
   const routeComponent = entry?.component;
@@ -94,11 +127,13 @@ function renderSelection(
     params: entry.params,
     query: selection.query,
     hash: selection.hash,
+    meta: selection.route.meta,
     router,
   };
   return component(
     routeComponent as AnyComponent,
     viewProps as unknown as Record<string, unknown>,
+    viewOptions,
   );
 }
 
@@ -115,6 +150,9 @@ function createLiveProps(router: IRouter, depth: number): RouteViewProps {
     },
     get hash(): string {
       return router.state().hash;
+    },
+    get meta(): RouteMeta {
+      return router.state().route?.meta ?? EMPTY_META;
     },
     router,
   };
@@ -138,26 +176,71 @@ function mountNodesConnected(nodes: readonly Node[]): boolean {
   return false;
 }
 
+function isNotFound(error: unknown): boolean {
+  return error instanceof RouterNavigationError && error.code === "no-match";
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  return String(error);
+}
+
+function defaultErrorText(error: unknown, notFound: boolean): string {
+  return `Error: ${notFound ? "Маршрут не найден" : errorMessage(error)}`;
+}
+
+function resolveSlot(slot: unknown, error: unknown): unknown {
+  return typeof slot === "function"
+    ? (slot as (value: unknown) => unknown)(error)
+    : slot;
+}
+
+function renderError(props: RouterViewProps, error: unknown): unknown {
+  const notFound = isNotFound(error);
+  const slot = notFound && props.notFound !== undefined ? props.notFound : props.error;
+  return slot === undefined ? defaultErrorText(error, notFound) : resolveSlot(slot, error);
+}
+
+function keysDiffer(
+  nextKey: string | number | undefined,
+  currentKey: string | number | undefined,
+): boolean {
+  return nextKey !== undefined && nextKey !== currentKey;
+}
+
 export function RouterView(props: RouterViewProps): Node {
-  const router = resolveRouter(props.router);
+  const runtimeOptions = getRuntimeOptions();
+  const container = props.container ?? runtimeOptions.container;
+  const router = resolveRouter(props.router, container);
+  const viewOptions: RuntimeOptions = container === undefined
+    ? runtimeOptions
+    : { ...runtimeOptions, container };
   const depth = props.depth ?? 0;
-  const container = document.createDocumentFragment();
+  const fragment = document.createDocumentFragment();
   const marker = document.createComment(ROUTER_VIEW_MARKER);
-  container.appendChild(marker);
+  fragment.appendChild(marker);
 
   if (isServerMode()) {
-    const nodes = collectNodes(renderSelection(router, props, selectView(router, depth)) as Children);
+    const selection = selectView(router, depth);
+    const output = selection.error === null
+      ? renderSelection(router, props, selection, viewOptions)
+      : renderError(props, selection.error);
+    const nodes = collectNodes(output as Children);
     for (const node of nodes) {
-      container.insertBefore(node, marker);
+      fragment.insertBefore(node, marker);
     }
-    return container;
+    return fragment;
   }
 
-  const runtimeOptions = getRuntimeOptions();
   const adoptedMarker = adoptHydrationRegion(ROUTER_VIEW_MARKER);
   const mountMarker = adoptedMarker ?? marker;
-  container.appendChild(mountMarker);
-  const mount = createMountPoint(container, mountMarker);
+  fragment.appendChild(mountMarker);
+  const mount = createMountPoint(fragment, mountMarker);
   const selection = createMemo(
     () => selectView(router, depth),
     { equals: sameSelection },
@@ -165,6 +248,7 @@ export function RouterView(props: RouterViewProps): Node {
   const liveProps = createLiveProps(router, depth);
   let currentResult: ComponentResult | null = null;
   let currentComponent: AnyComponent | null = null;
+  let currentKey: string | number | undefined;
   let fallbackShown = false;
 
   const teardown = (): void => {
@@ -172,12 +256,26 @@ export function RouterView(props: RouterViewProps): Node {
     currentResult?.dispose();
     currentResult = null;
     currentComponent = null;
+    currentKey = undefined;
     fallbackShown = false;
   };
 
   createRenderEffect(() => {
     const current = selection();
+
+    if (current.error !== null) {
+      mount.clear();
+      currentResult?.dispose();
+      currentResult = null;
+      currentComponent = null;
+      currentKey = undefined;
+      fallbackShown = false;
+      mount.render(renderError(props, current.error));
+      return;
+    }
+
     const next = current.entry?.component ?? null;
+    const nextKey = selectionKey(current);
 
     if (next === null) {
       if (fallbackShown && currentComponent === null) {
@@ -187,6 +285,7 @@ export function RouterView(props: RouterViewProps): Node {
       currentResult?.dispose();
       currentResult = null;
       currentComponent = null;
+      currentKey = undefined;
       mount.render(props.fallback);
       fallbackShown = true;
       return;
@@ -194,6 +293,7 @@ export function RouterView(props: RouterViewProps): Node {
 
     if (
       next === currentComponent
+      && !keysDiffer(nextKey, currentKey)
       && currentResult !== null
       && mountNodesConnected(mount.nodes())
     ) {
@@ -211,8 +311,8 @@ export function RouterView(props: RouterViewProps): Node {
           next,
           liveProps as unknown as Record<string, unknown>,
           adoptedMarker === null
-            ? runtimeOptions
-            : { ...runtimeOptions, hydrate: false },
+            ? viewOptions
+            : { ...viewOptions, hydrate: false },
         ),
       ),
     );
@@ -221,6 +321,7 @@ export function RouterView(props: RouterViewProps): Node {
     } else {
       currentResult = withoutHydration(create);
     }
+    currentKey = nextKey;
     mount.render(currentResult.node);
   });
 
@@ -228,5 +329,5 @@ export function RouterView(props: RouterViewProps): Node {
     teardown();
   });
 
-  return container;
+  return fragment;
 }

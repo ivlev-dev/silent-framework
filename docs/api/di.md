@@ -23,6 +23,70 @@
 
 Если `resolve` вызван с функцией-классом, для которого нет явной привязки, контейнер автоматически создаёт привязку этого класса как синглтона в контейнере, с которого начался `resolve`, и резолвит её рекурсивно. Классы со статическим свойством `[DI_CREATE]` инстанциируются через него с передачей текущего контейнера. После такого разрешения `has(token)` возвращает `true`.
 
+Поведение неявной привязки управляется режимом `ImplicitBindingMode`, передаваемым через `ContainerOptions` (по умолчанию `"warn"` в development, `"allow"` в production):
+
+- `"allow"` — прежнее поведение: класс автоматически биндится как singleton, без предупреждений.
+- `"warn"` — в `console.warn` выводится сообщение с именем зависимости, контейнера и стеком вызовов, после чего выполняется обычный implicit bind.
+- `"error"` — `resolve` незабинженного класса отклоняется `MissingBindingError`, экземпляр не создаётся; явные `bind`/`bindValue` работают как обычно. Незабинженный symbol-токен в любом режиме даёт прежнюю ошибку `no binding registered`.
+
+Режим наследуется в дочерние скоупы, созданные через `createScope`. В `createScope` передаётся `{ implicitBindings: this.implicitBindings }`, поэтому дочерний контейнер всегда имеет тот же режим, что и родитель. Установить другой режим для скоупа нельзя — только при создании корневого контейнера.
+
+### `ContainerOptions`
+
+```ts
+interface ContainerOptions {
+  readonly implicitBindings?: ImplicitBindingMode;
+}
+```
+
+Описание: опции конструктора `Container`. Поле `implicitBindings` задаёт режим неявных биндингов для контейнера и его потомков. Если не задано, наследуется от родителя; для корневого контейнера используется значение по умолчанию (`"warn"` в development, `"allow"` в production).
+
+Ограничения: опции читаются один раз при создании контейнера; изменить режим после создания нельзя.
+
+### `ImplicitBindingMode`
+
+```ts
+type ImplicitBindingMode = "allow" | "warn" | "error";
+```
+
+Описание: режим обработки неявных биндингов (класс как токен без явной привязки). Значения: `"allow"`, `"warn"`, `"error"` — см. раздел «Неявные привязки».
+
+Ограничения: строковый union из трёх значений.
+
+### `MissingBindingError`
+
+```ts
+class MissingBindingError extends Error {
+  readonly token: unknown;
+  readonly container: Container;
+}
+```
+
+Описание: ошибка, отклоняющая `resolve` незабинженного класса в режиме `"error"`. Поле `token` содержит класс/токен, поле `container` — контейнер, в котором attempted resolve. Не создаёт экземпляр класса.
+
+Пример:
+
+```ts
+import { Container, MissingBindingError } from "@ivlev-dev/silent-di";
+
+class Service {
+  readonly id = 1;
+}
+
+const root = new Container("app", undefined, { implicitBindings: "error" });
+
+try {
+  await root.resolve(Service);
+} catch (error) {
+  if (error instanceof MissingBindingError) {
+    console.log(error.token === Service); // true
+    console.log(error.container === root); // true
+  }
+}
+```
+
+Ограничения: выбрасывается синхронно внутри `bindImplicit`, но `resolve` возвращает отклонённый промис (resolve никогда не бросает синхронно). Имя ошибки — `"MissingBindingError"`.
+
 ### Интерфейсы и автопоиск реализаций
 
 Рантайм-контейнер работает только с токенами. Автопоиск конкретной реализации интерфейса выполняется компилятором: сканер индекса строит отображение `интерфейс → список реализаций`, и при компиляции конструктора, принимающего интерфейс, подставляется единственная найденная реализация (её класс становится токеном). Ограничения описаны в разделе «Интеграция с компилятором».
@@ -51,6 +115,23 @@ await root.createScope("request").resolve(Service); // InvalidScopeError
 
 Singleton и `scoped` в одном контейнере совместимы: например, ViewModel в `view:*`-скоупе может зависеть от request-scoped сервиса того же view. Для общих данных используйте `singleton`, для данных запроса — отдельный request scope.
 
+### Матрица scope: peek / resolve / resolveSync
+
+Поведение `peek`, `resolve` и `resolveSync` до и после первого успешного разрешения:
+
+| Привязка | До resolve: `peek` | До resolve: `resolveSync` | После resolve: `peek` | После resolve: `resolveSync` | После resolve: `resolve` |
+| --- | --- | --- | --- | --- | --- |
+| `bindValue(value)` | значение | значение | значение | значение | то же значение |
+| `bind(factory)` singleton | `undefined` | бросает | значение (владелец и потомки) | значение | то же значение |
+| `bind(factory)` scoped | `undefined` | бросает | значение (только в scope разрешения) | значение (только в scope) | то же значение в том же scope, новое в другом |
+| `bind(factory)` transient | `undefined` | бросает | `undefined` | бросает | новый экземпляр каждый раз |
+
+Примечания:
+- `bindValue` кладёт значение в `resolved`-кэш владельца сразу при регистрации, поэтому `peek`/`peekValue`/`resolveSync` видят его без `resolve`.
+- Singleton-фабрика ленивая: до первого `resolve` `peek` возвращает `undefined`; после успешного разрешения значение видно из дочерних scope через `peek`, потому что кеш принадлежит владельцу (родителю).
+- Scoped создаёт экземпляр на scope, в котором начался `resolve`; между scope экземпляры различаются.
+- Transient не хранит значение в долговременном кеше: после завершения `resolve` `peek` возвращает `undefined`, `resolveSync` бросает.
+
 ### Кеш промисов
 
 Для каждого токена в подходящем контейнере хранится `Promise` разрешения. Параллельные `resolve` одного токена получают один и тот же промис. При ошибке factory кеш очищается, следующий `resolve` повторяет попытку. Транзиент очищает кеш после завершения. `clearCache(token?)` сбрасывает кеш и `resolved`-значения.
@@ -68,7 +149,8 @@ Singleton и `scoped` в одном контейнере совместимы: �
 ```ts
 class Container {
   readonly name: string;
-  constructor(name?: string, parent?: Container);
+  readonly implicitBindings: ImplicitBindingMode;
+  constructor(name?: string, parent?: Container, options?: ContainerOptions);
   bind<T = unknown>(token: unknown, factory?: unknown): BindingBuilder;
   bindValue<T>(token: unknown, value: T): void;
   resolve<T = unknown>(token: unknown): Promise<T>;
@@ -76,6 +158,7 @@ class Container {
   peek<T = unknown>(token: unknown): T | undefined;
   peekValue<T = unknown>(token: unknown): T | undefined;
   has(token: unknown): boolean;
+  hasExplicit(token: unknown): boolean;
   createScope(name?: string): Container;
   snapshot(): ContainerSnapshot;
   clearCache(token?: unknown): void;
@@ -84,7 +167,7 @@ class Container {
 }
 ```
 
-Описание: асинхронный контейнер зависимостей. Хранит привязки, кеш и дочерние скоупы. При передаче `parent` привязки разрешаются с учётом иерархии родителя, а сам контейнер регистрируется как ребёнок родителя. `bindValue` регистрирует готовое значение и сразу кладёт его в `resolved`, поэтому `peek`/`peekValue` синхронно возвращают его без `resolve`.
+Описание: асинхронный контейнер зависимостей. Хранит привязки, кеш и дочерние скоупы. При передаче `parent` привязки разрешаются с учётом иерархии родителя, а сам контейнер регистрируется как ребёнок родителя. `bindValue` регистрирует готовое значение и сразу кладёт его в `resolved`, поэтому `peek`/`peekValue` синхронно возвращают его без `resolve`. Поле `implicitBindings` содержит текущий режим неявных биндингов (`"allow"`, `"warn"` или `"error"`), унаследованный при создании скоупа через `createScope`.
 
 Пример:
 
@@ -350,6 +433,62 @@ builder.inTransientScope().inSingletonScope();
 
 Ограничения: методы идемпотентны только по смыслу скоупа; смена скоупа очищает кеш токена.
 
+### `ContainerResolutionEvent`
+
+Сигнатура:
+
+```ts
+interface ContainerResolutionEvent {
+  readonly token: unknown;
+  readonly tokenName: string;
+  readonly container: string;
+  readonly owner: string;
+  readonly scope: ScopeName;
+  readonly implicit: boolean;
+  readonly cached: boolean;
+}
+```
+
+Описание: событие, которое контейнер передаёт глобальному инспектору при каждом найденном биндинге. `tokenName` — человекочитаемое имя токена, `container` — имя контейнера, в котором вызван `resolve`, `owner` — имя владельца биндинга, `implicit` — был ли биндинг создан неявно, `cached` — взят ли уже готовый промис из кеша.
+
+Ограничения: событие не содержит значения зависимости и не эмитится для ошибок поиска биндинга.
+
+### `ContainerResolutionInspector`
+
+Сигнатура:
+
+```ts
+type ContainerResolutionInspector = (event: ContainerResolutionEvent) => void;
+```
+
+Описание: подписчик на события DI-резолва. Используется devtools для построения графа зависимостей.
+
+Ограничения: одновременно активен только один инспектор.
+
+### `setContainerResolutionInspector`
+
+Сигнатура:
+
+```ts
+function setContainerResolutionInspector(
+  inspector: ContainerResolutionInspector | null,
+): void;
+```
+
+Описание: устанавливает или снимает глобальный инспектор DI-резолва. Исключения инспектора подавляются и не влияют на `resolve`.
+
+Пример:
+
+```ts
+import { setContainerResolutionInspector } from "@ivlev-dev/silent-di";
+
+setContainerResolutionInspector((event) => {
+  console.log(event.tokenName, event.container, event.cached);
+});
+```
+
+Ограничения: функция не включает devtools-события сама по себе; подписку на `DevtoolsEvent` настраивает `installDevtools()` из `@ivlev-dev/silent-core`.
+
 ## Сценарии
 
 ### Singleton / transient / scoped
@@ -384,6 +523,10 @@ const t2 = await root.resolve(transientToken);
 
 Проверяет наличие привязки с учётом родителя. Не запускает factory и не создаёт неявных привязок.
 
+### `Container.hasExplicit`
+
+Возвращает `true`, если для токена есть явная привязка (`bind`/`bindValue`) с учётом родителя. Неявные биндинги, созданные автоматически при resolve класса, не учитываются. Не запускает factory. Полезен для проверки, зарегистрирован ли токен явно (например, при strict-режиме).
+
 ### `Container.resolveSync`
 
 Возвращает уже разрешённое значение из кеша без асинхронного ожидания. Если токен не разрешён, контейнер disposed или привязки нет — выбрасывает ошибку. Полезен в синхронных участках, где значение гарантированно подготовлено ранее.
@@ -400,6 +543,24 @@ const t2 = await root.resolve(transientToken);
 
 Дочерний скоуп наследует привязки родителя. Синглтоны привязки родителя кешируются у владельца (родителя) и разделяются между всеми потомками. `clearCache` и `bind` очищают кеш в потомках. `dispose` скоупа не затрагивает родителя.
 
+### Router / Session: bindValue или singleton в корне
+
+Для Router и Session (долгоживущие сервисы, общие для всего приложения) используйте `bindValue` или `bind(...)` с scope `singleton` и регистрируйте в корневом контейнере. Не используйте `inScopedScope()`: `inScopedScope()` создаёт новый экземпляр на каждый view-scope, поэтому Router/Session «размножатся» по каждому view. Токен, зарегистрированный как scoped в корне, при resolve из дочернего view-scope создаст отдельный экземпляр в этом view-scope и не будет разделяться между view.
+
+Пример:
+
+```ts
+const root = new Container("app", undefined, { implicitBindings: "error" });
+const router = new Router();
+const session = new Session();
+
+root.bindValue(RouterToken, router);
+root.bind(SessionToken, () => session); // singleton по умолчанию
+
+const viewScope = root.createScope("view:home");
+// viewScope.resolve(RouterToken) === router
+```
+
 ### Поведение после `dispose`
 
 - `has(token)` возвращает `false` (привязки очищены).
@@ -412,6 +573,7 @@ const t2 = await root.resolve(transientToken);
 
 - `CircularDependencyError` — возникает при циклической зависимости. Поле `path: unknown[]` содержит путь из токенов.
 - `InvalidScopeError` — singleton-фабрика разрешает `scoped`-токен вне контейнера-владельца; поля `singletonToken`, `scopedToken`, `owner`.
+- `MissingBindingError` — в режиме `implicitBindings: "error"` `resolve` незабинженного класса отклоняется этой ошибкой; поля `token`, `container`. Экземпляр не создаётся.
 - Отсутствующая привязка — `resolve` неизвестного токена (не функции-класса и не зарегистрированного) возвращает отклонённый промис с ошибкой `Error("Async DI: no binding registered for token ...")`.
 - Вызов после `dispose` — `resolve` возвращает отклонённый промис с `Error("Container \"name\" has been disposed")`.
 - `resolve(undefined)` — отклонённый промис с `Error("Async DI: resolve<T>() must be transformed by silentwire before runtime")`.

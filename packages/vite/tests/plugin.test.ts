@@ -122,12 +122,12 @@ describe("silent()", () => {
     expect(scanMock).toHaveBeenCalledWith(process.cwd(), expect.any(String));
   });
 
-  it("transform вызывает native transform и возвращает code, map, warnings", async () => {
+  it("transform вызывает native transform и возвращает code и map", async () => {
     transformMock.mockImplementation((source: string) =>
       JSON.stringify({
         code: `${source} // out`,
         map: "map-string",
-        diagnostics: ["warn1", "warn2"],
+        diagnostics: [],
       }),
     );
     const plugin = createPlugin();
@@ -147,7 +147,7 @@ describe("silent()", () => {
     );
     expect(result?.code).toBe("const a = 1; // out");
     expect(result?.map).toBe("map-string");
-    expect(result?.warnings).toEqual(["warn1", "warn2"]);
+    expect(result?.warnings).toEqual([]);
   });
 
   it("кеш индекса: несколько transform не вызывают scan повторно", async () => {
@@ -464,5 +464,121 @@ describe("silent()", () => {
     await plugin.transform?.("four", fileFor("src", "d.cts"));
 
     expect(transformMock).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe("режим di", () => {
+  const diagnostics = [
+    "для интерфейса Store не найдено реализации",
+    "найдено несколько реализаций для интерфейса Store: MemoryStore, ApiStore",
+  ];
+
+  const mockDiagnostics = (): void => {
+    transformMock.mockImplementation((source: string) =>
+      JSON.stringify({
+        code: `${source} // out`,
+        map: null,
+        diagnostics,
+      }),
+    );
+  };
+
+  it("по умолчанию di: \"warn\" вызывает warn и не дублирует диагностики в warnings", async () => {
+    mockDiagnostics();
+    const plugin = createPlugin();
+    await plugin.buildStart?.();
+
+    const warn = vi.fn();
+    const result = (await plugin.transform?.call(
+      { warn },
+      "code",
+      fileFor("src", "di.ts"),
+    )) as TransformOutput | undefined;
+
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn.mock.calls[0]?.[0]).toBe(
+      "[silent-vite] DI: для интерфейса Store не найдено реализации",
+    );
+    expect(warn.mock.calls[1]?.[0]).toBe(
+      "[silent-vite] DI: найдено несколько реализаций для интерфейса Store: MemoryStore, ApiStore",
+    );
+    expect(result?.code).toBe("code // out");
+    expect(result?.warnings).toEqual([]);
+  });
+
+  it("di: \"error\" падает с текстом диагностики и именем зависимости", async () => {
+    mockDiagnostics();
+    const plugin = createPlugin({ di: "error" });
+    await plugin.buildStart?.();
+
+    await expect(
+      plugin.transform?.("code", fileFor("src", "di.ts")),
+    ).rejects.toThrow(
+      /\[silent-vite\] DI: .*Store.*не найдено реализации[\s\S]*несколько реализаций/,
+    );
+  });
+
+  it("di: \"error\" не падает без диагностик", async () => {
+    const plugin = createPlugin({ di: "error" });
+    const result = (await plugin.transform?.(
+      "code",
+      fileFor("src", "clean.ts"),
+    )) as TransformOutput | undefined;
+
+    expect(result?.code).toBe("code /* compiled */");
+  });
+
+  it("di: \"allow\" игнорирует диагностики", async () => {
+    mockDiagnostics();
+    const plugin = createPlugin({ di: "allow" });
+    await plugin.buildStart?.();
+
+    const warn = vi.fn();
+    const result = (await plugin.transform?.call(
+      { warn },
+      "code",
+      fileFor("src", "di.ts"),
+    )) as TransformOutput | undefined;
+
+    expect(warn).not.toHaveBeenCalled();
+    expect(result?.code).toBe("code // out");
+    expect(result?.warnings).toEqual([]);
+  });
+
+  it("di: \"error\" применяется и на cache hit", async () => {
+    mockDiagnostics();
+    const cacheDir = mkdtempSync(path.join(tmpdir(), "silent-vite-di-cache-"));
+    cacheDirectories.push(cacheDir);
+    const plugin = createPlugin({ di: "error" });
+    plugin.configResolved?.({ cacheDir } as ResolvedConfig);
+    await plugin.buildStart?.();
+
+    const file = fileFor("src", "cached-di.ts");
+    await expect(plugin.transform?.("const x = 1;", file)).rejects.toThrow(
+      /\[silent-vite\] DI: /,
+    );
+    await expect(plugin.transform?.("const x = 1;", file)).rejects.toThrow(
+      /несколько реализаций/,
+    );
+    expect(transformMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("di: \"warn\" применяется и на cache hit", async () => {
+    mockDiagnostics();
+    const cacheDir = mkdtempSync(path.join(tmpdir(), "silent-vite-di-cache-"));
+    cacheDirectories.push(cacheDir);
+    const plugin = createPlugin({ di: "warn" });
+    plugin.configResolved?.({ cacheDir } as ResolvedConfig);
+    await plugin.buildStart?.();
+
+    const file = fileFor("src", "cached-warn.ts");
+    const firstWarn = vi.fn();
+    const secondWarn = vi.fn();
+    await plugin.transform?.call({ warn: firstWarn }, "const x = 1;", file);
+    await plugin.transform?.call({ warn: secondWarn }, "const x = 1;", file);
+
+    expect(transformMock).toHaveBeenCalledTimes(1);
+    expect(firstWarn).toHaveBeenCalledTimes(2);
+    expect(secondWarn).toHaveBeenCalledTimes(2);
   });
 });

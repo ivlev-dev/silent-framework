@@ -57,6 +57,7 @@ export default defineConfig({
 | `runtime` | `string` | `"@ivlev-dev/silent-core"` | Имя модуля рантайма для сгенерированного кода. |
 | `hmr` | `boolean` | `true` | Включить внедрение HMR в компилируемый код. |
 | `index` | `boolean` | `true` | Строить индекс DI по файлам проекта. При `false` передаётся пустой индекс `{ interfaces: {}, values: {} }`. |
+| `di` | `"allow" \| "warn" \| "error"` | `"warn"` | Политика DI-диагностик компилятора: `allow` — игнорировать, `warn` — выводить через `this.warn`, `error` — бросать ошибку в `transform`. |
 
 Типы `ResolvedOptions` и функция `resolveOptions` описаны в `packages/vite/dist/options.d.ts`, но в основной точке входа пакета не реэкспортируются. Их можно использовать только через внутренние пути; `DEFAULT_INCLUDE`, `DEFAULT_EXCLUDE`, `DEFAULT_RUNTIME`, `matchesPattern`, `cleanModuleId`, `isVirtualModule`, `isInsideRoot`, `isSourceModule` ведут себя так же, как определено в `options.ts`.
 
@@ -68,13 +69,25 @@ export default defineConfig({
 function resolveOptions(options?: SilentOptions): ResolvedOptions;
 ```
 
-Нормализует пользовательские опции: подставляет значения по умолчанию, разрешает `root` относительно `process.cwd()`. Возвращает объект с обязательными полями `include`, `exclude`, `root`, `swc`, `requirePreloader`, `runtime`, `hmr`, `index`.
+Нормализует пользовательские опции: подставляет значения по умолчанию, разрешает `root` относительно `process.cwd()`. Возвращает объект с обязательными полями `include`, `exclude`, `root`, `swc`, `requirePreloader`, `runtime`, `hmr`, `index`, `view`, `di`.
+
+#### `DiMode`
+
+Сигнатура:
+
+```ts
+type DiMode = "allow" | "warn" | "error";
+```
+
+Описание: политика обработки диагностик DI-компилятора. `allow` игнорирует их, `warn` передаёт в `this.warn`, `error` прерывает transform с текстом диагностики, включающим имя зависимости. Значение по умолчанию — `warn`.
 
 Нормализованные опции (`ResolvedOptions`)
 
 Сигнатура:
 
 ```ts
+type DiMode = "allow" | "warn" | "error";
+
 interface ResolvedOptions {
   include: RegExp;
   exclude: RegExp;
@@ -84,6 +97,8 @@ interface ResolvedOptions {
   runtime: string;
   hmr: boolean;
   index: boolean;
+  view: boolean;
+  di: DiMode;
 }
 ```
 
@@ -101,7 +116,7 @@ interface ResolvedOptions {
    - загружает addon через `loadSwc()`;
    - получает индекс через `ensureIndex()`;
    - вызывает `nativeTransform(swc, code, moduleId, optionsJson, indexJson)`;
-   - возвращает `{ code, map, warnings: diagnostics }`.
+   - применяет политику `di` к `diagnostics` и возвращает `{ code, map, warnings }` (`warnings` всегда пуст: `warn`-режим выводит сообщения через `this.warn`, `error`-режим бросает ошибку).
 3. `watchChange(id)` — при изменении исходного модуля (но не виртуального) сбрасывает кеш индекса.
 4. `handleHotUpdate({ file })` — то же для HMR-обновлений.
 
@@ -129,6 +144,30 @@ interface SilentIndex {
 ```
 
 Индекс сериализуется в `indexJson` и передаётся в компилятор, который подставляет найденные реализации интерфейсов при компиляции конструкторов. Если `index: false`, используется `EMPTY_INDEX_JSON` (`{ interfaces: {}, values: {} }`), scan не вызывается.
+
+### Политика DI-диагностик
+
+Компилятор возвращает `diagnostics`, когда, например, «для интерфейса … не найдено реализации» или «найдено несколько реализаций …». Опция `di` управляет их обработкой:
+
+- `"allow"` — диагностики игнорируются;
+- `"warn"` (по умолчанию) — каждая диагностика передаётся в `this.warn` Vite с префиксом `[silent-vite] DI: `; в `warnings` результата `transform` они не дублируются;
+- `"error"` — `transform` выбрасывает `Error` с префиксом `[silent-vite] DI: ` и списком диагностик; Vite показывает это как ошибку сборки, текст содержит имя зависимости.
+
+```ts
+silent({ di: "error" });
+```
+
+Политика применяется одинаково при cache miss и cache hit: кешированный результат содержит те же `diagnostics`, поэтому `warn`/`error` воспроизводятся и при чтении из `cacheDir`.
+
+Compile-time проверка видит интерфейсы и биндинги. Классы без `DI_CREATE` и без явного биндинга статически не проверяются — для них включите строгий режим контейнера в рантайме:
+
+```ts
+import { Container } from "@ivlev-dev/silent-di";
+
+const container = new Container("root", undefined, { implicitBindings: "error" });
+```
+
+`implicitBindings: "error"` запрещает неявное создание классов и бросает ошибку при отсутствующей реализации вместо молчаливого `undefined`. Режим наследуется дочерними контейнерами и scope'ами. Рекомендуемая комбинация — `di: "error"` в плагине вместе со строгим контейнером.
 
 ### Внедрение HMR
 
@@ -170,7 +209,14 @@ interface SilentIndex {
 
 - Если структура ответа не соответствует `{ code, map, diagnostics }`, выбрасывается ошибка `неожиданную структуру`.
 
-- Диагностики компилятора возвращаются в поле `warnings` результата `transform` и передаются Vite как warnings.
+- Диагностики компилятора обрабатываются по политике `di` (см. «Политика DI-диагностик») и не попадают в `warnings` результата `transform`.
+
+```text
+[silent-vite] DI: для интерфейса Store не найдено реализации
+[silent-vite] DI: найдено несколько реализаций для интерфейса Store: MemoryStore, ApiStore
+```
+
+При `di: "warn"` эти же строки уходят в `this.warn` Vite, при `di: "allow"` молча отбрасываются, при `di: "error"` первая строка становится текстом `Error`, и сборка падает.
 
 - Подробные ошибки SWC видны в `diagnostics`/`warnings` и в stderr при падении addon. Для повторной сборки addon используйте `pnpm --filter @ivlev-dev/silent-swc build`; при несовпадении ABI версии addon также пересоберите его и синхронизируйте версию Node.js.
 
@@ -183,4 +229,5 @@ interface SilentIndex {
 - `map` может быть `null`, если addon не вернул source map.
 - Индекс DI строится один раз за запуск и инвалидируется только при изменении исходных модулей; правки конфигурации требуют перезапуска dev-сервера.
 - `swc` передаётся в addon как есть; валидация опций SWC выполняется самим addon'ом.
+- `di` управляет только compile-time диагностиками: классы без `DI_CREATE`/биндинга требуют строгого режима контейнера (`implicitBindings: "error"`).
 - HMR не выполняет горячую замену самого рантайма фреймворка — в этом случае происходит полная перезагрузка.

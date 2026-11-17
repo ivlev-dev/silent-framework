@@ -126,8 +126,12 @@ export function toNode(value: unknown): Node {
 export function component(
   componentFn: AnyComponent,
   props: Record<string, unknown>,
+  runtimeOptions?: RuntimeOptions,
 ): Node {
-  const options = getRuntimeOptions();
+  const options =
+    runtimeOptions === undefined
+      ? getRuntimeOptions()
+      : { ...getRuntimeOptions(), ...runtimeOptions };
   if (readMeta(componentFn) === null) {
     return createComponentLight(componentFn, props, options).node;
   }

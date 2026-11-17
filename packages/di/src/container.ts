@@ -1,5 +1,14 @@
 import { DI_CREATE } from "./token.js";
-import type { Binding, BindingBuilder, Factory, ScopeName } from "./types.js";
+import type {
+  Binding,
+  BindingBuilder,
+  ContainerOptions,
+  ContainerResolutionEvent,
+  ContainerResolutionInspector,
+  Factory,
+  ImplicitBindingMode,
+  ScopeName,
+} from "./types.js";
 
 type FunctionValue = (...args: unknown[]) => unknown;
 type ConstructorValue = new (...args: never[]) => unknown;
@@ -11,6 +20,14 @@ interface CaptiveFrame {
 }
 
 const SYMBOL_DISPOSE: symbol | undefined = (Symbol as { readonly dispose?: symbol }).dispose;
+
+let resolutionInspector: ContainerResolutionInspector | null = null;
+
+export function setContainerResolutionInspector(
+  inspector: ContainerResolutionInspector | null,
+): void {
+  resolutionInspector = inspector;
+}
 
 export interface ContainerSnapshot {
   readonly name: string;
@@ -57,6 +74,29 @@ function describeToken(token: unknown): string {
     return token.name === "" ? "anonymous" : token.name;
   }
   return String(token);
+}
+
+function isDevelopment(): boolean {
+  const runtime = globalThis as {
+    readonly process?: { readonly env?: { readonly NODE_ENV?: string } };
+  };
+  if (runtime.process?.env?.NODE_ENV === "development") {
+    return true;
+  }
+  const meta = import.meta as ImportMeta & { readonly env?: { readonly DEV?: boolean } };
+  return meta.env?.DEV === true;
+}
+
+export class MissingBindingError extends Error {
+  readonly token: unknown;
+  readonly container: Container;
+
+  constructor(token: unknown, container: Container) {
+    super(`Нет биндинга для зависимости "${describeToken(token)}" в контейнере "${container.name}"`);
+    this.name = "MissingBindingError";
+    this.token = token;
+    this.container = container;
+  }
 }
 
 function isFunctionValue(value: unknown): value is FunctionValue {
@@ -129,12 +169,19 @@ export class Container {
   private resolving = new Map<unknown, unknown>();
   private disposeHooks: Array<() => void> = [];
   private disposed = false;
+  private implicitBindingMode: ImplicitBindingMode;
 
-  constructor(name = "root", parent?: Container) {
+  constructor(name = "root", parent?: Container, options: ContainerOptions = {}) {
     this.name = name;
     if (parent !== undefined) {
       this.parent = parent;
     }
+    this.implicitBindingMode =
+      options.implicitBindings ?? parent?.implicitBindings ?? Container.defaultImplicitBindings();
+  }
+
+  get implicitBindings(): ImplicitBindingMode {
+    return this.implicitBindingMode;
   }
 
   bind<T = unknown>(token: unknown, factory?: unknown): BindingBuilder {
@@ -184,7 +231,7 @@ export class Container {
 
   createScope(name = `scope:${Math.random()}`): Container {
     this.assertUsable();
-    const scope = new Container(name, this);
+    const scope = new Container(name, this, { implicitBindings: this.implicitBindingMode });
     this.children.add(scope);
     return scope;
   }
@@ -229,6 +276,10 @@ export class Container {
 
   has(token: unknown): boolean {
     return this.findBindingWithOwner(token) !== undefined;
+  }
+
+  hasExplicit(token: unknown): boolean {
+    return this.findExplicitWithOwner(token) !== undefined;
   }
 
   snapshot(): ContainerSnapshot {
@@ -380,12 +431,15 @@ export class Container {
 
     const cached = cacheContainer.cache.get(token);
     if (cached !== undefined) {
+      this.reportResolution(token, owner, binding, true);
       return cached as Promise<T>;
     }
 
     if (cacheContainer.resolving.has(token)) {
       throw new CircularDependencyError([...cacheContainer.resolving.keys()]);
     }
+
+    this.reportResolution(token, owner, binding, false);
 
     const marker: object = {};
     cacheContainer.resolving.set(token, marker);
@@ -452,12 +506,25 @@ export class Container {
   }
 
   private bindImplicit(token: FunctionValue, owner: Container): void {
+    if (owner.implicitBindingMode === "error") {
+      throw new MissingBindingError(token, owner);
+    }
+    if (owner.implicitBindingMode === "warn") {
+      const stack = new Error().stack ?? "";
+      console.warn(
+        `[silent-di] Неявный биндинг для зависимости "${describeToken(token)}" в контейнере "${owner.name}". Стек:\n${stack}`,
+      );
+    }
     owner.bindings.set(token, {
       factory: toFallbackFactory(token),
       scope: "singleton",
     });
     owner.implicitTokens.add(token);
     owner.clearCache(token);
+  }
+
+  private static defaultImplicitBindings(): ImplicitBindingMode {
+    return isDevelopment() ? "warn" : "allow";
   }
 
   private static isAncestor(ancestor: Container, node: Container): boolean {
@@ -496,6 +563,32 @@ export class Container {
       return target.resolveInternal(token, frame);
     } catch (error) {
       return Promise.reject(error);
+    }
+  }
+
+  private reportResolution(
+    token: unknown,
+    owner: Container,
+    binding: Binding<unknown>,
+    cached: boolean,
+  ): void {
+    const inspector = resolutionInspector;
+    if (inspector === null) {
+      return;
+    }
+    const event: ContainerResolutionEvent = {
+      token,
+      tokenName: describeToken(token),
+      container: this.name,
+      owner: owner.name,
+      scope: binding.scope,
+      implicit: owner.implicitTokens.has(token),
+      cached,
+    };
+    try {
+      inspector(event);
+    } catch {
+      return;
     }
   }
 

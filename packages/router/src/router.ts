@@ -1,4 +1,4 @@
-import type { AnyComponent } from "@ivlev-dev/silent-core";
+import { devtoolsNavigate, type AnyComponent } from "@ivlev-dev/silent-core";
 import type { Container } from "@ivlev-dev/silent-di";
 import {
   createSignal,
@@ -20,10 +20,12 @@ import {
   resolveLocation,
   type CompiledRoute,
   type MatchedRoute,
+  type RouteGuardContext,
   type RouteGuardResult,
   type RouteLoaderResult,
   type RouteLocation,
   type RouteLocationTargetObject,
+  type RouteMeta,
   type RouteParams,
   type RouteQuery,
   type RouteRecord,
@@ -56,10 +58,14 @@ export interface IRouter {
   readonly params: RouteParams;
   readonly query: RouteQuery;
   readonly hash: string;
+  readonly meta: RouteMeta;
   readonly matched: readonly MatchedRoute[];
   resolve(to: RouteTarget): RouteLocation;
   href(to: RouteTarget): string;
+  hasRoute(to: RouteTarget): boolean;
+  isLoaded(to: RouteTarget): boolean;
   prefetch(to: RouteTarget): Promise<void>;
+  navigate(to: RouteTarget, options?: { readonly replace?: boolean }): Promise<boolean>;
   push(to: RouteTarget): Promise<void>;
   replace(to: RouteTarget): Promise<void>;
   back(): void;
@@ -69,16 +75,28 @@ export interface IRouter {
   dispose(): void;
 }
 
+export interface RouterComponentLoadContext extends RouteLoadContext {
+  readonly record: RouteRecord;
+}
+
+export type RouterComponentLoader = (
+  context: RouterComponentLoadContext,
+) => RouteLoaderResult | Promise<RouteLoaderResult>;
+
 export interface RouterOptions {
   readonly routes: readonly RouteInput[];
   readonly base?: string;
   readonly history?: RouterHistory;
   readonly scrollBehavior?: ScrollBehavior;
   readonly container?: Container;
+  readonly load?: RouterComponentLoader;
+  readonly resolveComponent?: RouterComponentLoader;
+  readonly onError?: (error: RouterNavigationError, to: RouteTarget) => void;
 }
 
 const EMPTY_PARAMS: RouteParams = Object.freeze({});
 const EMPTY_QUERY: RouteQuery = Object.freeze({});
+const EMPTY_META: RouteMeta = Object.freeze({});
 const EMPTY_MATCHED: readonly MatchedRoute[] = Object.freeze([]);
 
 const routers: Router[] = [];
@@ -123,6 +141,9 @@ export class Router implements IRouter {
   private readonly history: RouterHistory;
   private readonly ownsHistory: boolean;
   private readonly scrollBehavior: ScrollBehavior | undefined;
+  private readonly container: Container | undefined;
+  private readonly componentLoader: RouterComponentLoader | undefined;
+  private readonly onError: ((error: RouterNavigationError, to: RouteTarget) => void) | undefined;
   private readonly stateSignal: readonly [Accessor<RouterState>, Setter<RouterState>];
   private readonly loadedComponents = new Map<RouteRecord, AnyComponent>();
   private readonly savedPositions = new Map<string, ScrollPosition>();
@@ -138,6 +159,9 @@ export class Router implements IRouter {
     this.history = options.history ?? createDefaultHistory();
     this.ownsHistory = options.history === undefined;
     this.scrollBehavior = options.scrollBehavior;
+    this.container = options.container;
+    this.componentLoader = options.load ?? options.resolveComponent;
+    this.onError = options.onError;
 
     this.stateSignal = createSignal<RouterState>({
       route: null,
@@ -181,6 +205,10 @@ export class Router implements IRouter {
     return this.stateSignal[0]().hash;
   }
 
+  get meta(): RouteMeta {
+    return this.stateSignal[0]().route?.meta ?? EMPTY_META;
+  }
+
   get matched(): readonly MatchedRoute[] {
     return this.stateSignal[0]().matched;
   }
@@ -195,6 +223,36 @@ export class Router implements IRouter {
     return `${this.base}${this.resolve(to).fullPath}`;
   }
 
+  hasRoute(to: RouteTarget): boolean {
+    try {
+      resolveLocation(this.compiled, to, this.stateSignal[0]().route, this.loadedComponents);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  isLoaded(to: RouteTarget): boolean {
+    let location: RouteLocation;
+    try {
+      location = this.resolve(to);
+    } catch {
+      return false;
+    }
+    for (const entry of location.matched) {
+      if (entry.component !== undefined || entry.record.component !== undefined) {
+        continue;
+      }
+      if (this.loadedComponents.has(entry.record)) {
+        continue;
+      }
+      if (entry.record.load !== undefined || this.componentLoader !== undefined) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   prefetch(to: RouteTarget): Promise<void> {
     if (this.disposed) {
       return Promise.reject(new RouterNavigationError("Router уничтожен", "abort", targetString(to)));
@@ -204,12 +262,23 @@ export class Router implements IRouter {
     return this.runLoaders(location, new AbortController().signal, id);
   }
 
+  async navigate(
+    to: RouteTarget,
+    options?: { readonly replace?: boolean },
+  ): Promise<boolean> {
+    try {
+      return await this.transition(to, options?.replace ?? false, false);
+    } catch {
+      return false;
+    }
+  }
+
   push(to: RouteTarget): Promise<void> {
-    return this.navigate(to, false, false);
+    return this.transition(to, false, false).then(() => undefined);
   }
 
   replace(to: RouteTarget): Promise<void> {
-    return this.navigate(to, true, false);
+    return this.transition(to, true, false).then(() => undefined);
   }
 
   back(): void {
@@ -232,7 +301,7 @@ export class Router implements IRouter {
     this.unlisten = this.history.listen((location) => {
       void this.navigateFromHistory(location);
     });
-    await this.navigate(this.fullPathFromHistory(this.history.location), true, true);
+    await this.transition(this.fullPathFromHistory(this.history.location), true, true);
   }
 
   stop(): void {
@@ -288,22 +357,22 @@ export class Router implements IRouter {
 
   private async navigateFromHistory(location: HistoryLocation): Promise<void> {
     try {
-      await this.navigate(this.fullPathFromHistory(location), true, true);
+      await this.transition(this.fullPathFromHistory(location), true, true);
     } catch {
       return;
     }
   }
 
-  private async navigate(
+  private async transition(
     target: RouteTarget,
     replace: boolean,
     fromHistory: boolean,
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (this.disposed) {
       throw new RouterNavigationError("Router уничтожен", "abort", targetString(target));
     }
     if (!fromHistory && this.isSameLocation(target)) {
-      return;
+      return true;
     }
     this.navigationId += 1;
     const id = this.navigationId;
@@ -350,7 +419,7 @@ export class Router implements IRouter {
           if (id === this.navigationId) {
             this.stateSignal[1]((previous) => ({ ...previous, pending: false }));
           }
-          return;
+          return false;
         }
         if (guard !== true) {
           current = guard;
@@ -374,7 +443,7 @@ export class Router implements IRouter {
         const resolved = this.attachComponents(location);
         this.commit(resolved, from, action);
         await this.restoreScroll(resolved, from);
-        return;
+        return true;
       }
     } catch (error) {
       if (
@@ -385,7 +454,7 @@ export class Router implements IRouter {
         if (id === this.navigationId) {
           this.stateSignal[1]((previous) => ({ ...previous, pending: false }));
         }
-        return;
+        return false;
       }
       const navigationError = error instanceof RouterNavigationError
         ? error
@@ -400,6 +469,9 @@ export class Router implements IRouter {
         pending: false,
         error,
       }));
+      if (this.onError !== undefined) {
+        this.onError(navigationError, target);
+      }
       throw navigationError;
     }
   }
@@ -415,9 +487,16 @@ export class Router implements IRouter {
       if (guard === undefined) {
         continue;
       }
+      const context: RouteGuardContext = {
+        router: this,
+        container: this.container,
+        to: location,
+        from,
+        signal,
+      };
       let result: RouteGuardResult;
       try {
-        result = await guard(location, from, signal);
+        result = await guard(location, from, signal, context);
       } catch (error) {
         if (signal.aborted || id !== this.navigationId) {
           throw new RouterAbortError(location.fullPath);
@@ -448,31 +527,43 @@ export class Router implements IRouter {
     id: number,
   ): Promise<void> {
     for (const entry of location.matched) {
-      const load = entry.record.load;
-      if (load === undefined || entry.component !== undefined) {
+      if (entry.component !== undefined) {
         continue;
       }
+      const record = entry.record;
+      const own = record.load;
+      const shared = this.componentLoader;
+      if (own === undefined && shared === undefined) {
+        continue;
+      }
+      const label = record.name ?? entry.path;
+      const context: RouterComponentLoadContext = {
+        route: location,
+        params: location.params,
+        query: location.query,
+        hash: location.hash,
+        meta: location.meta,
+        router: this,
+        signal,
+        record,
+      };
       let result: RouteLoaderResult;
       try {
-        if (hasContextLoader(entry.record)) {
-          const context: RouteLoadContext = {
-            route: location,
-            params: location.params,
-            query: location.query,
-            hash: location.hash,
-            router: this,
-            signal,
-          };
-          result = await (load as unknown as RouteClassLoad)(context);
+        if (own !== undefined) {
+          result = hasContextLoader(record)
+            ? await (own as unknown as RouteClassLoad)(context)
+            : await own(location, signal);
+        } else if (shared !== undefined) {
+          result = await shared(context);
         } else {
-          result = await load(location, signal);
+          continue;
         }
       } catch (error) {
         if (signal.aborted || id !== this.navigationId) {
           throw new RouterAbortError(location.fullPath);
         }
         throw new RouterNavigationError(
-          `Загрузчик маршрута ${entry.path} завершился ошибкой`,
+          `Загрузчик маршрута ${label} завершился ошибкой`,
           "load",
           location.fullPath,
           error,
@@ -484,7 +575,7 @@ export class Router implements IRouter {
       const component = typeof result === "function" ? result : result.default;
       if (typeof component !== "function") {
         throw new RouterNavigationError(
-          `Загрузчик маршрута ${entry.path} вернул некорректный компонент`,
+          `Загрузчик маршрута ${label} вернул некорректный компонент`,
           "load",
           location.fullPath,
         );
@@ -518,6 +609,7 @@ export class Router implements IRouter {
       pending: false,
       error: null,
     });
+    devtoolsNavigate(location.fullPath, from?.fullPath ?? null);
   }
 
   private async restoreScroll(

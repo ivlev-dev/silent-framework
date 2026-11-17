@@ -1,4 +1,7 @@
 import type { AnyComponent } from "@ivlev-dev/silent-core";
+import type { Container } from "@ivlev-dev/silent-di";
+import type { TypedRouteLocation } from "./route.js";
+import type { IRouter } from "./router.js";
 
 export type RouteParams = Readonly<Record<string, string>>;
 export type RouteQueryScalar = string | number | boolean;
@@ -81,6 +84,7 @@ export interface RouteLocation {
   readonly params: RouteParams;
   readonly query: RouteQuery;
   readonly hash: string;
+  readonly meta: RouteMeta;
   readonly matched: readonly MatchedRoute[];
 }
 
@@ -94,10 +98,22 @@ export interface MatchedRoute {
 
 export type RouteGuardResult = boolean | void | string | RouteLocationTargetObject;
 
+export interface RouteGuardContext<
+  Path extends string = string,
+  Query = RouteQuery,
+> {
+  readonly router: IRouter;
+  readonly container: Container | undefined;
+  readonly to: TypedRouteLocation<Path, Query>;
+  readonly from: TypedRouteLocation<Path, Query> | null;
+  readonly signal: AbortSignal;
+}
+
 export type RouteGuard = (
   to: RouteLocation,
   from: RouteLocation | null,
   signal: AbortSignal,
+  context: RouteGuardContext,
 ) => RouteGuardResult | Promise<RouteGuardResult>;
 
 export type RouteRedirect =
@@ -122,6 +138,7 @@ export interface RouteRecord<Q = Readonly<Record<string, unknown>>> {
   readonly load?: RouteLoader;
   readonly meta?: RouteMeta;
   readonly query?: QuerySchema<Q>;
+  readonly key?: (to: RouteLocation) => string | number;
 }
 
 export interface ScrollPosition {
@@ -732,6 +749,20 @@ function entryFor(
   return component === undefined ? base : { ...base, component };
 }
 
+const EMPTY_META: RouteMeta = Object.freeze({});
+
+function mergeMeta(chain: readonly RouteRecord[]): RouteMeta {
+  let meta: Record<string, unknown> | undefined;
+  for (const record of chain) {
+    const current = record.meta;
+    if (current === undefined) {
+      continue;
+    }
+    meta = { ...(meta ?? {}), ...current };
+  }
+  return meta === undefined ? EMPTY_META : Object.freeze(meta);
+}
+
 export function createLocation(
   compiled: readonly CompiledRoute[],
   pathname: string,
@@ -767,6 +798,7 @@ export function createLocation(
     params: match.params,
     query,
     hash: normalizedHash,
+    meta: mergeMeta(match.route.chain),
     matched,
   };
 }

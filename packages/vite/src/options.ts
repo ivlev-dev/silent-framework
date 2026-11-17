@@ -1,5 +1,7 @@
 import * as path from "node:path";
 
+export type DiMode = "allow" | "warn" | "error";
+
 export interface SilentOptions {
   include?: RegExp;
   exclude?: RegExp;
@@ -10,6 +12,7 @@ export interface SilentOptions {
   hmr?: boolean;
   index?: boolean;
   view?: boolean;
+  di?: DiMode;
 }
 
 export interface ResolvedOptions {
@@ -22,11 +25,13 @@ export interface ResolvedOptions {
   hmr: boolean;
   index: boolean;
   view: boolean;
+  di: DiMode;
 }
 
 export const DEFAULT_INCLUDE = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
 export const DEFAULT_EXCLUDE = /node_modules/;
 export const DEFAULT_RUNTIME = "@ivlev-dev/silent-core";
+export const DEFAULT_DI: DiMode = "warn";
 
 export function resolveOptions(options: SilentOptions = {}): ResolvedOptions {
   return {
@@ -39,6 +44,7 @@ export function resolveOptions(options: SilentOptions = {}): ResolvedOptions {
     hmr: options.hmr ?? true,
     index: options.index ?? true,
     view: options.view ?? true,
+    di: options.di ?? DEFAULT_DI,
   };
 }
 

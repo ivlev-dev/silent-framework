@@ -217,8 +217,11 @@ Counter.call({ vm, preloader: CounterPreloader }, props);
 
 При рендере view устанавливаются runtime-опции `{ container: scope }`, поэтому компоненты, вызванные из view (в том числе синхронные), создают дочерние scope от скоупа родителя. Наследование сохраняется и при асинхронном резолве VM: вложенные компоненты получают тот же контейнер.
 
+`component()` дополняет амбиентные runtime-опции явными: `container` из аргумента имеет приоритет над унаследованным. Для Router/Session используйте `bindValue`/`singleton` в корневом контейнере; `inScopedScope` даст новый экземпляр на каждом view, так как scope view отдельный.
+
 ```tsx
 mount(target, App, { container: appScope });
+const child = component(View, {}, { container: appScope });
 ```
 
 Внутри `App` любой `<Child />` видит биндинги `appScope`.

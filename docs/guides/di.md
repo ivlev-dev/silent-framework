@@ -375,6 +375,80 @@ export class ApiVM extends ViewModel {
 
 (Компилятор подставит реализацию для интерфейса; для value-токена привязку нужно сделать явно, как выше.)
 
+### 6. Router + Session + вложенные ViewModel
+
+Долгоживущие сервисы (Router, Session) регистрируйте в корневом контейнере через `bindValue` или singleton-фабрику, и включайте строгий режим, чтобы неявные биндинги классов не проскальзывали:
+
+```ts
+import { Container, createToken } from "@ivlev-dev/silent-di";
+import { Router } from "./router";
+import { Session } from "./session";
+
+const RouterToken = createToken<Router>("router");
+const SessionToken = createToken<Session>("session");
+
+const root = new Container("app", undefined, { implicitBindings: "error" });
+
+const router = new Router();
+const session = new Session();
+
+root.bindValue(RouterToken, router);
+root.bind(SessionToken, () => session); // singleton по умолчанию
+```
+
+Дочерние scope (view-scope) наследуют режим и привязки:
+
+```ts
+const viewScope = root.createScope("view:home");
+const sameRouter = await viewScope.resolve(RouterToken); // === router
+```
+
+Почему не `scoped`: `inScopedScope()` создаёт новый экземпляр на каждый view-scope, поэтому Router/Session «размножатся» по каждому view и потеряют общее состояние. `bindValue`/singleton гарантируют один экземпляр на корень и разделение между всеми view.
+
+### Почему появился второй экземпляр
+
+Если сервис зарегистрирован фабрикой `bind(factory)` со scope `singleton`, он всё равно создаётся лениво — при первом `resolve`. До первого разрешения `peek` возвращает `undefined`, и код, который ожидает «уже готовый» экземпляр, может создать второй через прямой `new` или через отдельный контейнер.
+
+Проверка:
+
+```ts
+import { Container, createToken } from "@ivlev-dev/silent-di";
+import { Router } from "./router";
+
+const root = new Container("app");
+const token = createToken<Router>("router");
+root.bind(token, () => new Router()); // singleton, ленивый
+
+console.log(root.peek(token)); // undefined — ещё не разрешён
+const first = await root.resolve(token);
+console.log(root.peek(token) === first); // true
+
+const scope = root.createScope("view");
+console.log(scope.peek(token) === first); // true — singleton виден из скоупа
+```
+
+Если нужно гарантировать наличие значения до любого `resolve` (например, Router/Session), используйте `bindValue` — он кладёт значение в `resolved`-кэш сразу:
+
+```ts
+import { Container, createToken } from "@ivlev-dev/silent-di";
+import { Router } from "./router";
+
+const root = new Container("app");
+const token = createToken<Router>("router");
+
+root.bindValue(token, new Router());
+console.log(root.peek(token) !== undefined); // true синхронно
+console.log(root.resolveSync(token)); // то же значение
+```
+
+Типичные причины «второго экземпляра»:
+- фабричный `bind` + чтение через `new` в другом месте до `resolve`;
+- отдельный контейнер/тестовый контейнер без общей привязки;
+- `inScopedScope()` для долгоживущего сервиса — каждый scope получает свой экземпляр;
+- `clearCache(token)` или повторный `bind` сбросили кеш.
+
+Чтобы избежать — регистрируйте долгоживущие сервисы в корне через `bindValue`/singleton и разрешайте через контейнер, а не через `new`.
+
 ## Ограничения
 
 - ESM-only: пакет экспортируется только через `import` (`"type": "module"`).

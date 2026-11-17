@@ -118,11 +118,49 @@ function changelogWithVersion(version) {
   return { text: result.join(eol), changed: true };
 }
 
+function internalRange(version) {
+  const match = version.match(semverPattern);
+  if (!match) {
+    fail(`Некорректная версия: ${version}`);
+  }
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  return `>=${major}.${minor}.0 <${major}.${minor + 1}.0`;
+}
+
+function isInternalRange(value) {
+  return (
+    typeof value === "string" && /^>=\d+\.\d+\.\d+ <\d+\.\d+\.\d+$/.test(value)
+  );
+}
+
+function updateInternalRanges(manifest, version) {
+  const next = internalRange(version);
+  const changed = [];
+  for (const field of ["dependencies", "peerDependencies", "optionalDependencies"]) {
+    const block = manifest[field];
+    if (block === null || typeof block !== "object") {
+      continue;
+    }
+    for (const [name, value] of Object.entries(block)) {
+      if (!name.startsWith("@ivlev-dev/") || !isInternalRange(value)) {
+        continue;
+      }
+      if (value !== next) {
+        block[name] = next;
+        changed.push(`${name}: ${value} -> ${next}`);
+      }
+    }
+  }
+  return changed;
+}
+
 function writePackages(version) {
   for (const name of packages) {
     const path = manifestPath(name);
     const manifest = readManifest(path);
     manifest.version = version;
+    updateInternalRanges(manifest, version);
     writeText(path, `${JSON.stringify(manifest, null, 2)}\n`);
   }
 }
@@ -165,7 +203,15 @@ console.log(`Новая версия: ${nextVersion}`);
 if (options.dryRun) {
   console.log("Режим dry-run: файлы не изменяются.");
   for (const name of packages) {
+    const manifest = readManifest(manifestPath(name));
+    const rangeChanges = updateInternalRanges(
+      structuredClone(manifest),
+      nextVersion,
+    );
     console.log(`${manifestPath(name)}: ${currentVersion} -> ${nextVersion}`);
+    for (const change of rangeChanges) {
+      console.log(`  диапазон ${change}`);
+    }
   }
   console.log(`Cargo.toml: ${currentVersion} -> ${nextVersion}`);
   console.log(

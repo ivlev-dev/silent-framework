@@ -96,8 +96,8 @@
       },
       "component": {
         "kind": "function",
-        "type": "(componentFn: AnyComponent, props: Record<string, unknown>) => Node",
-        "signature": "export declare function component(componentFn: AnyComponent, props: Record<string, unknown>): Node;"
+        "type": "(componentFn: AnyComponent, props: Record<string, unknown>, runtimeOptions?: RuntimeOptions) => Node",
+        "signature": "export declare function component(componentFn: AnyComponent, props: Record<string, unknown>, runtimeOptions?: RuntimeOptions): Node;"
       },
       "Component": {
         "kind": "type",
@@ -198,7 +198,7 @@
       },
       "DevtoolsEvent": {
         "kind": "type",
-        "signature": "export type DevtoolsEvent = DevtoolsMountEvent | DevtoolsUnmountEvent | DevtoolsErrorEvent | DevtoolsHmrEvent | DevtoolsNavigateEvent;"
+        "signature": "export type DevtoolsEvent = DevtoolsMountEvent | DevtoolsUnmountEvent | DevtoolsErrorEvent | DevtoolsHmrEvent | DevtoolsNavigateEvent | DevtoolsResolveEvent;"
       },
       "DevtoolsEventBase": {
         "kind": "interface",
@@ -206,11 +206,11 @@
       },
       "DevtoolsEventStats": {
         "kind": "interface",
-        "signature": "export interface DevtoolsEventStats { readonly active: boolean; readonly installed: boolean; readonly subscribers: number; readonly buffered: number; readonly capacity: number; readonly emitted: number; readonly dropped: number; readonly mounts: number; readonly unmounts: number; readonly errors: number; readonly hmr: number; readonly navigations: number; }"
+        "signature": "export interface DevtoolsEventStats { readonly active: boolean; readonly installed: boolean; readonly subscribers: number; readonly buffered: number; readonly capacity: number; readonly emitted: number; readonly dropped: number; readonly mounts: number; readonly unmounts: number; readonly errors: number; readonly hmr: number; readonly navigations: number; readonly resolutions: number; }"
       },
       "DevtoolsEventType": {
         "kind": "type",
-        "signature": "export type DevtoolsEventType = \"mount\" | \"unmount\" | \"error\" | \"hmr\" | \"navigate\";"
+        "signature": "export type DevtoolsEventType = \"mount\" | \"unmount\" | \"error\" | \"hmr\" | \"navigate\" | \"resolve\";"
       },
       "DevtoolsGlobal": {
         "kind": "interface",
@@ -252,6 +252,10 @@
       "DevtoolsRegistrySnapshot": {
         "kind": "interface",
         "signature": "export interface DevtoolsRegistrySnapshot { readonly modules: number; readonly views: number; }"
+      },
+      "DevtoolsResolveEvent": {
+        "kind": "interface",
+        "signature": "export interface DevtoolsResolveEvent extends DevtoolsEventBase { readonly type: \"resolve\"; readonly token: string; readonly container: string; readonly owner: string; readonly scope: string; readonly implicit: boolean; readonly cached: boolean; }"
       },
       "DevtoolsSnapshot": {
         "kind": "interface",
@@ -931,7 +935,19 @@
       },
       "Container": {
         "kind": "class",
-        "signature": "export declare class Container { readonly name: string; constructor(name?: string, parent?: Container); bind<T = unknown>(token: unknown, factory?: unknown): BindingBuilder; bindValue<T>(token: unknown, value: T): void; peekValue<T = unknown>(token: unknown): T | undefined; createScope(name?: string): Container; resolve<T = unknown>(token: unknown): Promise<T>; resolveSync<T = unknown>(token: unknown): T; peek<T = unknown>(token: unknown): T | undefined; has(token: unknown): boolean; snapshot(): ContainerSnapshot; clearCache(token?: unknown): void; onDispose(fn: () => void): void; dispose(): void; }"
+        "signature": "export declare class Container { readonly name: string; constructor(name?: string, parent?: Container, options?: ContainerOptions); get implicitBindings(): ImplicitBindingMode; bind<T = unknown>(token: unknown, factory?: unknown): BindingBuilder; bindValue<T>(token: unknown, value: T): void; peekValue<T = unknown>(token: unknown): T | undefined; createScope(name?: string): Container; resolve<T = unknown>(token: unknown): Promise<T>; resolveSync<T = unknown>(token: unknown): T; peek<T = unknown>(token: unknown): T | undefined; has(token: unknown): boolean; hasExplicit(token: unknown): boolean; snapshot(): ContainerSnapshot; clearCache(token?: unknown): void; onDispose(fn: () => void): void; dispose(): void; }"
+      },
+      "ContainerOptions": {
+        "kind": "interface",
+        "signature": "export interface ContainerOptions { readonly implicitBindings?: ImplicitBindingMode; }"
+      },
+      "ContainerResolutionEvent": {
+        "kind": "interface",
+        "signature": "export interface ContainerResolutionEvent { readonly token: unknown; readonly tokenName: string; readonly container: string; readonly owner: string; readonly scope: ScopeName; readonly implicit: boolean; readonly cached: boolean; }"
+      },
+      "ContainerResolutionInspector": {
+        "kind": "type",
+        "signature": "export type ContainerResolutionInspector = (event: ContainerResolutionEvent) => void;"
       },
       "ContainerSnapshot": {
         "kind": "interface",
@@ -951,13 +967,26 @@
         "kind": "type",
         "signature": "export type Factory<T> = (container: Container) => T | Promise<T>;"
       },
+      "ImplicitBindingMode": {
+        "kind": "type",
+        "signature": "export type ImplicitBindingMode = \"allow\" | \"warn\" | \"error\";"
+      },
       "InvalidScopeError": {
         "kind": "class",
         "signature": "export declare class InvalidScopeError extends Error { readonly singletonToken: unknown; readonly scopedToken: unknown; readonly owner: Container; constructor(singletonToken: unknown, owner: Container, scopedToken: unknown); }"
       },
+      "MissingBindingError": {
+        "kind": "class",
+        "signature": "export declare class MissingBindingError extends Error { readonly token: unknown; readonly container: Container; constructor(token: unknown, container: Container); }"
+      },
       "ScopeName": {
         "kind": "type",
         "signature": "export type ScopeName = \"singleton\" | \"transient\" | \"scoped\";"
+      },
+      "setContainerResolutionInspector": {
+        "kind": "function",
+        "type": "(inspector: ContainerResolutionInspector | null) => void",
+        "signature": "export declare function setContainerResolutionInspector(inspector: ContainerResolutionInspector | null): void;"
       },
       "Token": {
         "kind": "type",
@@ -1183,10 +1212,20 @@
         "type": "(win?: Window) => BrowserHistory",
         "signature": "export declare function createBrowserHistory(win?: Window): BrowserHistory;"
       },
+      "createGuard": {
+        "kind": "function",
+        "type": "<Path extends string = string, Query = Readonly<Record<string, RouteQueryValue>>>(handler: (context: RouteGuardContext<Path, Query>) => RouteGuardResult | Promise<RouteGuardResult>) => RouteGuard",
+        "signature": "export declare function createGuard<Path extends string = string, Query = RouteQuery>(handler: (context: RouteGuardContext<Path, Query>) => RouteGuardResult | Promise<RouteGuardResult>): RouteGuard;"
+      },
       "createMemoryHistory": {
         "kind": "function",
         "type": "(initial?: string | { url: string; state?: unknown; }) => MemoryHistory",
         "signature": "export declare function createMemoryHistory(initial?: string | { url: string; state?: unknown; }): MemoryHistory;"
+      },
+      "createTestRouter": {
+        "kind": "function",
+        "type": "(options: TestRouterOptions) => Router",
+        "signature": "export declare function createTestRouter(options: TestRouterOptions): Router;"
       },
       "HistoryListener": {
         "kind": "type",
@@ -1198,7 +1237,7 @@
       },
       "IRouter": {
         "kind": "interface",
-        "signature": "export interface IRouter { readonly base: string; readonly state: Accessor<RouterState>; readonly route: RouteLocation | null; readonly params: RouteParams; readonly query: RouteQuery; readonly hash: string; readonly matched: readonly MatchedRoute[]; resolve(to: RouteTarget): RouteLocation; href(to: RouteTarget): string; prefetch(to: RouteTarget): Promise<void>; push(to: RouteTarget): Promise<void>; replace(to: RouteTarget): Promise<void>; back(): void; forward(): void; start(): Promise<void>; stop(): void; dispose(): void; } export declare const IRouter: typeof Router;"
+        "signature": "export interface IRouter { readonly base: string; readonly state: Accessor<RouterState>; readonly route: RouteLocation | null; readonly params: RouteParams; readonly query: RouteQuery; readonly hash: string; readonly meta: RouteMeta; readonly matched: readonly MatchedRoute[]; resolve(to: RouteTarget): RouteLocation; href(to: RouteTarget): string; hasRoute(to: RouteTarget): boolean; isLoaded(to: RouteTarget): boolean; prefetch(to: RouteTarget): Promise<void>; navigate(to: RouteTarget, options?: { readonly replace?: boolean; }): Promise<boolean>; push(to: RouteTarget): Promise<void>; replace(to: RouteTarget): Promise<void>; back(): void; forward(): void; start(): Promise<void>; stop(): void; dispose(): void; } export declare const IRouter: typeof Router;"
       },
       "Link": {
         "kind": "function",
@@ -1235,7 +1274,7 @@
       },
       "Route": {
         "kind": "class",
-        "signature": "export declare abstract class Route<Path extends string = string, Query extends RouteQueryShape = RouteQuery> implements RouteDefinition<Query> { abstract readonly path: Path; readonly name?: string; readonly component?: AnyComponent; readonly children?: readonly RouteInput[]; readonly redirect?: RouteRedirect; readonly meta?: RouteMeta; readonly query?: QuerySchema<Query>; } export interface Route<Path extends string = string, Query extends RouteQueryShape = RouteQuery> { beforeEnter?(to: TypedRouteLocation<Path, Query>, from: TypedRouteLocation<Path, Query> | null, signal: AbortSignal): RouteGuardResult | Promise<RouteGuardResult>; load?(context: RouteLoadContext<Path, Query>): RouteLoaderResult | Promise<RouteLoaderResult>; }"
+        "signature": "export declare abstract class Route<Path extends string = string, Query extends RouteQueryShape = RouteQuery> implements RouteDefinition<Query> { abstract readonly path: Path; readonly name?: string; readonly component?: AnyComponent; readonly children?: readonly RouteInput[]; readonly redirect?: RouteRedirect; readonly meta?: RouteMeta; readonly query?: QuerySchema<Query>; readonly key?: (to: RouteLocation) => string | number; } export interface Route<Path extends string = string, Query extends RouteQueryShape = RouteQuery> { beforeEnter?(to: TypedRouteLocation<Path, Query>, from: TypedRouteLocation<Path, Query> | null, signal: AbortSignal, context?: RouteGuardContext<Path, Query>): RouteGuardResult | Promise<RouteGuardResult>; load?(context: RouteLoadContext<Path, Query>): RouteLoaderResult | Promise<RouteLoaderResult>; }"
       },
       "RouteClass": {
         "kind": "type",
@@ -1243,7 +1282,7 @@
       },
       "RouteClassGuard": {
         "kind": "type",
-        "signature": "export type RouteClassGuard<Path extends string = string, Query = RouteQuery> = (to: TypedRouteLocation<Path, Query>, from: TypedRouteLocation<Path, Query> | null, signal: AbortSignal) => RouteGuardResult | Promise<RouteGuardResult>;"
+        "signature": "export type RouteClassGuard<Path extends string = string, Query = RouteQuery> = (to: TypedRouteLocation<Path, Query>, from: TypedRouteLocation<Path, Query> | null, signal: AbortSignal, context?: RouteGuardContext<Path, Query>) => RouteGuardResult | Promise<RouteGuardResult>;"
       },
       "RouteClassLoad": {
         "kind": "type",
@@ -1255,11 +1294,15 @@
       },
       "RouteDefinition": {
         "kind": "interface",
-        "signature": "export interface RouteDefinition<Query = Readonly<Record<string, unknown>>> { readonly path: string; readonly name?: string; readonly component?: AnyComponent; readonly children?: readonly RouteInput[]; readonly redirect?: RouteRedirect; readonly meta?: RouteMeta; readonly beforeEnter?: AnyRouteGuard; readonly load?: AnyRouteLoader; readonly query?: QuerySchema<Query>; }"
+        "signature": "export interface RouteDefinition<Query = Readonly<Record<string, unknown>>> { readonly path: string; readonly name?: string; readonly component?: AnyComponent; readonly children?: readonly RouteInput[]; readonly redirect?: RouteRedirect; readonly meta?: RouteMeta; readonly beforeEnter?: AnyRouteGuard; readonly load?: AnyRouteLoader; readonly query?: QuerySchema<Query>; readonly key?: (to: RouteLocation) => string | number; }"
       },
       "RouteGuard": {
         "kind": "type",
-        "signature": "export type RouteGuard = (to: RouteLocation, from: RouteLocation | null, signal: AbortSignal) => RouteGuardResult | Promise<RouteGuardResult>;"
+        "signature": "export type RouteGuard = (to: RouteLocation, from: RouteLocation | null, signal: AbortSignal, context: RouteGuardContext) => RouteGuardResult | Promise<RouteGuardResult>;"
+      },
+      "RouteGuardContext": {
+        "kind": "interface",
+        "signature": "export interface RouteGuardContext<Path extends string = string, Query = RouteQuery> { readonly router: IRouter; readonly container: Container | undefined; readonly to: TypedRouteLocation<Path, Query>; readonly from: TypedRouteLocation<Path, Query> | null; readonly signal: AbortSignal; }"
       },
       "RouteGuardResult": {
         "kind": "type",
@@ -1283,7 +1326,7 @@
       },
       "RouteLocation": {
         "kind": "interface",
-        "signature": "export interface RouteLocation { readonly path: string; readonly fullPath: string; readonly name: string | null; readonly params: RouteParams; readonly query: RouteQuery; readonly hash: string; readonly matched: readonly MatchedRoute[]; }"
+        "signature": "export interface RouteLocation { readonly path: string; readonly fullPath: string; readonly name: string | null; readonly params: RouteParams; readonly query: RouteQuery; readonly hash: string; readonly meta: RouteMeta; readonly matched: readonly MatchedRoute[]; }"
       },
       "RouteLocationTargetObject": {
         "kind": "interface",
@@ -1311,15 +1354,23 @@
       },
       "Router": {
         "kind": "class",
-        "signature": "export declare class Router implements IRouter { readonly base: string; readonly state: Accessor<RouterState>; constructor(options: RouterOptions); static current(): Router | null; provide(container: Container): this; get route(): RouteLocation | null; get params(): RouteParams; get query(): RouteQuery; get hash(): string; get matched(): readonly MatchedRoute[]; resolve(to: RouteTarget): RouteLocation; href(to: RouteTarget): string; prefetch(to: RouteTarget): Promise<void>; push(to: RouteTarget): Promise<void>; replace(to: RouteTarget): Promise<void>; back(): void; forward(): void; start(): Promise<void>; stop(): void; dispose(): void; }"
+        "signature": "export declare class Router implements IRouter { readonly base: string; readonly state: Accessor<RouterState>; constructor(options: RouterOptions); static current(): Router | null; provide(container: Container): this; get route(): RouteLocation | null; get params(): RouteParams; get query(): RouteQuery; get hash(): string; get meta(): RouteMeta; get matched(): readonly MatchedRoute[]; resolve(to: RouteTarget): RouteLocation; href(to: RouteTarget): string; hasRoute(to: RouteTarget): boolean; isLoaded(to: RouteTarget): boolean; prefetch(to: RouteTarget): Promise<void>; navigate(to: RouteTarget, options?: { readonly replace?: boolean; }): Promise<boolean>; push(to: RouteTarget): Promise<void>; replace(to: RouteTarget): Promise<void>; back(): void; forward(): void; start(): Promise<void>; stop(): void; dispose(): void; }"
       },
       "RouterAbortError": {
         "kind": "class",
         "signature": "export declare class RouterAbortError extends RouterNavigationError { constructor(to?: string, message?: string); }"
       },
+      "RouterComponentLoadContext": {
+        "kind": "interface",
+        "signature": "export interface RouterComponentLoadContext extends RouteLoadContext { readonly record: RouteRecord; }"
+      },
+      "RouterComponentLoader": {
+        "kind": "type",
+        "signature": "export type RouterComponentLoader = (context: RouterComponentLoadContext) => RouteLoaderResult | Promise<RouteLoaderResult>;"
+      },
       "RouteRecord": {
         "kind": "interface",
-        "signature": "export interface RouteRecord<Q = Readonly<Record<string, unknown>>> { readonly path: string; readonly name?: string; readonly component?: AnyComponent; readonly children?: readonly RouteRecord[]; readonly redirect?: RouteRedirect; readonly beforeEnter?: RouteGuard; readonly load?: RouteLoader; readonly meta?: RouteMeta; readonly query?: QuerySchema<Q>; }"
+        "signature": "export interface RouteRecord<Q = Readonly<Record<string, unknown>>> { readonly path: string; readonly name?: string; readonly component?: AnyComponent; readonly children?: readonly RouteRecord[]; readonly redirect?: RouteRedirect; readonly beforeEnter?: RouteGuard; readonly load?: RouteLoader; readonly meta?: RouteMeta; readonly query?: QuerySchema<Q>; readonly key?: (to: RouteLocation) => string | number; }"
       },
       "RouteRedirect": {
         "kind": "type",
@@ -1343,7 +1394,7 @@
       },
       "RouterOptions": {
         "kind": "interface",
-        "signature": "export interface RouterOptions { readonly routes: readonly RouteInput[]; readonly base?: string; readonly history?: RouterHistory; readonly scrollBehavior?: ScrollBehavior; readonly container?: Container; }"
+        "signature": "export interface RouterOptions { readonly routes: readonly RouteInput[]; readonly base?: string; readonly history?: RouterHistory; readonly scrollBehavior?: ScrollBehavior; readonly container?: Container; readonly load?: RouterComponentLoader; readonly resolveComponent?: RouterComponentLoader; readonly onError?: (error: RouterNavigationError, to: RouteTarget) => void; }"
       },
       "RouterState": {
         "kind": "interface",
@@ -1360,7 +1411,7 @@
       },
       "RouterViewProps": {
         "kind": "interface",
-        "signature": "export interface RouterViewProps { readonly router?: IRouter; readonly depth?: number; readonly fallback?: unknown; }"
+        "signature": "export interface RouterViewProps { readonly router?: IRouter; readonly depth?: number; readonly fallback?: unknown; readonly container?: Container; readonly error?: unknown | ((error: unknown) => unknown); readonly notFound?: unknown | ((error: unknown) => unknown); }"
       },
       "RouteTarget": {
         "kind": "type",
@@ -1368,7 +1419,7 @@
       },
       "RouteViewProps": {
         "kind": "interface",
-        "signature": "export interface RouteViewProps<Path extends string = string, Query = RouteQuery> { readonly route: TypedRouteLocation<Path, Query>; readonly params: PathParams<Path>; readonly query: Query; readonly hash: string; readonly router: IRouter; }"
+        "signature": "export interface RouteViewProps<Path extends string = string, Query = RouteQuery> { readonly route: TypedRouteLocation<Path, Query>; readonly params: PathParams<Path>; readonly query: Query; readonly hash: string; readonly meta: RouteMeta; readonly router: IRouter; }"
       },
       "ScrollBehavior": {
         "kind": "type",
@@ -1381,6 +1432,10 @@
       "ScrollPosition": {
         "kind": "interface",
         "signature": "export interface ScrollPosition { readonly left: number; readonly top: number; }"
+      },
+      "TestRouterOptions": {
+        "kind": "interface",
+        "signature": "export interface TestRouterOptions extends Omit<RouterOptions, \"history\"> { readonly initial?: string; readonly history?: RouterHistory; }"
       },
       "TypedRouteLocation": {
         "kind": "type",
@@ -1437,6 +1492,10 @@
       }
     },
     "@ivlev-dev/silent-vite": {
+      "DiMode": {
+        "kind": "type",
+        "signature": "export type DiMode = \"allow\" | \"warn\" | \"error\";"
+      },
       "silent": {
         "kind": "function",
         "type": "(options?: SilentOptions) => Plugin",
@@ -1444,7 +1503,7 @@
       },
       "SilentOptions": {
         "kind": "interface",
-        "signature": "export interface SilentOptions { include?: RegExp; exclude?: RegExp; root?: string; swc?: Record<string, unknown>; requirePreloader?: boolean; runtime?: string; hmr?: boolean; index?: boolean; view?: boolean; }"
+        "signature": "export interface SilentOptions { include?: RegExp; exclude?: RegExp; root?: string; swc?: Record<string, unknown>; requirePreloader?: boolean; runtime?: string; hmr?: boolean; index?: boolean; view?: boolean; di?: DiMode; }"
       }
     }
   }

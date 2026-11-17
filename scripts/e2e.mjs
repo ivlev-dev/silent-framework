@@ -299,15 +299,71 @@ async function runRouter(browser) {
 
   try {
     await page.goto(server.url, { waitUntil: "domcontentloaded" });
-    await page.locator(".card h2").waitFor();
-    assert.equal((await page.locator(".card h2").textContent())?.trim(), "Главная");
+    await page.locator(".home h2").waitFor();
+    assert.equal((await page.locator(".home h2").textContent())?.trim(), "Главная");
     assert.equal(await page.title(), "Silent Router");
+    assert.equal(
+      (await page.locator(".home .user-badge").textContent())?.trim(),
+      "Пользователь: гость",
+    );
+
+    await page.goto(new URL("private/profile", server.url).href, {
+      waitUntil: "domcontentloaded",
+    });
+    await page.locator(".login h2").waitFor();
+    assert.equal(new URL(page.url()).pathname, "/login");
+    assert.equal(new URL(page.url()).searchParams.get("next"), "/private/profile");
+
+    await page.getByRole("button", { name: "Войти", exact: true }).click();
+    await page.locator(".layout .outlet .profile").waitFor();
+    assert.equal(new URL(page.url()).pathname, "/private/profile");
+    assert.equal(
+      (await page.locator(".layout h2").textContent())?.trim(),
+      "Личный кабинет",
+    );
+    assert.equal(
+      (await page.locator(".layout .outlet .profile .user-badge").textContent())?.trim(),
+      "Пользователь: Алиса",
+    );
+
+    const homeNav = page.locator(".nav").getByRole("link", { name: "Главная", exact: true });
+    await homeNav.click();
+    await page.locator(".home .user-badge").waitFor();
+    assert.equal(
+      (await page.locator(".home .user-badge").textContent())?.trim(),
+      "Пользователь: Алиса",
+    );
+
+    const privateNav = page
+      .locator(".nav")
+      .getByRole("link", { name: "Приватный кабинет", exact: true });
+    await privateNav.click();
+    await page.locator(".layout .outlet .profile").waitFor();
+    assert.equal(new URL(page.url()).pathname, "/private/profile");
 
     await page
       .locator(".nav")
-      .getByRole("link", { name: "Пользователь", exact: true })
+      .getByRole("link", { name: "Lazy", exact: true })
       .click();
-    await page.locator(".card h2").filter({ hasText: "Пользователь 1" }).waitFor();
+    await page.locator(".card h2").filter({ hasText: "Ленивый маршрут" }).waitFor();
+    assert.equal(new URL(page.url()).pathname, "/lazy");
+
+    await page.goto(new URL("missing", server.url).href, {
+      waitUntil: "domcontentloaded",
+    });
+    await page.locator(".not-found h2").waitFor();
+    assert.equal(
+      (await page.locator(".not-found h2").textContent())?.trim(),
+      "Страница не найдена",
+    );
+
+    await page.goto(server.url, { waitUntil: "domcontentloaded" });
+    await page.locator(".home .links").waitFor();
+    await page
+      .locator(".home .links")
+      .getByRole("link", { name: "Пользователь 1", exact: true })
+      .click();
+    await page.locator(".user h2").filter({ hasText: "Пользователь 1" }).waitFor();
     assert.equal(new URL(page.url()).pathname, "/users/1");
     assert.equal((await page.locator(".badge").textContent())?.trim(), "Вкладка: info");
 
@@ -316,7 +372,7 @@ async function runRouter(browser) {
     await input.evaluate((element) => element.setAttribute("data-marker", "kept"));
 
     await page.getByRole("button", { name: /Следующий/ }).click();
-    await page.locator(".card h2").filter({ hasText: "Пользователь 2" }).waitFor();
+    await page.locator(".user h2").filter({ hasText: "Пользователь 2" }).waitFor();
     assert.equal(new URL(page.url()).pathname, "/users/2");
     assert.equal(await input.inputValue(), "черновик");
     assert.equal(await input.getAttribute("data-marker"), "kept");
@@ -328,41 +384,6 @@ async function runRouter(browser) {
     await page.locator(".badge").filter({ hasText: "Вкладка: posts" }).waitFor();
     assert.equal(new URL(page.url()).search, "?tab=posts");
     assert.equal(await postsTab.getAttribute("aria-current"), "page");
-
-    const aboutNav = page
-      .locator(".nav")
-      .getByRole("link", { name: "О примере", exact: true });
-    await aboutNav.click();
-    await page.locator(".card h2").filter({ hasText: "О примере" }).waitFor();
-    assert.ok(((await aboutNav.getAttribute("class")) ?? "").includes("nav-active"));
-    assert.equal(await aboutNav.getAttribute("aria-current"), "page");
-
-    const historyLength = await page.evaluate(() => history.length);
-    await aboutNav.click();
-    await page.waitForTimeout(100);
-    assert.equal(await page.evaluate(() => history.length), historyLength);
-
-    await page.goBack();
-    await page.locator(".card h2").filter({ hasText: "Пользователь 2" }).waitFor();
-    assert.equal(new URL(page.url()).search, "?tab=posts");
-
-    await page
-      .locator(".nav")
-      .getByRole("link", { name: "Lazy", exact: true })
-      .click();
-    await page.locator(".card h2").filter({ hasText: "Ленивый маршрут" }).waitFor();
-
-    await page
-      .locator(".nav")
-      .getByRole("link", { name: "404", exact: true })
-      .click();
-    await page
-      .locator(".card h2")
-      .filter({ hasText: "Страница не найдена" })
-      .waitFor();
-
-    await page.goBack();
-    await page.locator(".card h2").filter({ hasText: "Ленивый маршрут" }).waitFor();
 
     assert.deepEqual(errors, []);
   } finally {

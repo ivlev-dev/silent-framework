@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.11.16
+
+### RouterView и DI
+
+- `RouterView` принимает `container`, строго резолвит Router из контейнера и передаёт контейнер в `component(..., { container })` на клиенте и на SSR.
+- Добавлены слоты `error` и `notFound`; ошибка загрузчика и отсутствие маршрута больше не оставляют пустой экран. `state.error` рендерится и на сервере.
+- `RouteRecord.key` управляет пересозданием view при смене параметров; без ключа DOM по-прежнему переиспользуется.
+- Добавлен регрессионный тест «layout + ленивые children + DI» с одним `Session`/`Router` из `bindValue`.
+- Добавлен тест гидрации вложенного layout с ленивым child и SSR-тест error-слота.
+
+### Навигация и API роутера
+
+- `router.navigate(to, { replace? })` не бросает и пишет ошибку в `state.error`; `push`/`replace` сохраняют прежнее поведение.
+- `RouterOptions.onError`, `RouteLocation.meta`, `IRouter.meta`.
+- `RouteGuardContext` с `container` и `createGuard`; guard получает контекст четвёртым аргументом.
+- `RouterOptions.load` / `resolveComponent`, `isLoaded`, `hasRoute`.
+- `createTestRouter` с `MemoryHistory` по умолчанию.
+
+### DI и core
+
+- Добавлен строгий режим `ContainerOptions.implicitBindings` (`allow`/`warn`/`error`), `MissingBindingError` и `hasExplicit`.
+- Режим наследуется в `createScope`; по умолчанию `warn` в development и `allow` в production.
+- Добавлена матрица тестов наследования scope для `bindValue`, singleton, scoped и transient.
+- `component(fn, props, options?)` принимает явный контейнер с приоритетом над ambient runtime options.
+- `createMountPoint` переприсоединяет отсоединённый маркер, поэтому `insertBefore` больше не падает с «node before which is not a child of this node».
+- Devtools получили событие `resolve` и счётчик `resolutions`.
+
+### Vite и пакеты
+
+- `silent-vite` получил режим `di: "allow" | "warn" | "error"`; в `error` сборка падает с именем зависимости.
+- Внутренние зависимости библиотек переведены на peer-диапазоны `>=0.11.0 <0.12.0`, локальная разработка использует `workspace:*`.
+- `version.mjs` обновляет диапазоны при смене minor-версии.
+- `@ivlev-dev/silent` реэкспортирует `@ivlev-dev/silent-router`.
+
+### Пример и документация
+
+- `examples/router` переведён на `bindValue`, строгий контейнер, login-guard, приватный layout с ленивым child, `navigate()` и error/notFound-слоты.
+- e2e и SSR-e2e обновлены под сценарий «гость → логин → защищённый layout → lazy child → 404».
+- Обновлены README, `docs/api/*` и `docs/guides/*`, пересозданы API-снимки.
+
 ## 0.11.15
 
 ### Link: prefetch по видимости

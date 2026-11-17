@@ -1,6 +1,15 @@
-export { Router, IRouter, type RouterOptions, type RouterState } from "./router.js";
+export {
+  Router,
+  IRouter,
+  type RouterComponentLoadContext,
+  type RouterComponentLoader,
+  type RouterOptions,
+  type RouterState,
+} from "./router.js";
+export { createTestRouter, type TestRouterOptions } from "./testing.js";
 export {
   Route,
+  createGuard,
   type AnyRouteGuard,
   type AnyRouteLoader,
   type PathParams,
@@ -33,6 +42,7 @@ export {
   type QueryParser,
   type QuerySchema,
   type RouteGuard,
+  type RouteGuardContext,
   type RouteGuardResult,
   type RouteLoader,
   type RouteLoaderResult,

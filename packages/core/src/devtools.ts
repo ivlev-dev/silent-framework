@@ -1,4 +1,9 @@
-import { container as rootContainer, type ContainerSnapshot } from "@ivlev-dev/silent-di";
+import {
+  container as rootContainer,
+  setContainerResolutionInspector,
+  type ContainerResolutionEvent,
+  type ContainerSnapshot,
+} from "@ivlev-dev/silent-di";
 import {
   getReactivityStats,
   type ReactivityStats,
@@ -11,6 +16,7 @@ import {
   clearDevtoolsEvents,
   clearDevtoolsSubscribers,
   emitDevtoolsNavigate,
+  emitDevtoolsResolve,
   getDevtoolsEventStats,
   getDevtoolsEvents,
   isDevtoolsInstalled,
@@ -34,6 +40,7 @@ export {
   type DevtoolsHmrEvent,
   type DevtoolsMountEvent,
   type DevtoolsNavigateEvent,
+  type DevtoolsResolveEvent,
   type DevtoolsSubscriber,
   type DevtoolsUnmountEvent,
 } from "./devtools-events.js";
@@ -220,6 +227,17 @@ function handleFor(globalObject: DevtoolsGlobal): DevtoolsHandle {
   };
 }
 
+function handleResolution(event: ContainerResolutionEvent): void {
+  emitDevtoolsResolve({
+    token: event.tokenName,
+    container: event.container,
+    owner: event.owner,
+    scope: event.scope,
+    implicit: event.implicit,
+    cached: event.cached,
+  });
+}
+
 export function installDevtools(
   options: DevtoolsInstallOptions = {},
 ): DevtoolsHandle {
@@ -240,6 +258,7 @@ export function installDevtools(
   const globalObject = createGlobal();
   installedGlobal = globalObject;
   setDevtoolsInstalled(true);
+  setContainerResolutionInspector(handleResolution);
   host().__SILENT_DEVTOOLS__ = globalObject;
   return handleFor(globalObject);
 }
@@ -251,6 +270,7 @@ export function uninstallDevtools(): void {
     delete host().__SILENT_DEVTOOLS__;
   }
   setDevtoolsInstalled(false);
+  setContainerResolutionInspector(null);
   clearDevtoolsSubscribers();
   resetDevtoolsEvents();
   setDevtoolsEventLimit(DEVTOOLS_EVENT_LIMIT);

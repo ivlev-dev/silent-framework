@@ -278,11 +278,15 @@ interface RuntimeOptions {
 
 Опции исполнения для `createComponent`/`component`/`withRuntimeOptions` и текущего JSX-контекста:
 
-- `container` — DI-контейнер, от которого строится дочерний scope view.
+- `container` — DI-контейнер, от которого строится дочерний scope view. У `component()` явный `container` имеет приоритет над амбиентным.
 - `preloader` — локальный прелоадер, перекрывающий глобальный.
 - `onError` — локальный обработчик ошибок, перекрывающий глобальный.
 - `boundary` — граница `Suspense` (внутренний тип); создаётся `Suspense` и передаётся вниз автоматически.
 - `hydrate: false` — отключает адоптацию серверной разметки для поддерева; используется `RouterView`, который рендерит маршрут заново.
+
+Правило merge для `component()`: явные `runtimeOptions` дополняют `getRuntimeOptions()`, а не заменяют; `container` из явного аргумента перекрывает амбиентный.
+
+Предупреждение: для Router/Session используйте `bindValue`/`singleton` в корневом контейнере. `inScopedScope` создаст новый экземпляр на каждый view, так как scope view отдельный.
 
 ### `getRuntimeOptions`
 
@@ -588,10 +592,18 @@ handle.dispose();
 *Стабильность: public.*
 
 ```ts
-function component(componentFn: AnyComponent, props: Record<string, unknown>): Node;
+function component(
+  componentFn: AnyComponent,
+  props: Record<string, unknown>,
+  runtimeOptions?: RuntimeOptions,
+): Node;
 ```
 
-Вызывает `createComponent(componentFn, props, getRuntimeOptions())` и возвращает только узел — без `ready` и `dispose`. Формат вызова, который компилятор генерирует для `<Comp {...props} />`; удобен и для ручного создания компонентов внутри родителя:
+Вызывает `createComponent(componentFn, props, mergedOptions)` и возвращает только узел — без `ready` и `dispose`. При отсутствии аргумента используются текущие runtime-опции. Явные `runtimeOptions` дополняют `getRuntimeOptions()`, а не заменяют его; `container` из явного аргумента имеет приоритет над амбиентным. Формат вызова, который компилятор генерирует для `<Comp {...props} />`; удобен и для ручного создания компонентов внутри родителя:
+
+```ts
+const child = component(View, {}, { container });
+```
 
 ```ts
 function App(): Node {
@@ -2010,11 +2022,11 @@ console.log(snapshot.views, snapshot.pending.async, snapshot.di.scopes);
 function subscribeDevtools(listener: DevtoolsSubscriber): () => void;
 ```
 
-Подписывает слушатель на события `mount`, `unmount`, `error`, `hmr` и `navigate`. Возвращает идемпотентную функцию отписки. Исключение слушателя не прерывает рантайм и выводится через `console.error`. Подписка без установки DevTools разрешена; буфер очищается после отписки последнего слушателя.
+Подписывает слушатель на события `mount`, `unmount`, `error`, `hmr`, `navigate` и `resolve`. Возвращает идемпотентную функцию отписки. Исключение слушателя не прерывает рантайм и выводится через `console.error`. Подписка без установки DevTools разрешена; буфер очищается после отписки последнего слушателя. При `installDevtools()` подключается DI-инспектор, при `uninstallDevtools()` снимается.
 
 ```ts
 const unsubscribe = subscribeDevtools((event) => {
-  if (event.type === "error") console.warn(event.phase, event.message);
+  if (event.type === "resolve") console.log(event.token, event.container, event.cached);
 });
 unsubscribe();
 ```
@@ -2025,7 +2037,7 @@ unsubscribe();
 function installDevtools(options?: DevtoolsInstallOptions): DevtoolsHandle;
 ```
 
-Устанавливает `globalThis.__SILENT_DEVTOOLS__` с методами `snapshot`, `subscribe`, `events`, `clear` и `uninstall`. Повторный вызов возвращает handle уже установленного объекта. `enabled: false` или production-режим возвращают no-op handle без побочных эффектов. `eventLimit` ограничивает буфер (1–1000 событий, по умолчанию `DEVTOOLS_EVENT_LIMIT`).
+Устанавливает `globalThis.__SILENT_DEVTOOLS__` с методами `snapshot`, `subscribe`, `events`, `clear` и `uninstall`. При установке подключается DI-инспектор, публикующий события `resolve`; `uninstallDevtools()` снимает его. Повторный вызов возвращает handle уже установленного объекта. `enabled: false` или production-режим возвращают no-op handle без побочных эффектов. `eventLimit` ограничивает буфер (1–1000 событий, по умолчанию `DEVTOOLS_EVENT_LIMIT`).
 
 ```ts
 import { installDevtools } from "@ivlev-dev/silent-core/devtools";
@@ -2165,10 +2177,11 @@ interface DevtoolsEventStats {
   readonly errors: number;
   readonly hmr: number;
   readonly navigations: number;
+  readonly resolutions: number;
 }
 ```
 
-Счётчики шины событий. `dropped` увеличивается при вытеснении событий из ограниченного буфера.
+Счётчики шины событий. `dropped` увеличивается при вытеснении событий из ограниченного буфера. `resolutions` — число событий `resolve`.
 
 ### `DevtoolsEvent`
 
@@ -2178,7 +2191,8 @@ type DevtoolsEvent =
   | DevtoolsUnmountEvent
   | DevtoolsErrorEvent
   | DevtoolsHmrEvent
-  | DevtoolsNavigateEvent;
+  | DevtoolsNavigateEvent
+  | DevtoolsResolveEvent;
 ```
 
 Объединение всех событий. Каждое событие содержит `type`, `sequence` и `timestamp`.
@@ -2198,7 +2212,7 @@ interface DevtoolsEventBase {
 ### `DevtoolsEventType`
 
 ```ts
-type DevtoolsEventType = "mount" | "unmount" | "error" | "hmr" | "navigate";
+type DevtoolsEventType = "mount" | "unmount" | "error" | "hmr" | "navigate" | "resolve";
 ```
 
 Тип события.
@@ -2270,6 +2284,22 @@ interface DevtoolsNavigateEvent extends DevtoolsEventBase {
 ```
 
 Событие навигации, опубликованное через `devtoolsNavigate`.
+
+### `DevtoolsResolveEvent`
+
+```ts
+interface DevtoolsResolveEvent extends DevtoolsEventBase {
+  readonly type: "resolve";
+  readonly token: string;
+  readonly container: string;
+  readonly owner: string;
+  readonly scope: string;
+  readonly implicit: boolean;
+  readonly cached: boolean;
+}
+```
+
+Событие DI-резолва: `token` — имя токена, `container` — контейнер-владелец, `owner` — запрашивающий контейнер, `scope` — режим scope, `implicit` — неявный биндинг, `cached` — взято из кеша.
 
 ### `DevtoolsSubscriber`
 

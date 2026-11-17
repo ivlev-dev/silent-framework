@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { setServerMode } from "@ivlev-dev/silent-core";
+import { attr, setServerMode } from "@ivlev-dev/silent-core";
+import { Container } from "@ivlev-dev/silent-di";
 import { onCleanup } from "@ivlev-dev/silent-reactivity";
 import {
   Router,
@@ -54,6 +55,14 @@ function cleanupView(): HTMLElement {
   return element;
 }
 
+function metaView(props: RouterViewComponentProps): HTMLElement {
+  const element = document.createElement("div");
+  element.dataset.view = "meta";
+  attr(element, "data-title", () => String(props.meta["title"] ?? ""));
+  attr(element, "data-route-title", () => String(props.route.meta["title"] ?? ""));
+  return element;
+}
+
 const routes: readonly RouteRecord[] = [
   { path: "/", name: "home", component: leaf("home") },
   {
@@ -68,6 +77,8 @@ const routes: readonly RouteRecord[] = [
   { path: "/other", name: "other", component: leaf("other") },
   { path: "/empty", name: "empty" },
   { path: "/cleanup", name: "cleanup", component: cleanupView },
+  { path: "/meta-a", name: "meta-a", component: metaView, meta: { title: "A" } },
+  { path: "/meta-b", name: "meta-b", component: metaView, meta: { title: "B" } },
 ];
 
 function createRouter(initial = "/"): Router {
@@ -120,6 +131,18 @@ describe("RouterView", () => {
     expect(deep.host.textContent).toBe("fallback");
   });
 
+  it("передаёт meta в компонент маршрута и обновляет её при reuse", async () => {
+    const router = createRouter("/meta-a");
+    await router.start();
+    const { host } = mount(() => RouterView({ router }));
+    const element = host.querySelector("[data-view=meta]");
+    expect(element?.getAttribute("data-title")).toBe("A");
+    expect(element?.getAttribute("data-route-title")).toBe("A");
+    await router.push("/meta-b");
+    expect(element?.getAttribute("data-title")).toBe("B");
+    expect(element?.getAttribute("data-route-title")).toBe("B");
+  });
+
   it("освобождает DOM и вызывает onCleanup при уходе с маршрута", async () => {
     cleanups = 0;
     const router = createRouter("/cleanup");
@@ -148,6 +171,24 @@ describe("RouterView", () => {
       routers.pop()?.dispose();
     }
     expect(() => RouterView({})).toThrow(RouterMissingError);
+  });
+
+  it("не откатывается к текущему Router при контейнере без Router", () => {
+    createRouter("/");
+    const container = new Container("no-router");
+    expect(() => RouterView({ container })).toThrow(RouterMissingError);
+    expect(() => RouterView({ container })).toThrow(/не нашёл Router/);
+    container.dispose();
+  });
+
+  it("сообщает о зарегистрированном, но не разрешённом Router", async () => {
+    const container = new Container("pending");
+    const router = createRouter("/");
+    container.bind(Router, async () => router);
+    expect(() => RouterView({ container })).toThrow(RouterMissingError);
+    expect(() => RouterView({ container })).toThrow(/bindValue\/provide/);
+    await container.resolve(Router);
+    container.dispose();
   });
 
   it("обновляется после асинхронной загрузки компонента", async () => {

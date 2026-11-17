@@ -72,6 +72,37 @@ describe("createMountPoint: повторный рендер тех же узло
   });
 });
 
+describe("createMountPoint: отсоединённый маркер", () => {
+  it("переприсоединяет маркер вместо insertBefore с чужим child", () => {
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
+    const marker = document.createComment("marker");
+    const mount = createMountPoint(parent, marker);
+    const node = document.createElement("span");
+    node.textContent = "ok";
+
+    expect(() => mount.render(node)).not.toThrow();
+    expect(parent.firstChild).toBe(node);
+    expect(parent.lastChild).toBe(marker);
+  });
+
+  it("рендерит в родителе уже присоединённого маркера", () => {
+    const parent = document.createElement("div");
+    const other = document.createElement("section");
+    const marker = document.createComment("marker");
+    other.appendChild(marker);
+    document.body.append(parent, other);
+    const mount = createMountPoint(parent, marker);
+    const node = document.createElement("b");
+
+    expect(() => mount.render(node)).not.toThrow();
+    expect(marker.parentNode).toBe(other);
+    expect(other.firstChild).toBe(node);
+    expect(other.lastChild).toBe(marker);
+    expect(parent.childNodes.length).toBe(0);
+  });
+});
+
 describe("createMountPoint: clear", () => {
   it("сбрасывает состояние и позволяет снова вставить то же значение", () => {
     const parent = document.createElement("div");

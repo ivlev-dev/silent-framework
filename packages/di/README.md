@@ -14,7 +14,8 @@
 - Асинхронное разрешение: `resolve` всегда возвращает `Promise`, кеш промисов разделяет параллельные вызовы.
 - Детектор циклов: `CircularDependencyError` с путём из токенов.
 - Защита от captive dependencies: singleton не может захватить `scoped`-сервис более короткого жизненного цикла (`InvalidScopeError`).
-- Точечное управление: `bindValue`, `peek`, `peekValue`, `has`, `clearCache(token?)`, `onDispose`-хуки, рекурсивный `dispose`.
+- Точечное управление: `bindValue`, `peek`, `peekValue`, `has`, `hasExplicit`, `clearCache(token?)`, `onDispose`-хуки, рекурсивный `dispose`.
+- Строгий режим неявных биндингов: `implicitBindings: "error" | "warn" | "allow"` в `ContainerOptions`; по умолчанию `"warn"` в development и `"allow"` в production. В режиме `"error"` незабинженный класс отклоняется `MissingBindingError` без создания экземпляра.
 
 ## Установка
 
@@ -82,7 +83,27 @@ const service = await root.resolve(Service);
 root.has(Service);
 ```
 
+Строгий режим отключает неявные биндинги классов:
+
+```ts
+import { Container, MissingBindingError } from "@ivlev-dev/silent-di";
+
+class Service {}
+
+const root = new Container("app", undefined, { implicitBindings: "error" });
+await root.resolve(Service).catch((error) => {
+  if (error instanceof MissingBindingError) {
+    // Service не был зарегистрирован явно
+  }
+});
+
+root.bind(Service, Service);
+const instance = await root.resolve(Service);
+```
+
 Если интерфейс имеет более одной реализации, используйте явный `bind`.
+
+Подробнее о strict-режиме, `hasExplicit`, `implicitBindings` и матрице scope — в [документации API](https://github.com/ivlev-dev/silent-framework/blob/main/docs/api/di.md) и [руководстве](https://github.com/ivlev-dev/silent-framework/blob/main/docs/guides/di.md).
 
 ## Скоупы
 
@@ -157,13 +178,16 @@ try {
 
 | Символ | Назначение |
 | --- | --- |
-| `Container` | Асинхронный контейнер: `bind`, `bindValue`, `resolve`, `resolveSync`, `createScope`, `peek`, `peekValue`, `has`, `clearCache`, `onDispose`, `dispose` |
+| `Container` | Асинхронный контейнер: `bind`, `bindValue`, `resolve`, `resolveSync`, `createScope`, `peek`, `peekValue`, `has`, `hasExplicit`, `clearCache`, `onDispose`, `dispose`, `implicitBindings` |
 | `container` | Глобальный корневой экземпляр `Container("root")` |
 | `createToken` | Создаёт типизированный токен (`symbol` c phantom-типом `T`) |
 | `Token` | Тип токена: `symbol` c phantom-параметром `T` |
 | `DI_CREATE` | Рантайм-символ `Symbol.for("silent.di.create")` для инстанциирования классов компилятором |
 | `CircularDependencyError` | Ошибка циклической зависимости с полем `path` |
 | `InvalidScopeError` | Captive-зависимость: singleton захватывает scoped-сервис |
+| `MissingBindingError` | В строгом режиме: незабинженный класс; поля `token`, `container` |
+| `ImplicitBindingMode` | `"allow" | "warn" | "error"` |
+| `ContainerOptions` | `{ implicitBindings?: ImplicitBindingMode }` |
 | `ScopeName` | Тип скоупа: `"singleton"`, `"transient"`, `"scoped"` |
 | `Factory` | Фабрика: `(container: Container) => T | Promise<T>` |
 | `Binding` | Привязка: `factory` + `scope` |

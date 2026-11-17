@@ -17,6 +17,14 @@
 - `BrowserHistory` (`pushState`, `popstate`, `hashchange`) и `MemoryHistory` для тестов и SSR.
 - Повторный переход на текущий путь не дублирует историю и не перезапускает guards/loaders.
 - Восстановление скролла: `scrollBehavior(to, from, savedPosition)`; без него позиция восстанавливается автоматически, а `#hash` прокручивает к элементу.
+- `RouteLocation.meta` и `IRouter.meta` — объединение `meta` по matched-цепочке от корня к листу, лист перекрывает родителей.
+- `RouteGuardContext`: `{ router, container, to, from, signal }`; guard получает его 4-м аргументом; `createGuard(handler)` оборачивает функциональный guard.
+- Глобальные загрузчики `RouterOptions.load` и `RouterOptions.resolveComponent` с контекстом `{ route, params, query, hash, meta, router, signal, record }`; `record.load` имеет приоритет. `IRouter.isLoaded(to)`, `IRouter.hasRoute(to)`.
+- `router.navigate(to, { replace? }): Promise<boolean>` — не бросает, пишет ошибку в `state.error`, возвращает `true`/`false`; `push`/`replace` по-прежнему бросают.
+- `RouterOptions.onError?: (error, to) => void` вызывается при ошибке навигации (не при отмене).
+- `RouteDefinition.key?: (to: RouteLocation) => string | number`; `RouterView` пересоздаёт компонент при смене ключа, иначе переиспользует и обновляет.
+- `RouterView`: пропсы `container`, `error`, `notFound` — разрешение роутера из контейнера и слоты ошибки/404.
+- `createTestRouter(options)` — тестовый роутер с `MemoryHistory` по умолчанию.
 
 ## Установка
 
@@ -32,7 +40,7 @@ npm install @ivlev-dev/silent-router
 yarn add @ivlev-dev/silent-router
 ```
 
-`@ivlev-dev/silent-core`, `@ivlev-dev/silent-di` и `@ivlev-dev/silent-reactivity` устанавливаются как зависимости пакета. Пакет поставляется только как ESM. Требуется Node.js 22 или новее.
+`@ivlev-dev/silent-core`, `@ivlev-dev/silent-di` и `@ivlev-dev/silent-reactivity` объявлены как peer-зависимости с диапазоном `>=0.11.0 <0.12.0`: их устанавливает ваш менеджер пакетов, npm 7+ и pnpm делают это автоматически. Пакет поставляется только как ESM. Требуется Node.js 22 или новее.
 
 ## Быстрый старт
 
@@ -69,6 +77,7 @@ function UserView(props: RouteViewProps<"{id}", { tab?: "info" | "profile" }>) {
     <section>
       <h1>{props.params.id}</h1>
       <p>{props.query.tab ?? "info"}</p>
+      <p>{props.meta.title as string}</p>
     </section>
   );
 }
@@ -82,13 +91,19 @@ await router.start();
 
 export function App() {
   return (
-    <nav>
-      <Link to="/" activeClass="active" exactActiveClass="exact">Главная</Link>
-      <Link to={{ name: "users" }} activeClass="active">Пользователи</Link>
-    </nav>
-    <main>
-      <RouterView fallback={<p>Загрузка…</p>} />
-    </main>
+    <>
+      <nav>
+        <Link to="/" activeClass="active" exactActiveClass="exact">Главная</Link>
+        <Link to={{ name: "users" }} activeClass="active">Пользователи</Link>
+      </nav>
+      <main>
+        <RouterView
+          fallback={<p>Загрузка…</p>}
+          notFound={<p>Маршрут не найден</p>}
+          error={(error) => <p>Ошибка: {String(error)}</p>}
+        />
+      </main>
+    </>
   );
 }
 ```
@@ -107,32 +122,50 @@ export class PageVM {
 }
 ```
 
-`IRouter` содержит `base`, `state()`, `route`, `params`, `query`, `hash`, `matched`, `resolve`, `href`, `prefetch`, `push`, `replace`, `back`, `forward`, `start`, `stop`, `dispose`. В рантайме `IRouter` — value-токен, совпадающий с `Router`, поэтому компилятор DI подставляет его как единственную реализацию.
+`IRouter` содержит `base`, `state()`, `route`, `params`, `query`, `hash`, `meta`, `matched`, `resolve`, `href`, `hasRoute`, `isLoaded`, `prefetch`, `navigate`, `push`, `replace`, `back`, `forward`, `start`, `stop`, `dispose`. В рантайме `IRouter` — value-токен, совпадающий с `Router`, поэтому компилятор DI подставляет его как единственную реализацию.
 
-Зарегистрируйте роутер в контейнере:
+Корневой контейнер создавайте в строгом режиме:
 
 ```ts
-import { container } from "@ivlev-dev/silent-di";
+import { Container } from "@ivlev-dev/silent-di";
 
-const router = new Router({ routes, container });
+const container = new Container("app", undefined, { implicitBindings: "error" });
 ```
 
-Или явно:
+Зарегистрируйте роутер и сервисы через `bindValue`:
+
+```ts
+import { Router } from "@ivlev-dev/silent-router";
+
+const router = new Router({ routes });
+container.bindValue(Session, session);
+container.bindValue(Router, router);
+```
+
+`bindValue` кладёт экземпляр в resolved-кеш владельца, поэтому `container.peek(Router)` работает синхронно сразу после регистрации. `container.bind(Router, router)` с готовым экземпляром тоже виден синхронно через `peek`/`peekValue`. `container.bind(Router, factory)` с функцией остаётся ленивым и резолвится асинхронно.
+
+`scoped`/`transient` не подходят для `Router` и `Session`: `Link` и `RouterView` ищут роутер через `peek` до асинхронного resolve, а scoped-экземпляр привязан к дочернему scope и не виден синхронно из родительского/соседнего контейнера.
+
+`provide` вызывает `container.bindValue(Router, router)`:
 
 ```ts
 const router = new Router({ routes });
 router.provide(container);
 ```
 
-`provide` вызывает `container.bindValue(Router, router)`, поэтому `container.peek(Router)` работает синхронно сразу после регистрации. `container.bind(Router, router)` с готовым экземпляром тоже виден синхронно через `peek`/`peekValue`: non-function значение сразу попадает в resolved-кеш, а function-factory сохраняет прежнее ленивое поведение.
-
 Порядок поиска роутера в `Link` и `RouterView`:
 
 1. явный `router` prop;
-2. `getRuntimeOptions().container.peek(Router)`;
-3. `Router.current()`.
+2. если передан или найден контейнер: `container.peek(Router)`; если `container.hasExplicit(Router)`, но значения ещё нет — `RouterMissingError`; если контейнер есть, а биндинга нет — `RouterMissingError`;
+3. `Router.current()` только когда контейнера нет вообще.
 
 `Link` не использует асинхронный `resolve`.
+
+`RouterView` принимает `container` prop и использует его для разрешения роутера и DI-контекста дочерних компонентов:
+
+```tsx
+<RouterView container={container} fallback={<p>Загрузка…</p>} />
+```
 
 ## Route-классы
 
@@ -145,7 +178,7 @@ class AdminRoute extends Route {
   readonly component = AdminLayout;
   readonly children = [AdminIndexRoute, AdminUserRoute];
   readonly meta = { requiresAuth: true };
-  readonly beforeEnter = async (to: RouteLocation, from: RouteLocation | null, signal: AbortSignal) => {
+  readonly beforeEnter = async (to, from, signal, context) => {
     if (signal.aborted) return false;
     return (await checkSession()) ? true : "/login";
   };
@@ -163,15 +196,16 @@ class AdminUserRoute extends Route<"users/{id}"> {
 
 `RouterOptions.routes` принимает route-классы, их экземпляры и старые object-routes. Классы инстанцируются роутером.
 
-`Route` поддерживает `path`, `name`, `component`, `children`, `redirect`, `meta`, `beforeEnter`, `load`.
+`Route` поддерживает `path`, `name`, `component`, `children`, `redirect`, `meta`, `beforeEnter`, `load`, `query`, `key`.
 
 - `{id}` и `:id` — параметрические сегменты. `PathParams<"/users/{id}">` даёт `{ readonly id: string }`.
 - Параметры можно смешивать с литералами внутри одного сегмента: `prefix-{id}`, `edit-{id}-{tab}`, `v{version}.{ext}`. Mixed-сегмент специфичнее чистого параметра и уступает чистому статическому сегменту.
 - `Query` — generic-форма query для `RouteViewProps` и `RouteLoadContext`. `query` задаёт runtime-схему (`QueryParser`/`QuerySchema`): `"string"`, `"number"`, `"boolean"`, `"string[]"`, `"number[]"`, `"boolean[]"` или функция `(raw) => value | undefined`.
-- `load(context)` получает `route`, `params`, `query`, `hash`, `router`, `signal`; можно вернуть компонент или модуль с `default`. Компонент кешируется.
-- `beforeEnter` возвращает `true`, `false`, путь/объект маршрута или `Promise` с этим значением.
+- `load(context)` получает `route`, `params`, `query`, `hash`, `router`, `signal`, `meta`; можно вернуть компонент или модуль с `default`. Компонент кешируется.
+- `beforeEnter` возвращает `true`, `false`, путь/объект маршрута или `Promise` с этим значением; получает `RouteGuardContext` 4-м аргументом.
 - `redirect` — строка, объект маршрута или функция `(to) => target`.
-- `meta` не интерпретируется роутером и доступен через `matched[i].record.meta`.
+- `meta` не интерпретируется роутером и доступен через `matched[i].record.meta` и `RouteLocation.meta`.
+- `key` определяет идентификатор компонента для `RouterView`: при смене ключа компонент пересоздаётся.
 
 ```ts
 import { Route, type QuerySchema, type RouteViewProps } from "@ivlev-dev/silent-router";
@@ -189,6 +223,7 @@ class EditRoute extends Route<"/edit-{id}", EditQuery> {
   readonly name = "edit";
   readonly component = EditView;
   readonly query = editQuery;
+  readonly key = (to) => to.params.id;
 }
 
 function EditView(props: RouteViewProps<"/edit-{id}", EditQuery>) {
@@ -198,6 +233,7 @@ function EditView(props: RouteViewProps<"/edit-{id}", EditQuery>) {
       <p>{props.query.page}</p>
       <p>{String(props.query.active)}</p>
       <p>{props.query.tags.join(", ")}</p>
+      <p>{props.meta.section as string}</p>
     </section>
   );
 }
@@ -216,6 +252,101 @@ const routes: RouteRecord[] = [
 ];
 ```
 
+## Guards, загрузчики и отмена
+
+```ts
+import { createGuard, type RouteGuardContext } from "@ivlev-dev/silent-router";
+
+const requireAuth = createGuard((context: RouteGuardContext) => {
+  if (context.container?.peek(Session)?.authenticated) {
+    return true;
+  }
+  return { name: "login" };
+});
+
+class PrivateRoute extends Route {
+  readonly path = "/private";
+  readonly component = Private;
+  readonly beforeEnter = requireAuth;
+}
+
+class ReportRoute extends Route {
+  readonly path = "/report";
+  async load(context: RouteLoadContext<"/report">) {
+    if (context.signal.aborted) throw new Error("aborted");
+    const module = await import("./report");
+    return module.Report;
+  }
+}
+```
+
+Новая навигация вызывает `AbortController.abort()` у предыдущей. Устаревшая навигация завершается без обновления состояния и без отклонения промиса. Если guard вернул `false`, навигация отменяется, а текущий маршрут остаётся прежним.
+
+Ошибки guard и загрузчика оборачиваются в `RouterNavigationError` с `code: "guard" | "load"`. Отсутствие роутера у компонента даёт `RouterMissingError`. Прерванная навигация использует `RouterAbortError`. `RouterOptions.onError` вызывается для реальных ошибок, но не для отмены и не для `false` от guard.
+
+```ts
+import { RouterNavigationError } from "@ivlev-dev/silent-router";
+
+try {
+  await router.push("/private");
+} catch (error) {
+  if (error instanceof RouterNavigationError) {
+    console.error(error.code, error.to, error.cause);
+  }
+}
+```
+
+Глобальные загрузчики:
+
+```ts
+const router = new Router({
+  routes,
+  load: (context) => import("./pages").then((m) => m.default),
+});
+```
+
+`load` и `resolveComponent` — алиасы. Контекст содержит `record`, поэтому можно выбирать загрузчик по имени маршрута. `record.load` имеет приоритет.
+
+## `navigate()` и обработка ошибок
+
+```ts
+const ok = await router.navigate("/private");
+const replaced = await router.navigate({ name: "user", params: { id: 7 } }, { replace: true });
+
+router.push("/private"); // бросает RouterNavigationError при ошибке
+```
+
+`navigate()` не бросает: при успехе возвращает `true`, при отмене, `false` от guard, no-match, ошибках guard/load/resolve — `false` и записывает ошибку в `state.error`. `onError` вызывается для реальных ошибок.
+
+Почему `onClick={() => router.push(...)}` даёт unhandled rejection: `push` возвращает `Promise<void>`, который отклоняется при guard/load/no-match, а `onClick` не ждёт и не обрабатывает промис. В обработчиках используйте `navigate()`:
+
+```tsx
+<button onClick={() => void router.navigate("/private")}>Открыть</button>
+```
+
+или асинхронный обработчик с `try/catch`:
+
+```tsx
+<button onClick={async () => {
+  try {
+    await router.push("/private");
+  } catch (error) {
+    console.error(error);
+  }
+}}>Открыть</button>
+```
+
+## Meta
+
+```ts
+router.meta; // RouteMeta текущего маршрута
+router.route?.meta; // то же через location
+
+const title = router.meta["title"];
+```
+
+`RouteLocation.meta` и `IRouter.meta` — объединение `meta` по matched-цепочке от корня к листу. Значения листа перекрывают родительские. `RouteViewProps.meta` содержит итоговый `meta` текущего маршрута. `meta` доступен в guard-контексте через `context.to.meta` и в загрузчиках через `context.meta`.
+
 ## Навигация и состояние
 
 ```ts
@@ -228,6 +359,7 @@ router.route;
 router.params;
 router.query;
 router.hash;
+router.meta;
 router.matched;
 router.state();
 ```
@@ -243,46 +375,9 @@ const location = router.resolve({
 
 location.fullPath;
 location.matched;
+location.meta;
 
 router.href("/users/42");
-```
-
-## Guards, загрузчики и отмена
-
-```ts
-class PrivateRoute extends Route {
-  readonly path = "/private";
-  readonly component = Private;
-  readonly beforeEnter = async (to: RouteLocation, from: RouteLocation | null, signal: AbortSignal) => {
-    if (signal.aborted) return false;
-    return (await isAuthorized()) ? true : { name: "login" };
-  };
-}
-
-class ReportRoute extends Route {
-  readonly path = "/report";
-  async load(context: RouteLoadContext<"/report">) {
-    if (context.signal.aborted) throw new Error("aborted");
-    const module = await import("./report");
-    return module.Report;
-  }
-}
-```
-
-Новая навигация вызывает `AbortController.abort()` у предыдущей. Устаревшая навигация завершается без обновления состояния и без отклонения промиса. Если guard вернул `false`, навигация отменяется, а текущий маршрут остаётся прежним.
-
-Ошибки guard и загрузчика оборачиваются в `RouterNavigationError` с `code: "guard" | "load"`. Отсутствие роутера у компонента даёт `RouterMissingError`. Прерванная навигация использует `RouterAbortError`.
-
-```ts
-import { RouterNavigationError } from "@ivlev-dev/silent-router";
-
-try {
-  await router.push("/private");
-} catch (error) {
-  if (error instanceof RouterNavigationError) {
-    console.error(error.code, error.to, error.cause);
-  }
-}
 ```
 
 ## Вложенные представления
@@ -300,7 +395,29 @@ export function AdminLayout(props: RouteViewProps) {
 }
 ```
 
-Route-компонент получает `RouteViewProps`: `route`, `params`, `query`, `hash`, `router`. `RouterView` монтирует его через core `component(...)`, поэтому ViewModel с DI работает и на клиенте, и на сервере.
+Route-компонент получает `RouteViewProps`: `route`, `params`, `query`, `hash`, `meta`, `router`. `RouterView` монтирует его через core `component(...)`, поэтому ViewModel с DI работает и на клиенте, и на сервере.
+
+`RouterView` принимает:
+
+- `router?` — явный роутер;
+- `depth?` — глубина matched (по умолчанию 0);
+- `fallback?` — что рендерить, если компонента нет;
+- `container?` — DI-контейнер для разрешения роутера и дочерних компонентов;
+- `error?` — слот ошибки: значение или функция `(error) => ...`;
+- `notFound?` — слот для ошибки с `code === "no-match"`.
+
+Для ошибки с `code === "no-match"` используется `notFound`, если он задан, иначе `error`. Без слотов показывается `Error: ...`.
+
+```tsx
+<RouterView
+  container={container}
+  fallback={<p>Загрузка…</p>}
+  notFound={<NotFoundView />}
+  error={(error) => <ErrorView error={error} />}
+/>
+```
+
+При смене `params`/`query`/`hash` в рамках того же route-компонента view не пересоздаётся: props остаются живыми, DOM, введённый текст и focus сохраняются. При этом у ViewModel вызывается `updated()`, а light-компоненты без ViewModel обновляются через `update()` с восстановлением focus. Пересоздание происходит только при смене компонента маршрута или при смене `key`.
 
 ## История и SSR
 
@@ -353,6 +470,25 @@ const router = new Router({
 
 Позиция сохраняется при уходе с маршрута и передаётся в `savedPosition` при возврате. Без `scrollBehavior` сохранённая позиция восстанавливается автоматически. Возврат `false` или `null` отменяет прокрутку.
 
+## Тесты
+
+Для тестов используйте `createTestRouter` (по умолчанию `MemoryHistory`):
+
+```ts
+import { createTestRouter } from "@ivlev-dev/silent-router";
+
+const router = createTestRouter({ routes, initial: "/users/1" });
+await router.start();
+await router.navigate("/users/2?tab=posts");
+
+expect(router.params).toEqual({ id: "2" });
+expect(router.query).toEqual({ tab: "posts" });
+expect(router.hasRoute("/users/2")).toBe(true);
+expect(router.isLoaded("/users/2")).toBe(true);
+```
+
+`Router.dispose()` снимает подписку на историю и убирает экземпляр из `Router.current()`; переданную извне историю роутер не освобождает.
+
 ## Жизненный цикл
 
 ```ts
@@ -367,8 +503,8 @@ router.dispose();
 ## Публичный API
 
 - Классы: `Router`, `Route`, `BrowserHistory`, `MemoryHistory`, `RouterMissingError`, `RouterNavigationError`, `RouterAbortError`.
-- Интерфейсы и типы: `IRouter`, `RouterOptions`, `RouterState`, `RouteClass`, `RouteDefinition`, `RouteInput`, `RouteViewProps`, `RouteLoadContext`, `RouteClassGuard`, `RouteClassLoad`, `RouteComponent`, `PathParams`, `TypedRouteLocation`, `RouteQueryShape`, `QueryParser`, `QuerySchema`, `RouteRecord`, `RouteLocation`, `MatchedRoute`, `RouteParams`, `RouteQuery`, `RouteQueryValue`, `RouteTarget`, `RouteGuard`, `RouteLoader`, `RouteRedirect`, `ScrollBehavior`, `ScrollPosition`, `RouterHistory`, `HistoryLocation`, `LinkProps`, `RouterViewProps`, `RouterViewComponentProps`.
+- Интерфейсы и типы: `IRouter`, `RouterOptions`, `RouterState`, `RouteClass`, `RouteDefinition`, `RouteInput`, `RouteViewProps`, `RouteLoadContext`, `RouteClassGuard`, `RouteClassLoad`, `RouteComponent`, `PathParams`, `TypedRouteLocation`, `RouteQueryShape`, `QueryParser`, `QuerySchema`, `RouteRecord`, `RouteLocation`, `MatchedRoute`, `RouteParams`, `RouteQuery`, `RouteQueryValue`, `RouteTarget`, `RouteGuard`, `RouteGuardContext`, `RouteGuardResult`, `RouteLoader`, `RouteLoaderResult`, `RouteRedirect`, `ScrollBehavior`, `ScrollPosition`, `RouterHistory`, `HistoryLocation`, `LinkProps`, `RouterViewProps`, `RouterViewComponentProps`, `RouterComponentLoadContext`, `RouterComponentLoader`, `RouteMeta`, `TestRouterOptions`.
 - Компоненты: `Link`, `RouterView`.
-- Функции создания истории: `createBrowserHistory`, `createMemoryHistory`.
+- Функции: `createBrowserHistory`, `createMemoryHistory`, `createGuard`, `createTestRouter`.
 
 Публичных hooks (`useRouter`, `useRoute`, `useParams`) нет: состояние доступно через `IRouter` и `RouteViewProps`.

@@ -3,6 +3,7 @@ import type {
   QueryInput,
   QuerySchema,
   RouteGuard,
+  RouteGuardContext,
   RouteGuardResult,
   RouteLoader,
   RouteLoaderResult,
@@ -82,6 +83,7 @@ export interface RouteViewProps<
   readonly params: PathParams<Path>;
   readonly query: Query;
   readonly hash: string;
+  readonly meta: RouteMeta;
   readonly router: IRouter;
 }
 
@@ -104,6 +106,7 @@ export type RouteClassGuard<
   to: TypedRouteLocation<Path, Query>,
   from: TypedRouteLocation<Path, Query> | null,
   signal: AbortSignal,
+  context?: RouteGuardContext<Path, Query>,
 ) => RouteGuardResult | Promise<RouteGuardResult>;
 
 export type RouteClassLoad<
@@ -133,6 +136,7 @@ export interface RouteDefinition<
   readonly beforeEnter?: AnyRouteGuard;
   readonly load?: AnyRouteLoader;
   readonly query?: QuerySchema<Query>;
+  readonly key?: (to: RouteLocation) => string | number;
 }
 
 export abstract class Route<
@@ -146,6 +150,7 @@ export abstract class Route<
   declare readonly redirect?: RouteRedirect;
   declare readonly meta?: RouteMeta;
   declare readonly query?: QuerySchema<Query>;
+  declare readonly key?: (to: RouteLocation) => string | number;
 }
 
 export interface Route<
@@ -156,6 +161,7 @@ export interface Route<
     to: TypedRouteLocation<Path, Query>,
     from: TypedRouteLocation<Path, Query> | null,
     signal: AbortSignal,
+    context?: RouteGuardContext<Path, Query>,
   ): RouteGuardResult | Promise<RouteGuardResult>;
   load?(
     context: RouteLoadContext<Path, Query>,
@@ -164,6 +170,15 @@ export interface Route<
 
 export type RouteClass = new () => RouteDefinition;
 export type RouteInput = RouteRecord | RouteDefinition | RouteClass;
+
+export function createGuard<Path extends string = string, Query = RouteQuery>(
+  handler: (
+    context: RouteGuardContext<Path, Query>,
+  ) => RouteGuardResult | Promise<RouteGuardResult>,
+): RouteGuard {
+  return (_to, _from, _signal, context) =>
+    handler(context as RouteGuardContext<Path, Query>);
+}
 
 const contextLoaders = new WeakSet<RouteRecord>();
 
@@ -198,6 +213,7 @@ function definitionToRecord(
     beforeEnter?: RouteGuard;
     load?: RouteLoader;
     query?: QuerySchema<Readonly<Record<string, unknown>>>;
+    key?: (to: RouteLocation) => string | number;
   } = { path: input.path };
 
   if (input.name !== undefined) {
@@ -205,6 +221,9 @@ function definitionToRecord(
   }
   if (input.component !== undefined) {
     record.component = input.component;
+  }
+  if (input.key !== undefined) {
+    record.key = input.key;
   }
   const children = normalizeChildren(input.children);
   if (children !== undefined) {

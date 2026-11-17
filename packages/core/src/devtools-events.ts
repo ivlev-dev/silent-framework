@@ -1,4 +1,10 @@
-export type DevtoolsEventType = "mount" | "unmount" | "error" | "hmr" | "navigate";
+export type DevtoolsEventType =
+  | "mount"
+  | "unmount"
+  | "error"
+  | "hmr"
+  | "navigate"
+  | "resolve";
 
 export interface DevtoolsEventBase {
   readonly type: DevtoolsEventType;
@@ -44,12 +50,23 @@ export interface DevtoolsNavigateEvent extends DevtoolsEventBase {
   readonly from: string | null;
 }
 
+export interface DevtoolsResolveEvent extends DevtoolsEventBase {
+  readonly type: "resolve";
+  readonly token: string;
+  readonly container: string;
+  readonly owner: string;
+  readonly scope: string;
+  readonly implicit: boolean;
+  readonly cached: boolean;
+}
+
 export type DevtoolsEvent =
   | DevtoolsMountEvent
   | DevtoolsUnmountEvent
   | DevtoolsErrorEvent
   | DevtoolsHmrEvent
-  | DevtoolsNavigateEvent;
+  | DevtoolsNavigateEvent
+  | DevtoolsResolveEvent;
 
 export type DevtoolsSubscriber = (event: DevtoolsEvent) => void;
 
@@ -66,6 +83,7 @@ export interface DevtoolsEventStats {
   readonly errors: number;
   readonly hmr: number;
   readonly navigations: number;
+  readonly resolutions: number;
 }
 
 export const DEVTOOLS_EVENT_LIMIT = 100;
@@ -84,6 +102,7 @@ let unmounts = 0;
 let errors = 0;
 let hmr = 0;
 let navigations = 0;
+let resolutions = 0;
 
 function clampLimit(limit: number): number {
   if (!Number.isFinite(limit)) {
@@ -172,7 +191,8 @@ export function emitDevtoolsEvent(
     | Omit<DevtoolsUnmountEvent, "sequence" | "timestamp">
     | Omit<DevtoolsErrorEvent, "sequence" | "timestamp">
     | Omit<DevtoolsHmrEvent, "sequence" | "timestamp">
-    | Omit<DevtoolsNavigateEvent, "sequence" | "timestamp">,
+    | Omit<DevtoolsNavigateEvent, "sequence" | "timestamp">
+    | Omit<DevtoolsResolveEvent, "sequence" | "timestamp">,
 ): DevtoolsEvent | null {
   if (!isActive()) {
     return null;
@@ -209,6 +229,10 @@ export function emitDevtoolsEvent(
       break;
     case "navigate":
       navigations += 1;
+      next = { ...event, sequence, timestamp: Date.now() };
+      break;
+    case "resolve":
+      resolutions += 1;
       next = { ...event, sequence, timestamp: Date.now() };
       break;
   }
@@ -270,6 +294,17 @@ export function emitDevtoolsNavigate(event: {
   emitDevtoolsEvent({ type: "navigate", to: clip(event.to), from: event.from === null ? null : clip(event.from) });
 }
 
+export function emitDevtoolsResolve(event: {
+  readonly token: string;
+  readonly container: string;
+  readonly owner: string;
+  readonly scope: string;
+  readonly implicit: boolean;
+  readonly cached: boolean;
+}): void {
+  emitDevtoolsEvent({ type: "resolve", ...event });
+}
+
 export function getDevtoolsEventStats(): DevtoolsEventStats {
   return {
     active: isActive(),
@@ -284,6 +319,7 @@ export function getDevtoolsEventStats(): DevtoolsEventStats {
     errors,
     hmr,
     navigations,
+    resolutions,
   };
 }
 
@@ -297,4 +333,5 @@ export function resetDevtoolsEvents(): void {
   errors = 0;
   hmr = 0;
   navigations = 0;
+  resolutions = 0;
 }

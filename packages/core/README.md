@@ -9,6 +9,8 @@
 - Сигналы, мемо и эффекты с батчингом; обновляется только затронутый DOM-узел.
 - Глубокая реактивность объектов и массивов: отдельный сигнал на каждое вложенное свойство и индекс.
 - MVVM: view получает ViewModel через асинхронный DI, DI-скоуп наследуется вложенными компонентами.
+- Явный контейнер для `component()`: `component(View, {}, { container })` передаёт DI-контейнер вложенному view.
+- DevTools: событие `"resolve"` для DI-резолвов, счётчик `resolutions` в статистике.
 - Stage-3 декораторы `@reactive`, `@computed` и `@watch` для полей, геттеров и методов.
 - Прелоадеры на уровне view: из метаданных, через `setPreloader`, из VM или глобальные.
 - `For`, `Show`, `Suspense` и `lazy`: keyed-реконсиляция, условный рендер и асинхронные границы.
@@ -29,7 +31,7 @@ npm install @ivlev-dev/silent-core
 yarn add @ivlev-dev/silent-core
 ```
 
-`@ivlev-dev/silent-di` и `@ivlev-dev/silent-reactivity` устанавливаются как зависимости пакета. Для компиляции TSX нужен плагин Vite:
+`@ivlev-dev/silent-di` и `@ivlev-dev/silent-reactivity` объявлены как peer-зависимости: их устанавливает ваш менеджер пакетов, npm 7+ и pnpm делают это автоматически. Для компиляции TSX нужен плагин Vite:
 
 ```bash
 pnpm add -D @ivlev-dev/silent-vite
@@ -266,7 +268,7 @@ const stop = subscribeDevtools((event) => {
 console.log(getDevtoolsSnapshot().views);
 ```
 
-Снимок содержит view-инстансы, счётчик pending async-задач, дерево DI, состояние гидрации, счётчики реестра и реактивности. События `mount`, `unmount`, `error`, `hmr` и `navigate` кладутся в ограниченный буфер; ссылки на компоненты, VM, props и DOM не удерживаются. `installDevtools()` выставляет `globalThis.__SILENT_DEVTOOLS__`, а в production (или при `enabled: false`) возвращает no-op handle без побочных эффектов. `uninstallDevtools()` удаляет глобальный объект, отписывает слушателей и очищает буфер.
+Снимок содержит view-инстансы, счётчик pending async-задач, дерево DI, состояние гидрации, счётчики реестра и реактивности. События `mount`, `unmount`, `error`, `hmr`, `navigate` и `resolve` кладутся в ограниченный буфер; ссылки на компоненты, VM, props и DOM не удерживаются. `installDevtools()` подключает DI-инспектор, `uninstallDevtools()` снимает его и удаляет глобальный объект, отписывает слушателей и очищает буфер. В production (или при `enabled: false`) возвращается no-op handle без побочных эффектов.
 
 ## API
 
@@ -278,7 +280,7 @@ console.log(getDevtoolsSnapshot().views);
 | `ViewModel` | Базовый класс VM: `props`, `view`, хуки жизненного цикла и `dispose()`. |
 | `ComponentContext` | DI-токен view: `props`, `container`, `signal`, `view`. |
 | `createComponent` | Создаёт компонент и возвращает `{ node, ready, dispose }`. |
-| `component` | Создаёт компонент с текущими runtime-опциями и возвращает только `Node`. |
+| `component` | Создаёт компонент с runtime-опциями, явный `container` имеет приоритет над амбиентным; возвращает только `Node`. |
 | `mount` | Монтирует корневой компонент в `Element` или селектор; возвращает `Promise<MountHandle>`. |
 | `hydrate` | Гидрация серверной разметки с адоптацией узлов; возвращает `Promise<MountHandle>`. |
 | `For` | Keyed-список с реконсиляцией и `fallback`. |
@@ -292,7 +294,7 @@ console.log(getDevtoolsSnapshot().views);
 | `whenIdle` | Ждёт завершения всех отслеживаемых рантаймом промисов. |
 | `HydrationMismatchError` | Ошибка несовпадения серверной и клиентской разметки. |
 | `getDevtoolsSnapshot` | Снимок view, pending async, DI, гидрации, реестра и реактивности без сильных ссылок. |
-| `subscribeDevtools` | Подписка на события `mount`, `unmount`, `error`, `hmr`, `navigate`; возвращает отписку. |
+| `subscribeDevtools` | Подписка на события `mount`, `unmount`, `error`, `hmr`, `navigate`, `resolve`; возвращает отписку. |
 | `installDevtools`, `uninstallDevtools` | Установка/снятие `globalThis.__SILENT_DEVTOOLS__`; в production — no-op. |
 | `devtoolsNavigate` | Публикация события `navigate` без изменения Router. |
 | `createSignal`, `createMemo`, `createEffect`, `batch`, `untrack`, `onCleanup`, `createRoot` | Примитивы реактивности, реэкспорт из `@ivlev-dev/silent-reactivity`. |

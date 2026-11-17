@@ -8,8 +8,9 @@
 
 ## Возможности
 
-- Один пакет вместо шести: `silent-core`, `silent-di`, `silent-reactivity`, `silent-swc`, `silent-vite`.
+- Один пакет вместо семи: `silent-core`, `silent-di`, `silent-reactivity`, `silent-router`, `silent-swc`, `silent-vite`.
 - Реэкспорт всего публичного API `@ivlev-dev/silent-core`.
+- Реэкспорт роутера: `Router`, `RouterView`, `Link` и остальной API `@ivlev-dev/silent-router`.
 - Плагин Vite доступен как `silent` из того же пакета.
 - Совместим с точечной установкой отдельных пакетов — метапакет ничего не меняет в рантайме.
 
@@ -20,7 +21,7 @@ pnpm add @ivlev-dev/silent
 pnpm add -D vite typescript
 ```
 
-`vite` — peer-зависимость (>= 8). `typescript` нужен для типов и `tsc`.
+`vite` — peer-зависимость (>= 8). `typescript` нужен для типов и `tsc`. Внутренние пакеты `@ivlev-dev/silent-*` ставятся как зависимости метапакета в диапазоне `>=0.11.0 <0.12.0`, их peer-зависимости менеджер пакетов устанавливает сам (npm 7+ и pnpm — автоматически).
 
 Точечная установка вместо метапакета:
 
@@ -71,6 +72,7 @@ void mount("#app", App);
 | `@ivlev-dev/silent-core` | MVVM, JSX-рантайм, control flow, гидрация |
 | `@ivlev-dev/silent-di` | асинхронный DI без декораторов |
 | `@ivlev-dev/silent-reactivity` | сигналы, мемо, эффекты, глубокие прокси |
+| `@ivlev-dev/silent-router` | клиентский и серверный роутинг, `Router`, `RouterView`, `Link` |
 | `@ivlev-dev/silent-swc` | нативный компилятор на Rust |
 | `@ivlev-dev/silent-vite` | Vite-плагин: компиляция, DI-индекс, HMR |
 
@@ -78,6 +80,7 @@ void mount("#app", App);
 
 - ESM-only, Node.js >= 22, Vite >= 8.
 - `vite` не устанавливается автоматически (peer); добавьте его явно.
+- Внутренние пакеты объявлены с диапазоном `>=0.11.0 <0.12.0`: патч-версии совместимы, `0.12.0` требует согласованного обновления.
 - Для SSR дополнительно установите `@ivlev-dev/silent-server`.
 
 ## Ссылки

@@ -76,7 +76,7 @@ import { hydrate, mount } from "@ivlev-dev/silent-core";
 import { renderToString } from "@ivlev-dev/silent-server";
 import silent from "@ivlev-dev/silent-vite";
 import { transform, version } from "@ivlev-dev/silent-swc";
-import { mount as metaMount, silent as metaSilent } from "@ivlev-dev/silent";
+import { mount as metaMount, Router as metaRouter, silent as metaSilent } from "@ivlev-dev/silent";
 
 const [read, write] = createSignal(1);
 write(2);
@@ -89,6 +89,7 @@ if (typeof renderToString !== "function") throw new Error("server: renderToStrin
 if (typeof silent !== "function") throw new Error("vite: plugin export");
 if (typeof metaMount !== "function") throw new Error("silent: mount re-export");
 if (typeof metaSilent !== "function") throw new Error("silent: plugin re-export");
+if (typeof metaRouter !== "function") throw new Error("silent: router re-export");
 const result = JSON.parse(
   transform("export const answer: number = 42;", "answer.ts", "{}", "{}"),
 );

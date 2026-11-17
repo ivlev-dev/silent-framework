@@ -1,10 +1,11 @@
 import type { ConfigEnv, Plugin, ResolvedConfig, UserConfig } from "vite";
 import { join } from "node:path";
+import type { NativeTransformResult } from "@ivlev-dev/silent-swc";
 import { loadSwc, nativeScan, nativeTransform } from "./native.js";
 import { aliasesJson, mergeAliases, type AliasRule } from "./aliases.js";
 import type { SilentIndex } from "./native.js";
 import { cleanModuleId, isInsideRoot, isSourceModule, isVirtualModule, matchesPattern, resolveOptions } from "./options.js";
-import type { SilentOptions } from "./options.js";
+import type { DiMode, SilentOptions } from "./options.js";
 import {
   hashContent,
   pruneTransformCache,
@@ -14,10 +15,30 @@ import {
 } from "./cache.js";
 
 const EMPTY_INDEX_JSON = JSON.stringify({ interfaces: {}, values: {} });
+const DI_MESSAGE_PREFIX = "[silent-vite] DI: ";
 
-export { type SilentOptions };
+interface DiagnosticContext {
+  warn: (message: string) => void;
+}
+
+export { type DiMode, type SilentOptions };
 
 export default silent;
+
+function reportDiagnostics(
+  mode: DiMode,
+  diagnostics: readonly string[],
+  context: DiagnosticContext | undefined,
+): void {
+  if (diagnostics.length === 0 || mode === "allow") return;
+  const messages = diagnostics.map((diagnostic) => `${DI_MESSAGE_PREFIX}${diagnostic}`);
+  if (mode === "error") {
+    throw new Error(messages.join("\n"));
+  }
+  for (const message of messages) {
+    context?.warn(message);
+  }
+}
 
 export function silent(options: SilentOptions = {}): Plugin {
   const opts = resolveOptions(options);
@@ -135,6 +156,19 @@ export function silent(options: SilentOptions = {}): Plugin {
       if (matchesPattern(opts.exclude, moduleId)) return null;
       if (!isInsideRoot(opts.root, moduleId)) return null;
 
+      const pluginContext: DiagnosticContext | undefined =
+        typeof this?.warn === "function"
+          ? { warn: (message: string): void => { this.warn(message); } }
+          : undefined;
+      const emit = (result: NativeTransformResult): {
+        code: string;
+        map: string | null;
+        warnings: string[];
+      } => {
+        reportDiagnostics(opts.di, result.diagnostics, pluginContext);
+        return { code: result.code, map: result.map, warnings: [] };
+      };
+
       const swc = await getSwc();
       const indexJson = await ensureIndex();
       const callOptionsJson = buildOptionsJson(transformOptions?.ssr === true);
@@ -142,12 +176,7 @@ export function silent(options: SilentOptions = {}): Plugin {
         cacheDirectory !== null && process.env.SILENT_TRANSFORM_CACHE !== "off";
       const directory = cacheEnabled ? cacheDirectory : null;
       if (directory === null) {
-        const result = nativeTransform(swc, code, moduleId, callOptionsJson, indexJson);
-        return {
-          code: result.code,
-          map: result.map,
-          warnings: result.diagnostics,
-        };
+        return emit(nativeTransform(swc, code, moduleId, callOptionsJson, indexJson));
       }
       transformVersion ??= swc.version();
       const key = transformCacheKey([
@@ -159,19 +188,11 @@ export function silent(options: SilentOptions = {}): Plugin {
       ]);
       const cached = readTransformCache(directory, key);
       if (cached !== null) {
-        return {
-          code: cached.code,
-          map: cached.map,
-          warnings: cached.diagnostics,
-        };
+        return emit(cached);
       }
       const result = nativeTransform(swc, code, moduleId, callOptionsJson, indexJson);
       writeTransformCache(directory, key, result);
-      return {
-        code: result.code,
-        map: result.map,
-        warnings: result.diagnostics,
-      };
+      return emit(result);
     },
   };
 }

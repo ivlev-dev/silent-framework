@@ -12,7 +12,7 @@ export class UserVM extends ViewModel<{ params: { id: string } }> {
   }
 
   next(): void {
-    void this.router.push({
+    void this.router.navigate({
       name: "user",
       params: { id: this.nextId },
       query: { tab: "info" },

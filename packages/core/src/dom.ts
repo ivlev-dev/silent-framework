@@ -470,6 +470,9 @@ export function createMountPoint(
       target.appendChild(node);
       return;
     }
+    if (marker.parentNode !== target) {
+      target.appendChild(marker);
+    }
     target.insertBefore(node, marker);
   };
 
