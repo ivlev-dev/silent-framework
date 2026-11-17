@@ -92,6 +92,8 @@ void mount("#app", App, { props: { title: "Silent Framework" } });
 | `runtime` | `string` | `"@ivlev-dev/silent-core"` | Имя рантайм-модуля для сгенерированного кода. |
 | `hmr` | `boolean` | `true` | Внедрять HMR-код в компилируемые модули. |
 | `index` | `boolean` | `true` | Строить индекс DI по файлам проекта. При `false` передаётся пустой индекс и scan не вызывается. |
+| `view` | `boolean` | `true` | Включить view/VM-рантайм и lazy-чанк `component-view`. |
+| `hydrate` | `boolean` | `true` | Включить клиентскую гидрацию. При `false` hydration-ветки и прокси вырезаются из стартового чанка. |
 | `di` | `"allow" \| "warn" \| "error"` | `"warn"` | Политика DI-диагностик компилятора: игнорировать, выводить предупреждения Vite или ронять сборку. |
 
 Пример с нестандартными опциями:
@@ -105,6 +107,8 @@ silent({
   },
   hmr: true,
   index: true,
+  view: true,
+  hydrate: true,
   di: "error",
 });
 ```

@@ -151,8 +151,8 @@
 - [x] `start JS` после выноса DOM-гидрации: **26.4 KB** (default) и **23.2 KB** с `view: false`; Solid 12.6 KB.
 - [x] `bench:build` отдельно считает `start JS`, `start gzip`, `all JS`.
 - [x] Бюджет ≤ 25.5 KB start для `view: false`: после волны гидрации размер вырос до 28.1 KB / 9.5 gzip, затем возвращён к **25.4 KB / 8.6 gzip** — probe-код только в гидрационном чанке, `__SILENT_SERVER__: false` в production-клиенте вырезает серверный `insert`, `view: false` отключает полифилл `modulepreload`. Default-режим — **29.3 KB / 10.1 gzip**, lazy view — 13.0 KB.
-- [ ] Дожать default-режим (28.6 KB): `dom` 4.76 KB gzip, `control-flow` 3.77, `graph` 2.85, `metadata` 1.06, `component-lite` 0.83.
-- [ ] Вынести гид рационные прокси из стартового чанка mount-only сборки. Уточнённая оценка: обёртки (`hydration-proxy` 0.31 + `dom-hydration-state` 0.30) остаются в чанке, потому что `dom.ts`/`control-flow.ts` вызывают их в 40+ точках горячего пути; реально выносится только `withWindow`/реестр/`mismatch` из `hydration-state` — выигрыш **~0.3–0.4 KB gzip**, а не 1.2. Низкий приоритет.
+- [ ] Дожать default-режим: после M3/M7 замеры — mount-only `view:false` 34.3 KB / 11.7 gzip с `hydrate:false`, default `silent+vm` 41.1 KB / 14.4 gzip. Исторические 28.6/29.3 KB относятся к 0.7.x и не воспроизводятся.
+- [x] `hydrate: false` для mount-only сборок: Vite-плагин ставит `__SILENT_HYDRATE__: false`, ветки `isHydrating` в `dom`/`control-flow`/`index-list`/`switch`/`component-lite`/`suspense`/`error-boundary`/`portal`/`transition` закрыты build-time константой `HYDRATE`. Стартовый чанк mount-only: 35.71 → **34.3 KB** min (12.37 → **11.7 KB gzip**), default/SSR-сборки не меняются. Остаются `hydration-state` (~0.8 KB rendered), `hydration-cursor` (~0.7) и `hydration-proxy` (~0.3); для их полного выноса нужен literal-alias флага или отдельный mount-only вход.
 - [ ] Проверить размер `For`/`Show` и сгенерированного кода (соседние тексты, лишние обёртки).
 - [ ] Разделить client/server entry через package `exports`/условия `browser`/`node`.
 - [ ] Убрать неиспользуемые helper'ы из сгенерированного кода.

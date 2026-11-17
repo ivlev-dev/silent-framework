@@ -57,6 +57,8 @@ export default defineConfig({
 | `runtime` | `string` | `"@ivlev-dev/silent-core"` | Имя модуля рантайма для сгенерированного кода. |
 | `hmr` | `boolean` | `true` | Включить внедрение HMR в компилируемый код. |
 | `index` | `boolean` | `true` | Строить индекс DI по файлам проекта. При `false` передаётся пустой индекс `{ interfaces: {}, values: {} }`. |
+| `view` | `boolean` | `true` | Включить view/VM-рантайм. При `false` вырезает `component-view` и генерирует lazy-чанк только при наличии VM. |
+| `hydrate` | `boolean` | `true` | Включить клиентскую гидрацию. При `false` вырезает hydration-ветки и прокси из стартового чанка; используйте только для mount-only приложений. |
 | `di` | `"allow" \| "warn" \| "error"` | `"warn"` | Политика DI-диагностик компилятора: `allow` — игнорировать, `warn` — выводить через `this.warn`, `error` — бросать ошибку в `transform`. |
 
 Типы `ResolvedOptions` и функция `resolveOptions` описаны в `packages/vite/dist/options.d.ts`, но в основной точке входа пакета не реэкспортируются. Их можно использовать только через внутренние пути; `DEFAULT_INCLUDE`, `DEFAULT_EXCLUDE`, `DEFAULT_RUNTIME`, `matchesPattern`, `cleanModuleId`, `isVirtualModule`, `isInsideRoot`, `isSourceModule` ведут себя так же, как определено в `options.ts`.
@@ -69,7 +71,7 @@ export default defineConfig({
 function resolveOptions(options?: SilentOptions): ResolvedOptions;
 ```
 
-Нормализует пользовательские опции: подставляет значения по умолчанию, разрешает `root` относительно `process.cwd()`. Возвращает объект с обязательными полями `include`, `exclude`, `root`, `swc`, `requirePreloader`, `runtime`, `hmr`, `index`, `view`, `di`.
+Нормализует пользовательские опции: подставляет значения по умолчанию, разрешает `root` относительно `process.cwd()`. Возвращает объект с обязательными полями `include`, `exclude`, `root`, `swc`, `requirePreloader`, `runtime`, `hmr`, `index`, `view`, `hydrate`, `di`.
 
 #### `DiMode`
 
@@ -98,6 +100,7 @@ interface ResolvedOptions {
   hmr: boolean;
   index: boolean;
   view: boolean;
+  hydrate: boolean;
   di: DiMode;
 }
 ```
