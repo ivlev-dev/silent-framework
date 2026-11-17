@@ -8,6 +8,7 @@ import {
   untrack,
 } from "@ivlev-dev/silent-reactivity";
 import { createEffectUnlessStatic } from "./static-effect.js";
+import { markDirectComponent } from "./match-node.js";
 import type { Children } from "./jsx.js";
 import {
   attachDisposer,
@@ -907,3 +908,5 @@ export function Show(props: ShowProps): Node {
   onCleanup(mount.clear);
   return container;
 }
+
+markDirectComponent(For);

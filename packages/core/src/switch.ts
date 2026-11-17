@@ -4,7 +4,7 @@ import {
   MATCH_DESCRIPTOR,
   attachMatch,
   isMatchNode,
-  markMarkerComponent,
+  markDirectComponent,
 } from "./match-node.js";
 import { collectNodes, createMountPoint, isServerMode } from "./dom.js";
 import { extractMetadata } from "./metadata.js";
@@ -124,7 +124,8 @@ export function Match(props: MatchProps): Node {
   return node;
 }
 
-markMarkerComponent(Match);
+markDirectComponent(Match);
+markDirectComponent(Switch);
 
 export function Switch(props: SwitchProps): Node {
   if (SERVER && isServerMode()) {

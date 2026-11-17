@@ -8,6 +8,7 @@ import {
   untrack,
 } from "@ivlev-dev/silent-reactivity";
 import { createEffectUnlessStatic } from "./static-effect.js";
+import { markDirectComponent } from "./match-node.js";
 import type { Children } from "./jsx.js";
 import {
   attachDisposer,
@@ -461,3 +462,5 @@ export function Index<T>(props: IndexProps<T>): Node {
 
   return hydrating ? document.createDocumentFragment() : container;
 }
+
+markDirectComponent(Index);
