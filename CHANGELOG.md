@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### SSR
+
+- Light-компоненты на сервере рендерятся напрямую, без light-инстанса, props-прокси, отдельного `createRoot`, props-updater и focus-логики. `renderToString` на скомпилированном приложении: 54 216 → **84 323 ops/s** (+55%), 0.47× → **0.71×** от Solid; HTML не изменился.
+
 ### Размер бандла
 
 - Vite-плагин получил `hydrate: false` для mount-only приложений: `__SILENT_HYDRATE__: false` вырезает hydration-ветки и прокси из стартового чанка.

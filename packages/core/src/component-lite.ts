@@ -7,7 +7,7 @@ import {
   runWithOwner,
   type Owner,
 } from "@ivlev-dev/silent-reactivity";
-import { NODE_DISPOSER, attachDisposer, collectNodes, disposeNode } from "./dom.js";
+import { NODE_DISPOSER, attachDisposer, collectNodes, disposeNode, isServerMode } from "./dom.js";
 import { settleNodes } from "./dom-hydration-state.js";
 import { extractMetadata } from "./metadata.js";
 import { currentWindow, isHydrating } from "./hydration-state.js";
@@ -604,6 +604,29 @@ export function createComponentLight(
 ): ComponentResult {
   if (isDirectComponent(component)) {
     const node = (component as unknown as (values: Record<string, unknown>) => Node)(props);
+    return {
+      node,
+      ready: RESOLVED_READY,
+      settled: RESOLVED_READY,
+      update: () => {},
+      dispose: () => {},
+    };
+  }
+  if (isServerMode()) {
+    const output = withRuntimeOptions(options, () =>
+      (component as unknown as (values: Record<string, unknown>) => unknown)(props),
+    );
+    const nodes = extractMetadata(normalizeNodes(output));
+    let node: Node;
+    if (nodes.length === 1) {
+      node = nodes[0]!;
+    } else {
+      const fragment = document.createDocumentFragment();
+      for (const child of nodes) {
+        fragment.appendChild(child);
+      }
+      node = fragment;
+    }
     return {
       node,
       ready: RESOLVED_READY,
