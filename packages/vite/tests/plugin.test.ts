@@ -100,6 +100,24 @@ describe("silent()", () => {
     expect(plugin.config?.({}, { command: "serve", mode: "development" })).toBeUndefined();
   });
 
+  it("hydrate: false вырезает клиентскую гидрацию через define", () => {
+    expect(createPlugin({ hydrate: false }).config?.()).toEqual({
+      define: { __SILENT_HYDRATE__: "false" },
+    });
+  });
+
+  it("hydrate и view можно отключить вместе", () => {
+    expect(createPlugin({ view: false, hydrate: false }).config?.()).toEqual({
+      define: { __SILENT_HYDRATE__: "false", __SILENT_VIEW__: "false" },
+      build: { modulePreload: { polyfill: false } },
+    });
+  });
+
+  it("по умолчанию не задаёт define для view и hydrate", () => {
+    expect(createPlugin().config?.()).toBeUndefined();
+    expect(createPlugin({ hydrate: true }).config?.()).toBeUndefined();
+  });
+
   it("по умолчанию не задаёт define для view", () => {
     expect(createPlugin().config?.()).toBeUndefined();
     expect(createPlugin({ view: true }).config?.()).toBeUndefined();

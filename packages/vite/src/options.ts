@@ -12,6 +12,7 @@ export interface SilentOptions {
   hmr?: boolean;
   index?: boolean;
   view?: boolean;
+  hydrate?: boolean;
   di?: DiMode;
 }
 
@@ -25,6 +26,7 @@ export interface ResolvedOptions {
   hmr: boolean;
   index: boolean;
   view: boolean;
+  hydrate: boolean;
   di: DiMode;
 }
 
@@ -44,6 +46,7 @@ export function resolveOptions(options: SilentOptions = {}): ResolvedOptions {
     hmr: options.hmr ?? true,
     index: options.index ?? true,
     view: options.view ?? true,
+    hydrate: options.hydrate ?? true,
     di: options.di ?? DEFAULT_DI,
   };
 }

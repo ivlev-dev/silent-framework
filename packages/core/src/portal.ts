@@ -10,6 +10,11 @@ import {
 import { extractMetadata } from "./metadata.js";
 import { currentWindow, isHydrating, mismatch } from "./hydration-proxy.js";
 
+
+declare const __SILENT_HYDRATE__: boolean | undefined;
+
+const HYDRATE =
+  typeof __SILENT_HYDRATE__ === "undefined" || __SILENT_HYDRATE__;
 declare const __SILENT_SERVER__: boolean | undefined;
 
 const SERVER = typeof __SILENT_SERVER__ === "undefined" || __SILENT_SERVER__;
@@ -185,7 +190,7 @@ export function Portal(props: PortalProps): Node {
     return marker;
   }
 
-  if (isHydrating()) {
+  if (HYDRATE && isHydrating()) {
     const window = currentWindow();
     if (window === null) {
       return mismatch("Portal вне окна гидрации");

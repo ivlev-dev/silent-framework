@@ -20,6 +20,11 @@ import {
   withWindow,
 } from "./hydration-proxy.js";
 
+
+declare const __SILENT_HYDRATE__: boolean | undefined;
+
+const HYDRATE =
+  typeof __SILENT_HYDRATE__ === "undefined" || __SILENT_HYDRATE__;
 declare const __SILENT_SERVER__: boolean | undefined;
 
 const SERVER = typeof __SILENT_SERVER__ === "undefined" || __SILENT_SERVER__;
@@ -137,7 +142,7 @@ export function Switch(props: SwitchProps): Node {
     container.appendChild(document.createComment(SWITCH));
     return container;
   }
-  if (isHydrating()) {
+  if (HYDRATE && isHydrating()) {
     const outer = currentWindow();
     if (outer === null) {
       return mismatch("Switch вне окна гидрации");

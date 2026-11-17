@@ -32,6 +32,11 @@ import {
   type RuntimeOptions,
 } from "./component-state.js";
 
+
+declare const __SILENT_HYDRATE__: boolean | undefined;
+
+const HYDRATE =
+  typeof __SILENT_HYDRATE__ === "undefined" || __SILENT_HYDRATE__;
 interface DisposeHost {
   [COMPONENT_DISPOSE]?: () => void;
 }
@@ -311,7 +316,7 @@ function buildLightOutput(
   if (matchNode) {
     nodes = [output as Comment];
   } else {
-    if (initial && isHydrating()) {
+    if (initial && HYDRATE && isHydrating()) {
       settleNodes(currentWindow()?.end ?? null, output);
     }
     const normalized = normalizeNodes(output);

@@ -5,6 +5,11 @@ import type {
   TemplatePlan,
 } from "./dom.js";
 
+
+declare const __SILENT_HYDRATE__: boolean | undefined;
+
+const HYDRATE =
+  typeof __SILENT_HYDRATE__ === "undefined" || __SILENT_HYDRATE__;
 export interface DomHydrationRuntime {
   hydrateTemplate(source: TemplateHydrationSource): TemplateClone;
   settleNodes(end: Node | null, value: unknown): void;
@@ -39,7 +44,7 @@ function requireRuntime(): DomHydrationRuntime {
 }
 
 export function settleNodes(end: Node | null, value: unknown): void {
-  if (!isHydrating()) {
+  if (!HYDRATE || !isHydrating()) {
     return;
   }
   requireRuntime().settleNodes(end, value);

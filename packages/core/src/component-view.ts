@@ -64,6 +64,11 @@ import {
   type RuntimeOptions,
 } from "./component-state.js";
 
+
+declare const __SILENT_HYDRATE__: boolean | undefined;
+
+const HYDRATE =
+  typeof __SILENT_HYDRATE__ === "undefined" || __SILENT_HYDRATE__;
 interface DisposeHost {
   [COMPONENT_DISPOSE]?: () => void;
 }
@@ -213,7 +218,7 @@ export function createViewResult(
   const viewId = (viewSequence += 1);
   let mountedAt: number | null = null;
   let fragment: DocumentFragment | null = null;
-  const hydrated = isHydrating();
+  const hydrated = HYDRATE && isHydrating();
   const propsProxy = createPropsProxy(props);
   const viewProps = propsProxy.value;
   let adoptPending = hydrated;

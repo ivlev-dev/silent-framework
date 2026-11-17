@@ -36,6 +36,11 @@ import {
   withWindow,
 } from "./hydration-proxy.js";
 
+
+declare const __SILENT_HYDRATE__: boolean | undefined;
+
+const HYDRATE =
+  typeof __SILENT_HYDRATE__ === "undefined" || __SILENT_HYDRATE__;
 declare const __SILENT_SERVER__: boolean | undefined;
 
 const SERVER = typeof __SILENT_SERVER__ === "undefined" || __SILENT_SERVER__;
@@ -311,7 +316,7 @@ export function For<T>(props: ForProps<T>): Node {
   if (SERVER && isServerMode()) {
     return renderForServer(props);
   }
-  const hydrating = isHydrating();
+  const hydrating = HYDRATE && isHydrating();
   const outer = hydrating ? currentWindow() : null;
   let container: DocumentFragment | null = null;
   const fallback = props.fallback;
@@ -852,7 +857,7 @@ export function Show(props: ShowProps): Node {
     container.appendChild(document.createComment(SHOW));
     return container;
   }
-  if (isHydrating()) {
+  if (HYDRATE && isHydrating()) {
     const outer = currentWindow();
     if (outer === null) {
       return mismatch("Show вне окна гидрации");

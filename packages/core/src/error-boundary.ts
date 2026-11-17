@@ -20,6 +20,11 @@ import {
   withWindow,
 } from "./hydration-proxy.js";
 
+
+declare const __SILENT_HYDRATE__: boolean | undefined;
+
+const HYDRATE =
+  typeof __SILENT_HYDRATE__ === "undefined" || __SILENT_HYDRATE__;
 export interface ErrorBoundaryProps {
   readonly fallback: (error: unknown, reset: () => void) => unknown;
   readonly children: unknown | (() => unknown);
@@ -89,7 +94,7 @@ function resolve(value: unknown): unknown {
 }
 
 export function ErrorBoundary(props: ErrorBoundaryProps): Node {
-  if (isHydrating()) {
+  if (HYDRATE && isHydrating()) {
     return hydrateErrorBoundary(props);
   }
   if (SERVER && isServerMode()) {

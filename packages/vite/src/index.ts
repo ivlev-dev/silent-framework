@@ -110,6 +110,9 @@ export function silent(options: SilentOptions = {}): Plugin {
       if (!opts.view) {
         define.__SILENT_VIEW__ = "false";
       }
+      if (!opts.hydrate) {
+        define.__SILENT_HYDRATE__ = "false";
+      }
       if (env?.command === "build" && !config.build?.ssr) {
         define.__SILENT_SERVER__ = "false";
       }

@@ -36,6 +36,11 @@ import {
   withWindow,
 } from "./hydration-proxy.js";
 
+
+declare const __SILENT_HYDRATE__: boolean | undefined;
+
+const HYDRATE =
+  typeof __SILENT_HYDRATE__ === "undefined" || __SILENT_HYDRATE__;
 declare const __SILENT_SERVER__: boolean | undefined;
 
 const SERVER = typeof __SILENT_SERVER__ === "undefined" || __SILENT_SERVER__;
@@ -222,7 +227,7 @@ export function Index<T>(props: IndexProps<T>): Node {
   if (SERVER && isServerMode()) {
     return renderIndexServer(props);
   }
-  const hydrating = isHydrating();
+  const hydrating = HYDRATE && isHydrating();
   const outer = hydrating ? currentWindow() : null;
   const container = document.createDocumentFragment();
   const fallback = props.fallback;

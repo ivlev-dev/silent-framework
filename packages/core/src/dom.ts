@@ -27,10 +27,9 @@ import {
   mergeTopLevelMetadata,
   mismatch,
   shapeMatches,
-  significantChildren,
-  significantChildrenFromEnd,
   withWindow,
 } from "./hydration-proxy.js";
+import { significantChildren, significantChildrenFromEnd } from "./significant.js";
 import {
   getDomHydrationRuntime,
   hydratedEffect,
@@ -44,6 +43,11 @@ import {
   settleWindow,
 } from "./hydration-cursor.js";
 
+
+declare const __SILENT_HYDRATE__: boolean | undefined;
+
+const HYDRATE =
+  typeof __SILENT_HYDRATE__ === "undefined" || __SILENT_HYDRATE__;
 export const NODE_DISPOSER = Symbol("silent.disposer");
 const ITEM_DISPOSER = Symbol("silent.itemDisposer");
 
@@ -619,7 +623,7 @@ function createTemplateFactory(html: string): () => Node {
     return mark(content.cloneNode(true));
   };
   return () => {
-    if (!isHydrating()) {
+    if (!HYDRATE || !isHydrating()) {
       return create();
     }
     if (!metadata) {
@@ -917,7 +921,7 @@ function createClientTemplateHoles(
     cloneNode,
   };
   return () => {
-    if (isHydrating()) {
+    if (HYDRATE && isHydrating()) {
       return getDomHydrationRuntime().hydrateTemplate(source);
     }
     return create();
@@ -1035,7 +1039,7 @@ export function insert(
     insertServer(parent, accessor, nodeMarker);
     return;
   }
-  if (isHydrating()) {
+  if (HYDRATE && isHydrating()) {
     insertHydrated(parent, accessor, nodeMarker);
     return;
   }
@@ -1053,7 +1057,7 @@ export function text(node: Text, accessor: () => unknown): void {
       node.data = next;
     }
   };
-  if (isHydrating()) {
+  if (HYDRATE && isHydrating()) {
     hydratedEffect(apply);
     return;
   }
@@ -1158,7 +1162,7 @@ export function attr(el: Element, name: string, accessor: () => unknown): void {
     }
     applyAttr(el, name, value, svg);
   };
-  if (isHydrating()) {
+  if (HYDRATE && isHydrating()) {
     hydratedEffect(apply);
   } else {
     createRenderEffect(apply);
@@ -1912,7 +1916,7 @@ export function bindValue(
   const apply = (): void => {
     applyValue(control, state as ValueBinding, accessor());
   };
-  if (isHydrating()) {
+  if (HYDRATE && isHydrating()) {
     hydratedEffect(apply);
     return;
   }
@@ -2041,7 +2045,7 @@ export function bindChecked(
   const apply = (): void => {
     applyChecked(control, state as CheckBinding, accessor());
   };
-  if (isHydrating()) {
+  if (HYDRATE && isHydrating()) {
     hydratedEffect(apply);
     return;
   }
@@ -2445,7 +2449,7 @@ export function effect(fn: () => void): void {
 }
 
 export function fragment(accessor: () => unknown): Node {
-  if (isHydrating()) {
+  if (HYDRATE && isHydrating()) {
     const outer = currentWindow();
     if (outer === null) {
       return mismatch("fragment вне окна гидрации");

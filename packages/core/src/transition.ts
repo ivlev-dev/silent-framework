@@ -10,6 +10,11 @@ import { extractMetadata } from "./metadata.js";
 import { settleWindow } from "./hydration-cursor.js";
 import { collectBetween, currentWindow, isHydrating, mismatch } from "./hydration-proxy.js";
 
+
+declare const __SILENT_HYDRATE__: boolean | undefined;
+
+const HYDRATE =
+  typeof __SILENT_HYDRATE__ === "undefined" || __SILENT_HYDRATE__;
 declare const __SILENT_SERVER__: boolean | undefined;
 
 const SERVER = typeof __SILENT_SERVER__ === "undefined" || __SILENT_SERVER__;
@@ -69,7 +74,7 @@ export function Transition(props: TransitionProps): Node {
     return renderServer(props);
   }
 
-  const hydrating = isHydrating();
+  const hydrating = HYDRATE && isHydrating();
   let container: DocumentFragment;
   let anchor: Comment;
   let mount: ReturnType<typeof createMountPoint>;

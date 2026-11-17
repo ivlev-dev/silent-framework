@@ -28,6 +28,11 @@ import {
 } from "./hydration-proxy.js";
 import { getOwner, onCleanup, runWithOwner } from "@ivlev-dev/silent-reactivity";
 
+
+declare const __SILENT_HYDRATE__: boolean | undefined;
+
+const HYDRATE =
+  typeof __SILENT_HYDRATE__ === "undefined" || __SILENT_HYDRATE__;
 export interface SuspenseProps {
   readonly fallback?: unknown;
   readonly children: unknown;
@@ -84,7 +89,7 @@ function disposeValue(value: unknown): void {
 }
 
 export function Suspense(props: SuspenseProps): Node {
-  if (isHydrating()) {
+  if (HYDRATE && isHydrating()) {
     return hydrateSuspense(props);
   }
   const container = document.createDocumentFragment();
@@ -237,7 +242,7 @@ export function lazy<P extends Record<string, unknown>>(
     const propsRecord: Record<string, unknown> = props;
     let disposed = false;
 
-    if (isHydrating()) {
+    if (HYDRATE && isHydrating()) {
       const outer = currentWindow();
       if (outer === null) {
         return mismatch("lazy вне окна гидрации");
