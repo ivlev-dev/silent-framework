@@ -1,4 +1,5 @@
 import {
+  currentWindow,
   getHydrationRuntime,
   type HydrationRuntime,
   type HydrationWindow,
@@ -83,4 +84,28 @@ export function significantChildrenFromEnd(node: Node, offset: number): Node | n
 
 export function countSignificantChildren(node: Node): number {
   return runtime().countSignificantChildren(node);
+}
+
+export function adoptHydrationRegion(markerData: string): Comment | null {
+  const window = currentWindow();
+  if (window === null) {
+    return null;
+  }
+  const stale: Node[] = [];
+  let node: Node | null =
+    window.cursor !== null && window.cursor !== window.end
+      ? window.cursor
+      : window.start.nextSibling;
+  while (node !== null && node !== window.end) {
+    if (node.nodeType === Node.COMMENT_NODE && (node as Comment).data === markerData) {
+      for (const staleNode of stale) {
+        staleNode.parentNode?.removeChild(staleNode);
+      }
+      window.cursor = node.nextSibling;
+      return node as Comment;
+    }
+    stale.push(node);
+    node = node.nextSibling;
+  }
+  return null;
 }

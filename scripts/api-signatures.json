@@ -7,6 +7,11 @@
         "type": "(owner: Owner | null, values: Map<object, unknown> | null) => void",
         "signature": "export declare function adoptContextValues(owner: Owner | null, values: Map<object, unknown> | null): void;"
       },
+      "adoptHydrationRegion": {
+        "kind": "function",
+        "type": "(markerData: string) => Comment | null",
+        "signature": "export declare function adoptHydrationRegion(markerData: string): Comment | null;"
+      },
       "AnyComponent": {
         "kind": "type",
         "signature": "export type AnyComponent = (...args: never[]) => unknown;"
@@ -894,6 +899,11 @@
         "kind": "function",
         "type": "<T>(fn: () => T) => T",
         "signature": "export declare function withIdScope<T>(fn: () => T): T;"
+      },
+      "withoutHydration": {
+        "kind": "function",
+        "type": "<T>(fn: () => T) => T",
+        "signature": "export declare function withoutHydration<T>(fn: () => T): T;"
       },
       "withRuntimeOptions": {
         "kind": "function",

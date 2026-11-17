@@ -6,7 +6,8 @@ export * from "./component-context.js";
 export * from "./component.js";
 export * from "./mount.js";
 export * from "./hydrate.js";
-export { HydrationMismatchError } from "./hydration-state.js";
+export { HydrationMismatchError, withoutHydration } from "./hydration-state.js";
+export { adoptHydrationRegion } from "./hydration-proxy.js";
 export * from "./devtools.js";
 export { setMetadataCollector } from "./metadata.js";
 export {

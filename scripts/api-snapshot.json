@@ -3,6 +3,7 @@
   "packages": {
     "@ivlev-dev/silent-core": [
       "adoptContextValues",
+      "adoptHydrationRegion",
       "AnyComponent",
       "applyProps",
       "attachDisposer",
@@ -198,6 +199,7 @@
       "whenIdle",
       "whenSettled",
       "withIdScope",
+      "withoutHydration",
       "withRuntimeOptions"
     ],
     "@ivlev-dev/silent-di": [

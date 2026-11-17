@@ -102,7 +102,9 @@ describe("SSR контекста и id", () => {
     });
 
     expect(mismatches).toEqual([]);
-    expect(target.querySelector("label")).toBe(serverLabel);
+    expect(target.querySelectorAll("label").length).toBe(1);
+    expect(target.querySelectorAll(".field").length).toBe(1);
+    expect(target.querySelector("label")).not.toBe(serverLabel);
     expect(target.querySelector("label")?.getAttribute("for")).toBe("field-1");
     expect(target.querySelector("input")?.getAttribute("id")).toBe("field-1");
     expect(target.querySelector("label")?.textContent).toBe("dark");
