@@ -1357,7 +1357,7 @@ dependencies = [
 
 [[package]]
 name = "silent-node"
-version = "0.11.16"
+version = "0.11.17"
 dependencies = [
  "napi",
  "napi-build",
@@ -1370,7 +1370,7 @@ dependencies = [
 
 [[package]]
 name = "silent-transform"
-version = "0.11.16"
+version = "0.11.17"
 dependencies = [
  "serde",
  "serde_json",
