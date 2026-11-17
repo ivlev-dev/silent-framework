@@ -1449,7 +1449,7 @@
       },
       "RenderOptions": {
         "kind": "interface",
-        "signature": "export interface RenderOptions { readonly props?: Record<string, unknown> | undefined; readonly container?: Container | undefined; readonly preloader?: Preloader | undefined; readonly onError?: ((error: unknown, component: AnyComponent) => void) | undefined; }"
+        "signature": "export interface RenderOptions { readonly props?: Record<string, unknown> | undefined; readonly container?: Container | undefined; readonly preloader?: Preloader | undefined; readonly onError?: ((error: unknown, component: AnyComponent) => void) | undefined; readonly markers?: boolean | undefined; }"
       },
       "RenderResult": {
         "kind": "interface",
