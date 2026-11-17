@@ -496,6 +496,7 @@ export function For<T>(props: ForProps<T>): Node {
     const state = new KeyedState<T>(item, keyAt(item, position), anchor, itemEnd, position);
     let initialMount: Node | null = mountParent;
     let seeded = itemEnd !== null;
+    const children = untrack(() => props.children);
     const run = (): void => {
       if (seeded) {
         seeded = false;
@@ -510,14 +511,14 @@ export function For<T>(props: ForProps<T>): Node {
           window.end = end;
           window.cursor = start.nextSibling;
         }
-        const value = withWindow(window, props.children, item, state.index);
+        const value = withWindow(window, children, item, state.index);
         settleNodes(end, value);
         if (!regionMatches(window, end, value)) {
           mismatch("содержимое элемента списка не совпало");
         }
         return;
       }
-      renderItem(state, props.children(item, state.index), initialMount);
+      renderItem(state, children(item, state.index), initialMount);
       initialMount = null;
     };
     state.cleanup = hydrating
@@ -543,7 +544,7 @@ export function For<T>(props: ForProps<T>): Node {
       return;
     }
     runWithOwner(parentOwner, () => {
-      renderItem(state, props.children(item, state.index));
+      renderItem(state, untrack(() => props.children)(item, state.index));
     });
   };
 

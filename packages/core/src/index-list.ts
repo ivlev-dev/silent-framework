@@ -276,6 +276,7 @@ export function Index<T>(props: IndexProps<T>): Node {
   ): IndexState<T> => {
     const state = new IndexedState<T>(value, anchor, nodes, position);
     let initialMount = mountParent;
+    const children = untrack(() => props.children);
     state.cleanup = createEffectUnlessStatic(() => {
       if (itemEnd !== null) {
         const start = anchor as Comment;
@@ -288,7 +289,7 @@ export function Index<T>(props: IndexProps<T>): Node {
           window.end = itemEnd;
           window.cursor = start.nextSibling;
         }
-        const rendered = withWindow(window, props.children, state.item, state.index);
+        const rendered = withWindow(window, children, state.item, state.index);
         settleNodes(itemEnd, rendered);
         if (!regionMatches(window, itemEnd, rendered)) {
           mismatch("содержимое элемента списка не совпало");
@@ -316,7 +317,7 @@ export function Index<T>(props: IndexProps<T>): Node {
       if (parent === null) {
         return;
       }
-      const rendered = props.children(state.item, state.index);
+      const rendered = children(state.item, state.index);
       let placed: Node[];
       if (rendered instanceof Node && !(rendered instanceof DocumentFragment)) {
         const kept = extractMetadataNode(rendered);
