@@ -936,6 +936,7 @@ interface RenderOptions {
   readonly container?: Container | undefined;
   readonly preloader?: Preloader | undefined;
   readonly onError?: ((error: unknown, component: AnyComponent) => void) | undefined;
+  readonly markers?: boolean | undefined;
 }
 ```
 
@@ -943,6 +944,7 @@ interface RenderOptions {
 - `container` — корневой DI-контейнер; дочерние view наследуют scope.
 - `preloader` — глобальный прелоадер (используется, если у компонента нет своего).
 - `onError` — если не задан, первая ошибка резолва/загрузки пробрасывается из `renderToString`; если задан — вызывается обработчик, а рендер завершается.
+- `markers` — по умолчанию `true`. При `false` из `html` и `head` удаляются комментарии `silent-*` и атрибуты `data-silent-*`; разметка не предназначена для `hydrate`. HTML уменьшается (1 230 → 369 B, gzip 187 → 134 B), но рендер замедляется на ~20–25% из-за финальной очистки. Для `renderToStream` опция не применяется.
 
 ### `RenderResult`
 

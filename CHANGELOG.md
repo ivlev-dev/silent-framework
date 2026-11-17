@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### SSR
+
+- `renderToString` получил `markers: false`: удаляет `silent-*`-комментарии и `data-silent-*`-атрибуты из `html`/`head` для негидрируемого SSR. HTML 1 230 → 369 B (gzip 187 → 134 B), но рендер замедляется на ~20–25% из-за финальной очистки. Default-поведение и `renderToStream` не меняются.
+
 ### Производительность
 
 - `extractMetadataNode` не обходит поддерево, если у элемента нет элементных детей: строки списка из текстовых узлов больше не платят за поиск `<title>/<meta>/<link>`. `keyed list: create 1000` ~146 → 150 ops/s, `index list` ~127 → 130.

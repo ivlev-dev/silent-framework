@@ -53,13 +53,15 @@ const APPS: readonly BuildApp[] = [
   },
 ];
 
-function clearArtifacts(root: string, outDir: string): void {
+function clearArtifacts(root: string, outDir: string, clearCache = false): void {
   rmSync(join(root, outDir), { recursive: true, force: true });
-  rmSync(join(root, "node_modules", ".vite"), { recursive: true, force: true });
-  rmSync(join(root, "node_modules", ".vite-temp"), {
-    recursive: true,
-    force: true,
-  });
+  if (clearCache) {
+    rmSync(join(root, "node_modules", ".vite"), { recursive: true, force: true });
+    rmSync(join(root, "node_modules", ".vite-temp"), {
+      recursive: true,
+      force: true,
+    });
+  }
 }
 
 async function runBuild(root: string, configFile: string): Promise<number> {
@@ -142,11 +144,12 @@ async function main(): Promise<void> {
     const warm: number[] = [];
 
     for (let run = 0; run < RUNS; run += 1) {
-      clearArtifacts(app.root, app.outDir);
+      clearArtifacts(app.root, app.outDir, true);
       cold.push(await runBuild(app.root, app.configFile));
     }
 
     for (let run = 0; run < RUNS; run += 1) {
+      clearArtifacts(app.root, app.outDir);
       warm.push(await runBuild(app.root, app.configFile));
     }
 

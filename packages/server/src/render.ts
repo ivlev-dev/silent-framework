@@ -17,6 +17,13 @@ export interface RenderOptions {
   readonly container?: Container | undefined;
   readonly preloader?: Preloader | undefined;
   readonly onError?: ((error: unknown, component: AnyComponent) => void) | undefined;
+  readonly markers?: boolean | undefined;
+}
+
+const HYDRATION_MARKERS = /<!--silent-[^>]*-->|\sdata-silent-[a-z0-9-]+(?:="[^"]*")?/g;
+
+function stripMarkers(html: string): string {
+  return HYDRATION_MARKERS.test(html) ? html.replace(HYDRATION_MARKERS, "") : html;
 }
 
 export interface RenderResult {
@@ -83,11 +90,13 @@ async function renderOnce(
   try {
     await settleRender(session.result);
     session.throwIfFailed();
-    const head = session.serializeHead();
-    rendered = {
-      html: serializeNode(session.result.node as unknown as DomNode),
-      head,
-    };
+    let head = session.serializeHead();
+    let html = serializeNode(session.result.node as unknown as DomNode);
+    if (options.markers === false) {
+      html = stripMarkers(html);
+      head = stripMarkers(head);
+    }
+    rendered = { html, head };
   } catch (error) {
     renderFailed = true;
     renderError = error;

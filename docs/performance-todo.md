@@ -96,7 +96,7 @@
 - [ ] Быстрый путь для синхронных приложений без VM/preloader (меньше микротасок).
 - [ ] Кэш скомпилированных рендер-функций шаблонов.
 - [x] Проверено и отклонено: массив `parts` в `ssrRaw`/`RawText` для потокового producer без полной строки. `renderToString` 84 323 → 73 540 ops/s (−13%) из-за `join` на каждую строку; string-конкатенация быстрее. Откат; потоковый shell работает для mini-DOM, скомпилированный `RawText` остаётся одной строкой.
-- [ ] Опциональный режим без hydration-маркеров для негидрируемого SSR.
+- [x] `renderToString({ markers: false })`: удаление комментариев `silent-*` и `data-silent-*` из `html`/`head`. HTML 1 230 → **369 B** (gzip 187 → **134 B**), но рендер ~116k → 89k ops/s (−23%) из-за финального regex-прохода. Default-режим и `renderToStream` не меняются.
 - [x] `renderToStream`: head не сериализуется без `onHead`, короткий чанк уходит без `slice`, регион патчится один раз через `serializeBetween`. Полная потоковая сериализация shell без промежуточной строки не внедрена.
 - [x] `renderToStream`: shell без `onShell` сериализуется в чанки через `serializeNodeChunks` без полной строки и повторного `slice`. Ограничение: скомпилированный `RawText` всё равно хранит готовую строку, поэтому для него нужен отдельный строковый producer.
 - [ ] Статическая предгенерация неизменяемых поддеревьев.
@@ -119,6 +119,7 @@
 - [x] `tsc -b` с project references: `composite: true` и `references` в tsconfig пакетов, root `build` = `build:native` + один `tsc -b`. Warm `pnpm build` 417 → 200 мс, cold 414 мс.
 - [x] Персистентный кэш transform по хэшу содержимого: ключ = версия нативного addon + модуль + JSON опций + хэш индекса + код, файлы в `config.cacheDir/silent-transform`, очистка старых записей при `buildStart`, отключение через `SILENT_TRANSFORM_CACHE=off`.
 - [x] Отклонено: пропуск пересборки неизменившихся пакетов на уровне pnpm — pnpm не умеет, а фильтры по git меняют семантику root `build`.
+- [x] `bench:build` корректно измеряет persistent transform-кэш: холодные прогоны очищают `.vite`, warm-прогоны переиспользуют кэш движка и плагина. Warm остаётся ~44 мс против ~30 у Solid — основной остаток связан с размером бандла и Rollup, не с кэшем трансформаций.
 - [x] Кэш нативных артефактов по content hash: sha256 исходников в `packages/swc/native/.build-hash-<triple>`, `touch` без изменения содержимого больше не пересобирает.
 - [x] Сравнение cold/warm build с Solid в CI (`pnpm bench:build`): guard считает `coldRatio`/`warmRatio` из того же прогона (порог +40%, без `--strict` — предупреждение).
 
