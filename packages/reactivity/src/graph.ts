@@ -357,6 +357,18 @@ function reconcileDependencies(node: ComputationNode): void {
     node.depVersions = null;
     return;
   }
+  if (nextMap.size === 1 && previousDeps !== null && previousDeps.length === 1) {
+    const iterator = nextMap.keys();
+    const firstEntry = iterator.next();
+    const dep = firstEntry.done === true ? undefined : firstEntry.value;
+    if (dep !== undefined && dep === previousDeps[0]) {
+      if (previousVersions !== null) {
+        previousVersions[0] = nextMap.get(dep) ?? 0;
+      }
+      nextMap.clear();
+      return;
+    }
+  }
   const nextDeps: SourceNode[] = [];
   const nextVersions: number[] = [];
   for (const [dep, version] of nextMap) {
