@@ -293,6 +293,9 @@ function compilePattern(pattern: string): PatternSegment[] {
 }
 
 function scoreOf(segments: readonly PatternSegment[]): number[] {
+  if (segments.length === 0) {
+    return [5];
+  }
   return segments.map((segment) => {
     if (segment.kind === "static") {
       return 4;

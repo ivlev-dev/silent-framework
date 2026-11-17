@@ -78,6 +78,17 @@ describe("сопоставление маршрутов", () => {
     expect(location.params["*"]).toBe("a/b/c.txt");
   });
 
+  it("не отдаёт корень wildcard-маршруту", async () => {
+    const router = createRouter([
+      ...routes,
+      { path: "*", name: "not-found", component: leaf("not-found") },
+    ]);
+    await router.start();
+    expect(router.route?.name).toBe("home");
+    await router.push("/unknown/deep");
+    expect(router.route?.name).toBe("not-found");
+  });
+
   it("выбирает наиболее специфичный маршрут", () => {
     const router = createRouter(routes);
     expect(router.resolve("/static/path").name).toBe("static-path");
