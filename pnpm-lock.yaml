@@ -288,6 +288,9 @@ importers:
       '@ivlev-dev/silent-router':
         specifier: workspace:*
         version: link:../../packages/router
+      '@ivlev-dev/silent-server':
+        specifier: workspace:*
+        version: link:../../packages/server
     devDependencies:
       '@ivlev-dev/silent-vite':
         specifier: workspace:*

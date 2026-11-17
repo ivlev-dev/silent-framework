@@ -3,6 +3,9 @@ import { silent } from "@ivlev-dev/silent-vite";
 
 export default defineConfig({
   plugins: [silent()],
+  build: {
+    outDir: "dist/client",
+  },
   ssr: {
     external: [
       "@ivlev-dev/silent-core",

@@ -1,7 +1,7 @@
 import "./style.css";
-import { mount } from "@ivlev-dev/silent-core";
+import { hydrate } from "@ivlev-dev/silent-core";
 import { Container } from "@ivlev-dev/silent-di";
-import { Router } from "@ivlev-dev/silent-router";
+import { Router, createBrowserHistory } from "@ivlev-dev/silent-router";
 import { App } from "./app";
 import { routes } from "./routes";
 
@@ -11,10 +11,19 @@ if (root === null) {
 }
 
 const container = new Container("router-example");
-const router = new Router({ routes, container });
+const router = new Router({
+  routes,
+  history: createBrowserHistory(),
+  container,
+});
 await router.start();
 
-void mount(root, App, {
+const state = globalThis as typeof globalThis & { __silentReady?: boolean };
+void hydrate(root, App, {
   container,
   props: { title: "Silent Router" },
-});
+}).then((handle) =>
+  handle.ready.then(() => {
+    state.__silentReady = true;
+  }),
+);

@@ -156,9 +156,7 @@ export function RouterView(props: RouterViewProps): Node {
   const runtimeOptions = getRuntimeOptions();
   const adoptedMarker = adoptHydrationRegion(ROUTER_VIEW_MARKER);
   const mountMarker = adoptedMarker ?? marker;
-  if (adoptedMarker === null) {
-    container.appendChild(marker);
-  }
+  container.appendChild(mountMarker);
   const mount = createMountPoint(container, mountMarker);
   const selection = createMemo(
     () => selectView(router, depth),
@@ -212,11 +210,17 @@ export function RouterView(props: RouterViewProps): Node {
         createComponent(
           next,
           liveProps as unknown as Record<string, unknown>,
-          runtimeOptions,
+          adoptedMarker === null
+            ? runtimeOptions
+            : { ...runtimeOptions, hydrate: false },
         ),
       ),
     );
-    currentResult = adoptedMarker === null ? create() : withoutHydration(create);
+    if (adoptedMarker === null) {
+      currentResult = create();
+    } else {
+      currentResult = withoutHydration(create);
+    }
     mount.render(currentResult.node);
   });
 
