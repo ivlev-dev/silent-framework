@@ -10,7 +10,7 @@
 
 - Vite-плагин получил `hydrate: false` для mount-only приложений: `__SILENT_HYDRATE__: false` вырезает hydration-ветки и прокси из стартового чанка.
 - В core добавлена build-time константа `HYDRATE`; `isHydrating`-ветки в `For`/`Index`/`Show`/`Switch`/`dom`/`component-lite`/`Suspense`/`ErrorBoundary`/`Portal`/`Transition` закрыты ею.
-- Mount-only `bench:build`: 35.71 → **34.3 KB** min, 12.37 → **11.7 KB gzip**. Default/SSR-сборки не меняются.
+- Mount-only `bench:build`: 35.71 → **34.5 KB** min, 12.37 → **11.79 KB gzip**. Default/SSR-сборки не меняются.
 
 ### Производительность гидрации
 
