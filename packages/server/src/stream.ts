@@ -100,6 +100,11 @@ async function runStream(
     if (state.cancelled || controller === null || html.length === 0) {
       return;
     }
+    if (html.length <= chunkSize) {
+      controller.enqueue(html);
+      options.onChunk?.(html);
+      return;
+    }
     for (let index = 0; index < html.length; index += chunkSize) {
       const chunk = html.slice(index, index + chunkSize);
       controller.enqueue(chunk);
@@ -196,8 +201,11 @@ async function runStream(
   try {
     session = beginRenderSession(app, options);
     flushSync();
-    const shellHead = session.serializeHead();
-    options.onHead?.(shellHead, { final: false });
+    const trackHead = options.onHead !== undefined;
+    const shellHead = trackHead ? session.serializeHead() : "";
+    if (trackHead) {
+      options.onHead?.(shellHead, { final: false });
+    }
     const shell = serializeNode(session.result.node as unknown as DomNode);
     options.onShell?.(shell);
     shellEmitted = true;
@@ -213,9 +221,11 @@ async function runStream(
       throw patchError;
     }
 
-    const finalHead = session.serializeHead();
-    if (finalHead !== shellHead) {
-      options.onHead?.(finalHead, { final: true });
+    if (trackHead) {
+      const finalHead = session.serializeHead();
+      if (finalHead !== shellHead) {
+        options.onHead?.(finalHead, { final: true });
+      }
     }
   } catch (error) {
     streamFailed = true;
