@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
@@ -119,7 +119,7 @@ describe("silent()", () => {
     await plugin.buildStart?.();
 
     expect(scanMock).toHaveBeenCalledTimes(1);
-    expect(scanMock).toHaveBeenCalledWith(process.cwd());
+    expect(scanMock).toHaveBeenCalledWith(process.cwd(), expect.any(String));
   });
 
   it("transform вызывает native transform и возвращает code, map, warnings", async () => {
@@ -183,6 +183,40 @@ describe("silent()", () => {
 
     await plugin.transform?.("two", fileFor("src", "b.ts"));
     expect(scanMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("передаёт alias и tsconfig paths в scan и transform", async () => {
+    const project = mkdtempSync(path.join(tmpdir(), "silent-vite-alias-"));
+    const cacheDir = mkdtempSync(path.join(tmpdir(), "silent-vite-cache-"));
+    cacheDirectories.push(project, cacheDir);
+    writeFileSync(
+      path.join(project, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          baseUrl: ".",
+          paths: { "@/*": ["src/*"] },
+        },
+      }),
+    );
+
+    const plugin = createPlugin({ root: project });
+    plugin.configResolved?.({
+      cacheDir,
+      resolve: { alias: [{ find: "~lib", replacement: path.join(project, "lib") }] },
+    } as unknown as ResolvedConfig);
+
+    await plugin.buildStart?.();
+    const scanOptions = JSON.parse(scanMock.mock.calls[0]?.[1] ?? "{}");
+    expect(scanOptions.aliases).toEqual(
+      expect.arrayContaining([
+        { find: "~lib", replacement: path.join(project, "lib") },
+        { find: "@/*", replacement: path.join(project, "src/*") },
+      ]),
+    );
+
+    await plugin.transform?.("code", path.join(project, "src", "app.ts"));
+    const transformOptions = JSON.parse(transformMock.mock.calls[0]?.[2] ?? "{}");
+    expect(transformOptions.aliases).toEqual(scanOptions.aliases);
   });
 
   it("options JSON содержит swc, requirePreloader, runtime, hmr", async () => {

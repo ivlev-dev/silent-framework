@@ -76,8 +76,10 @@ const result = JSON.parse(raw) as NativeTransformResult;
 ## `scan`
 
 ```ts
-function scan(root: string): string;
+function scan(root: string, optionsJson: string): string;
 ```
+
+`optionsJson` — JSON с необязательными правилами алиасов: `{ "aliases": [{ "find": "@/*", "replacement": "/abs/src/*" }] }`. Пустая строка означает отсутствие алиасов.
 
 Рекурсивно обходит `root` и возвращает JSON-строку с DI-индексом:
 
@@ -91,14 +93,14 @@ interface SilentIndex {
 - `interfaces` — отображение токена интерфейса на массив токенов его реализаций (`/abs/path/types.ts#Store` → `["/abs/path/memory-store.ts#MemoryStore"]`).
 - `values` — отображение пути модуля без расширения на массив экспортируемых значений (`/abs/path/memory-store.ts` → `["MemoryStore"]`).
 
-Сканер обходит файлы расширений `ts`, `tsx`, `mts`, `cts`, `js`, `jsx`, `mjs`, `cjs`, пропуская `.d.ts` и каталоги `node_modules`, `dist`, `build`, `out`, `coverage`, `.next`, `.nuxt`, `.vite`, `.turbo`, `target`, а также скрытые и символические ссылки. Токены формируются как `<путь-модуля-без-расширения>#<Имя>`.
+Правила алиасов применяются к импортам без `./`: сканер сопоставляет `find` (с одним `*`) и подставляет `replacement`, после чего токен интерфейса указывает на реальный модуль. Сканер обходит файлы расширений `ts`, `tsx`, `mts`, `cts`, `js`, `jsx`, `mjs`, `cjs`, пропуская `.d.ts` и каталоги `node_modules`, `dist`, `build`, `out`, `coverage`, `.next`, `.nuxt`, `.vite`, `.turbo`, `target`, а также скрытые и символические ссылки. Токены формируются как `<путь-модуля-без-расширения>#<Имя>`.
 
 Пример:
 
 ```ts
 import { scan } from "@ivlev-dev/silent-swc";
 
-const index = JSON.parse(scan("/project")) as {
+const index = JSON.parse(scan("/project", "")) as {
   interfaces: Record<string, string[]>;
   values: Record<string, string[]>;
 };

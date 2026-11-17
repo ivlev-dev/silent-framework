@@ -54,6 +54,18 @@ pub fn module_token(path: &Path, name: &str) -> String {
     format!("{}#{}", module_path_without_extension(path), name)
 }
 
+pub fn resolve_module(
+    from_file: &Path,
+    source: &str,
+    aliases: &[crate::alias::AliasRule],
+) -> Option<String> {
+    if source.starts_with('.') {
+        return resolve_import_path(from_file, source);
+    }
+    let target = crate::alias::resolve_alias(source, aliases)?;
+    Some(module_path_without_extension(Path::new(&target)))
+}
+
 pub fn resolve_import_path(from_file: &Path, source: &str) -> Option<String> {
     if !source.starts_with('.') {
         return None;

@@ -1422,8 +1422,8 @@
       },
       "scan": {
         "kind": "function",
-        "type": "(root: string) => string",
-        "signature": "export function scan(root: string): string;"
+        "type": "(root: string, optionsJson: string) => string",
+        "signature": "export function scan(root: string, optionsJson: string): string;"
       },
       "transform": {
         "kind": "function",

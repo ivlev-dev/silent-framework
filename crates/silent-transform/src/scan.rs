@@ -1,5 +1,6 @@
+use crate::alias::AliasRule;
 use crate::index::Index;
-use crate::paths::{is_source_file, module_token, resolve_import_path};
+use crate::paths::{is_source_file, module_token, resolve_module};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -130,6 +131,7 @@ fn entity_from_expr(expr: &Expr) -> Option<TsEntityName> {
 fn interface_token(
     file: &Path,
     imports: &HashMap<String, ImportInfo>,
+    aliases: &[AliasRule],
     expr: &TsEntityName,
 ) -> Option<String> {
     match expr {
@@ -139,7 +141,7 @@ fn interface_token(
                 if import.imported == "*" {
                     return None;
                 }
-                if let Some(module) = resolve_import_path(file, &import.source) {
+                if let Some(module) = resolve_module(file, &import.source, aliases) {
                     return Some(format!("{module}#{}", import.imported));
                 }
             }
@@ -151,7 +153,7 @@ fn interface_token(
             };
             let local = left.sym.to_string();
             let import = imports.get(&local)?;
-            let module = resolve_import_path(file, &import.source)?;
+            let module = resolve_module(file, &import.source, aliases)?;
             Some(format!("{module}#{}", qualified.right.sym))
         }
     }
@@ -161,6 +163,7 @@ fn collect_implements(
     file: &Path,
     module: &Module,
     imports: &HashMap<String, ImportInfo>,
+    aliases: &[AliasRule],
     index: &mut Index,
 ) {
     let impl_token = |ident: &swc_core::ecma::ast::Ident| module_token(file, ident.sym.as_ref());
@@ -175,7 +178,7 @@ fn collect_implements(
             let Some(entity) = entity_from_expr(&implemented.expr) else {
                 continue;
             };
-            let Some(token) = interface_token(file, imports, &entity) else {
+            let Some(token) = interface_token(file, imports, aliases, &entity) else {
                 continue;
             };
             let entry = index.interfaces.entry(token).or_default();
@@ -300,6 +303,10 @@ fn walk(directory: &Path, root: &Path, files: &mut Vec<PathBuf>) {
 }
 
 pub fn scan(root: &Path) -> Index {
+    scan_with_aliases(root, &[])
+}
+
+pub fn scan_with_aliases(root: &Path, aliases: &[AliasRule]) -> Index {
     let root = crate::paths::normalize_path(root);
     let mut files = Vec::new();
     walk(&root, &root, &mut files);
@@ -311,7 +318,7 @@ pub fn scan(root: &Path) -> Index {
             continue;
         };
         let imports = collect_imports(&module);
-        collect_implements(&file, &module, &imports, &mut index);
+        collect_implements(&file, &module, &imports, aliases, &mut index);
 
         let names = collect_exported_names(&module);
         if !names.is_empty() {

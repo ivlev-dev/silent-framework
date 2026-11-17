@@ -61,10 +61,10 @@ export function nativeTransform(
   return parsed;
 }
 
-export function nativeScan(swc: SwcModule, root: string): SilentIndex {
+export function nativeScan(swc: SwcModule, root: string, optionsJson: string): SilentIndex {
   let raw: string;
   try {
-    raw = swc.scan(root);
+    raw = swc.scan(root, optionsJson);
   } catch (error) {
     throw new Error(
       `@ivlev-dev/silent-vite: scan упал для root ${root}:\n${describeError(error)}`,

@@ -11,6 +11,6 @@ export function transform(
   indexJson: string,
 ): string;
 
-export function scan(root: string): string;
+export function scan(root: string, optionsJson: string): string;
 
 export function version(): string;

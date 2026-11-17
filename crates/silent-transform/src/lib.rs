@@ -1,3 +1,4 @@
+pub mod alias;
 pub mod imports;
 pub mod index;
 pub mod jsx;
@@ -9,7 +10,7 @@ mod template_plan;
 pub mod transform;
 
 pub use index::Index;
-pub use scan::scan;
+pub use scan::{scan, scan_with_aliases};
 pub use transform::{transform, SilentOptions};
 
 pub fn version() -> &'static str {

@@ -39,7 +39,7 @@ describe("@ivlev-dev/silent-swc", () => {
       join(root, "src", "memory.ts"),
       "import type { Store } from './types';\nexport class MemoryStore implements Store { get() { return ''; } }\n",
     );
-    const index = JSON.parse(scan(root)) as {
+    const index = JSON.parse(scan(root, "")) as {
       interfaces: Record<string, string[]>;
       values: Record<string, string[]>;
     };

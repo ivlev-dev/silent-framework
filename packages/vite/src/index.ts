@@ -1,6 +1,7 @@
 import type { ConfigEnv, Plugin, ResolvedConfig, UserConfig } from "vite";
 import { join } from "node:path";
 import { loadSwc, nativeScan, nativeTransform } from "./native.js";
+import { aliasesJson, mergeAliases, type AliasRule } from "./aliases.js";
 import type { SilentIndex } from "./native.js";
 import { cleanModuleId, isInsideRoot, isSourceModule, isVirtualModule, matchesPattern, resolveOptions } from "./options.js";
 import type { SilentOptions } from "./options.js";
@@ -28,9 +29,10 @@ export function silent(options: SilentOptions = {}): Plugin {
       runtime: opts.runtime,
       hmr: opts.hmr,
       ssr,
+      aliases: aliasRules,
     });
-  const optionsJson = buildOptionsJson(false);
-  const ssrOptionsJson = buildOptionsJson(true);
+  let aliasRules: AliasRule[] = [];
+  let aliasOptionsJson = aliasesJson([]);
 
   let cachedIndexJson: string | null = null;
   let cachedIndexHash: string | null = null;
@@ -55,7 +57,7 @@ export function silent(options: SilentOptions = {}): Plugin {
     if (!indexPromise) {
       indexPromise = getSwc()
         .then((swc) => {
-          const index: SilentIndex = nativeScan(swc, opts.root);
+          const index: SilentIndex = nativeScan(swc, opts.root, aliasOptionsJson);
           const json = JSON.stringify(index);
           cachedIndexJson = json;
           return json;
@@ -107,9 +109,17 @@ export function silent(options: SilentOptions = {}): Plugin {
     },
     configResolved(config: ResolvedConfig) {
       cacheDirectory = join(config.cacheDir, "silent-transform");
+      aliasRules = mergeAliases(config.resolve?.alias ?? [], opts.root);
+      aliasOptionsJson = aliasesJson(aliasRules);
+      invalidateIndex();
     },
     watchChange(id) {
       if (isSourceModule(id) && !isVirtualModule(id)) {
+        invalidateIndex();
+      }
+      if (id.endsWith("tsconfig.json")) {
+        aliasRules = mergeAliases([], opts.root);
+        aliasOptionsJson = aliasesJson(aliasRules);
         invalidateIndex();
       }
     },
@@ -127,8 +137,7 @@ export function silent(options: SilentOptions = {}): Plugin {
 
       const swc = await getSwc();
       const indexJson = await ensureIndex();
-      const callOptionsJson =
-        transformOptions?.ssr === true ? ssrOptionsJson : optionsJson;
+      const callOptionsJson = buildOptionsJson(transformOptions?.ssr === true);
       const cacheEnabled =
         cacheDirectory !== null && process.env.SILENT_TRANSFORM_CACHE !== "off";
       const directory = cacheEnabled ? cacheDirectory : null;

@@ -110,6 +110,33 @@ class TimerVM {
 
 Ограничение: интерфейс должен иметь ровно одну реализацию в индексе; сложные re-export и generic-типы требуют ручной привязки.
 
+
+### Alias и tsconfig paths
+
+Индекс понимает алиасы и разрешает их так же, как Vite/TypeScript:
+
+- строковые записи из `resolve.alias` Vite (RegExp-алиасы пропускаются);
+- `compilerOptions.baseUrl` + `compilerOptions.paths` из `tsconfig.json`, `tsconfig.app.json` или `tsconfig.base.json`.
+
+```json
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@/*": ["src/*"] }
+  }
+}
+```
+
+```ts
+import type { UsersService } from "@/application/users/service";
+
+export class UsersProbe {
+  constructor(private readonly users: UsersService) {}
+}
+```
+
+Такой `import type` индексируется как относительный: компилятор подставит реализацию `UsersService`. При нескольких подходящих правилах выигрывает самое длинное совпадение. Если алиас не найден, импорт считается внешним пакетом.
+
 ## ViewModel и scope
 
 View-компонент получает ViewModel асинхронно через DI:

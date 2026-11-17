@@ -38,6 +38,8 @@ pub struct SilentOptions {
     pub hmr: bool,
     #[serde(default)]
     pub ssr: bool,
+    #[serde(default)]
+    pub aliases: Vec<crate::alias::AliasRule>,
 }
 
 #[derive(Debug, Serialize)]
@@ -68,6 +70,7 @@ pub(crate) struct SilentPass {
     pub(crate) hmr: bool,
     pub(crate) ssr: bool,
     pub(crate) hmr_deps: Vec<String>,
+    pub(crate) aliases: Vec<crate::alias::AliasRule>,
     pub(crate) hoisted_templates: Vec<(Ident, Expr)>,
     pub(crate) hoisted_template_names: HashMap<String, Ident>,
     pub(crate) template_counter: usize,
@@ -100,6 +103,7 @@ impl SilentPass {
             hmr: options.hmr,
             ssr: options.ssr,
             hmr_deps: Vec::new(),
+            aliases: options.aliases.clone(),
             hoisted_templates: Vec::new(),
             hoisted_template_names: HashMap::new(),
             template_counter: 0,
@@ -262,8 +266,7 @@ impl SilentPass {
         imported: &str,
         type_only: bool,
     ) -> Option<Expr> {
-        if source.starts_with('.') {
-            let module = crate::paths::resolve_import_path(&self.filename, source)?;
+        if let Some(module) = crate::paths::resolve_module(&self.filename, source, &self.aliases) {
             if module != self.current_module() && self.hmr {
                 self.record_hmr_dep(&module);
             }
@@ -377,11 +380,8 @@ impl SilentPass {
 
     fn resolve_import_type(&mut self, import: &TsImportType) -> Option<Expr> {
         let source = import.arg.value.to_string_lossy().into_owned();
-        let module = if source.starts_with('.') {
-            crate::paths::resolve_import_path(&self.filename, &source)?
-        } else {
-            source.clone()
-        };
+        let module = crate::paths::resolve_module(&self.filename, &source, &self.aliases)
+            .unwrap_or_else(|| source.clone());
         let export = import
             .qualifier
             .as_ref()
