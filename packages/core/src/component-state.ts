@@ -150,8 +150,11 @@ export function callHook(target: object, name: string, ...args: unknown[]): void
   }
 }
 
+let readyNodes = 0;
+
 export function setReady(node: Node, ready: Promise<void>): void {
   (node as ReadyHost)[COMPONENT_READY] = ready;
+  readyNodes += 1;
 }
 
 export function getOwnReady(node: Node): Promise<void> {
@@ -191,6 +194,9 @@ function collectReady(
 }
 
 export function getReady(node: Node): Promise<void> {
+  if (readyNodes === 0) {
+    return RESOLVED_READY;
+  }
   const promises: Promise<void>[] = [];
   collectReady(node, promises, new Set<Node>());
   if (promises.length === 0) {
