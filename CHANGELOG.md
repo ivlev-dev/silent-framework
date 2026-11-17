@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.11.12
+
+### Link: prefetch на touch
+
+- `Link prefetch` теперь срабатывает и на `pointerdown`, поэтому предзагрузка работает на touch-устройствах без hover.
+- Добавлен тест на `pointerdown`.
+
+### Документация
+
+- Добавлен практический гайд по роутеру: [`docs/guides/router.md`](./docs/guides/router.md) — установка, route-классы, `Link`/`RouterView`, guards, loaders, DI, SSR/гидрация, прокрутка и тесты.
+- Гайд добавлен в README, `docs/api/index.md` и `docs/getting-started.md`.
+
 ## 0.11.11
 
 ### Исправления гидрации
