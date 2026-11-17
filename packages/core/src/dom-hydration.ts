@@ -25,6 +25,7 @@ import {
   markClientNodes,
   mergeTopLevelMetadata,
   mismatch,
+  registerInsertStart,
   shapeMatches,
   withWindow,
   type HydrationWindow,
@@ -120,6 +121,41 @@ function attrName(key: string | undefined, index: number): string {
   return key ?? (ATTR_MARKER + index);
 }
 
+const insertParents = new WeakSet<Node>();
+
+function recordInsertRegion(hole: Comment): void {
+  const end = hole.previousSibling;
+  if (
+    end === null ||
+    end.nodeType !== Node.COMMENT_NODE ||
+    (end as Comment).data !== INSERT_END
+  ) {
+    return;
+  }
+  const parent = hole.parentNode;
+  if (parent === null || insertParents.has(parent)) {
+    return;
+  }
+  const before = end.previousSibling;
+  if (
+    before !== null &&
+    before.nodeType === Node.COMMENT_NODE &&
+    (before as Comment).data === INSERT_START
+  ) {
+    return;
+  }
+  const start = parent.firstChild;
+  if (
+    start === null ||
+    start.nodeType !== Node.COMMENT_NODE ||
+    (start as Comment).data !== INSERT_START
+  ) {
+    return;
+  }
+  insertParents.add(parent);
+  registerInsertStart(end as Comment, start as Comment);
+}
+
 function tryAdoptPartsPlanByPath(
   root: Node,
   plan: TemplatePlan,
@@ -144,6 +180,7 @@ function tryAdoptPartsPlanByPath(
           (next as Comment).data === HOLE_ZERO
         ) {
           holes[0] = next as Comment;
+          recordInsertRegion(next as Comment);
           return true;
         }
       }
@@ -161,6 +198,7 @@ function tryAdoptPartsPlanByPath(
       holeMatches((node as Comment).data, entry.key, index)
     ) {
       holes[index] = node as Comment;
+      recordInsertRegion(node as Comment);
       continue;
     }
     if (node !== null && node.nodeType === Node.TEXT_NODE) {
@@ -171,6 +209,7 @@ function tryAdoptPartsPlanByPath(
         holeMatches((next as Comment).data, entry.key, index)
       ) {
         holes[index] = next as Comment;
+        recordInsertRegion(next as Comment);
         continue;
       }
     }
@@ -327,6 +366,9 @@ function tryAdoptPartsPlanByTrie(
     }
     adoptedHoles.push(hole);
   }
+  for (const hole of adoptedHoles) {
+    recordInsertRegion(hole);
+  }
   const adoptedAttrs: Element[] = [];
   for (let index = 0; index < plan.attrs.length; index += 1) {
     const element = attrs[index];
@@ -402,6 +444,9 @@ export function adoptPartsPlan(
   }
   out.holes = collected.holes;
   out.attrs = collected.attrs;
+  for (const hole of out.holes) {
+    recordInsertRegion(hole);
+  }
 }
 
 function isTextValue(value: unknown): boolean {

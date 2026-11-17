@@ -45,6 +45,12 @@ export function isItemMarker(node: Node | null | undefined): node is Comment {
   );
 }
 
+const insertStarts = new WeakMap<Comment, Comment>();
+
+export function registerInsertStart(end: Comment, start: Comment): void {
+  insertStarts.set(end, start);
+}
+
 export function findViewEnd(start: Node, limit?: Node | null): Node {
   let depth = 0;
   let cursor: Node | null = start;
@@ -69,6 +75,10 @@ export function findInsertWindow(marker: Node | null, parent: Node): HydrationWi
   const end = marker === null ? parent.lastChild : marker.previousSibling;
   if (!isMarker(end, INSERT_END)) {
     return mismatch("не найден конец региона вставки");
+  }
+  const knownStart = insertStarts.get(end);
+  if (knownStart !== undefined && knownStart.parentNode === parent) {
+    return { start: knownStart, end, cursor: knownStart.nextSibling };
   }
   const first = parent.firstChild;
   if (isMarker(first, INSERT_START) && first.nextSibling === end) {
