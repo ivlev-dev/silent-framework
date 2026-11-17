@@ -95,7 +95,9 @@ function renderToStream(
 ): ReadableStream<string>;
 ```
 
-`StreamOptions` расширяет `RenderOptions` полями `chunkSize` и `onHead`. Размер чанка по умолчанию — 16 КиБ; неположительное значение заменяется на значение по умолчанию. `onHead` вызывается один раз после завершения рендера и до первого чанка.
+`StreamOptions` расширяет `RenderOptions` полями `chunkSize`, `onHead`, `onShell`, `onChunk`, `nonce` и `signal`. Размер чанка по умолчанию — 16 КиБ; неположительное значение заменяется на значение по умолчанию.
+
+Это прогрессивный стриминг. Первый чанк — синхронный shell: разметка синхронной части дерева и fallback-содержимое незавершённых границ. Он уходит клиенту до завершения `Suspense`, `lazy` и асинхронных ViewModel; когда граница готова, сервер дописывает патч.
 
 ```js
 import { createServer } from "node:http";
@@ -103,10 +105,18 @@ import { renderToStream } from "@ivlev-dev/silent-server";
 import { App } from "./dist/server/entry-server.js";
 
 const server = createServer(async (request, response) => {
+  let head = "";
   const stream = renderToStream(App, {
     props: { title: "Silent Framework" },
     chunkSize: 8 * 1024,
-    onHead: (head) => {
+    nonce: response.getHeader("x-nonce") ?? undefined,
+    onHead(next, info) {
+      head = next;
+      if (info.final) {
+        // Асинхронная часть добавила метаданные: обновите head на клиенте.
+      }
+    },
+    onShell() {
       response.setHeader("content-type", "text/html; charset=utf-8");
       response.write(`<!doctype html><html lang="ru"><head><meta charset="utf-8" />${head}</head><body><div id="app">`);
     },
@@ -119,7 +129,9 @@ const server = createServer(async (request, response) => {
     response.end('</div><script type="module" src="/assets/main.js"></script></body></html>');
   } catch (error) {
     console.error(error);
-    response.statusCode = 500;
+    if (!response.headersSent) {
+      response.statusCode = 500;
+    }
     response.end("Internal Server Error");
   }
 });
@@ -127,9 +139,32 @@ const server = createServer(async (request, response) => {
 server.listen(3000);
 ```
 
-Важное ограничение: `renderToStream` сначала полностью выполняет `renderToString`, а затем нарезает готовую строку на чанки. Это не прогрессивный стриминг: границы `Suspense` не отдают содержимое по мере готовности, а `head` становится известен только после завершения всего рендера. Стриминг здесь снижает пиковую память на стороне ответа и позволяет начать передачу большого тела раньше, но не сокращает время до первого байта.
+Протокол:
 
-Если ошибка возникает во время рендера, `onHead` не вызывается: поток завершается ошибкой до записи заголовков, поэтому статус 500 ещё можно выставить.
+1. Первый чанк — shell. Незавершённая граница обёрнута комментариями `<!--silent-stream:ID-->…<!--silent-stream-end:ID-->`.
+2. Когда граница `Suspense`, `lazy` или асинхронная ViewModel готова, сервер дописывает чанк `<template data-silent-stream="ID">…</template><script>window.__silentStream.patch(ID)</script>`. Минимальный inline-runtime приходит один раз перед первым патчем и сам удаляет служебные узлы.
+3. Патч заменяет содержимое между маркерами и удаляет сами маркеры. Итоговый DOM совпадает с разметкой `renderToString`, поэтому `hydrate` принимает её без изменений. Вложенные границы патчатся независимо; порядок чанков сохраняется.
+4. `onHead(head, { final: false })` вызывается до первого чанка тела, `onHead(head, { final: true })` — только если асинхронная часть добавила метаданные. При `final: true` замените ранее отданный head.
+
+| Опция | Назначение |
+| --- | --- |
+| `onHead(head, info)` | Head доступен сразу после синхронного shell; `info.final` сообщает, что пришло финальное значение. |
+| `onShell(html)` | Синхронный shell до начала асинхронных патчей. |
+| `onChunk(chunk)` | Каждый фактически записанный чанк тела. |
+| `chunkSize` | Максимальный размер чанка; по умолчанию 16 КиБ. Патчи также режутся по этому лимиту. |
+| `nonce` | Nonce для inline-runtime и скриптов патчей (CSP). |
+| `signal` | Отмена доставки. Рендер завершается и освобождает ресурсы, но новые чанки не пишутся. |
+
+Ограничения протокола:
+
+- `head` с асинхронных границ не может попасть в HTTP-заголовки: используйте `onHead(..., { final: true })` и обновляйте head на клиенте.
+- Патч вставляется через `<template>`; содержимое парсится в контексте body. Фрагменты, допустимые только внутри таблицы/`select`, требуют собственного контейнера.
+- Inline-runtime требует разрешённых inline-скриптов или `nonce`. Без JS остаётся shell с fallback-содержимым.
+- Ошибка после отправки shell закрывает поток ошибкой: соединение обрывается, fallback остаётся видимым. Ошибки до shell отклоняют поток без отправки тела.
+- Backpressure не учитывается: чанки буферизуются в `ReadableStream`, пока читатель их не заберёт.
+- Поток удерживает внутреннюю очередь SSR до завершения рендера: другие `renderToString`/`renderToStream` ждут.
+
+`renderToString` не изменился: он ждёт всё дерево и возвращает `{ html, head }` без служебных маркеров стриминга.
 
 ## Сборка клиента
 
@@ -469,7 +504,6 @@ const { html, head } = await renderToString(App, {
 
 - Мини-DOM реализует только подмножество, необходимое шаблонам компилятора. События и `replaceChildren` не поддерживаются, интерактивные эффекты на сервере выполняются, но ничего не делают.
 - Внутри компонентов нельзя рассчитывать на произвольные браузерные API: `window`, `document` и навигация доступны только на клиенте.
-- Прогрессивного стриминга нет. `renderToStream` отдаёт уже полностью подготовленное тело чанками; границы `Suspense` не сбрасываются по мере готовности.
 - Поддерживается один заголовок страницы. Несколько одновременных `title` не дедуплицируются, поэтому рендерите один `title`.
 - `title` должен быть прямым потомком корневого элемента шаблона view. Заголовки внутри `svg` и элементы с `itemprop` в `head` не выносятся.
 - Гидрация адоптирует только разметку, созданную через `template()`/`templateHoles()`. Произвольный DOM, собранный вручную, рендерится клиентски.

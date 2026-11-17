@@ -322,4 +322,27 @@ describe("навигация", () => {
     expect(router.params).toEqual({ id: "7" });
     expect(router.matched[0]?.params["id"]).toBe("7");
   });
+  it("не дублирует навигацию на текущий маршрут", async () => {
+    const beforeEnter = vi.fn();
+    const routes: readonly RouteRecord[] = [
+      { path: "/about", name: "about", component: leaf("about"), beforeEnter },
+    ];
+    const history = createMemoryHistory("/about");
+    const router = track(new Router({ routes, history }));
+    await router.start();
+    beforeEnter.mockClear();
+
+    await router.push("/about");
+    await router.push({ name: "about" });
+    expect(beforeEnter).not.toHaveBeenCalled();
+    expect(history.length).toBe(1);
+
+    await router.push("/about?tab=files");
+    expect(beforeEnter).toHaveBeenCalledTimes(1);
+    expect(history.length).toBe(2);
+    expect(router.query).toEqual({ tab: "files" });
+
+    await router.replace("/about?tab=files");
+    expect(history.length).toBe(2);
+  });
 });

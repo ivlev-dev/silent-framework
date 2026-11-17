@@ -14,6 +14,7 @@
 - `Link` и `RouterView` получают роутер из DI-контекста синхронно, с fallback на prop и `Router.current()`.
 - `RouterView` монтирует route-компоненты через core `component(...)`, поэтому ViewModel/DI работают; при смене `params`/`query` view переиспользуется и сохраняет DOM/focus.
 - `BrowserHistory` (`pushState`, `popstate`, `hashchange`) и `MemoryHistory` для тестов и SSR.
+- Повторный переход на текущий путь не дублирует историю и не перезапускает guards/loaders.
 - Восстановление скролла: `scrollBehavior(to, from, savedPosition)`.
 
 ## Установка

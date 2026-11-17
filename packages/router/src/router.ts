@@ -269,6 +269,23 @@ export class Router implements IRouter {
     routers.push(this);
   }
 
+  private isSameLocation(target: RouteTarget): boolean {
+    const current = this.stateSignal[0]();
+    if (current.route === null || current.error !== null) {
+      return false;
+    }
+    try {
+      const location = this.attachComponents(
+        resolveLocation(this.compiled, target, current.route, this.loadedComponents),
+      );
+      const leaf = location.matched[location.matched.length - 1];
+      return location.fullPath === current.route.fullPath
+        && leaf?.record.redirect === undefined;
+    } catch {
+      return false;
+    }
+  }
+
   private async navigateFromHistory(location: HistoryLocation): Promise<void> {
     try {
       await this.navigate(this.fullPathFromHistory(location), true, true);
@@ -284,6 +301,9 @@ export class Router implements IRouter {
   ): Promise<void> {
     if (this.disposed) {
       throw new RouterNavigationError("Router уничтожен", "abort", targetString(target));
+    }
+    if (!fromHistory && this.isSameLocation(target)) {
+      return;
     }
     this.navigationId += 1;
     const id = this.navigationId;

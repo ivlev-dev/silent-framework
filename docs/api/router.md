@@ -35,7 +35,7 @@ await router.start();
 - `RouterOptions` — `routes`, `base`, `history`, `scrollBehavior`, `container`.
 - `RouterState` — `route`, `params`, `query`, `hash`, `matched`, `pending`, `error`.
 - `route`, `params`, `query`, `hash`, `matched`, `state()` — реактивные accessor'ы.
-- `push`, `replace`, `back`, `forward` — навигация; `resolve`/`href` — построение URL; `start`/`stop`/`dispose` — жизненный цикл.
+- `push`, `replace`, `back`, `forward` — навигация; `resolve`/`href` — построение URL; `start`/`stop`/`dispose` — жизненный цикл. Повторный `push`/`replace` на текущий `fullPath` (с учётом query и hash) не создаёт запись в истории и не перезапускает guards/loaders.
 - `Router.current()` возвращает последний активный роутер и остаётся fallback для компонентов без DI и `router` prop.
 
 ### Регистрация в DI
