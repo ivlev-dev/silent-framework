@@ -268,6 +268,38 @@ describe("навигация", () => {
     scrollY.mockRestore();
   });
 
+  it("прокручивает к элементу по hash без scrollBehavior", async () => {
+    const scrolled: string[] = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element): void {
+      scrolled.push(this.id);
+    };
+    try {
+      const history = createMemoryHistory("/");
+      const router = track(new Router({
+        routes: [
+          { path: "/", component: leaf("home") },
+          { path: "/docs", component: leaf("docs") },
+        ],
+        history,
+      }));
+      await router.start();
+      const section = document.createElement("section");
+      section.id = "install";
+      document.body.appendChild(section);
+
+      await router.push("/docs#install");
+      await tick();
+      expect(scrolled).toEqual(["install"]);
+
+      await router.push("/docs#missing");
+      await tick();
+      expect(scrolled).toEqual(["install"]);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
   it("снимает слушатели истории при dispose", async () => {
     const history = createMemoryHistory("/");
     const router = new Router({ routes: baseRoutes, history });

@@ -227,7 +227,7 @@ const router = new Router({
 });
 ```
 
-Позиция сохраняется при уходе с маршрута и передаётся в `savedPosition` при возврате. Без `scrollBehavior` сохранённая позиция восстанавливается автоматически. Возврат `false` или `null` отменяет прокрутку.
+Позиция сохраняется при уходе с маршрута и передаётся в `savedPosition` при возврате. Без `scrollBehavior` сохранённая позиция восстанавливается автоматически, а при непустом `hash` после обновления DOM прокручивается элемент с соответствующим `id` (или `name`). Возврат `false` или `null` отменяет прокрутку. Если `scrollBehavior` задан, он полностью управляет прокруткой, включая hash.
 
 `RouterNavigationError` содержит `code` (`abort`, `guard`, `load`, `no-match`, `redirect`, `resolve`) и `to`; `RouterAbortError` — прерванная навигация; `RouterMissingError` — отсутствие роутера у `Link`/`RouterView`.
 

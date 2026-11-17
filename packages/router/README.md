@@ -16,7 +16,7 @@
 - При гидрации `RouterView` адоптирует серверный маркер, удаляет старую разметку маршрута и рендерит matched-компонент заново.
 - `BrowserHistory` (`pushState`, `popstate`, `hashchange`) и `MemoryHistory` для тестов и SSR.
 - Повторный переход на текущий путь не дублирует историю и не перезапускает guards/loaders.
-- Восстановление скролла: `scrollBehavior(to, from, savedPosition)`.
+- Восстановление скролла: `scrollBehavior(to, from, savedPosition)`; без него позиция восстанавливается автоматически, а `#hash` прокручивает к элементу.
 
 ## Установка
 

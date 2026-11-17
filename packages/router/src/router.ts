@@ -527,11 +527,16 @@ export class Router implements IRouter {
     if (typeof window === "undefined") {
       return;
     }
+    await Promise.resolve();
     const saved = this.savedPositions.get(to.fullPath) ?? null;
     const behavior = this.scrollBehavior;
     if (behavior === undefined) {
       if (saved !== null) {
         this.applyScroll(saved);
+        return;
+      }
+      if (to.hash !== "") {
+        this.scrollToHash(to.hash);
       }
       return;
     }
@@ -540,6 +545,31 @@ export class Router implements IRouter {
       return;
     }
     this.applyScroll(result);
+  }
+
+  private scrollToHash(hash: string): void {
+    if (typeof document === "undefined") {
+      return;
+    }
+    const raw = hash.startsWith("#") ? hash.slice(1) : hash;
+    if (raw === "") {
+      return;
+    }
+    let id = raw;
+    try {
+      id = decodeURIComponent(raw);
+    } catch {
+      id = raw;
+    }
+    const element = document.getElementById(id) ?? document.getElementsByName(id)[0] ?? null;
+    if (element === null || typeof element.scrollIntoView !== "function") {
+      return;
+    }
+    try {
+      element.scrollIntoView({ block: "start" });
+    } catch {
+      void 0;
+    }
   }
 
   private applyScroll(position: ScrollPosition): void {
