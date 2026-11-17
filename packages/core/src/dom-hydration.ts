@@ -446,6 +446,46 @@ function ensureRegion(
   return { start, end, cursor: start.nextSibling };
 }
 
+function sameShape(left: Node, right: Node): boolean {
+  if (left.nodeType !== right.nodeType) {
+    return false;
+  }
+  if (left.nodeType === 1) {
+    return (left as Element).tagName === (right as Element).tagName;
+  }
+  return left.nodeType === 3 || left.nodeType === 8;
+}
+
+function dropTrailingShape(marker: Node | null, produced: readonly Node[]): void {
+  if (marker === null || produced.length === 0) {
+    return;
+  }
+  const collected: Node[] = [];
+  let node = marker.previousSibling;
+  while (node !== null && collected.length < produced.length) {
+    if (node.nodeType === 8) {
+      return;
+    }
+    collected.push(node);
+    node = node.previousSibling;
+  }
+  if (collected.length !== produced.length) {
+    return;
+  }
+  collected.reverse();
+  for (let index = 0; index < produced.length; index += 1) {
+    const existing = collected[index];
+    const next = produced[index];
+    if (existing === undefined || next === undefined || !sameShape(existing, next)) {
+      return;
+    }
+  }
+  for (const stale of collected) {
+    disposeNode(stale);
+    stale.parentNode?.removeChild(stale);
+  }
+}
+
 function textHydrated(
   parent: Node,
   accessor: () => unknown,
@@ -476,6 +516,9 @@ function textHydrated(
       }
       return;
     }
+    const produced: Node[] = [];
+    flattenNodes(resolved, produced);
+    dropTrailingShape(marker, produced);
     region = ensureRegion(parent, marker, textNode);
     textNode = null;
     writeRegion(region.start, region.end, value);
@@ -721,6 +764,36 @@ export function hydrateTemplate(source: TemplateHydrationSource): TemplateClone 
   return { node: container, ...collected };
 }
 
+function flattenNodes(value: unknown, out: Node[]): void {
+  if (value instanceof Node) {
+    if (value.nodeType === 11) {
+      let child = value.firstChild;
+      while (child !== null) {
+        out.push(child);
+        child = child.nextSibling;
+      }
+      return;
+    }
+    out.push(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      flattenNodes(item, out);
+    }
+  }
+}
+
+function clearRegion(start: Node, end: Node): void {
+  let node = start.nextSibling;
+  while (node !== null && node !== end) {
+    const next = node.nextSibling;
+    disposeNode(node);
+    node.parentNode?.removeChild(node);
+    node = next;
+  }
+}
+
 export function insertHydrated(
   parent: Node,
   accessor: () => unknown,
@@ -747,6 +820,15 @@ export function insertHydrated(
     if (!initialized) {
       initialized = true;
       const value = resolveValue(withWindow(window, accessor));
+      const produced: Node[] = [];
+      flattenNodes(value, produced);
+      if (
+        produced.length > 0
+        && !produced.some((node) => node.nodeType === 8)
+        && !produced.some((node) => node.parentNode === window.start.parentNode)
+      ) {
+        clearRegion(window.start, window.end);
+      }
       settleNodes(window.end, value);
       if (
         typeof value === "string" ||
