@@ -197,6 +197,27 @@ class CounterVM {
 }
 
 #[test]
+fn compiles_aliased_for_as_direct_list() {
+    let code = run(
+        "import { For as List, Index as ListIndex } from \"@ivlev-dev/silent-core\"; const a = <ul><List each={items}>{(item) => <li>{item}</li>}</List></ul>; const b = <div><ListIndex each={items}>{(item) => <span>{item()}</span>}</ListIndex></div>;",
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert_eq!(code.matches("parent:").count(), 2, "{code}");
+    assert_eq!(code.matches("marker:").count(), 2, "{code}");
+}
+
+#[test]
+fn does_not_treat_foreign_for_component_as_list() {
+    let code = run(
+        "import { For } from \"./for-component\"; const a = <div><For each={items}>{(item) => <span>{item}</span>}</For></div>;",
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(!code.contains("parent:"), "{code}");
+}
+
+#[test]
 fn compiles_for_and_index_as_direct_lists() {
     let code = run(
         "import { For, Index } from \"@ivlev-dev/silent-core\"; const a = <ul><For each={items}>{(item) => <li>{item}</li>}</For></ul>; const b = <div><Index each={items}>{(item) => <span>{item()}</span>}</Index></div>;",
