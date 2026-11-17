@@ -203,7 +203,7 @@ const createIndexListDirect: BenchTask = {
   fn: () => {
     const host = createHost();
     const dispose = createRoot((disposeRoot) => {
-      Index({ parent: host, each: indexItems, children: renderIndexRow });
+      Index({ parent: host, each: indexItems, children: renderIndexRow, index: false });
       return disposeRoot;
     });
     flushSync();
@@ -243,7 +243,7 @@ const createListDirect: BenchTask = {
     const host = createHost();
     const [items] = createSignal<readonly Row[]>(createRows(LIST_SIZE));
     const dispose = createRoot((disposeRoot) => {
-      For({ parent: host, each: items, children: renderRow });
+      For({ parent: host, each: items, children: renderRow, index: false });
       return disposeRoot;
     });
     flushSync();
@@ -257,7 +257,7 @@ const createBigListDirect: BenchTask = {
     const host = createHost();
     const [items] = createSignal<readonly Row[]>(createRows(BIG_LIST_SIZE));
     const dispose = createRoot((disposeRoot) => {
-      For({ parent: host, each: items, children: renderRow });
+      For({ parent: host, each: items, children: renderRow, index: false });
       return disposeRoot;
     });
     flushSync();

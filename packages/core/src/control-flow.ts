@@ -70,6 +70,8 @@ interface MutableWindow {
   cursor: Node | null;
 }
 
+const NO_INDEX: Accessor<number> = () => 0;
+
 class KeyedState<T> implements ItemState<T> {
   item: T;
   key: unknown;
@@ -90,6 +92,7 @@ class KeyedState<T> implements ItemState<T> {
     anchor: Comment | null,
     itemEnd: Node | null,
     position: number,
+    usesIndex = true,
   ) {
     this.item = item;
     this.key = key;
@@ -97,14 +100,16 @@ class KeyedState<T> implements ItemState<T> {
     this.nodes = itemEnd === null ? [] : NO_NODES;
     this.nodesEnd = itemEnd;
     this.position = position;
-    this.index = () => {
-      let handle = this.handle;
-      if (handle === null) {
-        handle = createSignal(this.position);
-        this.handle = handle;
-      }
-      return handle[0]();
-    };
+    this.index = usesIndex
+      ? () => {
+          let handle = this.handle;
+          if (handle === null) {
+            handle = createSignal(this.position);
+            this.handle = handle;
+          }
+          return handle[0]();
+        }
+      : NO_INDEX;
   }
 
   setIndex(value: number | ((previous: number) => number)): number {
@@ -125,6 +130,7 @@ export interface ForProps<T> {
   fallback?: unknown;
   parent?: Node;
   marker?: Node | null;
+  index?: boolean;
 }
 
 function sameItem(a: unknown, b: unknown): boolean {
@@ -512,11 +518,18 @@ export function For<T>(props: ForProps<T>): Node {
     mountParent: Node | null = null,
     tail: Node | null = null,
   ): ItemState<T> => {
-    const state = new KeyedState<T>(item, keyAt(item, position), anchor, itemEnd, position);
+    const children = untrack(() => props.children);
+    const state = new KeyedState<T>(
+      item,
+      keyAt(item, position),
+      anchor,
+      itemEnd,
+      position,
+      props.index !== false,
+    );
     let initialMount: Node | null = mountParent;
     let seeded = itemEnd !== null;
     let mountTail: Node | null = tail;
-    const children = untrack(() => props.children);
     const run = (): void => {
       if (seeded) {
         seeded = false;

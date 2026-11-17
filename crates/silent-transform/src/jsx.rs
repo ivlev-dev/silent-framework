@@ -784,6 +784,7 @@ impl SilentPass {
             }
         }
 
+        self.add_index_hint(element, &mut properties);
         call_expr(
             Expr::Ident(self.helper("component")),
             vec![
@@ -912,6 +913,56 @@ impl SilentPass {
         source == self.runtime.trim_end_matches('/')
             || source.ends_with("silent-core")
             || source == "@ivlev-dev/silent"
+    }
+
+    fn children_use_index(&self, element: &JSXElement) -> Option<bool> {
+        for child in &element.children {
+            let JSXElementChild::JSXExprContainer(container) = child else {
+                continue;
+            };
+            let JSXExpr::Expr(expr) = &container.expr else {
+                continue;
+            };
+            match unwrap_paren(expr) {
+                Expr::Arrow(arrow) => return Some(arrow.params.len() >= 2),
+                Expr::Fn(function) => return Some(function.function.params.len() >= 2),
+                _ => return None,
+            }
+        }
+        None
+    }
+
+    fn add_index_hint(&self, element: &JSXElement, properties: &mut Vec<PropOrSpread>) {
+        let JSXElementName::Ident(name) = &element.opening.name else {
+            return;
+        };
+        if !self.is_direct_list_component(name) {
+            return;
+        }
+        if self.children_use_index(element) != Some(false) {
+            return;
+        }
+        if properties.iter().any(|prop| {
+            let PropOrSpread::Prop(prop) = prop else {
+                return false;
+            };
+            let Prop::KeyValue(entry) = &**prop else {
+                return false;
+            };
+            let PropName::Ident(key) = &entry.key else {
+                return false;
+            };
+            key.sym.as_ref() == "index"
+        }) {
+            return;
+        }
+        properties.push(PropOrSpread::Prop(Box::new(Prop::KeyValue(KeyValueProp {
+            key: prop_name("index"),
+            value: Box::new(Expr::Lit(Lit::Bool(Bool {
+                span: DUMMY_SP,
+                value: false,
+            }))),
+        }))));
     }
 
     fn attach_direct_list(&self, expr: &mut Expr, parent: &Expr, hole: &Expr) -> bool {

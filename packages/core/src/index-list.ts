@@ -68,6 +68,8 @@ interface MutableWindow {
   cursor: Node | null;
 }
 
+const NO_INDEX: Accessor<number> = () => 0;
+
 class IndexedState<T> implements IndexState<T> {
   anchor: Comment | null;
   nodes: Node[];
@@ -80,7 +82,7 @@ class IndexedState<T> implements IndexState<T> {
   private currentItem: T;
   private position: number;
 
-  constructor(value: T, anchor: Comment | null, nodes: Node[], position: number) {
+  constructor(value: T, anchor: Comment | null, nodes: Node[], position: number, usesIndex = true) {
     this.anchor = anchor;
     this.nodes = nodes;
     this.currentItem = value;
@@ -93,14 +95,16 @@ class IndexedState<T> implements IndexState<T> {
       }
       return handle[0]();
     };
-    this.index = () => {
-      let handle = this.indexHandle;
-      if (handle === null) {
-        handle = createSignal(this.position);
-        this.indexHandle = handle;
-      }
-      return handle[0]();
-    };
+    this.index = usesIndex
+      ? () => {
+          let handle = this.indexHandle;
+          if (handle === null) {
+            handle = createSignal(this.position);
+            this.indexHandle = handle;
+          }
+          return handle[0]();
+        }
+      : NO_INDEX;
   }
 
   setItem(value: T | ((previous: T) => T)): T {
@@ -130,6 +134,7 @@ export interface IndexProps<T> {
   fallback?: unknown;
   parent?: Node;
   marker?: Node | null;
+  index?: boolean;
 }
 
 function resolve(value: unknown): unknown {
@@ -292,10 +297,16 @@ export function Index<T>(props: IndexProps<T>): Node {
     mountParent: Node | null = null,
     mountTail: Node | null = null,
   ): IndexState<T> => {
-    const state = new IndexedState<T>(value, anchor, nodes, position);
+    const children = untrack(() => props.children);
+    const state = new IndexedState<T>(
+      value,
+      anchor,
+      nodes,
+      position,
+      props.index !== false,
+    );
     let initialMount = mountParent;
     let initialTail = mountTail;
-    const children = untrack(() => props.children);
     state.cleanup = createEffectUnlessStatic(() => {
       if (itemEnd !== null) {
         const start = anchor as Comment;

@@ -228,4 +228,15 @@ fn compiles_for_and_index_as_direct_lists() {
     assert_eq!(code.matches("marker:").count(), 2, "{code}");
     assert!(code.contains("_$component(For"), "{code}");
     assert!(code.contains("_$component(Index"), "{code}");
+    assert_eq!(code.matches("index: false").count(), 2, "{code}");
+}
+
+#[test]
+fn keeps_index_accessor_when_children_use_it() {
+    let code = run(
+        "import { For } from \"@ivlev-dev/silent-core\"; const a = <ul><For each={items}>{(item, index) => <li>{item}{index()}</li>}</For></ul>;",
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(!code.contains("index: false"), "{code}");
 }
