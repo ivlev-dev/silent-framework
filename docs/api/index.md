@@ -25,6 +25,7 @@
 - [SSR и деплой](../guides/ssr.md)
 - [Гидрация](../guides/hydration.md)
 - [Dependency Injection](../guides/di.md)
+- [Роутер](../guides/router.md)
 - [Миграция с SolidJS](../guides/migration-from-solid.md)
 
 ## Соглашения

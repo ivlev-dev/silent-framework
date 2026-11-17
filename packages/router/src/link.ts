@@ -145,6 +145,7 @@ export function Link(props: LinkProps): Node {
       void router.prefetch(value).catch(() => {});
     };
     on(element, "pointerenter", () => prefetch);
+    on(element, "pointerdown", () => prefetch);
     on(element, "focus", () => prefetch);
   }
 

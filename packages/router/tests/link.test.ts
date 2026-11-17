@@ -96,6 +96,35 @@ describe("Link", () => {
     expect(loaded).toBe(1);
   });
 
+  it("предзагружает lazy route по pointerdown (touch)", async () => {
+    let loaded = 0;
+    const lazy = (): HTMLElement => {
+      const element = document.createElement("div");
+      element.dataset.view = "lazy-touch";
+      return element;
+    };
+    const router = track(new Router({
+      routes: [
+        { path: "/", name: "home", component: leaf("home") },
+        {
+          path: "/lazy-touch",
+          name: "lazy-touch",
+          load: async () => {
+            loaded += 1;
+            return lazy;
+          },
+        },
+      ],
+      history: createMemoryHistory("/"),
+    }));
+    await router.start();
+    const { host } = mount(() => Link({ to: "/lazy-touch", prefetch: true, children: "lazy" }));
+    host.querySelector("a")?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    await tick();
+    await tick();
+    expect(loaded).toBe(1);
+  });
+
   it("не перехватывает внешние ссылки", async () => {
     const { router } = setup();
     await router.start();
