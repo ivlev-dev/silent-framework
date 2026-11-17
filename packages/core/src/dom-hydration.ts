@@ -22,6 +22,7 @@ import {
   claimNext,
   collectBetween,
   findInsertWindow,
+  markClientNodes,
   mergeTopLevelMetadata,
   mismatch,
   shapeMatches,
@@ -507,6 +508,7 @@ function textHydrated(
         if (next === "") {
           return;
         }
+        markClientNodes();
         textNode = document.createTextNode(next);
         insertText(parent, marker, textNode);
         return;
@@ -534,18 +536,22 @@ export function settleNodes(end: Node | null, value: unknown): void {
     return;
   }
   if (value instanceof DocumentFragment) {
-    let child = value.firstChild;
+    const first = value.firstChild;
+    if (first === null) {
+      return;
+    }
+    markClientNodes();
+    let child: Node | null = first;
     while (child !== null) {
       clientNodes.add(child);
       child = child.nextSibling;
     }
-    if (value.firstChild !== null) {
-      parent.insertBefore(value, end);
-    }
+    parent.insertBefore(value, end);
     return;
   }
   clientNodes.add(value);
   if (value.parentNode !== parent) {
+    markClientNodes();
     parent.insertBefore(value, end);
   }
 }

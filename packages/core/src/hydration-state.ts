@@ -18,6 +18,7 @@ export interface HydrationWindow {
 export interface HydrationContext {
   readonly windows: HydrationWindow[];
   readonly listener: ((error: HydrationMismatchError) => void) | null;
+  clientNodes: number;
 }
 
 export const INSERT_START = "silent-insert";
@@ -108,6 +109,7 @@ export function beginHydration(
   const context: HydrationContext = {
     windows: [],
     listener: listener ?? null,
+    clientNodes: 0,
   };
   contexts.push(context);
   current = context;
@@ -127,6 +129,16 @@ export function endHydration(context?: HydrationContext): void {
   }
   contexts.splice(index, 1);
   refreshContext();
+}
+
+export function markClientNodes(count = 1): void {
+  if (current !== null) {
+    current.clientNodes += count;
+  }
+}
+
+export function countClientNodes(): number {
+  return current?.clientNodes ?? 0;
 }
 
 export function currentWindow(): HydrationWindow | null {

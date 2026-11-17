@@ -4,6 +4,7 @@ import {
   HYDRATE_END,
   HYDRATE_START,
   beginHydration,
+  countClientNodes,
   endHydration,
   withWindow,
   withoutHydration,
@@ -96,18 +97,6 @@ async function serialized<T>(task: () => Promise<T>): Promise<T> {
 
 type AdoptedRoot = ReturnType<typeof createRootResult>;
 
-function countNodes(start: Comment, end: Comment): number {
-  let count = 0;
-  let node = start.nextSibling;
-  while (node !== null && node !== end) {
-    if (node.nodeType !== 8) {
-      count += 1;
-    }
-    node = node.nextSibling;
-  }
-  return count;
-}
-
 function disposeAdopted(adopted: AdoptedRoot | null): void {
   if (adopted === null) {
     return;
@@ -137,7 +126,6 @@ async function hydrateWith(
   let adopted: AdoptedRoot | null = null;
   let handedOff = false;
   const lightRoot = getViewMeta(app) === null;
-  const serverNodeCount = lightRoot ? countNodes(boundaryStart, boundaryEnd) : 0;
   const hasServerMarkup = !forceFresh && boundaryStart.nextSibling !== boundaryEnd;
 
   try {
@@ -152,7 +140,7 @@ async function hydrateWith(
         if (pending !== null) {
           await pending;
         }
-        if (lightRoot && countNodes(boundaryStart, boundaryEnd) > serverNodeCount) {
+        if (lightRoot && countClientNodes() > 0) {
           disposeAdopted(adopted);
           adopted = null;
         }
