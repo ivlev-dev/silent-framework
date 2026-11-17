@@ -82,6 +82,9 @@ export function extractMetadataNode(node: Node): Node | null {
     hoist(node);
     return null;
   }
+  if (node.nodeType === 1 && (node as Element).firstElementChild === null) {
+    return node;
+  }
   collectNested(node);
   return node;
 }
