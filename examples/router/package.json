@@ -1,0 +1,23 @@
+{
+  "name": "@ivlev-dev/silent-example-router",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@ivlev-dev/silent-core": "workspace:*",
+    "@ivlev-dev/silent-di": "workspace:*",
+    "@ivlev-dev/silent-reactivity": "workspace:*",
+    "@ivlev-dev/silent-router": "workspace:*"
+  },
+  "devDependencies": {
+    "@ivlev-dev/silent-vite": "workspace:*",
+    "typescript": "^7.0.2",
+    "vite": "8.3.6"
+  }
+}

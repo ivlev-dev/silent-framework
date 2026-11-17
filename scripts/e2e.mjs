@@ -9,6 +9,7 @@ import { createServer } from "vite";
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const counterDir = join(root, "examples", "counter");
 const todoDir = join(root, "examples", "todo");
+const routerDir = join(root, "examples", "router");
 const cacheDir = join(homedir(), ".cache", "ms-playwright");
 
 const BROWSER_TYPES = { chromium, firefox, webkit };
@@ -291,6 +292,85 @@ async function runTodo(browser) {
   }
 }
 
+async function runRouter(browser) {
+  const server = await startServer(routerDir);
+  const page = await browser.newPage();
+  const errors = collectErrors(page);
+
+  try {
+    await page.goto(server.url, { waitUntil: "domcontentloaded" });
+    await page.locator(".card h2").waitFor();
+    assert.equal((await page.locator(".card h2").textContent())?.trim(), "Главная");
+    assert.equal(await page.title(), "Silent Router");
+
+    await page
+      .locator(".nav")
+      .getByRole("link", { name: "Пользователь", exact: true })
+      .click();
+    await page.locator(".card h2").filter({ hasText: "Пользователь 1" }).waitFor();
+    assert.equal(new URL(page.url()).pathname, "/users/1");
+    assert.equal((await page.locator(".badge").textContent())?.trim(), "Вкладка: info");
+
+    const input = page.locator(".demo-form input");
+    await input.fill("черновик");
+    await input.evaluate((element) => element.setAttribute("data-marker", "kept"));
+
+    await page.getByRole("button", { name: /Следующий/ }).click();
+    await page.locator(".card h2").filter({ hasText: "Пользователь 2" }).waitFor();
+    assert.equal(new URL(page.url()).pathname, "/users/2");
+    assert.equal(await input.inputValue(), "черновик");
+    assert.equal(await input.getAttribute("data-marker"), "kept");
+
+    const postsTab = page
+      .locator(".tabs")
+      .getByRole("link", { name: "Посты", exact: true });
+    await postsTab.click();
+    await page.locator(".badge").filter({ hasText: "Вкладка: posts" }).waitFor();
+    assert.equal(new URL(page.url()).search, "?tab=posts");
+    assert.equal(await postsTab.getAttribute("aria-current"), "page");
+
+    const aboutNav = page
+      .locator(".nav")
+      .getByRole("link", { name: "О примере", exact: true });
+    await aboutNav.click();
+    await page.locator(".card h2").filter({ hasText: "О примере" }).waitFor();
+    assert.ok(((await aboutNav.getAttribute("class")) ?? "").includes("nav-active"));
+    assert.equal(await aboutNav.getAttribute("aria-current"), "page");
+
+    const historyLength = await page.evaluate(() => history.length);
+    await aboutNav.click();
+    await page.waitForTimeout(100);
+    assert.equal(await page.evaluate(() => history.length), historyLength);
+
+    await page.goBack();
+    await page.locator(".card h2").filter({ hasText: "Пользователь 2" }).waitFor();
+    assert.equal(new URL(page.url()).search, "?tab=posts");
+
+    await page
+      .locator(".nav")
+      .getByRole("link", { name: "Lazy", exact: true })
+      .click();
+    await page.locator(".card h2").filter({ hasText: "Ленивый маршрут" }).waitFor();
+
+    await page
+      .locator(".nav")
+      .getByRole("link", { name: "404", exact: true })
+      .click();
+    await page
+      .locator(".card h2")
+      .filter({ hasText: "Страница не найдена" })
+      .waitFor();
+
+    await page.goBack();
+    await page.locator(".card h2").filter({ hasText: "Ленивый маршрут" }).waitFor();
+
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+    await server.close();
+  }
+}
+
 async function selectDomState(page) {
   return page.locator(".native-select").evaluate((element) => {
     const select = element;
@@ -408,9 +488,9 @@ async function runRegressions(browser, browserName) {
 }
 
 const SUITES = {
-  chromium: [runCounter, runTodo, runRegressions],
-  firefox: [runCounter, runTodo, runRegressions],
-  webkit: [runCounter, runTodo, runRegressions],
+  chromium: [runCounter, runTodo, runRouter, runRegressions],
+  firefox: [runCounter, runTodo, runRouter, runRegressions],
+  webkit: [runCounter, runTodo, runRouter, runRegressions],
 };
 
 async function main() {

@@ -11,7 +11,7 @@
     "build": "pnpm build:native && tsc -b packages/reactivity/tsconfig.json packages/di/tsconfig.json packages/core/tsconfig.json packages/vite/tsconfig.json packages/server/tsconfig.json packages/router/tsconfig.json",
     "build:native": "pnpm --filter @ivlev-dev/silent-swc build",
     "test": "cargo test -p silent-transform && pnpm -r --filter \"./packages/**\" --if-present test",
-    "typecheck": "pnpm -r --filter \"./packages/**\" --if-present typecheck && tsc -p packages/core/tsconfig.typecheck.json && pnpm --filter @ivlev-dev/silent-example-counter typecheck && pnpm --filter @ivlev-dev/silent-example-ssr-counter typecheck && pnpm --filter @ivlev-dev/silent-example-todo typecheck && pnpm --filter @ivlev-dev/silent-bench exec tsc --noEmit -p tsconfig.json",
+    "typecheck": "pnpm -r --filter \"./packages/**\" --if-present typecheck && tsc -p packages/core/tsconfig.typecheck.json && pnpm --filter @ivlev-dev/silent-example-counter typecheck && pnpm --filter @ivlev-dev/silent-example-ssr-counter typecheck && pnpm --filter @ivlev-dev/silent-example-todo typecheck && pnpm --filter @ivlev-dev/silent-example-router typecheck && pnpm --filter @ivlev-dev/silent-bench exec tsc --noEmit -p tsconfig.json",
     "dev": "pnpm --filter @ivlev-dev/silent-example-counter dev",
     "dev:todo": "pnpm --filter @ivlev-dev/silent-example-todo dev",
     "build:example": "pnpm --filter @ivlev-dev/silent-example-counter build",
