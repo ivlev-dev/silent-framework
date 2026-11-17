@@ -1,20 +1,23 @@
 import {
   collectNodes,
   component,
+  createComponent,
   createMountPoint,
   getRuntimeOptions,
+  getViewMeta,
   isServerMode,
   type AnyComponent,
   type Children,
+  type ComponentResult,
 } from "@ivlev-dev/silent-core";
-import { createMemo, createRenderEffect, createRoot, onCleanup } from "@ivlev-dev/silent-reactivity";
+import { createMemo, createRenderEffect, onCleanup, runWithOwner } from "@ivlev-dev/silent-reactivity";
 import {
   RouterMissingError,
   type MatchedRoute,
   type RouteLocation,
   type RouteQuery,
 } from "./match.js";
-import type { RouteViewProps } from "./route.js";
+import type { RouteViewProps, TypedRouteLocation } from "./route.js";
 import { Router, type IRouter } from "./router.js";
 
 export const ROUTER_VIEW_MARKER = "silent-router-view";
@@ -92,6 +95,24 @@ function renderSelection(
   );
 }
 
+function createLiveProps(router: IRouter, depth: number): RouteViewProps {
+  return {
+    get route(): TypedRouteLocation<string, RouteQuery> {
+      return router.state().route as TypedRouteLocation<string, RouteQuery>;
+    },
+    get params(): Record<string, string> {
+      return router.state().matched[depth]?.params ?? {};
+    },
+    get query(): RouteQuery {
+      return router.state().query;
+    },
+    get hash(): string {
+      return router.state().hash;
+    },
+    router,
+  };
+}
+
 export function RouterView(props: RouterViewProps): Node {
   const router = resolveRouter(props.router);
   const depth = props.depth ?? 0;
@@ -107,27 +128,67 @@ export function RouterView(props: RouterViewProps): Node {
     return container;
   }
 
+  const runtimeOptions = getRuntimeOptions();
   const mount = createMountPoint(container, marker);
   const selection = createMemo(
     () => selectView(router, depth),
     { equals: sameSelection },
   );
-  let viewRootDispose: (() => void) | null = null;
+  const liveProps = createLiveProps(router, depth);
+  let currentResult: ComponentResult | null = null;
+  let currentComponent: AnyComponent | null = null;
+  let fallbackShown = false;
+
+  const teardown = (): void => {
+    mount.clear();
+    currentResult?.dispose();
+    currentResult = null;
+    currentComponent = null;
+    fallbackShown = false;
+  };
+
   createRenderEffect(() => {
     const current = selection();
+    const next = current.entry?.component ?? null;
+
+    if (next === null) {
+      if (fallbackShown && currentComponent === null) {
+        return;
+      }
+      mount.clear();
+      currentResult?.dispose();
+      currentResult = null;
+      currentComponent = null;
+      mount.render(props.fallback);
+      fallbackShown = true;
+      return;
+    }
+
+    if (
+      next === currentComponent
+      && currentResult !== null
+      && getViewMeta(next) !== null
+    ) {
+      return;
+    }
+
     mount.clear();
-    viewRootDispose?.();
-    viewRootDispose = null;
-    const output = createRoot((dispose) => {
-      viewRootDispose = dispose;
-      return renderSelection(router, props, current);
-    });
-    mount.render(output);
+    fallbackShown = false;
+    currentResult?.dispose();
+    currentComponent = next;
+    currentResult = runWithOwner(null, () =>
+      createComponent(
+        next,
+        liveProps as unknown as Record<string, unknown>,
+        runtimeOptions,
+      ),
+    );
+    mount.render(currentResult.node);
   });
+
   onCleanup(() => {
-    mount.clear();
-    viewRootDispose?.();
-    viewRootDispose = null;
+    teardown();
   });
+
   return container;
 }

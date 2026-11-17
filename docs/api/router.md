@@ -184,7 +184,7 @@ const routes: RouteRecord[] = [
 <RouterView router={router} />
 ```
 
-`RouterViewProps`: `router?: IRouter`, `depth`, `fallback`. `RouterView` берёт matched-компонент по глубине и монтирует его через core `component(...)`, поэтому route-компоненты с ViewModel и DI работают штатно. Компонент получает `RouteViewProps`: `route`, `params`, `query`, `hash`, `router`. Старый `RouterViewComponentProps` — alias на `RouteViewProps`.
+`RouterViewProps`: `router?: IRouter`, `depth`, `fallback`. `RouterView` берёт matched-компонент по глубине и монтирует его через core `component(...)`, поэтому route-компоненты с ViewModel и DI работают штатно. Компонент получает `RouteViewProps`: `route`, `params`, `query`, `hash`, `router`. Старый `RouterViewComponentProps` — alias на `RouteViewProps`. При смене `params`/`query`/`hash` в рамках того же route-компонента view не пересоздаётся: props остаются живыми, DOM, введённый текст и focus сохраняются. Пересоздание происходит только при смене компонента маршрута; light-компоненты без ViewModel по-прежнему перемонтируются.
 
 ## History
 

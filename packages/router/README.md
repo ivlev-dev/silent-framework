@@ -12,7 +12,7 @@
 - Runtime-схема query (`QuerySchema`) приводит `number`, `boolean` и массивы; `RouteViewProps.query` и `router.query` содержат уже распарсенные значения.
 - `redirect`, синхронные и асинхронные `beforeEnter`, ленивый `load(context)` с кешированием.
 - `Link` и `RouterView` получают роутер из DI-контекста синхронно, с fallback на prop и `Router.current()`.
-- `RouterView` монтирует route-компоненты через core `component(...)`, поэтому ViewModel/DI работают.
+- `RouterView` монтирует route-компоненты через core `component(...)`, поэтому ViewModel/DI работают; при смене `params`/`query` view переиспользуется и сохраняет DOM/focus.
 - `BrowserHistory` (`pushState`, `popstate`, `hashchange`) и `MemoryHistory` для тестов и SSR.
 - Восстановление скролла: `scrollBehavior(to, from, savedPosition)`.
 
