@@ -42,6 +42,13 @@ function resolveTarget(to: RouteTarget | (() => RouteTarget)): RouteTarget {
   return typeof to === "function" ? (to as () => RouteTarget)() : to;
 }
 
+function externalHref(target: RouteTarget): string | null {
+  if (typeof target !== "string") {
+    return null;
+  }
+  return /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(target) ? target : null;
+}
+
 function matchesParams(
   current: Readonly<Record<string, string>>,
   target: Readonly<Record<string, string>>,
@@ -71,10 +78,14 @@ export function Link(props: LinkProps): Node {
   const element = createElement("a");
   const target = (): RouteTarget => resolveTarget(props.to);
 
-  attr(element, "href", () => router.href(target()));
-  attr(element, "aria-current", () =>
-    isExactActive(router, target()) ? "page" : null,
-  );
+  attr(element, "href", () => {
+    const value = target();
+    return externalHref(value) ?? router.href(value);
+  });
+  attr(element, "aria-current", () => {
+    const value = target();
+    return externalHref(value) === null && isExactActive(router, value) ? "page" : null;
+  });
 
   if (
     props.class !== undefined
@@ -82,8 +93,13 @@ export function Link(props: LinkProps): Node {
     || props.exactActiveClass !== undefined
   ) {
     attr(element, "class", () => {
+      const value = target();
+      const custom = normalizeClass(props.class);
+      if (externalHref(value) !== null) {
+        return custom;
+      }
       const current = router.state().route;
-      const location = router.resolve(target());
+      const location = router.resolve(value);
       let active = false;
       let exact = false;
       if (current !== null) {
@@ -96,7 +112,6 @@ export function Link(props: LinkProps): Node {
         }
       }
       const classes: string[] = [];
-      const custom = normalizeClass(props.class);
       if (custom !== "") {
         classes.push(custom);
       }
@@ -123,7 +138,11 @@ export function Link(props: LinkProps): Node {
         return;
       }
       started = true;
-      void router.prefetch(target()).catch(() => {});
+      const value = target();
+      if (externalHref(value) !== null) {
+        return;
+      }
+      void router.prefetch(value).catch(() => {});
     };
     on(element, "pointerenter", () => prefetch);
     on(element, "focus", () => prefetch);
@@ -139,10 +158,14 @@ export function Link(props: LinkProps): Node {
     if (element.hasAttribute("download")) {
       return;
     }
+    const value = target();
+    if (externalHref(value) !== null) {
+      return;
+    }
     event.preventDefault();
     const navigation = props.replace === true
-      ? router.replace(target())
-      : router.push(target());
+      ? router.replace(value)
+      : router.push(value);
     void navigation.catch(() => {});
   });
 

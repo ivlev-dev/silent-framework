@@ -96,6 +96,19 @@ describe("Link", () => {
     expect(loaded).toBe(1);
   });
 
+  it("не перехватывает внешние ссылки", async () => {
+    const { router } = setup();
+    await router.start();
+    const push = vi.spyOn(router, "push");
+    const { host } = mount(() => Link({ to: "https://example.com/docs", children: "docs" }));
+    const anchor = host.querySelector("a")!;
+    expect(anchor.getAttribute("href")).toBe("https://example.com/docs");
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+    anchor.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(push).not.toHaveBeenCalled();
+  });
+
   it("ставит aria-current на точный активный маршрут", async () => {
     const { router } = setup();
     await router.start();
