@@ -29,6 +29,7 @@ import {
   LIST_END,
   collectBetween,
   currentWindow,
+  findInsertWindow,
   isHydrating,
   isItemMarker,
   isMarker,
@@ -230,8 +231,15 @@ export function Index<T>(props: IndexProps<T>): Node {
     return renderIndexServer(props);
   }
   const hydrating = HYDRATE && isHydrating();
-  const outer = hydrating ? currentWindow() : null;
   const target = props.parent ?? null;
+  let outer = hydrating ? currentWindow() : null;
+  if (hydrating && target !== null && props.marker !== undefined && props.marker !== null) {
+    try {
+      outer = findInsertWindow(props.marker, target);
+    } catch {
+      // fall back to the enclosing template window
+    }
+  }
   let container: Node | null = null;
   const fallback = props.fallback;
   const hasFallback = fallback !== undefined;

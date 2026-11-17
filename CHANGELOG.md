@@ -6,6 +6,7 @@
 
 - `extractMetadataNode` не обходит поддерево, если у элемента нет элементных детей: строки списка из текстовых узлов больше не платят за поиск `<title>/<meta>/<link>`. `keyed list: create 1000` ~146 → 150 ops/s, `index list` ~127 → 130.
 - `For` и `Index` получили low-level режим `parent`/`marker`: строки вставляются прямо в контейнер без промежуточного fragment. `keyed list: create 1000 direct` 152 → 216 ops/s (0.63× Solid), 10k — 15 → 20 (0.66×), `index list: create 1000 direct` 137 → 158 (0.47×); обычные `For`/`Index` без изменений.
+- Компилятор автоматически передаёт `parent`/`marker` для `<For>` и `<Index>` в JSX: на клиенте больше нет `insert + component` для списков, а гидрация использует `findInsertWindow` по маркеру дыры. Гидрация в Chromium: 13 800 → **16 004 ops/s** (+16%), p50 0.055 → 0.045 мс; размер стартового чанка не изменился.
 - `reconcileDependencies` получил fast path для одной зависимости: если набор зависимостей не изменился, обновляется только версия, без пересборки массивов и обхода `Map`. Бенчмарки: signal 10k writes 263 → 433 ops/s (1.52× Solid), memo chain 143 → 253 (1.60×), effect → textContent 159 → 220 (1.41×), batched writes 6 927 → 7 259 (2.05×).
 
 ## 0.11.18

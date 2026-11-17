@@ -195,3 +195,16 @@ class CounterVM {
     assert!(!code.contains("@reactive accessor"));
     assert!(code.contains("_apply_decs"));
 }
+
+#[test]
+fn compiles_for_and_index_as_direct_lists() {
+    let code = run(
+        "import { For, Index } from \"@ivlev-dev/silent-core\"; const a = <ul><For each={items}>{(item) => <li>{item}</li>}</For></ul>; const b = <div><Index each={items}>{(item) => <span>{item()}</span>}</Index></div>;",
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert_eq!(code.matches("parent:").count(), 2, "{code}");
+    assert_eq!(code.matches("marker:").count(), 2, "{code}");
+    assert!(code.contains("_$component(For"), "{code}");
+    assert!(code.contains("_$component(Index"), "{code}");
+}

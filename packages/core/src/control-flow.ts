@@ -30,6 +30,7 @@ import {
   SHOW,
   collectBetween,
   currentWindow,
+  findInsertWindow,
   isHydrating,
   isMarker,
   mismatch,
@@ -319,8 +320,15 @@ export function For<T>(props: ForProps<T>): Node {
     return renderForServer(props);
   }
   const hydrating = HYDRATE && isHydrating();
-  const outer = hydrating ? currentWindow() : null;
   const target = props.parent ?? null;
+  let outer = hydrating ? currentWindow() : null;
+  if (hydrating && target !== null && props.marker !== undefined && props.marker !== null) {
+    try {
+      outer = findInsertWindow(props.marker, target);
+    } catch {
+      // fall back to the enclosing template window
+    }
+  }
   let container: Node | null = null;
   const fallback = props.fallback;
   const hasFallback = fallback !== undefined;

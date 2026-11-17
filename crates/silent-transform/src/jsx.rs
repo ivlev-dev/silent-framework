@@ -585,7 +585,7 @@ impl SilentPass {
             }));
         }
 
-        for (index, expr) in holes.into_iter().enumerate() {
+        for (index, mut expr) in holes.into_iter().enumerate() {
             let hole = computed_member(member_expr(result.clone(), "holes"), index);
             let parent = member_expr(hole.clone(), "parentNode");
             let node = member_expr(result.clone(), "node");
@@ -595,6 +595,13 @@ impl SilentPass {
                 left: Box::new(parent),
                 right: Box::new(node),
             });
+            if attach_direct_list(&mut expr, &parent, &hole) {
+                statements.push(Stmt::Expr(swc_core::ecma::ast::ExprStmt {
+                    span: DUMMY_SP,
+                    expr: Box::new(expr),
+                }));
+                continue;
+            }
             let call = call_expr(
                 Expr::Ident(self.helper("insert")),
                 vec![parent, arrow_expr(expr), hole],
@@ -890,6 +897,75 @@ fn ssr_compatible(parts: &TemplateParts) -> bool {
         };
         rest = &rest[position..];
     }
+    true
+}
+
+
+fn direct_list_component(expr: &Expr) -> bool {
+    let Expr::Call(call) = expr else {
+        return false;
+    };
+    let Callee::Expr(callee) = &call.callee else {
+        return false;
+    };
+    let Expr::Ident(callee) = &**callee else {
+        return false;
+    };
+    if !callee.sym.as_ref().ends_with("component") {
+        return false;
+    }
+    let Some(first) = call.args.first() else {
+        return false;
+    };
+    let Expr::Ident(name) = &*first.expr else {
+        return false;
+    };
+    matches!(name.sym.as_ref(), "For" | "Index")
+}
+
+fn has_prop(object: &ObjectLit, name: &str) -> bool {
+    object.props.iter().any(|prop| {
+        let PropOrSpread::Prop(prop) = prop else {
+            return false;
+        };
+        let Prop::KeyValue(entry) = &**prop else {
+            return false;
+        };
+        let PropName::Ident(key) = &entry.key else {
+            return false;
+        };
+        key.sym.as_ref() == name
+    })
+}
+
+fn attach_direct_list(expr: &mut Expr, parent: &Expr, hole: &Expr) -> bool {
+    if !direct_list_component(expr) {
+        return false;
+    }
+    let Expr::Call(call) = expr else {
+        return false;
+    };
+    let Some(props) = call.args.get_mut(1) else {
+        return false;
+    };
+    let Expr::Object(object) = &mut *props.expr else {
+        return false;
+    };
+    if has_prop(object, "parent") || has_prop(object, "marker") {
+        return false;
+    }
+    object.props.push(PropOrSpread::Prop(Box::new(Prop::KeyValue(
+        KeyValueProp {
+            key: prop_name("parent"),
+            value: Box::new(parent.clone()),
+        },
+    ))));
+    object.props.push(PropOrSpread::Prop(Box::new(Prop::KeyValue(
+        KeyValueProp {
+            key: prop_name("marker"),
+            value: Box::new(hole.clone()),
+        },
+    ))));
     true
 }
 
