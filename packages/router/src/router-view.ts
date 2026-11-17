@@ -4,7 +4,6 @@ import {
   createComponent,
   createMountPoint,
   getRuntimeOptions,
-  getViewMeta,
   isServerMode,
   type AnyComponent,
   type Children,
@@ -164,11 +163,8 @@ export function RouterView(props: RouterViewProps): Node {
       return;
     }
 
-    if (
-      next === currentComponent
-      && currentResult !== null
-      && getViewMeta(next) !== null
-    ) {
+    if (next === currentComponent && currentResult !== null) {
+      currentResult.update(liveProps as unknown as Record<string, unknown>);
       return;
     }
 

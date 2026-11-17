@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11.6
+
+### RouterView: reuse и lifecycle
+
+- Light-компоненты без ViewModel больше не пересоздаются при смене `params`/`query`: они обновляются через `update()` с сохранением focus.
+- У ViewModel при смене параметров вызывается hook `updated()`.
+- Добавлены тесты на light-компоненты и lifecycle.
+
 ## 0.11.5
 
 ### Переиспользование route-view

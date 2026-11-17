@@ -49,7 +49,7 @@ function StaticView(this: { vm: StaticVM }): HTMLElement {
 };
 
 function LightView(props: RouterViewComponentProps): HTMLElement {
-  const node = document.createElement("span");
+  const node = document.createElement("input");
   node.dataset.id = props.params["id"];
   return node;
 }
@@ -118,17 +118,53 @@ describe("RouterView: переиспользование view", () => {
     expect(host.querySelector("p")?.textContent).toBe("static");
   });
 
-  it("пересоздаёт light-компонент при смене params", async () => {
+  it("обновляет light-компонент без потери focus", async () => {
     const { router, host } = await setup(
       [{ path: "/light/:id", component: LightView as unknown as AnyComponent }],
       "/light/a",
     );
-    const first = host.querySelector("span");
-    expect(first?.dataset.id).toBe("a");
+    const input = host.querySelector("input");
+    expect(input?.dataset.id).toBe("a");
+    input!.focus();
     await router.push("/light/b");
     await tick();
-    const second = host.querySelector("span");
-    expect(second).not.toBe(first);
-    expect(second?.dataset.id).toBe("b");
+    expect(host.querySelector("input")?.dataset.id).toBe("b");
+    expect(document.activeElement).toBe(host.querySelector("input"));
+  });
+
+  it("вызывает updated() у ViewModel при смене params", async () => {
+    const events: string[] = [];
+    class RouteVM {
+      constructor() {
+        events.push("create");
+      }
+
+      updated(): void {
+        events.push("updated");
+      }
+
+      dispose(): void {
+        events.push("dispose");
+      }
+    }
+    function HookView(this: { vm: RouteVM }, props: RouterViewComponentProps): HTMLElement {
+      void this.vm;
+      const node = document.createElement("b");
+      attr(node, "data-id", () => props.params["id"]);
+      return node;
+    }
+    (HookView as unknown as Record<PropertyKey, unknown>)[VIEW] = {
+      vm: RouteVM,
+      name: "HookView",
+    };
+    const { router, host } = await setup(
+      [{ path: "/hook/:id", component: HookView as unknown as AnyComponent }],
+      "/hook/1",
+    );
+    const node = host.querySelector("b");
+    await router.push("/hook/2");
+    await tick();
+    expect(node?.getAttribute("data-id")).toBe("2");
+    expect(events).toEqual(["create", "updated"]);
   });
 });
