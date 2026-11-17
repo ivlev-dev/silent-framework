@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Производительность гидрации
+
+- `ComponentResult.settled` стал ленивым getter'ом с заранее снятым `ready`-снимком; промис `whenDisposed` и `Promise.race` создаются только при обращении. Вложенные `component()` больше не платят за неиспользуемый `settled`.
+- `findInsertWindow` сканирует комментарии вперёд от `firstChild` до `INSERT_END` со стеком вложенности вместо обратного прохода по всем узлам региона.
+- Замеры: jsdom 1 296–1 305 ops/s, Chromium 13 100–13 700 ops/s; стартовый JS 35.60 KB / 12.34 KB gzip.
+
 ## 0.11.17
 
 ### Исправления

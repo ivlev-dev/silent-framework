@@ -78,21 +78,25 @@ export function findInsertWindow(marker: Node | null, parent: Node): HydrationWi
   if (isMarker(adjacent, INSERT_START)) {
     return { start: adjacent, end, cursor: end };
   }
-  let depth = 0;
-  let cursor: Node | null = end;
+  const stack: Comment[] = [];
+  let cursor: Node | null = parent.firstChild;
   while (cursor !== null) {
+    if (cursor === end) {
+      const start = stack[stack.length - 1];
+      if (start !== undefined) {
+        return { start, end, cursor: start.nextSibling };
+      }
+      break;
+    }
     if (cursor.nodeType === Node.COMMENT_NODE) {
       const data = (cursor as Comment).data;
-      if (data === INSERT_END) {
-        depth += 1;
-      } else if (data === INSERT_START) {
-        depth -= 1;
-        if (depth === 0) {
-          return { start: cursor, end, cursor: cursor.nextSibling };
-        }
+      if (data === INSERT_START) {
+        stack.push(cursor as Comment);
+      } else if (data === INSERT_END && stack.length > 0) {
+        stack.pop();
       }
     }
-    cursor = cursor.previousSibling;
+    cursor = cursor.nextSibling;
   }
   return mismatch("не найдено начало региона вставки");
 }

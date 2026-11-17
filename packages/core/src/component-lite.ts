@@ -418,15 +418,26 @@ function buildLightInstance(
   const propsProxy = createPropsProxy(props);
   let instanceRootDispose: (() => void) | null = null;
 
-  let resolveDisposed: () => void = () => {};
-  const whenDisposed = new Promise<void>((resolve) => {
-    resolveDisposed = resolve;
-  });
+  let resolveDisposed: (() => void) | null = null;
+  let disposedGate: Promise<void> | null = null;
+  const disposedGatePromise = (): Promise<void> => {
+    if (instance.disposed) {
+      return RESOLVED_READY;
+    }
+    if (disposedGate === null) {
+      disposedGate = new Promise<void>((resolve) => {
+        resolveDisposed = resolve;
+      });
+    }
+    return disposedGate;
+  };
 
   const instance: LightInstance = {
     fn,
     props: propsProxy,
-    whenDisposed,
+    get whenDisposed(): Promise<void> {
+      return disposedGatePromise();
+    },
     options,
     contextValues: inheritedContext,
     node: document.createComment("silent-empty"),
@@ -451,7 +462,7 @@ function buildLightInstance(
         return;
       }
       instance.disposed = true;
-      resolveDisposed();
+      resolveDisposed?.();
       const disposeRender = instance.renderRootDispose;
       instance.renderRootDispose = null;
       disposeRender?.();
@@ -471,12 +482,16 @@ function buildLightInstance(
 
 function lightResult(instance: LightInstance): ComponentResult {
   registerLightUpdaters(instance);
+  const ready = instance.single ? getOwnReady(instance.node) : RESOLVED_READY;
+  const settledReady = getReady(instance.node);
   return {
     get node(): Node {
       return instance.node;
     },
-    ready: instance.single ? getOwnReady(instance.node) : RESOLVED_READY,
-    settled: Promise.race([getReady(instance.node), instance.whenDisposed]),
+    ready,
+    get settled(): Promise<void> {
+      return Promise.race([settledReady, instance.whenDisposed]);
+    },
     update: instance.updateProps,
     dispose: instance.dispose,
   };
