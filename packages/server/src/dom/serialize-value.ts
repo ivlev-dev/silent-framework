@@ -33,6 +33,10 @@ export function pushValue(value: unknown, parts: PartSink): void {
     return;
   }
   const renderable = value as RenderableValue;
+  if (parts.stream === true && typeof renderable.renderInto === "function") {
+    renderable.renderInto(parts);
+    return;
+  }
   if (typeof renderable.render === "function") {
     const text = renderable.render();
     if (text !== "") {

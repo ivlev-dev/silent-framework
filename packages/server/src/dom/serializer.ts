@@ -25,6 +25,7 @@ const REPLACE_TEXT = /[&<>]/g;
 const REPLACE_ATTRIBUTE = /[&<>"]/g;
 
 export interface PartSink {
+  readonly stream?: boolean | undefined;
   push(...values: string[]): void;
 }
 
@@ -108,12 +109,16 @@ interface RenderableNode {
 
 export function pushNode(node: DomNode, parts: PartSink): void {
   const raw = node as unknown as RenderableNode;
+  const renderInto = raw.renderInto;
+  if (parts.stream === true && typeof renderInto === "function") {
+    renderInto.call(node, parts);
+    return;
+  }
   const render = raw.render;
   if (typeof render === "function") {
     parts.push(render.call(node));
     return;
   }
-  const renderInto = raw.renderInto;
   if (typeof renderInto === "function") {
     renderInto.call(node, parts);
     return;
@@ -171,6 +176,7 @@ export function serializeNodeChunks(
     }
   };
   const sink: PartSink = {
+    stream: true,
     push(...values: string[]): void {
       for (const value of values) {
         if (value.length === 0) {
