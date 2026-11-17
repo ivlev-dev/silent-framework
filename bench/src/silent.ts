@@ -224,6 +224,34 @@ const createBigList: BenchTask = {
   },
 };
 
+const createListDirect: BenchTask = {
+  name: "keyed list: create 1000 direct",
+  fn: () => {
+    const host = createHost();
+    const [items] = createSignal<readonly Row[]>(createRows(LIST_SIZE));
+    const dispose = createRoot((disposeRoot) => {
+      For({ parent: host, each: items, children: renderRow });
+      return disposeRoot;
+    });
+    flushSync();
+    dispose();
+  },
+};
+
+const createBigListDirect: BenchTask = {
+  name: "keyed list: create 10k direct",
+  fn: () => {
+    const host = createHost();
+    const [items] = createSignal<readonly Row[]>(createRows(BIG_LIST_SIZE));
+    const dispose = createRoot((disposeRoot) => {
+      For({ parent: host, each: items, children: renderRow });
+      return disposeRoot;
+    });
+    flushSync();
+    dispose();
+  },
+};
+
 const appendBigList = setupKeyedList(createRows(BIG_LIST_SIZE));
 const appendBigRows = createRows(BIG_APPEND_SIZE);
 const appendBigTask: BenchTask = {
@@ -264,8 +292,10 @@ export const silentSuite: BenchSuite = {
     textUpdates,
     createList,
     createIndexList,
+    createListDirect,
     appendTask,
     createBigList,
+    createBigListDirect,
     appendBigTask,
     reorderTask,
   ],

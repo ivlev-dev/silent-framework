@@ -261,3 +261,31 @@ describe("mapKeyed и Keyed", () => {
     expect(inputsOf(host)[0]).toBe(captured.get("b"));
   });
 });
+
+describe("For: parent/marker", () => {
+  it("рендерит строки прямо в parent и очищает их при dispose", () => {
+    const [items, setItems] = createSignal<readonly Item[]>([item("a")]);
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const marker = document.createElement("hr");
+    host.appendChild(marker);
+
+    const dispose = createRoot((disposeRoot) => {
+      For<Item>({ parent: host, marker, each: items, children: row });
+      return disposeRoot;
+    });
+    flushSync();
+
+    expect(idsOf(host)).toEqual(["a"]);
+    expect(host.lastChild).toBe(marker);
+
+    setItems([item("a"), item("b")]);
+    flushSync();
+    expect(idsOf(host)).toEqual(["a", "b"]);
+    expect(host.lastChild).toBe(marker);
+
+    dispose();
+    expect(idsOf(host)).toEqual([]);
+    expect(host.lastChild).toBe(marker);
+  });
+});

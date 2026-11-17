@@ -122,6 +122,8 @@ export interface ForProps<T> {
   children: (item: T, index: () => number) => Node;
   keyOf?: (item: T, index: number) => unknown;
   fallback?: unknown;
+  parent?: Node;
+  marker?: Node | null;
 }
 
 function sameItem(a: unknown, b: unknown): boolean {
@@ -318,7 +320,8 @@ export function For<T>(props: ForProps<T>): Node {
   }
   const hydrating = HYDRATE && isHydrating();
   const outer = hydrating ? currentWindow() : null;
-  let container: DocumentFragment | null = null;
+  const target = props.parent ?? null;
+  let container: Node | null = null;
   const fallback = props.fallback;
   const hasFallback = fallback !== undefined;
   const keyOf = props.keyOf;
@@ -392,9 +395,10 @@ export function For<T>(props: ForProps<T>): Node {
     state: ItemState<T>,
     value: unknown,
     mountParent: Node | null = null,
+    mountTail: Node | null = null,
   ): void => {
     const nodes = materializeNodes(state);
-    let tail: Node | null = null;
+    let tail: Node | null = mountTail;
     let parent: Node | null = mountParent;
     if (nodes.length > 0) {
       tail = nodes[nodes.length - 1]!.nextSibling;
@@ -498,10 +502,12 @@ export function For<T>(props: ForProps<T>): Node {
     itemEnd: Node | null,
     position: number,
     mountParent: Node | null = null,
+    tail: Node | null = null,
   ): ItemState<T> => {
     const state = new KeyedState<T>(item, keyAt(item, position), anchor, itemEnd, position);
     let initialMount: Node | null = mountParent;
     let seeded = itemEnd !== null;
+    let mountTail: Node | null = tail;
     const children = untrack(() => props.children);
     const run = (): void => {
       if (seeded) {
@@ -524,8 +530,9 @@ export function For<T>(props: ForProps<T>): Node {
         }
         return;
       }
-      renderItem(state, children(item, state.index), initialMount);
+      renderItem(state, children(item, state.index), initialMount, mountTail);
       initialMount = null;
+      mountTail = null;
     };
     state.cleanup = hydrating
       ? hydratedEffect(run) ?? noopCleanup
@@ -557,8 +564,9 @@ export function For<T>(props: ForProps<T>): Node {
   const createState = (
     item: T,
     position: number,
-    sink: DocumentFragment,
-  ): ItemState<T> => makeState(item, null, null, position, sink);
+    sink: Node,
+    tail: Node | null = null,
+  ): ItemState<T> => makeState(item, null, null, position, sink, tail);
 
   let fallbackSeed: Node[] = [];
   let skipFirst = hydrating;
@@ -617,8 +625,18 @@ export function For<T>(props: ForProps<T>): Node {
     settleWindow(outer, endAnchor);
   } else {
     endAnchor = document.createComment(LIST_END);
-    const sink = container ?? (container = document.createDocumentFragment());
-    sink.appendChild(endAnchor);
+    if (target !== null) {
+      const marker = props.marker ?? null;
+      if (marker !== null) {
+        target.insertBefore(endAnchor, marker);
+      } else {
+        target.appendChild(endAnchor);
+      }
+      container = target;
+    } else {
+      const sink = container ?? (container = document.createDocumentFragment());
+      sink.appendChild(endAnchor);
+    }
   }
 
   const fallbackParent = hydrating ? endAnchor.parentNode : null;
@@ -628,7 +646,7 @@ export function For<T>(props: ForProps<T>): Node {
   const fallbackMount = hydrating
     ? createMountPoint(fallbackParent as Node, endAnchor, fallbackSeed)
     : createMountPoint(
-        container ?? (container = document.createDocumentFragment()),
+        target ?? (container ??= document.createDocumentFragment()),
         endAnchor,
       );
 
@@ -669,13 +687,21 @@ export function For<T>(props: ForProps<T>): Node {
       }
       if (nextLength >= previousLength) {
         if (nextLength > previousLength) {
-          const batch = document.createDocumentFragment();
-          runWithOwner(parentOwner, () => {
-            for (let position = previousLength; position < nextLength; position += 1) {
-              previous.push(createState(items[position] as T, position, batch));
-            }
-          });
-          parent.insertBefore(batch, endAnchor);
+          if (previousLength === 0 && target !== null) {
+            runWithOwner(parentOwner, () => {
+              for (let position = 0; position < nextLength; position += 1) {
+                previous.push(createState(items[position] as T, position, target, endAnchor));
+              }
+            });
+          } else {
+            const batch = document.createDocumentFragment();
+            runWithOwner(parentOwner, () => {
+              for (let position = previousLength; position < nextLength; position += 1) {
+                previous.push(createState(items[position] as T, position, batch));
+              }
+            });
+            parent.insertBefore(batch, endAnchor);
+          }
         }
         fallbackMount.render(nextLength === 0 && hasFallback ? resolve(fallback) : null);
         return;
@@ -840,7 +866,7 @@ export function For<T>(props: ForProps<T>): Node {
 
   onCleanup(removeAll);
 
-  return hydrating
+  return target !== null || hydrating
     ? document.createDocumentFragment()
     : (container ??= document.createDocumentFragment());
 }
