@@ -1,15 +1,23 @@
 import {
+  adoptHydrationRegion,
   collectNodes,
   component,
   createComponent,
   createMountPoint,
   getRuntimeOptions,
   isServerMode,
+  withoutHydration,
   type AnyComponent,
   type Children,
   type ComponentResult,
 } from "@ivlev-dev/silent-core";
-import { createMemo, createRenderEffect, onCleanup, runWithOwner } from "@ivlev-dev/silent-reactivity";
+import {
+  createMemo,
+  createRenderEffect,
+  onCleanup,
+  runWithOwner,
+  untrack,
+} from "@ivlev-dev/silent-reactivity";
 import {
   RouterMissingError,
   type MatchedRoute,
@@ -112,6 +120,24 @@ function createLiveProps(router: IRouter, depth: number): RouteViewProps {
   };
 }
 
+function mountNodesConnected(nodes: readonly Node[]): boolean {
+  for (const node of nodes) {
+    if (node.isConnected === true) {
+      return true;
+    }
+    if (node.nodeType === 11) {
+      let child = node.firstChild;
+      while (child !== null) {
+        if (child.isConnected === true) {
+          return true;
+        }
+        child = child.nextSibling;
+      }
+    }
+  }
+  return false;
+}
+
 export function RouterView(props: RouterViewProps): Node {
   const router = resolveRouter(props.router);
   const depth = props.depth ?? 0;
@@ -128,7 +154,12 @@ export function RouterView(props: RouterViewProps): Node {
   }
 
   const runtimeOptions = getRuntimeOptions();
-  const mount = createMountPoint(container, marker);
+  const adoptedMarker = adoptHydrationRegion(ROUTER_VIEW_MARKER);
+  const mountMarker = adoptedMarker ?? marker;
+  if (adoptedMarker === null) {
+    container.appendChild(marker);
+  }
+  const mount = createMountPoint(container, mountMarker);
   const selection = createMemo(
     () => selectView(router, depth),
     { equals: sameSelection },
@@ -163,7 +194,11 @@ export function RouterView(props: RouterViewProps): Node {
       return;
     }
 
-    if (next === currentComponent && currentResult !== null) {
+    if (
+      next === currentComponent
+      && currentResult !== null
+      && mountNodesConnected(mount.nodes())
+    ) {
       currentResult.update(liveProps as unknown as Record<string, unknown>);
       return;
     }
@@ -172,13 +207,16 @@ export function RouterView(props: RouterViewProps): Node {
     fallbackShown = false;
     currentResult?.dispose();
     currentComponent = next;
-    currentResult = runWithOwner(null, () =>
-      createComponent(
-        next,
-        liveProps as unknown as Record<string, unknown>,
-        runtimeOptions,
+    const create = (): ComponentResult => runWithOwner(null, () =>
+      untrack(() =>
+        createComponent(
+          next,
+          liveProps as unknown as Record<string, unknown>,
+          runtimeOptions,
+        ),
       ),
     );
+    currentResult = adoptedMarker === null ? create() : withoutHydration(create);
     mount.render(currentResult.node);
   });
 

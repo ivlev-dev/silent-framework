@@ -1,6 +1,6 @@
 {
   "name": "@ivlev-dev/silent-router",
-  "version": "0.11.8",
+  "version": "0.11.9",
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.js",
@@ -25,6 +25,7 @@
     "@ivlev-dev/silent-reactivity": "workspace:*"
   },
   "devDependencies": {
+    "@ivlev-dev/silent-server": "workspace:*",
     "@ivlev-dev/silent-swc": "workspace:*",
     "jsdom": "^31.0.0",
     "typescript": "^7.0.2",

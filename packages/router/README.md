@@ -13,6 +13,7 @@
 - `redirect`, синхронные и асинхронные `beforeEnter`, ленивый `load(context)` с кешированием.
 - `Link` и `RouterView` получают роутер из DI-контекста синхронно, с fallback на prop и `Router.current()`.
 - `RouterView` монтирует route-компоненты через core `component(...)`, поэтому ViewModel/DI работают; при смене `params`/`query` view переиспользуется и сохраняет DOM/focus.
+- При гидрации `RouterView` адоптирует серверный маркер, удаляет старую разметку маршрута и рендерит matched-компонент заново.
 - `BrowserHistory` (`pushState`, `popstate`, `hashchange`) и `MemoryHistory` для тестов и SSR.
 - Повторный переход на текущий путь не дублирует историю и не перезапускает guards/loaders.
 - Восстановление скролла: `scrollBehavior(to, from, savedPosition)`.
