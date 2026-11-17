@@ -900,7 +900,6 @@ fn ssr_compatible(parts: &TemplateParts) -> bool {
     true
 }
 
-
 impl SilentPass {
     fn is_direct_list_component(&self, name: &Ident) -> bool {
         let Some(record) = self.imports.get(name.sym.as_ref()) else {
@@ -946,18 +945,18 @@ impl SilentPass {
         if has_prop(object, "parent") || has_prop(object, "marker") {
             return false;
         }
-        object.props.push(PropOrSpread::Prop(Box::new(Prop::KeyValue(
-            KeyValueProp {
+        object
+            .props
+            .push(PropOrSpread::Prop(Box::new(Prop::KeyValue(KeyValueProp {
                 key: prop_name("parent"),
                 value: Box::new(parent.clone()),
-            },
-        ))));
-        object.props.push(PropOrSpread::Prop(Box::new(Prop::KeyValue(
-            KeyValueProp {
+            }))));
+        object
+            .props
+            .push(PropOrSpread::Prop(Box::new(Prop::KeyValue(KeyValueProp {
                 key: prop_name("marker"),
                 value: Box::new(hole.clone()),
-            },
-        ))));
+            }))));
         true
     }
 }
