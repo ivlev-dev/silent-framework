@@ -72,7 +72,10 @@ fn preserves_significant_spaces_around_expressions() {
         "/proj/src/view.tsx",
         Index::default(),
     );
-    assert!(code.contains("<p>Привет, <!--silent-hole-0-->!</p>"), "{code}");
+    assert!(
+        code.contains("<p>Привет, <!--silent-hole-0-->!</p>"),
+        "{code}"
+    );
 }
 
 #[test]
