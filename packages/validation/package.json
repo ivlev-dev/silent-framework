@@ -1,0 +1,52 @@
+{
+  "name": "@ivlev-dev/silent-validation",
+  "version": "0.11.21",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@ivlev-dev/silent-swc": "workspace:*",
+    "@ivlev-dev/silent-vite": "workspace:*",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ivlev-dev/silent-framework.git"
+  },
+  "homepage": "https://github.com/ivlev-dev/silent-framework#readme",
+  "bugs": {
+    "url": "https://github.com/ivlev-dev/silent-framework/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "description": "Class-based validation with stage 3 decorators, custom messages and i18n",
+  "keywords": [
+    "validation",
+    "decorators",
+    "typescript",
+    "i18n",
+    "class-validator"
+  ]
+}

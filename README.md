@@ -19,6 +19,7 @@
 - SSR без внешних DOM-зависимостей (`@ivlev-dev/silent-server`), `renderToStream` и гидрация без вспышки прелоадера.
 - `<title>`, `<meta>` и `<link>` из любого компонента выносятся в `<head>` — как в React 19, с SSR-поддержкой.
 - Опциональный `@ivlev-dev/silent-router`: класс `Router`, компоненты `Link`/`RouterView`, guards/loaders и memory history для SSR.
+- Опциональный `@ivlev-dev/silent-validation`: классовая валидация на stage-3 декораторах (`@Required`, `@IsEmail`, `@Min` и ещё 40+ правил), кастомные сообщения, встроенные ru/en и интеграция с i18n.
 - Справочник API с автопроверкой полноты (`pnpm api:check`).
 
 ## Установка
@@ -39,6 +40,8 @@ pnpm add @ivlev-dev/silent-core
 pnpm add -D @ivlev-dev/silent-vite vite typescript
 # для SSR:
 pnpm add @ivlev-dev/silent-server
+# для валидации:
+pnpm add @ivlev-dev/silent-validation
 ```
 
 ```ts
@@ -55,6 +58,24 @@ export default defineConfig({
 В библиотечных пакетах внутренние `@ivlev-dev/silent-*` объявлены как peer-зависимости с диапазоном `>=0.11.0 <0.12.0` (метапакет ставит их как обычные зависимости): патч-версии совместимы, а `0.12.0` требует согласованного обновления. npm 7+ и pnpm ставят такие peer-зависимости автоматически.
 
 По умолчанию плагин компилирует TS/TSX с `target: "es2024"`, включает source maps и HMR.
+
+## Валидация
+
+```ts
+import { validate, IsEmail, IsInt, Max, Min, Required } from "@ivlev-dev/silent-validation";
+
+class User {
+  @Required() @IsEmail() email!: string;
+  @IsInt() @Min(0) @Max(120) age!: number;
+}
+
+const result = validate(user);
+if (!result.valid) {
+  console.log(result.errors[0]?.message);
+}
+```
+
+Пакет не зависит от core: декораторы вешаются на поля, валидация вызывается явно (`validate`/`validateAsync`), сообщения настраиваются через `configureValidation` с резолвером i18n. Подробнее — [`docs/api/validation.md`](./docs/api/validation.md).
 
 ## Компонент и ViewModel
 

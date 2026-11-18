@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Валидация
+
+- Новый пакет `@ivlev-dev/silent-validation`: классовая валидация на stage-3 декораторах, 46 правил (наличие, типы, числа, строки, коллекции, сравнения, custom/nested), модификаторы `ValidateIf`/`Optional`/`Label`/`Groups`, `validate`/`validateAsync`/`validateOrThrow`, кастомные сообщения, встроенные каталоги ru/en и `MessageResolver` для i18n.
+
 ## 0.11.21
 
 ### Списки

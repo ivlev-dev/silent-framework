@@ -12,6 +12,7 @@ const PACKAGES = [
   { name: "@ivlev-dev/silent-reactivity", entry: "packages/reactivity/dist/index.d.ts", doc: "docs/api/reactivity.md" },
   { name: "@ivlev-dev/silent-di", entry: "packages/di/dist/index.d.ts", doc: "docs/api/di.md" },
   { name: "@ivlev-dev/silent-core", entry: "packages/core/dist/index.d.ts", doc: "docs/api/core.md" },
+  { name: "@ivlev-dev/silent-validation", entry: "packages/validation/dist/index.d.ts", doc: "docs/api/validation.md" },
   { name: "@ivlev-dev/silent-swc", entry: "packages/swc/index.d.ts", doc: "docs/api/swc.md" },
   { name: "@ivlev-dev/silent-vite", entry: "packages/vite/dist/index.d.ts", doc: "docs/api/vite.md" },
   { name: "@ivlev-dev/silent-server", entry: "packages/server/dist/index.d.ts", doc: "docs/api/core.md" },

@@ -1491,6 +1491,372 @@
         "signature": "export function version(): string;"
       }
     },
+    "@ivlev-dev/silent-validation": {
+      "ArrayMaxSize": {
+        "kind": "function",
+        "type": "(max: number, options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function ArrayMaxSize(max: number, options?: RuleOptions): RuleDecorator;"
+      },
+      "ArrayMinSize": {
+        "kind": "function",
+        "type": "(min: number, options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function ArrayMinSize(min: number, options?: RuleOptions): RuleDecorator;"
+      },
+      "ArrayNotEmpty": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function ArrayNotEmpty(options?: RuleOptions): RuleDecorator;"
+      },
+      "ArrayUnique": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function ArrayUnique(options?: RuleOptions): RuleDecorator;"
+      },
+      "AsyncRuleError": {
+        "kind": "class",
+        "signature": "export declare class AsyncRuleError extends Error { readonly field: string; readonly rule: string; constructor(field: string, rule: string); }"
+      },
+      "Between": {
+        "kind": "function",
+        "type": "(min: number, max: number, options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function Between(min: number, max: number, options?: RuleOptions): RuleDecorator;"
+      },
+      "configureValidation": {
+        "kind": "function",
+        "type": "(config: ValidationConfig) => void",
+        "signature": "export declare function configureValidation(config: ValidationConfig): void;"
+      },
+      "Custom": {
+        "kind": "function",
+        "type": "(check: RuleCheck, options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function Custom(check: RuleCheck, options?: RuleOptions): RuleDecorator;"
+      },
+      "DEFAULT_LOCALE": {
+        "kind": "variable",
+        "type": "\"ru\"",
+        "signature": "export declare const DEFAULT_LOCALE = \"ru\";"
+      },
+      "Each": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function Each(options?: RuleOptions): RuleDecorator;"
+      },
+      "Equals": {
+        "kind": "function",
+        "type": "(expected: unknown, options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function Equals(expected: unknown, options?: RuleOptions): RuleDecorator;"
+      },
+      "getValidationConfig": {
+        "kind": "function",
+        "type": "() => ValidationConfig",
+        "signature": "export declare function getValidationConfig(): ValidationConfig;"
+      },
+      "Groups": {
+        "kind": "function",
+        "type": "(...groups: string[]) => RuleDecorator",
+        "signature": "export declare function Groups(...groups: string[]): RuleDecorator;"
+      },
+      "HasKey": {
+        "kind": "function",
+        "type": "(key: PropertyKey, options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function HasKey(key: PropertyKey, options?: RuleOptions): RuleDecorator;"
+      },
+      "IsAlpha": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function IsAlpha(options?: RuleOptions): RuleDecorator;"
+      },
+      "IsAlphanumeric": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function IsAlphanumeric(options?: RuleOptions): RuleDecorator;"
+      },
+      "IsArray": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function IsArray(options?: RuleOptions): RuleDecorator;"
+      },
+      "IsBase64": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function IsBase64(options?: RuleOptions): RuleDecorator;"
+      },
+      "IsBoolean": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function IsBoolean(options?: RuleOptions): RuleDecorator;"
+      },
+      "IsDate": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function IsDate(options?: RuleOptions): RuleDecorator;"
+      },
+      "IsDefined": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function IsDefined(options?: RuleOptions): RuleDecorator;"
+      },
+      "IsEmail": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function IsEmail(options?: RuleOptions): RuleDecorator;"
+      },
+      "IsEnum": {
+        "kind": "function",
+        "type": "(values: EnumSource, options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function IsEnum(values: EnumSource, options?: RuleOptions): RuleDecorator;"
+      },
+      "IsFloat": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function IsFloat(options?: RuleOptions): RuleDecorator;"
+      },
+      "IsFunction": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function IsFunction(options?: RuleOptions): RuleDecorator;"
+      },
+      "IsHexColor": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function IsHexColor(options?: RuleOptions): RuleDecorator;"
+      },
+      "IsIn": {
+        "kind": "function",
+        "type": "(values: readonly unknown[], options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function IsIn(values: readonly unknown[], options?: RuleOptions): RuleDecorator;"
+      },
+      "IsInstanceOf": {
+        "kind": "function",
+        "type": "(ctor: AnyConstructor, options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function IsInstanceOf(ctor: AnyConstructor, options?: RuleOptions): RuleDecorator;"
+      },
+      "IsInt": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function IsInt(options?: RuleOptions): RuleDecorator;"
+      },
+      "IsISO8601": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function IsISO8601(options?: RuleOptions): RuleDecorator;"
+      },
+      "IsJSON": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function IsJSON(options?: RuleOptions): RuleDecorator;"
+      },
+      "IsNumber": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function IsNumber(options?: RuleOptions): RuleDecorator;"
+      },
+      "IsObject": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function IsObject(options?: RuleOptions): RuleDecorator;"
+      },
+      "IsPhone": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function IsPhone(options?: RuleOptions): RuleDecorator;"
+      },
+      "IsSlug": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function IsSlug(options?: RuleOptions): RuleDecorator;"
+      },
+      "IsString": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function IsString(options?: RuleOptions): RuleDecorator;"
+      },
+      "IsUrl": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function IsUrl(options?: RuleOptions): RuleDecorator;"
+      },
+      "IsUUID": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function IsUUID(options?: RuleOptions): RuleDecorator;"
+      },
+      "Label": {
+        "kind": "function",
+        "type": "(label: string) => RuleDecorator",
+        "signature": "export declare function Label(label: string): RuleDecorator;"
+      },
+      "Length": {
+        "kind": "function",
+        "type": "(length: number, options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function Length(length: number, options?: RuleOptions): RuleDecorator;"
+      },
+      "Matches": {
+        "kind": "function",
+        "type": "(pattern: RegExp | string, options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function Matches(pattern: RegExp | string, options?: RuleOptions): RuleDecorator;"
+      },
+      "Max": {
+        "kind": "function",
+        "type": "(limit: number, options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function Max(limit: number, options?: RuleOptions): RuleDecorator;"
+      },
+      "MaxLength": {
+        "kind": "function",
+        "type": "(max: number, options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function MaxLength(max: number, options?: RuleOptions): RuleDecorator;"
+      },
+      "MessageContext": {
+        "kind": "interface",
+        "signature": "export interface MessageContext { readonly rule: string; readonly key: string; readonly field: string; readonly label: string; readonly value: unknown; readonly params: Readonly<Record<string, unknown>>; readonly locale: string; readonly instance: object; readonly path: string; readonly index?: number | undefined; readonly message?: string | MessageFactory | undefined; readonly messageKey?: string | undefined; }"
+      },
+      "MessageFactory": {
+        "kind": "type",
+        "signature": "export type MessageFactory = (context: MessageContext) => string;"
+      },
+      "MessageResolver": {
+        "kind": "type",
+        "signature": "export type MessageResolver = (context: MessageContext) => string | undefined;"
+      },
+      "Min": {
+        "kind": "function",
+        "type": "(limit: number, options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function Min(limit: number, options?: RuleOptions): RuleDecorator;"
+      },
+      "MinLength": {
+        "kind": "function",
+        "type": "(min: number, options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function MinLength(min: number, options?: RuleOptions): RuleDecorator;"
+      },
+      "MultipleOf": {
+        "kind": "function",
+        "type": "(factor: number, options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function MultipleOf(factor: number, options?: RuleOptions): RuleDecorator;"
+      },
+      "Negative": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function Negative(options?: RuleOptions): RuleDecorator;"
+      },
+      "Nested": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function Nested(options?: RuleOptions): RuleDecorator;"
+      },
+      "NonNegative": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function NonNegative(options?: RuleOptions): RuleDecorator;"
+      },
+      "NonPositive": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function NonPositive(options?: RuleOptions): RuleDecorator;"
+      },
+      "NotEmpty": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function NotEmpty(options?: RuleOptions): RuleDecorator;"
+      },
+      "NotEquals": {
+        "kind": "function",
+        "type": "(expected: unknown, options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function NotEquals(expected: unknown, options?: RuleOptions): RuleDecorator;"
+      },
+      "NotIn": {
+        "kind": "function",
+        "type": "(values: readonly unknown[], options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function NotIn(values: readonly unknown[], options?: RuleOptions): RuleDecorator;"
+      },
+      "NotNull": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function NotNull(options?: RuleOptions): RuleDecorator;"
+      },
+      "NotUndefined": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function NotUndefined(options?: RuleOptions): RuleDecorator;"
+      },
+      "Optional": {
+        "kind": "function",
+        "type": "() => RuleDecorator",
+        "signature": "export declare function Optional(): RuleDecorator;"
+      },
+      "Positive": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function Positive(options?: RuleOptions): RuleDecorator;"
+      },
+      "Required": {
+        "kind": "function",
+        "type": "(options?: RuleOptions) => RuleDecorator",
+        "signature": "export declare function Required(options?: RuleOptions): RuleDecorator;"
+      },
+      "resetValidationConfig": {
+        "kind": "function",
+        "type": "() => void",
+        "signature": "export declare function resetValidationConfig(): void;"
+      },
+      "RuleDecorator": {
+        "kind": "type",
+        "signature": "export type RuleDecorator = <C extends object, V>(value: undefined, context: ClassFieldDecoratorContext<C, V>) => void;"
+      },
+      "RuleOptions": {
+        "kind": "interface",
+        "signature": "export interface RuleOptions { readonly message?: string | MessageFactory | undefined; readonly messageKey?: string | undefined; readonly label?: string | undefined; readonly groups?: readonly string[] | undefined; readonly when?: InstancePredicate | undefined; readonly each?: boolean | undefined; }"
+      },
+      "validate": {
+        "kind": "function",
+        "type": "(instance: object, options?: ValidationOptions) => ValidationResult",
+        "signature": "export declare function validate(instance: object, options?: ValidationOptions): ValidationResult;"
+      },
+      "validateAsync": {
+        "kind": "function",
+        "type": "(instance: object, options?: ValidationOptions) => Promise<ValidationResult>",
+        "signature": "export declare function validateAsync(instance: object, options?: ValidationOptions): Promise<ValidationResult>;"
+      },
+      "ValidateIf": {
+        "kind": "function",
+        "type": "(predicate: InstancePredicate) => RuleDecorator",
+        "signature": "export declare function ValidateIf(predicate: InstancePredicate): RuleDecorator;"
+      },
+      "validateOrThrow": {
+        "kind": "function",
+        "type": "(instance: object, options?: ValidationOptions) => void",
+        "signature": "export declare function validateOrThrow(instance: object, options?: ValidationOptions): void;"
+      },
+      "validateOrThrowAsync": {
+        "kind": "function",
+        "type": "(instance: object, options?: ValidationOptions) => Promise<void>",
+        "signature": "export declare function validateOrThrowAsync(instance: object, options?: ValidationOptions): Promise<void>;"
+      },
+      "ValidationConfig": {
+        "kind": "interface",
+        "signature": "export interface ValidationConfig { readonly locale?: string | undefined; readonly resolve?: MessageResolver | undefined; readonly messages?: Readonly<Record<string, Readonly<Record<string, string>>>> | undefined; }"
+      },
+      "ValidationError": {
+        "kind": "interface",
+        "signature": "export interface ValidationError { readonly field: string; readonly rule: string; readonly message: string; readonly params: Readonly<Record<string, unknown>>; readonly value: unknown; readonly path: string; readonly label: string; readonly index?: number | undefined; }"
+      },
+      "ValidationException": {
+        "kind": "class",
+        "signature": "export declare class ValidationException extends Error { readonly errors: readonly ValidationError[]; readonly result: ValidationResult; constructor(result: ValidationResult); }"
+      },
+      "validationMessages": {
+        "kind": "variable",
+        "type": "Readonly<Record<string, Readonly<Record<string, string>>>>",
+        "signature": "export declare const validationMessages: Readonly<Record<string, Readonly<Record<string, string>>>>;"
+      },
+      "ValidationOptions": {
+        "kind": "interface",
+        "signature": "export interface ValidationOptions extends ValidationConfig { readonly groups?: readonly string[] | undefined; readonly stopAtFirst?: boolean | undefined; readonly labels?: Readonly<Record<string, string>> | undefined; }"
+      },
+      "ValidationResult": {
+        "kind": "interface",
+        "signature": "export interface ValidationResult { readonly valid: boolean; readonly errors: readonly ValidationError[]; }"
+      }
+    },
     "@ivlev-dev/silent-vite": {
       "DiMode": {
         "kind": "type",
