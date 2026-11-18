@@ -15,7 +15,14 @@ function enumValues(source: unknown): readonly unknown[] {
     return source;
   }
   if (source !== null && typeof source === "object") {
-    return Object.values(source as Record<string, unknown>);
+    const values: unknown[] = [];
+    for (const [key, value] of Object.entries(source as Record<string, unknown>)) {
+      if (/^(?:0|[1-9]\d*)$/.test(key)) {
+        continue;
+      }
+      values.push(value);
+    }
+    return values;
   }
   return [];
 }
@@ -146,7 +153,7 @@ export function IsEnum(
   options?: RuleOptions,
 ): RuleDecorator {
   return ruleDecorator(
-    { ...typeRules.isEnum, params: { values } },
+    { ...typeRules.isEnum, params: { values: enumValues(values) } },
     options,
   );
 }

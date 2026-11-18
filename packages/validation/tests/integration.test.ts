@@ -8,6 +8,7 @@ import {
   Equals,
   Groups,
   IsEmail,
+  IsEnum,
   IsIn,
   IsInt,
   IsString,
@@ -95,6 +96,55 @@ describe("интеграция пакета", () => {
     model.email = "user@example.com";
     model.age = 21;
     expect(validate(model)).toEqual({ valid: true, errors: [] });
+  });
+
+  it("валидирует IsEnum и элементы массива классов", () => {
+    enum Role {
+      Admin = "admin",
+      User = "user",
+    }
+
+    enum Level {
+      Low,
+      High,
+    }
+
+    class Item {
+      @Required()
+      public accessor name!: string;
+
+      @IsInt()
+      public accessor quantity = 0;
+    }
+
+    class Order {
+      @IsEnum(Role)
+      public accessor role: string = Role.Admin;
+
+      @IsEnum(Level)
+      public accessor level: string | number = Level.Low;
+
+      @Each()
+      @ArrayMinSize(1)
+      public accessor items: Item[] = [];
+    }
+
+    const order = new Order();
+    order.items = [new Item(), new Item()];
+    order.items[1]!.name = "Book";
+
+    const result = validate(order);
+    expect(result.errors.map((error) => `${error.path}:${error.rule}`)).toEqual([
+      "items[0].name:required",
+    ]);
+
+    order.role = "guest";
+    order.level = "Low";
+    expect(validate(order).errors.map((error) => `${error.path}:${error.rule}`)).toEqual([
+      "role:isEnum",
+      "level:isEnum",
+      "items[0].name:required",
+    ]);
   });
 
   it("учитывает наследование правил", () => {

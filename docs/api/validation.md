@@ -232,7 +232,27 @@ function IsEnum(
 ): RuleDecorator;
 ```
 
-Проверяет, что значение входит в массив или в значения переданного объекта (например, enum). Ключ — `validation.isEnum`.
+Проверяет, что значение входит в массив или в значения enum-объекта. Для числовых enum обратные ключи (`"Low"` → `0`) игнорируются: допустимы только сами значения (`0`, `1`, …), а не их имена. Ключ — `validation.isEnum`.
+
+```ts
+enum Role {
+  Admin = "admin",
+  User = "user",
+}
+
+enum Level {
+  Low,
+  High,
+}
+
+class Member {
+  @IsEnum(Role)
+  public accessor role: Role = Role.Admin;
+
+  @IsEnum(Level)
+  public accessor level: Level = Level.Low;
+}
+```
 
 ### `IsInstanceOf`
 
