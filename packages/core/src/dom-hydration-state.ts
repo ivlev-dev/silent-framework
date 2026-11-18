@@ -16,6 +16,8 @@ export interface DomHydrationRuntime {
   writeRegion(start: Node, end: Node, value: unknown): void;
   insertHydrated(parent: Node, accessor: () => unknown, marker: Node | null): void;
   hydratedEffect(fn: () => void): (() => void) | null;
+  staticAttrMatches(el: Element, name: string, value: unknown, svg: boolean): boolean;
+  staticRowAllowed(item: unknown): boolean;
   adoptPartsPlan(
     root: Node,
     plan: TemplatePlan,
@@ -78,6 +80,19 @@ export function insertHydrated(
 
 export function hydratedEffect(fn: () => void): (() => void) | null {
   return requireRuntime().hydratedEffect(fn);
+}
+
+export function staticAttrMatches(
+  el: Element,
+  name: string,
+  value: unknown,
+  svg: boolean,
+): boolean {
+  return requireRuntime().staticAttrMatches(el, name, value, svg);
+}
+
+export function staticRowAllowed(item: unknown): boolean {
+  return requireRuntime().staticRowAllowed(item);
 }
 
 export function adoptPartsPlan(

@@ -37,6 +37,7 @@ import {
   isStaticHydration,
   settleNodes,
   writeRegion,
+  staticAttrMatches,
 } from "./dom-hydration-state.js";
 import {
   beginRegion,
@@ -289,9 +290,9 @@ export function isServerMode(): boolean {
   return serverMode;
 }
 
-const propertyNames = new Set<string>(["value", "checked", "selected", "disabled", "indeterminate"]);
+export const propertyNames = new Set<string>(["value", "checked", "selected", "disabled", "indeterminate"]);
 
-const booleanNames = new Set<string>([
+export const booleanNames = new Set<string>([
   "hidden",
   "autofocus",
   "required",
@@ -345,7 +346,7 @@ function isTextValue(value: unknown): boolean {
   return type === "string" || type === "number" || type === "bigint" || type === "boolean";
 }
 
-function valuesEqual(a: unknown, b: unknown): boolean {
+export function valuesEqual(a: unknown, b: unknown): boolean {
   if (a === b) {
     return true;
   }
@@ -1147,112 +1148,6 @@ function applyServerStyle(server: ServerAttribute, value: unknown): void {
   server.setAttribute("style", record);
 }
 
-function classTokensMatch(element: Element, expected: string): boolean {
-  const current = element.getAttribute("class") ?? "";
-  if (current === expected) {
-    return true;
-  }
-  const tokens = new Set<string>();
-  for (const token of current.split(/\s+/)) {
-    if (token !== "") {
-      tokens.add(token);
-    }
-  }
-  for (const token of expected.split(/\s+/)) {
-    if (token === "") {
-      continue;
-    }
-    if (!tokens.delete(token)) {
-      return false;
-    }
-  }
-  return tokens.size === 0;
-}
-
-function svgLocalName(target: SvgAttributeTarget): string {
-  const separator = target.name.indexOf(":");
-  return separator === -1 ? target.name : target.name.slice(separator + 1);
-}
-
-function svgAttributeValue(el: Element, target: SvgAttributeTarget): string | null {
-  return target.namespace === null
-    ? el.getAttribute(target.name)
-    : el.getAttributeNS(target.namespace, svgLocalName(target));
-}
-
-function propertyValueMatches(el: Element, name: string, value: unknown): boolean {
-  if (name === "indeterminate") {
-    return true;
-  }
-  if (name === "value") {
-    const target = el as unknown as Record<string, unknown>;
-    const expected = value === null || value === undefined ? "" : value;
-    return (
-      valuesEqual(target["value"], expected)
-      || String(target["value"]) === String(expected)
-    );
-  }
-  return el.hasAttribute(name) === Boolean(value);
-}
-
-const STYLE_IMPORTANT = /\s*!\s*important\s*$/i;
-
-function splitStylePriority(value: string): readonly [string, string] {
-  const match = STYLE_IMPORTANT.exec(value);
-  if (match === null) {
-    return [value, ""];
-  }
-  return [value.slice(0, match.index).trimEnd(), "important"];
-}
-
-function styleMatches(el: Element, value: unknown): boolean {
-  const declarations = styleDeclarations(value as StyleInput);
-  if (declarations.size === 0) {
-    return !el.hasAttribute("style");
-  }
-  const style = (el as HTMLElement).style;
-  if (style.length === 0) {
-    return false;
-  }
-  const probe = el.ownerDocument.createElement("div").style;
-  for (const [property, expected] of declarations) {
-    const [text, priority] = splitStylePriority(expected);
-    probe.setProperty(property, text, priority);
-  }
-  if (probe.length !== style.length) {
-    return false;
-  }
-  for (let index = 0; index < style.length; index += 1) {
-    const property = style.item(index);
-    if (
-      probe.getPropertyValue(property) !== style.getPropertyValue(property)
-      || probe.getPropertyPriority(property) !== style.getPropertyPriority(property)
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function attrValueMatches(el: Element, name: string, value: unknown, svg: boolean): boolean {
-  if (name === "class" || name === "className") {
-    return classTokensMatch(el, normalizeClass(value as ClassNameValue));
-  }
-  if (name === "style") {
-    return styleMatches(el, value);
-  }
-  if (!svg && propertyNames.has(name)) {
-    return propertyValueMatches(el, name, value);
-  }
-  const target = svg ? svgAttributeTarget(name) : null;
-  if (value === null || value === undefined || value === false) {
-    return (target === null ? el.getAttribute(name) : svgAttributeValue(el, target)) === null;
-  }
-  const expected = value === true ? (booleanNames.has(name) ? "" : "true") : stringOf(value);
-  const current = target === null ? el.getAttribute(name) : svgAttributeValue(el, target);
-  return current === expected;
-}
-
 export function attr(el: Element, name: string, accessor: () => unknown): void {
   const server = serverAttribute(el);
   if (server !== null) {
@@ -1294,12 +1189,7 @@ export function attr(el: Element, name: string, accessor: () => unknown): void {
   };
   if (HYDRATE && isHydrating()) {
     if (isStaticHydration()) {
-      const value = accessor();
-      if (!svg && (name === "value" || name === "indeterminate")) {
-        applyProperty(el, name, value);
-        return;
-      }
-      if (!attrValueMatches(el, name, value, svg)) {
+      if (!staticAttrMatches(el, name, accessor(), svg)) {
         mismatch("значение атрибута не совпало с серверной разметкой");
       }
       return;
@@ -1367,7 +1257,7 @@ export function applyAttr(el: Element, name: string, value: unknown, svg: boolea
   }
 }
 
-interface SvgAttributeTarget {
+export interface SvgAttributeTarget {
   readonly name: string;
   readonly namespace: string | null;
 }
@@ -1399,7 +1289,7 @@ const SVG_ATTRIBUTE_NAMES: ReadonlyMap<string, string> = new Map([
   ["markerEnd", "marker-end"],
 ]);
 
-function svgAttributeTarget(name: string): SvgAttributeTarget {
+export function svgAttributeTarget(name: string): SvgAttributeTarget {
   if (name.startsWith("xlink:")) {
     return { name, namespace: XLINK_NAMESPACE };
   }
@@ -1424,7 +1314,7 @@ function removeSvgAttribute(el: Element, target: SvgAttributeTarget): void {
   el.removeAttributeNS(target.namespace, local);
 }
 
-function applyProperty(el: Element, name: string, value: unknown): void {
+export function applyProperty(el: Element, name: string, value: unknown): void {
   const target = el as unknown as Record<string, unknown>;
   if (name === "indeterminate") {
     const enabled = value === "mixed" || Boolean(value);

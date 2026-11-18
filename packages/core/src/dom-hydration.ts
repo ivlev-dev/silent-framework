@@ -1,4 +1,4 @@
-import { createRenderEffect } from "@ivlev-dev/silent-reactivity";
+import { createRenderEffect, isReactive } from "@ivlev-dev/silent-reactivity";
 import {
   ATTR_MARKER,
   HOLE_MARKER,
@@ -10,6 +10,12 @@ import {
   resolvePath,
   resolveValue,
   stringOf,
+  svgAttributeTarget,
+  valuesEqual,
+  applyProperty,
+  booleanNames,
+  propertyNames,
+  type SvgAttributeTarget,
   type TemplateClone,
   type TemplateHydrationSource,
   type TemplatePlan,
@@ -30,6 +36,7 @@ import {
   withWindow,
   type HydrationWindow,
 } from "./hydration.js";
+import { normalizeClass, styleDeclarations, type ClassNameValue, type StyleInput } from "./class-style.js";
 import { extractMetadata, isMetadataElement, markMetadataFree } from "./metadata.js";
 import type { Children } from "./jsx.js";
 
@@ -408,6 +415,145 @@ function tryAdoptPartsPlan(
     attrs[index] = adopted.attrs[index];
   }
   return true;
+}
+
+function classTokensMatch(element: Element, expected: string): boolean {
+  const current = element.getAttribute("class") ?? "";
+  if (current === expected) {
+    return true;
+  }
+  const tokens = new Set<string>();
+  for (const token of current.split(/\s+/)) {
+    if (token !== "") {
+      tokens.add(token);
+    }
+  }
+  for (const token of expected.split(/\s+/)) {
+    if (token === "") {
+      continue;
+    }
+    if (!tokens.delete(token)) {
+      return false;
+    }
+  }
+  return tokens.size === 0;
+}
+
+function svgLocalName(target: SvgAttributeTarget): string {
+  const separator = target.name.indexOf(":");
+  return separator === -1 ? target.name : target.name.slice(separator + 1);
+}
+
+function svgAttributeValue(el: Element, target: SvgAttributeTarget): string | null {
+  return target.namespace === null
+    ? el.getAttribute(target.name)
+    : el.getAttributeNS(target.namespace, svgLocalName(target));
+}
+
+function propertyValueMatches(el: Element, name: string, value: unknown): boolean {
+  if (name === "value") {
+    const target = el as unknown as Record<string, unknown>;
+    const expected = value === null || value === undefined ? "" : value;
+    return (
+      valuesEqual(target["value"], expected)
+      || String(target["value"]) === String(expected)
+    );
+  }
+  return el.hasAttribute(name) === Boolean(value);
+}
+
+const STYLE_IMPORTANT = /\s*!\s*important\s*$/i;
+
+function splitStylePriority(value: string): readonly [string, string] {
+  const match = STYLE_IMPORTANT.exec(value);
+  if (match === null) {
+    return [value, ""];
+  }
+  return [value.slice(0, match.index).trimEnd(), "important"];
+}
+
+function styleMatches(el: Element, value: unknown): boolean {
+  const declarations = styleDeclarations(value as StyleInput);
+  if (declarations.size === 0) {
+    return !el.hasAttribute("style");
+  }
+  const style = (el as HTMLElement).style;
+  if (style.length === 0) {
+    return false;
+  }
+  const probe = el.ownerDocument.createElement("div").style;
+  for (const [property, expected] of declarations) {
+    const [text, priority] = splitStylePriority(expected);
+    probe.setProperty(property, text, priority);
+  }
+  if (probe.length !== style.length) {
+    return false;
+  }
+  for (let index = 0; index < style.length; index += 1) {
+    const property = style.item(index);
+    if (
+      probe.getPropertyValue(property) !== style.getPropertyValue(property)
+      || probe.getPropertyPriority(property) !== style.getPropertyPriority(property)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function attrValueMatches(el: Element, name: string, value: unknown, svg: boolean): boolean {
+  if (name === "class" || name === "className") {
+    return classTokensMatch(el, normalizeClass(value as ClassNameValue));
+  }
+  if (name === "style") {
+    return styleMatches(el, value);
+  }
+  if (!svg && propertyNames.has(name) && name !== "value") {
+    return propertyValueMatches(el, name, value);
+  }
+  const target = svg ? svgAttributeTarget(name) : null;
+  if (value === null || value === undefined || value === false) {
+    return (target === null ? el.getAttribute(name) : svgAttributeValue(el, target)) === null;
+  }
+  const expected = value === true ? (booleanNames.has(name) ? "" : "true") : stringOf(value);
+  const current = target === null ? el.getAttribute(name) : svgAttributeValue(el, target);
+  return current === expected;
+}
+
+export function staticRowAllowed(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) {
+    return true;
+  }
+  if (isReactive(value)) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value) as object | null;
+  if (prototype !== Object.prototype && prototype !== null) {
+    return false;
+  }
+  for (const key of Object.keys(value)) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (
+      descriptor !== undefined &&
+      (descriptor.get !== undefined || descriptor.set !== undefined)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export function staticAttrMatches(
+  el: Element,
+  name: string,
+  value: unknown,
+  svg: boolean,
+): boolean {
+  if (!svg && (name === "value" || name === "indeterminate")) {
+    applyProperty(el, name, value);
+    return true;
+  }
+  return attrValueMatches(el, name, value, svg);
 }
 
 const NO_HOLES: Comment[] = [];
@@ -945,6 +1091,8 @@ export function installDomHydrationRuntime(): void {
     writeRegion,
     insertHydrated,
     hydratedEffect: createEffectUnlessStatic,
+    staticAttrMatches,
+    staticRowAllowed,
     adoptPartsPlan,
   });
 }

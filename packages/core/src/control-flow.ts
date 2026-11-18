@@ -4,13 +4,13 @@ import {
   createRoot,
   createSignal,
   getOwner,
-  isReactive,
   onCleanup,
   runWithOwner,
   untrack,
 } from "@ivlev-dev/silent-reactivity";
 import { createEffectUnlessStatic } from "./static-effect.js";
 import { markDirectComponent } from "./match-node.js";
+import { staticRowAllowed } from "./dom-hydration-state.js";
 import type { Children } from "./jsx.js";
 import {
   attachItemState,
@@ -74,26 +74,6 @@ interface MutableWindow {
 }
 
 const NO_INDEX: Accessor<number> = () => 0;
-
-function isPlainItem(value: unknown): boolean {
-  if (typeof value !== "object" || value === null) {
-    return true;
-  }
-  const prototype = Object.getPrototypeOf(value) as object | null;
-  if (prototype !== Object.prototype && prototype !== null) {
-    return false;
-  }
-  for (const key of Object.keys(value)) {
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (
-      descriptor !== undefined &&
-      (descriptor.get !== undefined || descriptor.set !== undefined)
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
 
 class KeyedState<T> implements ItemState<T> {
   item: T;
@@ -437,32 +417,22 @@ export function For<T>(props: ForProps<T>): Node {
     return collected;
   };
 
-  const protectEndBoundary = (kept: readonly ItemState<T>[]): void => {
-    for (const state of kept) {
-      if (state.nodes === NO_NODES && state.nodesEnd === endAnchor) {
-        materializeNodes(state);
-      }
-    }
-  };
-
-  const protectBoundaries = (
+  const materializeBoundary = (
     kept: readonly ItemState<T>[],
     removed: readonly ItemState<T>[],
   ): void => {
-    if (removed.length === 0 || kept.length === 0) {
-      return;
-    }
     const anchors = new Set<Node>();
     for (const state of removed) {
       if (state.anchor !== null) {
         anchors.add(state.anchor);
       }
     }
-    if (anchors.size === 0) {
-      return;
-    }
     for (const state of kept) {
-      if (state.nodesEnd !== null && anchors.has(state.nodesEnd)) {
+      if (
+        state.nodes === NO_NODES &&
+        state.nodesEnd !== null &&
+        (state.nodesEnd === endAnchor || anchors.has(state.nodesEnd))
+      ) {
         materializeNodes(state);
       }
     }
@@ -663,8 +633,7 @@ export function For<T>(props: ForProps<T>): Node {
       staticRows &&
       anchor !== null &&
       itemEnd !== null &&
-      !isReactive(item) &&
-      isPlainItem(item)
+      staticRowAllowed(item)
     ) {
       state.cleanup = noopCleanup;
       withStaticHydration(run);
@@ -836,7 +805,7 @@ export function For<T>(props: ForProps<T>): Node {
             });
           } else {
             const batch = document.createDocumentFragment();
-            protectEndBoundary(previous);
+            materializeBoundary(previous, []);
             runWithOwner(parentOwner, () => {
               for (let position = previousLength; position < nextLength; position += 1) {
                 previous.push(createState(items[position] as T, position, batch, null, children));
@@ -849,7 +818,7 @@ export function For<T>(props: ForProps<T>): Node {
         return;
       }
       const removedTrailing = previous.slice(nextLength, previousLength);
-      protectBoundaries(previous.slice(0, nextLength), removedTrailing);
+      materializeBoundary(previous.slice(0, nextLength), removedTrailing);
       for (const state of removedTrailing) {
         removeState(state);
       }
@@ -925,13 +894,13 @@ export function For<T>(props: ForProps<T>): Node {
         removedStates.push(state);
       }
     }
-    protectBoundaries(next, removedStates);
+    materializeBoundary(next, removedStates);
     for (const state of removedStates) {
       removeState(state);
     }
 
     if (batch !== null) {
-      protectEndBoundary(next);
+      materializeBoundary(next, []);
       parent.insertBefore(batch, endAnchor);
     }
 
