@@ -79,9 +79,9 @@ const result = validate(order);
 
 Плагин вставляет в класс статический блок `static { this[Symbol.for("silent.validation.schema")] = { fields: ... } }`. По этой схеме `validate` проверяет `string`, `number`, вложенный `Address`, элементы `Item[]` и значения `Record`. Ошибка типа имеет `rule: "type"`, `params.type` с именем ожидаемого типа, сообщение по ключу `validation.type` (ru/en) и обычные `field`/`path`/`index`, например `address.city`, `items[0].name`; ключи `Record` и объектов идут через точку (`counts.apples`), ключи `Map` — в скобках (`map[key]`).
 
-**Порядок проверок.** Тип проверяется первым: если значение не соответствует аннотации, декораторы этого поля не запускаются. Для верного типа декораторы работают как обычно, поэтому `@IsEmail()` на `string` и `@Min(18)` на `number` дают нужную семантику.
+**Порядок проверок.** Тип проверяется первым. По умолчанию `cascade: true`: декораторы поля выполняются и при неверном типе, поэтому `@Min(18)` на строке даст две ошибки — `type` и `min`. `cascade: false` останавливает декораторы поля после ошибки типа. Для верного типа декораторы работают как обычно.
 
-**Отключение.** `validate(instance, { types: false })` оставляет только правила декораторов. По умолчанию `types: true`.
+**Отключение.** `validate(instance, { types: false })` оставляет только правила декораторов. По умолчанию `types: true`. Каскад управляется `cascade` (по умолчанию `true`) глобально через `configureValidation` или на вызов.
 
 **Поддерживаемые типы.** Примитивы (`string`, `number`, `boolean`, `bigint`, `symbol`, `object`, `function`, `undefined`, `null`, `void`, `never`), литералы, union и intersection (включая `| null` и `| undefined`), массивы и `ReadonlyArray`, кортежи с optional-элементами, `Record` и строковые index-signature, `Map`/`WeakMap`/`Set`/`WeakSet`, `Promise`, `Date`, `RegExp`, `Error` и подклассы, `ArrayBuffer`/`SharedArrayBuffer`/`DataView`, typed arrays, `URL`/`URLSearchParams`, `Iterable`/`Iterator`/`AsyncIterable`/`AsyncIterator`, значения `enum`, пользовательские классы (вложенная проверка экземпляра) и структурные интерфейсы/type alias’ы (глубина 4).
 
@@ -695,10 +695,11 @@ interface ValidationOptions extends ValidationConfig {
   readonly stopAtFirst?: boolean | undefined;
   readonly labels?: Readonly<Record<string, string>> | undefined;
   readonly types?: boolean | undefined;
+  readonly cascade?: boolean | undefined;
 }
 ```
 
-Опции вызова `validate`/`validateAsync`: фильтр групп, остановка на первой ошибке, карта ярлыков, проверка типов из аннотаций (`types`, по умолчанию `true`) и локальные настройки сообщений (`locale`, `resolve`, `messages`).
+Опции вызова `validate`/`validateAsync`: фильтр групп, остановка на первой ошибке, карта ярлыков, проверка типов из аннотаций (`types`, по умолчанию `true`), каскад типовых и декораторных ошибок (`cascade`, по умолчанию `true`) и локальные настройки сообщений (`locale`, `resolve`, `messages`).
 
 ### `ValidationResult`
 
@@ -732,13 +733,14 @@ interface ValidationError {
 
 ```ts
 interface ValidationConfig {
+  readonly cascade?: boolean | undefined;
   readonly locale?: string | undefined;
   readonly resolve?: MessageResolver | undefined;
   readonly messages?: Readonly<Record<string, Readonly<Record<string, string>>>> | undefined;
 }
 ```
 
-Настройки сообщений: локаль, резолвер и каталоги вида `локаль → ключ → шаблон`. Используется в `ValidationOptions` и `configureValidation`.
+Настройки: каскад ошибок (`cascade`), локаль, резолвер и каталоги вида `локаль → ключ → шаблон`. Используется в `ValidationOptions` и `configureValidation`.
 
 ### `MessageContext`
 

@@ -126,7 +126,13 @@ describe("валидация из TS-типов", () => {
 
     const mixed = new Mixed();
     mixed.contact = 1 as unknown as string;
-    expect(validate(mixed).errors.map((error) => error.rule)).toEqual(["type"]);
+    expect(validate(mixed).errors.map((error) => error.rule)).toEqual([
+      "type",
+      "isEmail",
+    ]);
+    expect(validate(mixed, { cascade: false }).errors.map((error) => error.rule)).toEqual([
+      "type",
+    ]);
     expect(validate(mixed, { types: false }).errors.map((error) => error.rule)).toEqual([
       "isEmail",
     ]);

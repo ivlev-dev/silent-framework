@@ -55,12 +55,14 @@ export interface RuleOptions {
 }
 
 export interface ValidationConfig {
+  readonly cascade?: boolean | undefined;
   readonly locale?: string | undefined;
   readonly resolve?: MessageResolver | undefined;
   readonly messages?: Readonly<Record<string, Readonly<Record<string, string>>>> | undefined;
 }
 
 export interface ValidationOptions extends ValidationConfig {
+  readonly cascade?: boolean | undefined;
   readonly groups?: readonly string[] | undefined;
   readonly stopAtFirst?: boolean | undefined;
   readonly labels?: Readonly<Record<string, string>> | undefined;

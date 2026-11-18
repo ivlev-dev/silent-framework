@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Min, Required, validate, validateAsync } from "../src/index.js";
 import { ruleDecorator } from "../src/rule.js";
-import { resetValidationConfig } from "../src/messages.js";
+import { configureValidation, resetValidationConfig } from "../src/messages.js";
 import { SCHEMA_SYMBOL } from "../src/schema.js";
 import type { ClassSchema, FieldSchemaMap } from "../src/schema.js";
 import type { RuleDefinition, ValidationResult } from "../src/types.js";
@@ -168,13 +168,35 @@ describe("комбинация типов и декораторов", () => {
     expect(result.errors[0]?.params).toEqual({ min: 18 });
   });
 
-  it("не запускает декораторы при неверном типе", () => {
+  it("по умолчанию собирает типовые и декораторные ошибки", () => {
     const account = new Account();
     account.name = "ok";
     account.age = "10" as unknown as number;
     const result = validate(account);
+    expect(rules(result)).toEqual(["type", "min"]);
+    expect(paths(result)).toEqual(["age", "age"]);
+  });
+
+  it("cascade: false останавливает декораторы после ошибки типа", () => {
+    const account = new Account();
+    account.name = "ok";
+    account.age = "10" as unknown as number;
+    const result = validate(account, { cascade: false });
     expect(rules(result)).toEqual(["type"]);
     expect(paths(result)).toEqual(["age"]);
+  });
+
+  it("глобальный cascade: false и переопределение на вызов", () => {
+    const account = new Account();
+    account.name = "ok";
+    account.age = "10" as unknown as number;
+    configureValidation({ cascade: false });
+    try {
+      expect(rules(validate(account))).toEqual(["type"]);
+      expect(rules(validate(account, { cascade: true }))).toEqual(["type", "min"]);
+    } finally {
+      resetValidationConfig();
+    }
   });
 
   it("пропускает все правила для optional при undefined", () => {
@@ -281,14 +303,15 @@ describe("асинхронный движок", () => {
   it("не запускает асинхронные правила при неверном типе", async () => {
     const model = new AsyncModel();
     model.value = 5;
-    const result = await validateAsync(model);
+    const result = await validateAsync(model, { cascade: false });
     expect(rules(result)).toEqual(["type"]);
   });
 
-  it("не требует асинхронного режима для типовых ошибок", () => {
+  it("не требует асинхронного режима при cascade: false", () => {
     const model = new AsyncModel();
     model.value = 5;
-    expect(() => validate(model)).not.toThrow();
-    expect(rules(validate(model))).toEqual(["type"]);
+    expect(() => validate(model, { cascade: false })).not.toThrow();
+    expect(rules(validate(model, { cascade: false }))).toEqual(["type"]);
+    expect(() => validate(model)).toThrow();
   });
 });

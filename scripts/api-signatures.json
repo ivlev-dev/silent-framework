@@ -1869,7 +1869,7 @@
       },
       "SilentOptions": {
         "kind": "interface",
-        "signature": "export interface SilentOptions { include?: RegExp; exclude?: RegExp; root?: string; swc?: Record<string, unknown>; requirePreloader?: boolean; runtime?: string; hmr?: boolean; index?: boolean; view?: boolean; hydrate?: boolean; di?: DiMode; validation?: boolean; }"
+        "signature": "export interface SilentOptions { include?: RegExp; exclude?: RegExp; root?: string; swc?: Record<string, unknown>; requirePreloader?: boolean; runtime?: string; hmr?: boolean; index?: boolean; view?: boolean; hydrate?: boolean; di?: DiMode; }"
       }
     }
   }

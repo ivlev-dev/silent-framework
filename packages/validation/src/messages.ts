@@ -126,6 +126,7 @@ export function configureValidation(config: ValidationConfig): void {
     ...(config.locale === undefined ? {} : { locale: config.locale }),
     ...(config.resolve === undefined ? {} : { resolve: config.resolve }),
     ...(config.messages === undefined ? {} : { messages: config.messages }),
+    ...(config.cascade === undefined ? {} : { cascade: config.cascade }),
   };
 }
 

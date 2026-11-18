@@ -24,6 +24,7 @@ interface RuntimeState {
   readonly labels: Readonly<Record<string, string>> | undefined;
   readonly callGroups: readonly string[] | undefined;
   readonly stopAtFirst: boolean;
+  readonly cascade: boolean;
   readonly types: boolean;
   readonly visiting: WeakSet<object>;
   stopped: boolean;
@@ -62,10 +63,12 @@ function createConfig(options: ValidationOptions | undefined): ValidationConfig 
   const locale = options?.locale ?? base.locale;
   const resolve = options?.resolve ?? base.resolve;
   const messages = options?.messages ?? base.messages;
+  const cascade = options?.cascade ?? base.cascade;
   return {
     ...(locale === undefined ? {} : { locale }),
     ...(resolve === undefined ? {} : { resolve }),
     ...(messages === undefined ? {} : { messages }),
+    ...(cascade === undefined ? {} : { cascade }),
   };
 }
 
@@ -78,6 +81,7 @@ function createState(options: ValidationOptions | undefined): RuntimeState {
     labels: options?.labels,
     callGroups: options?.groups,
     stopAtFirst: options?.stopAtFirst === true,
+    cascade: options?.cascade ?? config.cascade ?? true,
     types: options?.types !== false,
     visiting: new WeakSet<object>(),
     stopped: false,
@@ -320,8 +324,11 @@ function prepareField(
       }
       if (state.stopAtFirst) {
         state.stopped = true;
+        return null;
       }
-      return null;
+      if (!state.cascade) {
+        return null;
+      }
     }
   }
   return { value, path };
