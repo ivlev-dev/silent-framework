@@ -45,12 +45,12 @@ import { validate, Required, IsEmail, IsInt, Min, Max } from "@ivlev-dev/silent-
 class User {
   @Required()
   @IsEmail()
-  email!: string;
+  public accessor email!: string;
 
   @IsInt()
   @Min(0)
   @Max(120)
-  age!: number;
+  public accessor age!: number;
 }
 
 const user = new User();
@@ -58,6 +58,7 @@ user.email = "user@example.com";
 user.age = 30;
 
 const result = validate(user);
+// декораторы работают и на обычных полях, и на stage-3 accessor-полях
 
 if (!result.valid) {
   for (const error of result.errors) {
@@ -182,7 +183,7 @@ import {
 ```ts
 class Model {
   @Min(0, { each: true })
-  scores!: number[];
+  public accessor scores!: number[];
 }
 ```
 
@@ -202,10 +203,10 @@ import { Custom, validate } from "@ivlev-dev/silent-validation";
 
 class Order {
   @Custom((value) => typeof value === "string" && value.startsWith("ORD-"))
-  number!: string;
+  public accessor number!: string;
 
   @Custom(async (value) => value !== "blocked")
-  status!: string;
+  public accessor status!: string;
 }
 ```
 
@@ -227,14 +228,14 @@ class Profile {
   @Label("Возраст")
   @Optional()
   @Min(18)
-  age?: number;
+  public accessor age?: number;
 
   @ValidateIf((instance: Profile) => instance.age !== undefined)
   @Label("Согласие")
-  consent?: boolean;
+  public accessor consent?: boolean;
 
   @Groups("admin")
-  role?: string;
+  public accessor role?: string;
 }
 
 validate(profile, { groups: ["admin"] });
@@ -252,10 +253,10 @@ import { validate, Required, Min, IsEmail } from "@ivlev-dev/silent-validation";
 class User {
   @Required({ message: "Укажите email" })
   @IsEmail({ messageKey: "validation.required" })
-  email!: string;
+  public accessor email!: string;
 
   @Min(18, { message: ({ label, params }) => `${label}: минимум ${params.min}` })
-  age!: number;
+  public accessor age!: number;
 }
 ```
 
@@ -308,23 +309,23 @@ import { Nested, Each, Required, IsInt, validate } from "@ivlev-dev/silent-valid
 
 class Address {
   @Required()
-  city!: string;
+  public accessor city!: string;
 }
 
 class Item {
   @Required()
-  name!: string;
+  public accessor name!: string;
 
   @IsInt()
-  quantity!: number;
+  public accessor quantity!: number;
 }
 
 class Order {
   @Nested()
-  address!: Address;
+  public accessor address!: Address;
 
   @Each()
-  items!: Item[];
+  public accessor items!: Item[];
 }
 
 const result = validate(order);
@@ -336,7 +337,7 @@ const result = validate(order);
 
 ## Ограничения и совместимость
 
-- Только поля класса: приватные (`#field`) и статические поля не поддерживаются — декоратор бросает `TypeError`.
+- Поддерживаются обычные и stage-3 `accessor`-поля (`public accessor email!: string`). Приватные (`#field`) и статические поля не поддерживаются — декоратор бросает `TypeError`.
 - Валидация явная: декораторы не запускают проверку и не работают без вызова `validate`/`validateAsync`.
 - Нужны stage 3 декораторы: `experimentalDecorators: false`. Legacy-декораторы (`experimentalDecorators: true`) не поддерживаются.
 - ESM-only, Node.js >= 22.

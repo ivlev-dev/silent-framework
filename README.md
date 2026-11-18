@@ -65,8 +65,8 @@ export default defineConfig({
 import { validate, IsEmail, IsInt, Max, Min, Required } from "@ivlev-dev/silent-validation";
 
 class User {
-  @Required() @IsEmail() email!: string;
-  @IsInt() @Min(0) @Max(120) age!: number;
+  @Required() @IsEmail() public accessor email!: string;
+  @IsInt() @Min(0) @Max(120) public accessor age!: number;
 }
 
 const result = validate(user);

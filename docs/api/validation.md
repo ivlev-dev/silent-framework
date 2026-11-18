@@ -9,12 +9,12 @@ import type { ValidationResult } from "@ivlev-dev/silent-validation";
 class User {
   @Required()
   @IsEmail()
-  email!: string;
+  public accessor email!: string;
 
   @IsInt()
   @Min(0)
   @Max(120)
-  age!: number;
+  public accessor age!: number;
 }
 
 const user = new User();
@@ -510,7 +510,7 @@ function Each(options?: RuleOptions): RuleDecorator;
 ```ts
 class Order {
   @Each()
-  items!: Item[];
+  public accessor items!: Item[];
 }
 ```
 
@@ -566,7 +566,7 @@ function Custom(
 ```ts
 class Order {
   @Custom((value) => typeof value === "string" && value.startsWith("ORD-"))
-  number!: string;
+  public accessor number!: string;
 }
 ```
 
@@ -721,12 +721,14 @@ interface RuleOptions {
 
 ```ts
 type RuleDecorator = <C extends object, V>(
-  value: undefined,
-  context: ClassFieldDecoratorContext<C, V>,
+  value: undefined | ClassAccessorDecoratorTarget<C, V>,
+  context:
+    | ClassFieldDecoratorContext<C, V>
+    | ClassAccessorDecoratorContext<C, V>,
 ) => void;
 ```
 
-Тип декоратора поля для stage 3. Все правила и модификаторы возвращают этот тип.
+Тип декоратора для обычных и `accessor`-полей stage 3. Все правила и модификаторы возвращают этот тип.
 
 ### `ValidationException`
 

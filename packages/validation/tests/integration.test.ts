@@ -74,6 +74,29 @@ describe("интеграция пакета", () => {
     expect(result.errors[1]?.path).toBe("address.city");
   });
 
+  it("работает с accessor-полями", () => {
+    class Model {
+      @Required()
+      @IsEmail()
+      public accessor email!: string;
+
+      @IsInt()
+      @Min(18)
+      public accessor age = 10;
+    }
+
+    const model = new Model();
+    expect(validate(model).errors.map((error) => `${error.field}:${error.rule}`)).toEqual([
+      "email:required",
+      "email:isEmail",
+      "age:min",
+    ]);
+
+    model.email = "user@example.com";
+    model.age = 21;
+    expect(validate(model)).toEqual({ valid: true, errors: [] });
+  });
+
   it("учитывает наследование правил", () => {
     class Base {
       @Required()

@@ -22,8 +22,10 @@ export function decorateField(
   install: FieldInstaller,
 ): RuleDecorator {
   return <C extends object, V>(
-    _value: undefined,
-    context: ClassFieldDecoratorContext<C, V>,
+    _value: undefined | ClassAccessorDecoratorTarget<C, V>,
+    context:
+      | ClassFieldDecoratorContext<C, V>
+      | ClassAccessorDecoratorContext<C, V>,
   ): void => {
     if (context.private === true) {
       throw new TypeError("Приватные поля не поддерживаются валидацией");

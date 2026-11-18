@@ -107,8 +107,10 @@ export interface ClassValidationState {
 }
 
 export type RuleDecorator = <C extends object, V>(
-  value: undefined,
-  context: ClassFieldDecoratorContext<C, V>,
+  value: undefined | ClassAccessorDecoratorTarget<C, V>,
+  context:
+    | ClassFieldDecoratorContext<C, V>
+    | ClassAccessorDecoratorContext<C, V>,
 ) => void;
 
 export class ValidationException extends Error {

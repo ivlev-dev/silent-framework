@@ -1800,7 +1800,7 @@
       },
       "RuleDecorator": {
         "kind": "type",
-        "signature": "export type RuleDecorator = <C extends object, V>(value: undefined, context: ClassFieldDecoratorContext<C, V>) => void;"
+        "signature": "export type RuleDecorator = <C extends object, V>(value: undefined | ClassAccessorDecoratorTarget<C, V>, context: ClassFieldDecoratorContext<C, V> | ClassAccessorDecoratorContext<C, V>) => void;"
       },
       "RuleOptions": {
         "kind": "interface",
