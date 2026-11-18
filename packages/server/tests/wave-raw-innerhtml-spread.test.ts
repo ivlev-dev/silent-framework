@@ -128,13 +128,15 @@ describe("spread на SSR", () => {
       )();
       spread(template.attrs[0]!, () => ({
         class: "dyn",
-        style: { margin: "1px" },
+        style: { margin: "1px", width: 10, zIndex: 2 },
         onClick: () => undefined,
       }));
       return template.node;
     };
     const html = await render(view);
-    expect(html).toBe('<button data-silent-a-0="" class="dyn" style="margin:1px"></button>');
+    expect(html).toBe(
+      '<button data-silent-a-0="" class="dyn" style="margin: 1px; width: 10px; z-index: 2"></button>',
+    );
     expect(html.match(/class=/g)?.length).toBe(1);
     expect(html.match(/style=/g)?.length).toBe(1);
     expect(html).not.toContain("onClick");

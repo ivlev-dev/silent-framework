@@ -1158,7 +1158,6 @@ function classTokensMatch(element: Element, expected: string): boolean {
       tokens.add(token);
     }
   }
-  let count = 0;
   for (const token of expected.split(/\s+/)) {
     if (token === "") {
       continue;
@@ -1166,9 +1165,8 @@ function classTokensMatch(element: Element, expected: string): boolean {
     if (!tokens.delete(token)) {
       return false;
     }
-    count += 1;
   }
-  return count === tokens.size;
+  return tokens.size === 0;
 }
 
 function svgLocalName(target: SvgAttributeTarget): string {
@@ -1183,19 +1181,57 @@ function svgAttributeValue(el: Element, target: SvgAttributeTarget): string | nu
 }
 
 function propertyValueMatches(el: Element, name: string, value: unknown): boolean {
-  const target = el as unknown as Record<string, unknown>;
   if (name === "indeterminate") {
-    return target["indeterminate"] === (value === "mixed" || Boolean(value));
+    return true;
   }
   if (name === "value") {
+    const target = el as unknown as Record<string, unknown>;
     const expected = value === null || value === undefined ? "" : value;
     return (
       valuesEqual(target["value"], expected)
       || String(target["value"]) === String(expected)
     );
   }
-  const enabled = Boolean(value);
-  return Boolean(target[name]) === enabled && el.hasAttribute(name) === enabled;
+  return el.hasAttribute(name) === Boolean(value);
+}
+
+const STYLE_IMPORTANT = /\s*!\s*important\s*$/i;
+
+function splitStylePriority(value: string): readonly [string, string] {
+  const match = STYLE_IMPORTANT.exec(value);
+  if (match === null) {
+    return [value, ""];
+  }
+  return [value.slice(0, match.index).trimEnd(), "important"];
+}
+
+function styleMatches(el: Element, value: unknown): boolean {
+  const declarations = styleDeclarations(value as StyleInput);
+  if (declarations.size === 0) {
+    return !el.hasAttribute("style");
+  }
+  const style = (el as HTMLElement).style;
+  if (style.length === 0) {
+    return false;
+  }
+  const probe = el.ownerDocument.createElement("div").style;
+  for (const [property, expected] of declarations) {
+    const [text, priority] = splitStylePriority(expected);
+    probe.setProperty(property, text, priority);
+  }
+  if (probe.length !== style.length) {
+    return false;
+  }
+  for (let index = 0; index < style.length; index += 1) {
+    const property = style.item(index);
+    if (
+      probe.getPropertyValue(property) !== style.getPropertyValue(property)
+      || probe.getPropertyPriority(property) !== style.getPropertyPriority(property)
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function attrValueMatches(el: Element, name: string, value: unknown, svg: boolean): boolean {
@@ -1203,17 +1239,7 @@ function attrValueMatches(el: Element, name: string, value: unknown, svg: boolea
     return classTokensMatch(el, normalizeClass(value as ClassNameValue));
   }
   if (name === "style") {
-    const declarations = styleDeclarations(value as StyleInput);
-    if (declarations.size === 0) {
-      return !el.hasAttribute("style");
-    }
-    const style = (el as HTMLElement).style;
-    for (const [property, expected] of declarations) {
-      if (style.getPropertyValue(property) !== expected) {
-        return false;
-      }
-    }
-    return true;
+    return styleMatches(el, value);
   }
   if (!svg && propertyNames.has(name)) {
     return propertyValueMatches(el, name, value);
@@ -1268,7 +1294,12 @@ export function attr(el: Element, name: string, accessor: () => unknown): void {
   };
   if (HYDRATE && isHydrating()) {
     if (isStaticHydration()) {
-      if (!attrValueMatches(el, name, accessor(), svg)) {
+      const value = accessor();
+      if (!svg && (name === "value" || name === "indeterminate")) {
+        applyProperty(el, name, value);
+        return;
+      }
+      if (!attrValueMatches(el, name, value, svg)) {
         mismatch("значение атрибута не совпало с серверной разметкой");
       }
       return;
@@ -1356,10 +1387,6 @@ const SVG_ATTRIBUTE_NAMES: ReadonlyMap<string, string> = new Map([
   ["clipRule", "clip-rule"],
   ["stopColor", "stop-color"],
   ["stopOpacity", "stop-opacity"],
-  ["gradientUnits", "gradient-units"],
-  ["gradientTransform", "gradient-transform"],
-  ["patternUnits", "pattern-units"],
-  ["patternContentUnits", "pattern-content-units"],
   ["fontFamily", "font-family"],
   ["fontSize", "font-size"],
   ["fontWeight", "font-weight"],
@@ -1367,9 +1394,6 @@ const SVG_ATTRIBUTE_NAMES: ReadonlyMap<string, string> = new Map([
   ["dominantBaseline", "dominant-baseline"],
   ["shapeRendering", "shape-rendering"],
   ["colorInterpolation", "color-interpolation"],
-  ["markerUnits", "marker-units"],
-  ["markerWidth", "marker-width"],
-  ["markerHeight", "marker-height"],
   ["markerStart", "marker-start"],
   ["markerMid", "marker-mid"],
   ["markerEnd", "marker-end"],

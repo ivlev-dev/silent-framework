@@ -264,6 +264,7 @@ export function Index<T>(props: IndexProps<T>): Node {
   const parentOwner = getOwner();
   const usesIndex = props.index !== false;
   let states: IndexState<T>[] = [];
+  let updating = false;
   let endAnchor: Comment;
   let fallbackSeed: Node[] = [];
   let skipFirst = hydrating;
@@ -271,6 +272,17 @@ export function Index<T>(props: IndexProps<T>): Node {
   const detachNode = (node: Node): void => {
     if (node.parentNode !== null) {
       node.parentNode.removeChild(node);
+    }
+  };
+
+  const unlinkState = (state: IndexState<T>): void => {
+    const position = states.indexOf(state);
+    if (position < 0) {
+      return;
+    }
+    states.splice(position, 1);
+    for (let index = position; index < states.length; index += 1) {
+      states[index]!.setIndex(index);
     }
   };
 
@@ -290,13 +302,17 @@ export function Index<T>(props: IndexProps<T>): Node {
       detachNode(state.anchor);
     }
     state.cleanup();
+    if (!updating) {
+      unlinkState(state);
+    }
   };
 
   const removeAll = (): void => {
-    for (const state of states) {
+    const snapshot = states;
+    states = [];
+    for (const state of snapshot) {
       removeState(state);
     }
-    states = [];
     fallbackMount.clear();
   };
 
@@ -323,8 +339,10 @@ export function Index<T>(props: IndexProps<T>): Node {
     );
     let initialMount = mountParent;
     let initialTail = mountTail;
+    let seeded = itemEnd !== null;
     state.cleanup = createEffectUnlessStatic(() => {
-      if (itemEnd !== null) {
+      if (seeded && itemEnd !== null) {
+        seeded = false;
         const start = anchor as Comment;
         let window = runWindow;
         if (window === null) {
@@ -394,6 +412,12 @@ export function Index<T>(props: IndexProps<T>): Node {
 
     if (anchor !== null) {
       attachItemState(anchor, state);
+    }
+    if (itemEnd !== null) {
+      const first = nodes[0];
+      if (first !== undefined) {
+        attachItemState(first, state);
+      }
     }
     return state;
   };
@@ -480,7 +504,7 @@ export function Index<T>(props: IndexProps<T>): Node {
     ? createMountPoint(fallbackParent as Node, endAnchor, fallbackSeed)
     : createMountPoint(target ?? (container ??= document.createDocumentFragment()), endAnchor);
 
-  createRenderEffect(() => {
+  const renderList = (): void => {
     const parent = endAnchor.parentNode;
     if (parent === null) {
       removeAll();
@@ -517,6 +541,15 @@ export function Index<T>(props: IndexProps<T>): Node {
     }
 
     fallbackMount.render(items.length === 0 && hasFallback ? resolve(fallback) : null);
+  };
+
+  createRenderEffect(() => {
+    updating = true;
+    try {
+      renderList();
+    } finally {
+      updating = false;
+    }
   });
 
   onCleanup(removeAll);

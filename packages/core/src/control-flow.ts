@@ -1,6 +1,7 @@
 import type { Accessor, Setter } from "@ivlev-dev/silent-reactivity";
 import {
   createRenderEffect,
+  createRoot,
   createSignal,
   getOwner,
   isReactive,
@@ -60,6 +61,7 @@ interface ItemState<T> {
   disposed: boolean;
   previousIndex: number;
   generation: number;
+  disposeRerender: (() => void) | null;
   dispose(): void;
 }
 
@@ -78,7 +80,19 @@ function isPlainItem(value: unknown): boolean {
     return true;
   }
   const prototype = Object.getPrototypeOf(value) as object | null;
-  return prototype === Object.prototype || prototype === null;
+  if (prototype !== Object.prototype && prototype !== null) {
+    return false;
+  }
+  for (const key of Object.keys(value)) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (
+      descriptor !== undefined &&
+      (descriptor.get !== undefined || descriptor.set !== undefined)
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 class KeyedState<T> implements ItemState<T> {
@@ -91,6 +105,7 @@ class KeyedState<T> implements ItemState<T> {
   disposed = false;
   previousIndex = -1;
   generation = -1;
+  disposeRerender: (() => void) | null = null;
   index: Accessor<number>;
   private handle: [Accessor<number>, Setter<number>] | null = null;
   private position: number;
@@ -353,6 +368,7 @@ export function For<T>(props: ForProps<T>): Node {
     }
   }
   let container: Node | null = null;
+  const parentOwner = getOwner();
   const fallback = props.fallback;
   const hasFallback = fallback !== undefined;
   const keyOf = props.keyOf;
@@ -368,6 +384,7 @@ export function For<T>(props: ForProps<T>): Node {
   let states: ItemState<T>[] = [];
   let spare: ItemState<T>[] = [];
   const createdBuffer: ItemState<T>[] = [];
+  let updating = false;
   let generation = 0;
   let endAnchor: Comment;
 
@@ -418,6 +435,37 @@ export function For<T>(props: ForProps<T>): Node {
     }
     state.nodes = collected;
     return collected;
+  };
+
+  const protectEndBoundary = (kept: readonly ItemState<T>[]): void => {
+    for (const state of kept) {
+      if (state.nodes === NO_NODES && state.nodesEnd === endAnchor) {
+        materializeNodes(state);
+      }
+    }
+  };
+
+  const protectBoundaries = (
+    kept: readonly ItemState<T>[],
+    removed: readonly ItemState<T>[],
+  ): void => {
+    if (removed.length === 0 || kept.length === 0) {
+      return;
+    }
+    const anchors = new Set<Node>();
+    for (const state of removed) {
+      if (state.anchor !== null) {
+        anchors.add(state.anchor);
+      }
+    }
+    if (anchors.size === 0) {
+      return;
+    }
+    for (const state of kept) {
+      if (state.nodesEnd !== null && anchors.has(state.nodesEnd)) {
+        materializeNodes(state);
+      }
+    }
   };
 
   const renderItem = (
@@ -474,6 +522,30 @@ export function For<T>(props: ForProps<T>): Node {
     attachItemState(placed[0]!, state);
   };
 
+  const unlinkState = (state: ItemState<T>): void => {
+    const position = states.indexOf(state);
+    if (position < 0) {
+      return;
+    }
+    states.splice(position, 1);
+    for (let index = position; index < states.length; index += 1) {
+      states[index]!.setIndex(index);
+    }
+  };
+
+  const rerenderItem = (state: ItemState<T>, item: T): void => {
+    const pendingRerender = state.disposeRerender;
+    runWithOwner(parentOwner, () => {
+      state.disposeRerender = createRoot((dispose) => {
+        renderItem(state, untrack(() => props.children)(item, state.index));
+        return dispose;
+      });
+    });
+    if (pendingRerender !== null) {
+      pendingRerender();
+    }
+  };
+
   const removeState = (state: ItemState<T>): void => {
     if (state.disposed) {
       return;
@@ -491,15 +563,24 @@ export function For<T>(props: ForProps<T>): Node {
       detachNode(state.anchor);
     }
     state.cleanup();
+    const pendingRerender = state.disposeRerender;
+    if (pendingRerender !== null) {
+      state.disposeRerender = null;
+      pendingRerender();
+    }
+    if (!updating) {
+      unlinkState(state);
+    }
   };
 
   const removeAll = (): void => {
-    for (const state of states) {
-      removeState(state);
-    }
+    const snapshot = states;
     states = [];
     spare = [];
     createdBuffer.length = 0;
+    for (const state of snapshot) {
+      removeState(state);
+    }
     fallbackMount.clear();
   };
 
@@ -568,9 +649,14 @@ export function For<T>(props: ForProps<T>): Node {
         }
         return;
       }
-      renderItem(state, children(item, state.index), initialMount, mountTail);
+      renderItem(state, children(state.item, state.index), initialMount, mountTail);
       initialMount = null;
       mountTail = null;
+      const pendingRerender = state.disposeRerender;
+      if (pendingRerender !== null) {
+        state.disposeRerender = null;
+        pendingRerender();
+      }
     };
     if (
       hydrating &&
@@ -591,11 +677,17 @@ export function For<T>(props: ForProps<T>): Node {
     if (anchor !== null) {
       attachItemState(anchor, state);
     }
+    if (itemEnd !== null) {
+      const first = state.nodes[0] ?? anchor?.nextSibling ?? null;
+      if (first !== null && first !== itemEnd) {
+        attachItemState(first, state);
+      }
+    }
     return state;
   };
 
   const updateStateItem = (state: ItemState<T>, item: T): void => {
-    if (state.item === item) {
+    if (state.disposed || state.item === item) {
       return;
     }
     const previous = state.item;
@@ -606,9 +698,7 @@ export function For<T>(props: ForProps<T>): Node {
     if (untrack(() => sameItem(previous, item))) {
       return;
     }
-    runWithOwner(parentOwner, () => {
-      renderItem(state, untrack(() => props.children)(item, state.index));
-    });
+    rerenderItem(state, item);
   };
 
   const createState = (
@@ -621,8 +711,6 @@ export function For<T>(props: ForProps<T>): Node {
 
   let fallbackSeed: Node[] = [];
   let skipFirst = hydrating;
-
-  const parentOwner = getOwner();
 
   if (hydrating) {
     if (outer === null) {
@@ -702,7 +790,7 @@ export function For<T>(props: ForProps<T>): Node {
         endAnchor,
       );
 
-  createRenderEffect(() => {
+  const renderList = (): void => {
     const parent = endAnchor.parentNode;
     if (parent === null) {
       removeAll();
@@ -748,6 +836,7 @@ export function For<T>(props: ForProps<T>): Node {
             });
           } else {
             const batch = document.createDocumentFragment();
+            protectEndBoundary(previous);
             runWithOwner(parentOwner, () => {
               for (let position = previousLength; position < nextLength; position += 1) {
                 previous.push(createState(items[position] as T, position, batch, null, children));
@@ -759,8 +848,10 @@ export function For<T>(props: ForProps<T>): Node {
         fallbackMount.render(nextLength === 0 && hasFallback ? resolve(fallback) : null);
         return;
       }
-      for (let index = nextLength; index < previousLength; index += 1) {
-        removeState(previous[index]!);
+      const removedTrailing = previous.slice(nextLength, previousLength);
+      protectBoundaries(previous.slice(0, nextLength), removedTrailing);
+      for (const state of removedTrailing) {
+        removeState(state);
       }
       previous.length = nextLength;
       fallbackMount.render(nextLength === 0 && hasFallback ? resolve(fallback) : null);
@@ -822,14 +913,25 @@ export function For<T>(props: ForProps<T>): Node {
       }
     });
 
+    for (const state of next) {
+      if (state.nodes === NO_NODES && state.nodesEnd !== null) {
+        materializeNodes(state);
+      }
+    }
+    const removedStates: ItemState<T>[] = [];
     for (let index = 0; index < previousLength; index += 1) {
       const state = previous[index]!;
       if (state.generation !== currentGeneration) {
-        removeState(state);
+        removedStates.push(state);
       }
+    }
+    protectBoundaries(next, removedStates);
+    for (const state of removedStates) {
+      removeState(state);
     }
 
     if (batch !== null) {
+      protectEndBoundary(next);
       parent.insertBefore(batch, endAnchor);
     }
 
@@ -916,6 +1018,15 @@ export function For<T>(props: ForProps<T>): Node {
     created.length = 0;
 
     fallbackMount.render(nextLength === 0 && hasFallback ? resolve(fallback) : null);
+  };
+
+  createRenderEffect(() => {
+    updating = true;
+    try {
+      renderList();
+    } finally {
+      updating = false;
+    }
   });
 
   onCleanup(removeAll);

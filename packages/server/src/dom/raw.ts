@@ -1,3 +1,4 @@
+import { normalizeStyle, type StyleInput } from "@ivlev-dev/silent-core";
 import { NODE_TEXT } from "./types.js";
 import { NodeImpl } from "./node.js";
 import { escapeAttribute, escapeText } from "./serializer.js";
@@ -73,14 +74,14 @@ function serializeAttribute(name: string, value: unknown): string | true | null 
     return text === "" ? null : `class="${text}"`;
   }
   if (name === "style" && typeof value === "object") {
-    const parts: string[] = [];
-    for (const [key, item] of Object.entries(value)) {
-      if (item === null || item === undefined || item === false || item === "") {
-        continue;
-      }
-      parts.push(`${key.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`)}:${String(item)}`);
+    const declarations = normalizeStyle(value as StyleInput);
+    if (declarations === "") {
+      return null;
     }
-    return parts.length === 0 ? null : `style="${escapeAttribute(parts.join(";"))}"`;
+    const text = declarations.endsWith(";")
+      ? declarations.slice(0, -1)
+      : declarations;
+    return `style="${escapeAttribute(text)}"`;
   }
   return `${name}="${attributeText(value)}"`;
 }
