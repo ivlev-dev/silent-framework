@@ -26,6 +26,67 @@ const result: ValidationResult = validate(user);
 
 Все декораторы-правила имеют PascalCase-имена и возвращают `RuleDecorator`. Последний аргумент каждого правила — `RuleOptions`. Декораторы только регистрируют правила; проверка запускается явно через `validate`, `validateAsync`, `validateOrThrow` или `validateOrThrowAsync`.
 
+## Валидация из типов
+
+Типы `accessor`-полей можно не дублировать декораторами: отдельный Vite-плагин читает TS-аннотации на этапе сборки и добавляет классу статическую схему. В рантайме `validate` проверяет типы автоматически, а декораторы используются для семантики — формата, диапазонов, сравнений.
+
+```ts
+import { defineConfig } from "vite";
+import { silent } from "@ivlev-dev/silent-vite";
+import { validation } from "@ivlev-dev/silent-validation/vite";
+
+export default defineConfig({
+  plugins: [silent(), validation()],
+});
+```
+
+Плагин поставляется из subpath `@ivlev-dev/silent-validation/vite`. Опции:
+
+| Опция | Тип | По умолчанию | Назначение |
+| --- | --- | --- | --- |
+| `include` | `RegExp` | `/\.(ts\|tsx)$/` | Файлы, которые обрабатывает плагин |
+| `exclude` | `RegExp` | `/node_modules/` | Файлы, которые пропускаются |
+| `tsconfig` | `string` | ближайший `tsconfig.json` | Путь к конфигу относительно корня проекта |
+
+```ts
+import { IsEmail, Min, validate } from "@ivlev-dev/silent-validation";
+
+class Address {
+  public accessor city: string = "";
+}
+
+class Item {
+  public accessor name: string = "";
+  public accessor quantity: number = 0;
+}
+
+class Order {
+  @IsEmail()
+  public accessor email: string = "";
+
+  @Min(18)
+  public accessor age: number = 0;
+
+  public accessor address: Address = new Address();
+
+  public accessor items: Item[] = [];
+
+  public accessor counts: Record<string, number> = {};
+}
+
+const result = validate(order);
+```
+
+Плагин вставляет в класс статический блок `static { this[Symbol.for("silent.validation.schema")] = { fields: ... } }`. По этой схеме `validate` проверяет `string`, `number`, вложенный `Address`, элементы `Item[]` и значения `Record`. Ошибка типа имеет `rule: "type"`, `params.type` с именем ожидаемого типа, сообщение по ключу `validation.type` (ru/en) и обычные `field`/`path`/`index`, например `address.city`, `items[0].name`; ключи `Record` и объектов идут через точку (`counts.apples`), ключи `Map` — в скобках (`map[key]`).
+
+**Порядок проверок.** Тип проверяется первым: если значение не соответствует аннотации, декораторы этого поля не запускаются. Для верного типа декораторы работают как обычно, поэтому `@IsEmail()` на `string` и `@Min(18)` на `number` дают нужную семантику.
+
+**Отключение.** `validate(instance, { types: false })` оставляет только правила декораторов. По умолчанию `types: true`.
+
+**Поддерживаемые типы.** Примитивы (`string`, `number`, `boolean`, `bigint`, `symbol`, `object`, `function`, `undefined`, `null`, `void`, `never`), литералы, union и intersection (включая `| null` и `| undefined`), массивы и `ReadonlyArray`, кортежи с optional-элементами, `Record` и строковые index-signature, `Map`/`WeakMap`/`Set`/`WeakSet`, `Promise`, `Date`, `RegExp`, `Error` и подклассы, `ArrayBuffer`/`SharedArrayBuffer`/`DataView`, typed arrays, `URL`/`URLSearchParams`, `Iterable`/`Iterator`/`AsyncIterable`/`AsyncIterator`, значения `enum`, пользовательские классы (вложенная проверка экземпляра) и структурные интерфейсы/type alias’ы (глубина 4).
+
+**Ограничения.** Проверяются только `accessor`-поля с явной аннотацией; обычные поля и поля без аннотации пропускаются. Optional-поле описывается как `public accessor age: number | undefined = undefined;` — `?` для `accessor` в TypeScript запрещён. Условные, mapped, template и indexed-типы, а также generic-параметры не поддерживаются и пропускаются. Если класс импортирован только как тип, плагин добавляет namespace-импорт для рантайм-проверки. Метаданные попадают в бандл статическим блоком; без плагина типы не проверяются.
+
 ## Функции
 
 ### `validate`
@@ -633,10 +694,11 @@ interface ValidationOptions extends ValidationConfig {
   readonly groups?: readonly string[] | undefined;
   readonly stopAtFirst?: boolean | undefined;
   readonly labels?: Readonly<Record<string, string>> | undefined;
+  readonly types?: boolean | undefined;
 }
 ```
 
-Опции вызова `validate`/`validateAsync`: фильтр групп, остановка на первой ошибке, карта ярлыков и локальные настройки сообщений (`locale`, `resolve`, `messages`).
+Опции вызова `validate`/`validateAsync`: фильтр групп, остановка на первой ошибке, карта ярлыков, проверка типов из аннотаций (`types`, по умолчанию `true`) и локальные настройки сообщений (`locale`, `resolve`, `messages`).
 
 ### `ValidationResult`
 

@@ -1,6 +1,6 @@
 # @ivlev-dev/silent-validation
 
-Валидация классов на stage 3 декораторах: синхронные и асинхронные проверки, вложенные объекты и коллекции, группы, условные правила и сообщения с поддержкой i18n.
+Валидация классов на stage 3 декораторах: синхронные и асинхронные проверки, вложенные объекты и коллекции, группы, условные правила и сообщения с поддержкой i18n. Типы полей можно не дублировать декораторами — их проверяет Vite-плагин по TS-аннотациям.
 
 [![npm version](https://img.shields.io/npm/v/@ivlev-dev/silent-validation)](https://www.npmjs.com/package/@ivlev-dev/silent-validation)
 [![license](https://img.shields.io/npm/l/@ivlev-dev/silent-validation)](https://github.com/ivlev-dev/silent-framework/blob/main/LICENSE)
@@ -9,6 +9,7 @@
 ## Возможности
 
 - Декларативные правила на полях класса: наличие, типы, числа, строки, коллекции, сравнения.
+- Валидация из TS-типов без декораторов: Vite-плагин читает аннотации `accessor`-полей и проверяет типы в рантайме.
 - Имена декораторов в PascalCase: `@Required`, `@IsEmail`, `@Min`, `@Nested`.
 - Синхронный `validate` и асинхронный `validateAsync` с одинаковым набором правил.
 - Вложенная валидация объектов (`@Nested`) и элементов коллекций (`@Each`).
@@ -69,6 +70,147 @@ if (!result.valid) {
 
 Валидация явная: декораторы только регистрируют правила, проверка запускается вызовом `validate`/`validateAsync` (или `validateOrThrow`/`validateOrThrowAsync`).
 
+## Валидация из типов
+
+Типы полей уже описаны в TS-аннотациях, и дублировать их декораторами `@IsString()`/`@IsInt()` не нужно. Vite-плагин читает типы на этапе сборки через TypeScript API и вставляет в класс статическую схему. В рантайме `validate` проверяет по ней значения, а декораторы остаются для семантики: формат, диапазоны, сравнения.
+
+### Подключение плагина
+
+```ts
+import { defineConfig } from "vite";
+import { silent } from "@ivlev-dev/silent-vite";
+import { validation } from "@ivlev-dev/silent-validation/vite";
+
+export default defineConfig({
+  plugins: [silent(), validation()],
+});
+```
+
+| Опция | Тип | По умолчанию | Назначение |
+| --- | --- | --- | --- |
+| `include` | `RegExp` | `/\.(ts\|tsx)$/` | Файлы, которые обрабатывает плагин |
+| `exclude` | `RegExp` | `/node_modules/` | Файлы, которые плагин пропускает |
+| `tsconfig` | `string` | ближайший `tsconfig.json` | Путь к конфигу относительно корня проекта |
+
+TypeScript используется только на сборке: `typescript` — зависимость пакета, рантайм от него не зависит. Плагин самостоятельный: `silent()` нужен только для JSX/VM-компиляции, в обычном Vite-конфиге достаточно `validation()`.
+
+### Пример
+
+```ts
+import { validate } from "@ivlev-dev/silent-validation";
+
+class Address {
+  public accessor city: string = "";
+}
+
+class Item {
+  public accessor name: string = "";
+  public accessor quantity: number = 0;
+}
+
+class Order {
+  public accessor email: string = "";
+  public accessor age: number | undefined = undefined;
+  public accessor address: Address = new Address();
+  public accessor items: Item[] = [];
+  public accessor counts: Record<string, number> = {};
+}
+
+const order = new Order();
+order.email = "user@example.com";
+order.address.city = "Москва";
+order.items = [new Item()];
+order.counts = { apples: 3 };
+
+const result = validate(order);
+```
+
+Декораторов в классах нет, но `validate` проверяет типы: `email` — строка, `age` — число или `undefined`, `address` — экземпляр `Address` с корректным `city`, каждый элемент `items` — `Item`, значения `counts` — числа. Для этого плагин добавляет в класс статический блок вида:
+
+```js
+static {
+  this[Symbol.for("silent.validation.schema")] = { fields: { email: "string", age: ["optional", "number"] } };
+}
+```
+
+Ошибка типа получает `rule: "type"`, `params.type` с именем ожидаемого типа, сообщение по ключу `validation.type` и обычный `path`:
+
+```ts
+const broken = new Order();
+Object.assign(broken, { email: 42 });
+
+const { errors } = validate(broken);
+// errors[0].rule === "type"
+// errors[0].params.type === "string"
+// errors[0].path === "email"
+```
+
+### Вложенность и пути
+
+Вложенные классы, массивы, `Record` и index-signature дают те же пути, что и `@Nested`/`@Each`:
+
+```ts
+class Order {
+  public accessor address: Address = new Address();
+  public accessor items: Item[] = [];
+  public accessor counts: Record<string, number> = {};
+}
+```
+
+Ошибки приходят как `address.city`, `items[0].quantity`; для элементов массива заполняется `index`. Ключи объектов и `Record` идут через точку (`counts.apples`), ключи `Map` — в скобках (`map[userId]`).
+
+### Смешивание с декораторами
+
+Тип проверяется первым. Если значение не соответствует аннотации, декораторы этого поля не запускаются, поэтому `@Min(0)` на строке не даст вторую ошибку. Если тип верный, работают декораторы:
+
+```ts
+import { IsEmail, Min, validate } from "@ivlev-dev/silent-validation";
+
+class User {
+  @IsEmail()
+  public accessor email: string = "";
+
+  @Min(18)
+  public accessor age: number = 0;
+}
+
+validate(user);
+```
+
+`@IsEmail` проверяет формат, `number` и `@Min(18)` — тип и диапазон. `@Required()`/`@Optional()` не нужны: `undefined` и `null` описываются в типе (`string | undefined`, `number | null`), а `@ValidateIf`, `@Label`, `@Groups` работают как раньше.
+
+### Отключение проверки типов
+
+```ts
+validate(instance, { types: false });
+```
+
+Флаг `types` в `ValidationOptions` по умолчанию `true`. С `types: false` остаются только правила декораторов — удобно, когда схема приходит извне или типы описывают данные шире, чем допустимо в конкретном вызове.
+
+### Поддерживаемые типы
+
+| Группа | Типы |
+| --- | --- |
+| Примитивы | `string`, `number`, `boolean`, `bigint`, `symbol`, `object`, `function`, `undefined`, `null`, `void`, `never` |
+| Литералы | `"admin"`, `42`, `true` — значение сверяется с литералом |
+| Объединения и пересечения | `string \| number`, `A & B`, `T \| null`, `T \| undefined` |
+| Массивы и кортежи | `T[]`, `ReadonlyArray<T>`, `[string, number]`, `[string, number?]` |
+| Объекты | `Record<K, V>`, `{ [key: string]: T }`, классы и интерфейсы, type alias’ы (структурно, глубина 4) |
+| Коллекции | `Map`, `WeakMap`, `Set`, `WeakSet` |
+| Встроенные | `Promise`, `Date`, `RegExp`, `Error` и подклассы, `ArrayBuffer`, `SharedArrayBuffer`, `DataView`, typed arrays, `URL`, `URLSearchParams` |
+| Итераторы | `Iterable`, `Iterator`, `AsyncIterable`, `AsyncIterator` |
+| Enum | значения `enum` — как у `@IsEnum` |
+
+Валидируются только `accessor`-поля с явной аннотацией; обычные поля и поля без аннотации плагин пропускает.
+
+### Ограничения
+
+- Метаданные получают только классы с `accessor`-полями и аннотациями; файл должен попадать под `include` и не попадать под `exclude`.
+- Optional-поле описывается как `public accessor age: number | undefined = undefined;`. Синтаксис `accessor age?: number` в TypeScript запрещён.
+- Условные, mapped, template и indexed-типы, а также generic-параметры не поддерживаются и пропускаются.
+- Если класс импортирован только как тип (`import type { Item }`), плагин добавляет namespace-импорт, чтобы проверять экземпляры в рантайме.
+- Плагин вставляет статический блок в бандл: без него `validate` увидит только правила декораторов.
+
 ## API
 
 | Символ | Назначение |
@@ -81,7 +223,7 @@ if (!result.valid) {
 | `ValidationError` | Ошибка правила: `field`, `rule`, `message`, `params`, `value`, `path`, `label`, `index?` |
 | `ValidationException` | Исключение с полями `errors` и `result` |
 | `AsyncRuleError` | Бросается синхронным `validate`, если правило вернуло промис |
-| `ValidationOptions` | `groups`, `stopAtFirst`, `labels`, `locale`, `resolve`, `messages` |
+| `ValidationOptions` | `groups`, `stopAtFirst`, `labels`, `types`, `locale`, `resolve`, `messages` |
 
 ```ts
 import {
@@ -97,6 +239,7 @@ import {
 - `groups` — проверять только поля с указанными группами; поле без групп участвует всегда.
 - `stopAtFirst` — остановиться на первой ошибке.
 - `labels` — карта `имя поля → человекочитаемый ярлык`, переопределяет `@Label`.
+- `types` — проверка типов из TS-аннотаций (по умолчанию `true`, см. «Валидация из типов»).
 - `locale`, `resolve`, `messages` — переопределяют глобальный конфиг сообщений для конкретного вызова.
 
 `validate` бросает `AsyncRuleError`, если встретилось асинхронное правило (`Custom` с `async`-функцией). Для таких моделей используйте `validateAsync`.
@@ -228,14 +371,14 @@ class Profile {
   @Label("Возраст")
   @Optional()
   @Min(18)
-  public accessor age?: number;
+  public accessor age: number | undefined = undefined;
 
   @ValidateIf((instance: Profile) => instance.age !== undefined)
   @Label("Согласие")
-  public accessor consent?: boolean;
+  public accessor consent: boolean | undefined = undefined;
 
   @Groups("admin")
-  public accessor role?: string;
+  public accessor role: string | undefined = undefined;
 }
 
 validate(profile, { groups: ["admin"] });
@@ -340,7 +483,9 @@ const result = validate(order);
 ## Ограничения и совместимость
 
 - Поддерживаются только stage-3 `accessor`-поля (`public accessor email!: string`). Обычные поля, приватные (`#field`) и статические поля не поддерживаются — декоратор бросает `TypeError` (и типы не дадут применить его к обычному полю).
-- Валидация явная: декораторы не запускают проверку и не работают без вызова `validate`/`validateAsync`.
+- Optional-поле описывается через `| undefined`: `public accessor age: number | undefined = undefined;`. Синтаксис `accessor age?: number` в TypeScript запрещён.
+- Типы проверяются только из аннотаций `accessor`-полей и только при подключённом плагине `validation()` из `@ivlev-dev/silent-validation/vite`. Обычные поля и поля без аннотации остаются без проверки типов; условные/mapped/template/indexed-типы и generic-параметры пропускаются.
+- Валидация явная: ни декораторы, ни типы из аннотаций не запускают проверку без вызова `validate`/`validateAsync`.
 - Нужны stage 3 декораторы: `experimentalDecorators: false`. Legacy-декораторы (`experimentalDecorators: true`) не поддерживаются.
 - ESM-only, Node.js >= 22.
 - `validate` не поддерживает асинхронные правила — используйте `validateAsync`.

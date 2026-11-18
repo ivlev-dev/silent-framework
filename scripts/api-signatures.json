@@ -1800,7 +1800,7 @@
       },
       "RuleDecorator": {
         "kind": "type",
-        "signature": "export type RuleDecorator = <C extends object, V>(value: undefined | ClassAccessorDecoratorTarget<C, V>, context: ClassFieldDecoratorContext<C, V> | ClassAccessorDecoratorContext<C, V>) => void;"
+        "signature": "export type RuleDecorator = <C extends object, V>(value: ClassAccessorDecoratorTarget<C, V>, context: ClassAccessorDecoratorContext<C, V>) => void;"
       },
       "RuleOptions": {
         "kind": "interface",
@@ -1850,7 +1850,7 @@
       },
       "ValidationOptions": {
         "kind": "interface",
-        "signature": "export interface ValidationOptions extends ValidationConfig { readonly groups?: readonly string[] | undefined; readonly stopAtFirst?: boolean | undefined; readonly labels?: Readonly<Record<string, string>> | undefined; }"
+        "signature": "export interface ValidationOptions extends ValidationConfig { readonly groups?: readonly string[] | undefined; readonly stopAtFirst?: boolean | undefined; readonly labels?: Readonly<Record<string, string>> | undefined; readonly types?: boolean | undefined; }"
       },
       "ValidationResult": {
         "kind": "interface",
@@ -1869,7 +1869,7 @@
       },
       "SilentOptions": {
         "kind": "interface",
-        "signature": "export interface SilentOptions { include?: RegExp; exclude?: RegExp; root?: string; swc?: Record<string, unknown>; requirePreloader?: boolean; runtime?: string; hmr?: boolean; index?: boolean; view?: boolean; hydrate?: boolean; di?: DiMode; }"
+        "signature": "export interface SilentOptions { include?: RegExp; exclude?: RegExp; root?: string; swc?: Record<string, unknown>; requirePreloader?: boolean; runtime?: string; hmr?: boolean; index?: boolean; view?: boolean; hydrate?: boolean; di?: DiMode; validation?: boolean; }"
       }
     }
   }

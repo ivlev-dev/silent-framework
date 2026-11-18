@@ -1,6 +1,9 @@
 import { DEFAULT_LOCALE, getValidationConfig, resolveMessage } from "./messages.js";
 import { validationStateFor } from "./registry.js";
+import { readInstanceSchema } from "./schema.js";
+import { validateType } from "./type-validation.js";
 import { AsyncRuleError, ValidationException } from "./types.js";
+import type { TypeSchema } from "./schema.js";
 import type {
   FieldKey,
   FieldRuleEntry,
@@ -21,8 +24,21 @@ interface RuntimeState {
   readonly labels: Readonly<Record<string, string>> | undefined;
   readonly callGroups: readonly string[] | undefined;
   readonly stopAtFirst: boolean;
+  readonly types: boolean;
   readonly visiting: WeakSet<object>;
   stopped: boolean;
+}
+
+interface FieldRun {
+  readonly key: FieldKey;
+  readonly fieldName: string;
+  readonly slot: FieldSlot | undefined;
+  readonly schema: TypeSchema | undefined;
+}
+
+interface PreparedField {
+  readonly value: unknown;
+  readonly path: string;
 }
 
 interface RuleCall {
@@ -62,6 +78,7 @@ function createState(options: ValidationOptions | undefined): RuntimeState {
     labels: options?.labels,
     callGroups: options?.groups,
     stopAtFirst: options?.stopAtFirst === true,
+    types: options?.types !== false,
     visiting: new WeakSet<object>(),
     stopped: false,
   };
@@ -205,22 +222,125 @@ function callFor(
   return { target, slot, entry, value, path, index, state };
 }
 
+function fieldPlan(target: object, withSchema: boolean): readonly FieldRun[] {
+  const validation = validationStateFor(target);
+  const byName = new Map<string, FieldSlot>();
+  for (const slot of validation.fields.values()) {
+    if (!byName.has(slot.fieldName)) {
+      byName.set(slot.fieldName, slot);
+    }
+  }
+  const plan: FieldRun[] = [];
+  const used = new Set<FieldSlot>();
+  if (withSchema) {
+    const schema = readInstanceSchema(target);
+    if (schema !== null) {
+      for (const [name, typeSchema] of Object.entries(schema)) {
+        const slot = byName.get(name);
+        if (slot !== undefined) {
+          used.add(slot);
+        }
+        plan.push({
+          key: slot?.field ?? name,
+          fieldName: name,
+          slot,
+          schema: typeSchema,
+        });
+      }
+    }
+  }
+  for (const slot of validation.fields.values()) {
+    if (used.has(slot)) {
+      continue;
+    }
+    plan.push({
+      key: slot.field,
+      fieldName: slot.fieldName,
+      slot,
+      schema: undefined,
+    });
+  }
+  return plan;
+}
+
+function schemaSkips(schema: TypeSchema, value: unknown): boolean {
+  if (typeof schema === "string") {
+    return false;
+  }
+  const tag = schema[0];
+  if (tag === "optional" && value === undefined) {
+    return true;
+  }
+  if (tag === "nullable" && value === null) {
+    return true;
+  }
+  return false;
+}
+
+function prepareField(
+  target: object,
+  run: FieldRun,
+  prefix: string,
+  state: RuntimeState,
+): PreparedField | null {
+  const value = readField(target, run.key);
+  const slot = run.slot;
+  if (slot !== undefined && slot.optional && (value === null || value === undefined)) {
+    return null;
+  }
+  if (slot !== undefined) {
+    for (const condition of slot.conditions) {
+      if (!condition(target, value)) {
+        return null;
+      }
+    }
+  }
+  const path = `${prefix}${run.fieldName}`;
+  if (state.types && run.schema !== undefined) {
+    if (schemaSkips(run.schema, value)) {
+      return null;
+    }
+    const label = slot?.label ?? state.labels?.[run.fieldName] ?? run.fieldName;
+    const result = validateType(value, run.schema, {
+      instance: target,
+      field: run.fieldName,
+      label,
+      path,
+      config: state.config,
+      visiting: state.visiting,
+    });
+    if (result !== null) {
+      const errors = Array.isArray(result) ? result : [result];
+      const limit = state.stopAtFirst ? 1 : errors.length;
+      for (let index = 0; index < limit; index += 1) {
+        const error = errors[index];
+        if (error !== undefined) {
+          state.errors.push(error);
+        }
+      }
+      if (state.stopAtFirst) {
+        state.stopped = true;
+      }
+      return null;
+    }
+  }
+  return { value, path };
+}
+
 function runFieldSync(
   target: object,
-  slot: FieldSlot,
+  run: FieldRun,
   prefix: string,
   state: RuntimeState,
 ): void {
-  const value = readField(target, slot.field);
-  if (slot.optional && (value === null || value === undefined)) {
+  const prepared = prepareField(target, run, prefix, state);
+  if (prepared === null) {
     return;
   }
-  for (const condition of slot.conditions) {
-    if (!condition(target, value)) {
-      return;
-    }
+  const slot = run.slot;
+  if (slot === undefined) {
+    return;
   }
-  const path = `${prefix}${slot.fieldName}`;
   for (let index = slot.rules.length - 1; index >= 0; index -= 1) {
     if (state.stopped) {
       return;
@@ -229,7 +349,7 @@ function runFieldSync(
     if (entry === undefined) {
       continue;
     }
-    runRuleSync(target, slot, entry, value, path, state);
+    runRuleSync(target, slot, entry, prepared.value, prepared.path, state);
   }
 }
 
@@ -307,12 +427,11 @@ function runInstanceSync(target: object, prefix: string, state: RuntimeState): v
   }
   state.visiting.add(target);
   try {
-    const validation = validationStateFor(target);
-    for (const slot of validation.fields.values()) {
+    for (const run of fieldPlan(target, state.types)) {
       if (state.stopped) {
         return;
       }
-      runFieldSync(target, slot, prefix, state);
+      runFieldSync(target, run, prefix, state);
     }
   } finally {
     state.visiting.delete(target);
@@ -321,20 +440,18 @@ function runInstanceSync(target: object, prefix: string, state: RuntimeState): v
 
 async function runFieldAsync(
   target: object,
-  slot: FieldSlot,
+  run: FieldRun,
   prefix: string,
   state: RuntimeState,
 ): Promise<void> {
-  const value = readField(target, slot.field);
-  if (slot.optional && (value === null || value === undefined)) {
+  const prepared = prepareField(target, run, prefix, state);
+  if (prepared === null) {
     return;
   }
-  for (const condition of slot.conditions) {
-    if (!condition(target, value)) {
-      return;
-    }
+  const slot = run.slot;
+  if (slot === undefined) {
+    return;
   }
-  const path = `${prefix}${slot.fieldName}`;
   for (let index = slot.rules.length - 1; index >= 0; index -= 1) {
     if (state.stopped) {
       return;
@@ -343,7 +460,7 @@ async function runFieldAsync(
     if (entry === undefined) {
       continue;
     }
-    await runRuleAsync(target, slot, entry, value, path, state);
+    await runRuleAsync(target, slot, entry, prepared.value, prepared.path, state);
   }
 }
 
@@ -426,12 +543,11 @@ async function runInstanceAsync(
   }
   state.visiting.add(target);
   try {
-    const validation = validationStateFor(target);
-    for (const slot of validation.fields.values()) {
+    for (const run of fieldPlan(target, state.types)) {
       if (state.stopped) {
         return;
       }
-      await runFieldAsync(target, slot, prefix, state);
+      await runFieldAsync(target, run, prefix, state);
     }
   } finally {
     state.visiting.delete(target);

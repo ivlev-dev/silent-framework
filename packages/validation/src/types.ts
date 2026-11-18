@@ -64,6 +64,7 @@ export interface ValidationOptions extends ValidationConfig {
   readonly groups?: readonly string[] | undefined;
   readonly stopAtFirst?: boolean | undefined;
   readonly labels?: Readonly<Record<string, string>> | undefined;
+  readonly types?: boolean | undefined;
 }
 
 export interface ValidationError {

@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "import": "./dist/vite.js"
     }
   },
   "files": [
@@ -17,12 +21,15 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
-    "test": "vitest run"
+    "test": "vitest run && vitest run -c vitest.types.config.ts"
+  },
+  "dependencies": {
+    "magic-string": "^0.30.0",
+    "typescript": "^6.0.3"
   },
   "devDependencies": {
     "@ivlev-dev/silent-swc": "workspace:*",
     "@ivlev-dev/silent-vite": "workspace:*",
-    "typescript": "^7.0.2",
     "vite": "^8.3.6",
     "vitest": "^5.1.0"
   },

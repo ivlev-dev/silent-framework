@@ -5,6 +5,10 @@
 ### Валидация
 
 - Новый пакет `@ivlev-dev/silent-validation`: классовая валидация на stage-3 декораторах, 46 правил (наличие, типы, числа, строки, коллекции, сравнения, custom/nested), модификаторы `ValidateIf`/`Optional`/`Label`/`Groups`, `validate`/`validateAsync`/`validateOrThrow`, кастомные сообщения, встроенные каталоги ru/en и `MessageResolver` для i18n.
+- Валидация из TS-типов без декораторов: Vite-плагин `validation()` из `@ivlev-dev/silent-validation/vite` читает аннотации `accessor`-полей через TypeScript API и вставляет классу статическую схему. Поддержаны примитивы и литералы, union/intersection (включая `| null`/`| undefined`), массивы, `ReadonlyArray`, кортежи, `Record` и index-signature, `Map`/`Set`/`WeakMap`/`WeakSet`, `Promise`, `Date`, `RegExp`, `Error` и подклассы, `ArrayBuffer`/`DataView`, typed arrays, `URL`/`URLSearchParams`, `Iterable`/`AsyncIterable`, значения `enum`, пользовательские классы (вложенная проверка) и структурные интерфейсы/type alias’ы (глубина 4). Пути ошибок — `address.city`, `items[0].name`, `counts.apples` для `Record` и `map[key]` для `Map`.
+- Ошибки типов используют `rule: "type"`, `params.type` и сообщение `validation.type` (ru/en). Тип проверяется первым: для неверного типа декораторы поля не запускаются, поэтому типы и правила комбинируются.
+- `validate(instance, { types: false })` отключает проверку типов; в `ValidationOptions` добавлен `types?: boolean` (по умолчанию `true`).
+- Ограничения: проверяются только `accessor`-поля с явной аннотацией (optional — через `| undefined`, `?` для `accessor` запрещён), условные/mapped/template/indexed-типы и generic-параметры пропускаются, type-only импорт класса добавляет namespace-импорт, `typescript` нужен только на сборке.
 
 ## 0.11.21
 

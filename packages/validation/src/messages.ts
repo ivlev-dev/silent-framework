@@ -60,6 +60,7 @@ export const validationMessages: Readonly<
     "validation.nested": "Поле {label} содержит некорректный объект",
     "validation.each": "Элемент {index} поля {label} некорректен",
     "validation.custom": "Поле {label} не прошло проверку",
+    "validation.type": "Поле {label} должно быть типа {type}",
   },
   en: {
     "validation.required": "{label} is required",
@@ -113,6 +114,7 @@ export const validationMessages: Readonly<
     "validation.nested": "{label} contains an invalid object",
     "validation.each": "Item {index} of {label} is invalid",
     "validation.custom": "{label} failed validation",
+    "validation.type": "{label} must be of type {type}",
   },
 };
 

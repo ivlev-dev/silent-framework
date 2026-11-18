@@ -19,7 +19,7 @@
 - SSR без внешних DOM-зависимостей (`@ivlev-dev/silent-server`), `renderToStream` и гидрация без вспышки прелоадера.
 - `<title>`, `<meta>` и `<link>` из любого компонента выносятся в `<head>` — как в React 19, с SSR-поддержкой.
 - Опциональный `@ivlev-dev/silent-router`: класс `Router`, компоненты `Link`/`RouterView`, guards/loaders и memory history для SSR.
-- Опциональный `@ivlev-dev/silent-validation`: классовая валидация на stage-3 декораторах (`@Required`, `@IsEmail`, `@Min` и ещё 40+ правил), кастомные сообщения, встроенные ru/en и интеграция с i18n.
+- Опциональный `@ivlev-dev/silent-validation`: декораторы + валидация из TS-типов через Vite-плагин (`@Required`, `@IsEmail`, `@Min` и ещё 40+ правил, `accessor`-поля без дублирования типов), кастомные сообщения, встроенные ru/en и интеграция с i18n.
 - Справочник API с автопроверкой полноты (`pnpm api:check`).
 
 ## Установка
@@ -75,7 +75,7 @@ if (!result.valid) {
 }
 ```
 
-Пакет не зависит от core: декораторы вешаются на поля, валидация вызывается явно (`validate`/`validateAsync`), сообщения настраиваются через `configureValidation` с резолвером i18n. Подробнее — [`docs/api/validation.md`](./docs/api/validation.md).
+Пакет не зависит от core: декораторы вешаются на поля, валидация вызывается явно (`validate`/`validateAsync`), сообщения настраиваются через `configureValidation` с резолвером i18n. Типы `accessor`-полей можно не дублировать декораторами — плагин `validation()` из `@ivlev-dev/silent-validation/vite` читает TS-аннотации на сборке и проверяет их в рантайме. Подробнее — [`docs/api/validation.md`](./docs/api/validation.md).
 
 ## Компонент и ViewModel
 
