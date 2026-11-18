@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const names = ["reactivity", "di", "core", "swc", "vite", "server", "router", "silent"];
+const names = ["reactivity", "di", "core", "swc", "vite", "server", "router", "validation", "validation-vite", "silent"];
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const output = mkdtempSync(join(tmpdir(), "silent-install-"));
 const packs = join(output, "packs");

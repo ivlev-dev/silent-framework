@@ -1,11 +1,13 @@
 import type { FieldCondition, InstancePredicate, RuleDecorator } from "./types.js";
-import { decorateField } from "./rule.js";
+import { validateProperty } from "./engine.js";
+import { decorateField, fieldNameOf } from "./rule.js";
 import {
   installCondition,
   installGroups,
   installLabel,
   installOptional,
 } from "./registry.js";
+import { ValidationException } from "./types.js";
 
 export function ValidateIf(
   predicate: InstancePredicate,
@@ -36,4 +38,36 @@ export function Groups(...groups: string[]): RuleDecorator {
   return decorateField(token, (ctor, entryToken, field, fieldName) => {
     installGroups(ctor, entryToken, field, fieldName, groups);
   });
+}
+
+export function ValidateOnSet(): RuleDecorator {
+  return <C extends object, V>(
+    target: ClassAccessorDecoratorTarget<C, V>,
+    context: ClassAccessorDecoratorContext<C, V>,
+  ): ClassAccessorDecoratorResult<C, V> => {
+    if (context.kind !== "accessor") {
+      throw new TypeError(
+        "Валидация поддерживает только stage-3 accessor-поля (public accessor)",
+      );
+    }
+    if (context.private === true) {
+      throw new TypeError("Приватные поля не поддерживаются валидацией");
+    }
+    if (context.static === true) {
+      throw new TypeError("Статические поля не поддерживаются валидацией");
+    }
+    const fieldName = fieldNameOf(context.name);
+    const set = function (this: C, value: V): void {
+      target.set.call(this, value);
+      const result = validateProperty(this, fieldName);
+      if (!result.valid) {
+        throw new ValidationException(result);
+      }
+    };
+    return {
+      get: target.get,
+      set,
+      init: (value: V): V => value,
+    };
+  };
 }

@@ -9,28 +9,106 @@ export interface ValidationPluginOptions {
   readonly exclude?: RegExp;
   readonly tsconfig?: string;
   readonly base?: string;
+  readonly strict?: boolean;
 }
 
 const DEFAULT_INCLUDE = /\.(?:ts|tsx)$/;
 const DEFAULT_EXCLUDE = /node_modules/;
+const PACKAGE_NAME = "@ivlev-dev/silent-validation";
 const NAMESPACE_ALIAS_PREFIX = "__silent_validation_";
 const ACCESSOR_PATTERN = /\baccessor\b/;
 const EXTENDS_PATTERN = /\bextends\b/;
 
-function extendsBase(
-  type: ts.Type,
+function moduleExport(
+  checker: ts.TypeChecker,
+  moduleSymbol: ts.Symbol,
   name: string,
+): ts.Symbol | null {
+  let exports: readonly ts.Symbol[];
+  try {
+    exports = checker.getExportsOfModule(moduleSymbol);
+  } catch {
+    return null;
+  }
+  for (const entry of exports) {
+    const resolved = resolveAlias(checker, entry);
+    if (entry.getName() === name || resolved.getName() === name) {
+      return resolved;
+    }
+  }
+  return null;
+}
+
+function findBaseSymbol(
+  program: ts.Program,
+  checker: ts.TypeChecker,
+  name: string,
+): ts.Symbol | null {
+  const fromSpecifier = (specifier: ts.Expression): ts.Symbol | null => {
+    if (!ts.isStringLiteral(specifier) || specifier.text !== PACKAGE_NAME) {
+      return null;
+    }
+    const moduleSymbol = checker.getSymbolAtLocation(specifier);
+    if (moduleSymbol === undefined) {
+      return null;
+    }
+    return moduleExport(checker, moduleSymbol, name);
+  };
+  for (const sourceFile of program.getSourceFiles()) {
+    if (sourceFile.isDeclarationFile) continue;
+    for (const statement of sourceFile.statements) {
+      if (ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) {
+        const specifier = statement.moduleSpecifier;
+        if (specifier === undefined) continue;
+        const symbol = fromSpecifier(specifier);
+        if (symbol !== null) return symbol;
+      }
+    }
+  }
+  const root = program.getRootFileNames()[0];
+  if (root !== undefined) {
+    const resolved = ts.resolveModuleName(
+      PACKAGE_NAME,
+      root,
+      program.getCompilerOptions(),
+      ts.sys,
+    ).resolvedModule;
+    if (resolved !== undefined) {
+      const sourceFile = program.getSourceFile(resolved.resolvedFileName);
+      if (sourceFile !== undefined) {
+        const moduleSymbol = checker.getSymbolAtLocation(sourceFile);
+        if (moduleSymbol !== undefined) {
+          const symbol = moduleExport(checker, moduleSymbol, name);
+          if (symbol !== null) return symbol;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function extendsTarget(
+  type: ts.Type,
+  checker: ts.TypeChecker,
+  name: string,
+  target: ts.Symbol | null,
   seen: Set<ts.Type>,
 ): boolean {
   if (seen.has(type)) {
     return false;
   }
   seen.add(type);
-  if (type.getSymbol()?.getName() === name) {
-    return true;
-  }
   for (const base of type.getBaseTypes() ?? []) {
-    if (extendsBase(base, name, seen)) {
+    const symbol = base.getSymbol();
+    if (symbol !== undefined) {
+      const matches = target !== null
+        ? symbolsEqual(checker, symbol, target)
+        : resolveAlias(checker, symbol).getName() === name;
+      if (matches) {
+        return true;
+      }
+    }
+    if (extendsTarget(base, checker, name, target, seen)) {
       return true;
     }
   }
@@ -371,8 +449,20 @@ export function validation(options: ValidationPluginOptions = {}): Plugin {
   const include = options.include ?? DEFAULT_INCLUDE;
   const exclude = options.exclude ?? DEFAULT_EXCLUDE;
   const baseName = options.base ?? "ValidationModel";
+  const strict = options.strict === true;
   const programs = new Map<string, ProgramEntry>();
+  const baseSymbols = new WeakMap<ts.Program, ts.Symbol | null>();
+  const decisions = new WeakMap<ts.ClassDeclaration, boolean>();
   let root = process.cwd();
+
+  const baseSymbolFor = (program: ts.Program, checker: ts.TypeChecker): ts.Symbol | null => {
+    if (baseSymbols.has(program)) {
+      return baseSymbols.get(program) ?? null;
+    }
+    const symbol = findBaseSymbol(program, checker, baseName);
+    baseSymbols.set(program, symbol);
+    return symbol;
+  };
 
   const resolveConfigPath = (file: string): string | null => {
     if (options.tsconfig !== undefined) {
@@ -467,8 +557,9 @@ export function validation(options: ValidationPluginOptions = {}): Plugin {
         const sourceFile = program.getSourceFile(file);
         if (sourceFile === undefined) return null;
         const checker = program.getTypeChecker();
+        const baseSymbol = baseSymbolFor(program, checker);
         const resolver = createRuntimeRefResolver(sourceFile, checker);
-        const decisions = new Map<ts.ClassDeclaration, boolean>();
+        const context: { readonly warn?: (message: string) => void } | undefined = this;
         const blocks = generateValidationBlocks({
           sourceFile,
           checker,
@@ -479,10 +570,14 @@ export function validation(options: ValidationPluginOptions = {}): Plugin {
               return cached;
             }
             const type = checker.getTypeAtLocation(declaration);
-            const result = extendsBase(type, baseName, new Set<ts.Type>());
+            const result = extendsTarget(type, checker, baseName, baseSymbol, new Set<ts.Type>());
             decisions.set(declaration, result);
             return result;
           },
+          diagnostics: (message) => {
+            context?.warn?.(message);
+          },
+          strict,
         });
         if (blocks.length === 0) return null;
         const magic = new MagicString(code);

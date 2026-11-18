@@ -1,6 +1,6 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import ts from "typescript";
 import { generateValidationBlocks } from "../src/typegen.js";
@@ -12,23 +12,42 @@ afterAll(() => {
   rmSync(directory, { recursive: true, force: true });
 });
 
-function programFor(source: string): { readonly sourceFile: ts.SourceFile; readonly checker: ts.TypeChecker } {
-  const file = join(directory, `fixture-${Math.random().toString(36).slice(2)}.ts`);
-  writeFileSync(file, source);
-  const program = ts.createProgram([file], {
-    strict: true,
-    target: ts.ScriptTarget.ES2022,
-    module: ts.ModuleKind.ESNext,
-    moduleResolution: ts.ModuleResolutionKind.Bundler,
-    lib: ["lib.es2022.d.ts", "lib.dom.d.ts"],
-    skipLibCheck: true,
-    noEmit: true,
-  });
+const COMPILER_OPTIONS: ts.CompilerOptions = {
+  strict: true,
+  target: ts.ScriptTarget.ES2022,
+  module: ts.ModuleKind.ESNext,
+  moduleResolution: ts.ModuleResolutionKind.Bundler,
+  lib: ["lib.es2022.d.ts", "lib.dom.d.ts"],
+  skipLibCheck: true,
+  noEmit: true,
+};
+
+interface Fixture {
+  readonly sourceFile: ts.SourceFile;
+  readonly checker: ts.TypeChecker;
+}
+
+function projectFor(
+  files: Readonly<Record<string, string>>,
+  entry: string,
+): Fixture {
+  const root = mkdtempSync(join(directory, "case-"));
+  for (const [name, content] of Object.entries(files)) {
+    const file = join(root, name);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, content);
+  }
+  const file = join(root, entry);
+  const program = ts.createProgram([file], COMPILER_OPTIONS);
   const sourceFile = program.getSourceFile(file);
   if (sourceFile === undefined) {
     throw new Error("не удалось создать исходный файл");
   }
   return { sourceFile, checker: program.getTypeChecker() };
+}
+
+function programFor(source: string): Fixture {
+  return projectFor({ "main.ts": source }, "main.ts");
 }
 
 function blocksFor(source: string): readonly ValidationBlock[] {
@@ -44,7 +63,39 @@ function fieldsFor(source: string, index = 0): string {
   const blocks = blocksFor(source);
   expect(blocks.length).toBeGreaterThan(index);
   const code = blocks[index]!.code;
-  const match = /\{ fields: \{(.*)\} \};/.exec(code);
+  const match = /\{ version: 1, fields: \{(.*)\} \};/.exec(code);
+  if (match === null || match[1] === undefined) {
+    throw new Error(`не удалось разобрать блок: ${code}`);
+  }
+  return match[1].trim();
+}
+
+function runtimeRefName(symbol: ts.Symbol): string {
+  for (const declaration of symbol.declarations ?? []) {
+    if (
+      (ts.isClassDeclaration(declaration) || ts.isClassExpression(declaration))
+      && declaration.name !== undefined
+    ) {
+      return declaration.name.text;
+    }
+  }
+  return symbol.getName();
+}
+
+function projectFieldsFor(
+  files: Readonly<Record<string, string>>,
+  entry: string,
+  index = 0,
+): string {
+  const { sourceFile, checker } = projectFor(files, entry);
+  const blocks = generateValidationBlocks({
+    sourceFile,
+    checker,
+    runtimeRef: runtimeRefName,
+  });
+  expect(blocks.length).toBeGreaterThan(index);
+  const code = blocks[index]!.code;
+  const match = /\{ version: 1, fields: \{(.*)\} \};/.exec(code);
   if (match === null || match[1] === undefined) {
     throw new Error(`не удалось разобрать блок: ${code}`);
   }
@@ -259,7 +310,7 @@ class Empty {
       "class Simple {\n"
       + '  accessor email: string = "";\n'
       + "  static {\n"
-      + '    this[Symbol.for("silent.validation.schema")] = { fields: { "email": "string" } };\n'
+      + '    this[Symbol.for("silent.validation.schema")] = { version: 1, fields: { "email": "string" } };\n'
       + "  }\n"
       + "}\n",
     );
@@ -273,7 +324,7 @@ class Empty {
       + "  class Nested {\n"
       + "    accessor size: number = 0;\n"
       + "    static {\n"
-      + '      this[Symbol.for("silent.validation.schema")] = { fields: { "size": "number" } };\n'
+      + '      this[Symbol.for("silent.validation.schema")] = { version: 1, fields: { "size": "number" } };\n'
       + "    }\n"
       + "  }\n"
       + "  return Nested;\n"
@@ -298,5 +349,229 @@ class Empty {
     const applied = applyBlocks(source, blocks);
     expect(applied).toContain('"a": "string"');
     expect(applied).toContain('"b": "number"');
+  });
+
+  it("поддерживает отрицательные и bigint-литералы", () => {
+    const fields = fieldsFor(`
+class Numbers {
+  accessor negative: -1 = -1;
+  accessor bigNegative: -10n = -10n;
+}
+`);
+    expect(fields).toBe('"negative": ["literal",-1], "bigNegative": "bigint"');
+  });
+
+  it("сериализует классы из импорта, реэкспорта и default-экспорта", () => {
+    const fields = projectFieldsFor(
+      {
+        "inner.ts": "export class Imported {\n  accessor id: number = 0;\n}\n",
+        "default.ts": "export default class DefaultInner {\n  accessor flag: boolean = false;\n}\n",
+        "c.ts": 'export class Reexported {\n  accessor name: string = "";\n}\n',
+        "barrel.ts": 'export { Reexported } from "./c";\n',
+        "main.ts": [
+          'import { Imported } from "./inner";',
+          'import DefaultInner from "./default";',
+          'import { Reexported } from "./barrel";',
+          "",
+          "class Holder {",
+          "  accessor imported: Imported = new Imported();",
+          "  accessor defaulted: DefaultInner = new DefaultInner();",
+          "  accessor reexported: Reexported = new Reexported();",
+          "}",
+          "",
+        ].join("\n"),
+      },
+      "main.ts",
+    );
+    expect(fields).toBe(
+      '"imported": ["class",()=>Imported], '
+      + '"defaulted": ["class",()=>DefaultInner], '
+      + '"reexported": ["class",()=>Reexported]',
+    );
+  });
+
+  it("читает значения enum из type-only импорта", () => {
+    const fields = projectFieldsFor(
+      {
+        "roles.ts": [
+          "export enum Role {",
+          '  Admin = "admin",',
+          '  User = "user",',
+          "}",
+          "",
+          "export enum Level {",
+          "  Low = 1,",
+          "  High = 2,",
+          "}",
+          "",
+        ].join("\n"),
+        "main.ts": [
+          'import type { Level, Role } from "./roles";',
+          "",
+          "class Holder {",
+          '  accessor role: Role = "admin" as Role;',
+          "  accessor level: Level = 1 as Level;",
+          "}",
+          "",
+        ].join("\n"),
+      },
+      "main.ts",
+    );
+    expect(fields).toBe(
+      '"role": ["enum",["admin","user"]], "level": ["enum",[1,2]]',
+    );
+  });
+
+  it("сообщает о неподдерживаемом типе поля и продолжает генерацию", () => {
+    const messages: string[] = [];
+    const { sourceFile, checker } = programFor(`
+class Unsupported {
+  accessor data: unknown = undefined;
+  accessor ok: string = "";
+}
+`);
+    const blocks = generateValidationBlocks({
+      sourceFile,
+      checker,
+      runtimeRef: (symbol) => symbol.getName(),
+      diagnostics: (message) => messages.push(message),
+    });
+    expect(blocks).toHaveLength(1);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain("Unsupported.data");
+    expect(messages[0]).toContain("не поддерживается");
+    expect(blocks[0]!.code).toContain('"ok": "string"');
+    expect(blocks[0]!.code).not.toContain('"data"');
+  });
+
+  it("бросает ошибку в strict-режиме", () => {
+    const { sourceFile, checker } = programFor(`
+class Unsupported {
+  accessor data: unknown = undefined;
+}
+`);
+    expect(() => generateValidationBlocks({
+      sourceFile,
+      checker,
+      runtimeRef: (symbol) => symbol.getName(),
+      strict: true,
+    })).toThrow(/Unsupported\.data: тип unknown не поддерживается/);
+  });
+
+  it("диагностирует generic, template, conditional и mapped типы", () => {
+    const messages: string[] = [];
+    const { sourceFile, checker } = programFor(`
+type Wrap<T> = T extends string ? { value: T } : never;
+type Keys<T> = { [K in keyof T]: T[K] };
+type Indexed<T, K extends keyof T> = T[K];
+
+class Generic<T, K extends keyof T> {
+  accessor value: T = null as unknown as T;
+  accessor template: \`id-\${string}\` = "id-1";
+  accessor conditional: Wrap<T> = null as unknown as Wrap<T>;
+  accessor mapped: Keys<T> = null as unknown as Keys<T>;
+  accessor indexed: Indexed<T, K> = null as unknown as Indexed<T, K>;
+}
+`);
+    const blocks = generateValidationBlocks({
+      sourceFile,
+      checker,
+      runtimeRef: (symbol) => symbol.getName(),
+      diagnostics: (message) => messages.push(message),
+    });
+    expect(blocks).toHaveLength(0);
+    expect(messages).toHaveLength(5);
+    expect(messages.join("\n")).toContain("Generic.value");
+    expect(messages.join("\n")).toContain("Generic.template");
+    expect(messages.join("\n")).toContain("Generic.conditional");
+    expect(messages.join("\n")).toContain("Generic.mapped");
+    expect(messages.join("\n")).toContain("Generic.indexed");
+  });
+
+  it("генерирует lazy-узлы для рекурсивных интерфейсов", () => {
+    const blocks = blocksFor(`
+interface LinkedNode {
+  value: string;
+  next: LinkedNode | null;
+}
+
+class Tree {
+  accessor head: LinkedNode | null = null;
+  accessor nodes: LinkedNode[] = [];
+}
+`);
+    expect(blocks).toHaveLength(1);
+    const code = blocks[0]!.code;
+    const node = '["object",{"value":"string","next":["nullable",["lazy",()=>lazy0]]}]';
+    expect(code).toContain(`"head": ["nullable",${node}]`);
+    expect(code).toContain(`"nodes": ["array",${node}]`);
+    expect(code).toContain(`const lazy0 = ${node};`);
+    expect(code.match(/const lazy0/g)).toHaveLength(1);
+  });
+
+  it("закрывает взаимную рекурсию интерфейсов", () => {
+    const code = blocksFor(`
+interface A {
+  name: string;
+  b: B | null;
+}
+
+interface B {
+  count: number;
+  a: A | null;
+}
+
+class Mutual {
+  accessor root: A = { name: "", b: null };
+}
+`)[0]!.code;
+    expect(code).toContain('const lazy0 = ');
+    expect(code).toContain('["lazy",()=>lazy0]');
+  });
+
+  it("не обрезает вложенные интерфейсы на глубине больше четырёх", () => {
+    const fields = fieldsFor(`
+interface L5 { value: string }
+interface L4 { child: L5 }
+interface L3 { child: L4 }
+interface L2 { child: L3 }
+interface L1 { child: L2 }
+interface L0 { child: L1 }
+
+class Deep {
+  accessor root: L0 = null as unknown as L0;
+}
+`);
+    expect(fields).toBe(
+      '"root": ["object",{"child":["object",{"child":["object",{"child":["object",'
+      + '{"child":["object",{"child":["object",{"value":"string"}]}]}]}]}]}]',
+    );
+  });
+
+  it("сериализует rest-кортежи", () => {
+    const fields = fieldsFor(`
+class Tuples {
+  accessor rest: [string, number, ...boolean[]] = ["", 0];
+  accessor optionalRest: [string, number?, ...boolean[]] = [""];
+  accessor readonlyRest: readonly [string, ...number[]] = [""];
+}
+`);
+    expect(fields).toBe(
+      '"rest": ["tuple",["string","number"],"boolean"], '
+      + '"optionalRest": ["tuple",["string",null],"boolean"], '
+      + '"readonlyRest": ["tuple",["string"],"number"]',
+    );
+  });
+
+  it("не ломает обычные и readonly-кортежи", () => {
+    const fields = fieldsFor(`
+class Plain {
+  accessor tuple: [string, number?] = [""];
+  accessor readonlyTuple: readonly [string, number] = ["", 0];
+}
+`);
+    expect(fields).toBe(
+      '"tuple": ["tuple",["string",null]], "readonlyTuple": ["tuple",["string","number"]]',
+    );
   });
 });

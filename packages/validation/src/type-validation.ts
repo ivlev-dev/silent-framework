@@ -7,6 +7,11 @@ import type {
   ValidationError,
 } from "./types.js";
 
+export interface NestedInstance {
+  readonly instance: object;
+  readonly path: string;
+}
+
 export interface TypeValidationContext {
   readonly instance: object;
   readonly field: string;
@@ -14,17 +19,23 @@ export interface TypeValidationContext {
   readonly path: string;
   readonly config: ValidationConfig;
   readonly visiting?: WeakSet<object>;
+  readonly nested?: NestedInstance[] | undefined;
 }
 
-interface RunContext {
+interface ErrorContext {
   readonly instance: object;
   readonly field: string;
   readonly label: string;
   readonly path: string;
   readonly config: ValidationConfig;
   readonly locale: string;
-  readonly visiting: WeakSet<object>;
   readonly index: number | undefined;
+}
+
+interface RunContext extends ErrorContext {
+  readonly visiting: WeakSet<object>;
+  readonly nested: NestedInstance[] | undefined;
+  readonly lazyActive: Map<TypeSchema, Set<unknown>>;
 }
 
 type InstanceCtor = new (...args: never[]) => unknown;
@@ -212,6 +223,52 @@ function matchesPrimitive(value: unknown, schema: string): boolean {
   }
 }
 
+type FastPrimitiveSchema =
+  | "string"
+  | "number"
+  | "boolean"
+  | "bigint"
+  | "symbol"
+  | "object"
+  | "function";
+
+function isFastPrimitiveName(name: string): name is FastPrimitiveSchema {
+  switch (name) {
+    case "string":
+    case "number":
+    case "boolean":
+    case "bigint":
+    case "symbol":
+    case "object":
+    case "function":
+      return true;
+    default:
+      return false;
+  }
+}
+
+export function validateFastPrimitive(
+  value: unknown,
+  schema: TypeSchema,
+  context: TypeValidationContext,
+): ValidationError | null | undefined {
+  if (typeof schema !== "string" || !isFastPrimitiveName(schema)) {
+    return undefined;
+  }
+  if (matchesPrimitive(value, schema)) {
+    return null;
+  }
+  return createError(value, schema, {
+    instance: context.instance,
+    field: context.field,
+    label: context.label,
+    path: context.path,
+    config: context.config,
+    locale: context.config.locale ?? DEFAULT_LOCALE,
+    index: undefined,
+  });
+}
+
 function formatLiteral(value: string | number | boolean): string {
   return typeof value === "string" ? JSON.stringify(value) : String(value);
 }
@@ -225,50 +282,69 @@ function ctorName(getCtor: () => Function): string {
   }
 }
 
-function tupleName(items: readonly (TypeSchema | null)[]): string {
-  const parts = items.map((item) => (item === null ? "?" : typeName(item)));
+function tupleName(items: readonly (TypeSchema | null)[], rest: TypeSchema | undefined, depth: number): string {
+  const parts = items.map((item) => (item === null ? "?" : typeNameAt(item, depth + 1)));
+  if (rest !== undefined) {
+    parts.push(`...${typeNameAt(rest, depth + 1)}[]`);
+  }
   return `[${parts.join(", ")}]`;
 }
 
-export function typeName(schema: TypeSchema): string {
+const MAX_NAME_DEPTH = 8;
+
+function typeNameAt(schema: TypeSchema, depth: number): string {
   if (typeof schema === "string") {
     return PRIMITIVE_NAMES[schema] ?? schema;
   }
   switch (schema[0]) {
     case "array":
-      return `Array<${typeName(schema[1])}>`;
+      return `Array<${typeNameAt(schema[1], depth + 1)}>`;
     case "tuple":
-      return tupleName(schema[1]);
+      return tupleName(schema[1], schema[2], depth);
     case "union":
-      return schema[1].map((branch) => typeName(branch)).join(" | ");
+      return schema[1].map((branch) => typeNameAt(branch, depth + 1)).join(" | ");
     case "intersection":
-      return schema[1].map((branch) => typeName(branch)).join(" & ");
+      return schema[1].map((branch) => typeNameAt(branch, depth + 1)).join(" & ");
     case "literal":
       return formatLiteral(schema[1]);
     case "enum":
       return schema[1].map((item) => formatLiteral(item)).join(" | ");
     case "class":
       return ctorName(schema[1]);
+    case "lazy": {
+      if (depth >= MAX_NAME_DEPTH) {
+        return "object";
+      }
+      try {
+        return typeNameAt(schema[1](), depth + 1);
+      } catch {
+        return "object";
+      }
+    }
     case "object":
       return "object";
     case "record":
-      return `Record<string, ${typeName(schema[1])}>`;
+      return `Record<string, ${typeNameAt(schema[1], depth + 1)}>`;
     case "mapof":
-      return `Map<${typeName(schema[1])}, ${typeName(schema[2])}>`;
+      return `Map<${typeNameAt(schema[1], depth + 1)}, ${typeNameAt(schema[2], depth + 1)}>`;
     case "setof":
-      return `Set<${typeName(schema[1])}>`;
+      return `Set<${typeNameAt(schema[1], depth + 1)}>`;
     case "optional":
     case "nullable":
-      return typeName(schema[1]);
+      return typeNameAt(schema[1], depth + 1);
     default:
       return "unknown";
   }
 }
 
+export function typeName(schema: TypeSchema): string {
+  return typeNameAt(schema, 0);
+}
+
 function messageContext(
   value: unknown,
   schema: TypeSchema,
-  ctx: RunContext,
+  ctx: ErrorContext,
 ): MessageContext {
   const params: Readonly<Record<string, unknown>> = { type: typeName(schema) };
   return {
@@ -288,7 +364,7 @@ function messageContext(
 function createError(
   value: unknown,
   schema: TypeSchema,
-  ctx: RunContext,
+  ctx: ErrorContext,
 ): ValidationError {
   const context = messageContext(value, schema, ctx);
   return {
@@ -461,12 +537,17 @@ function validateSet(
 function validateTuple(
   value: readonly unknown[],
   items: readonly (TypeSchema | null)[],
+  rest: TypeSchema | undefined,
   schema: TypeSchema,
   ctx: RunContext,
   depth: number,
 ): ValidationError[] {
   const required = items.filter((item) => item !== null).length;
-  if (value.length < required || value.length > items.length) {
+  if (rest === undefined) {
+    if (value.length < required || value.length > items.length) {
+      return [createError(value, schema, ctx)];
+    }
+  } else if (value.length < required) {
     return [createError(value, schema, ctx)];
   }
   if (!enter(value, ctx)) {
@@ -484,6 +565,14 @@ function validateTuple(
       errors.push(
         ...validateSchema(value[index], itemSchema, childContext(ctx, path, undefined, index), depth + 1),
       );
+    }
+    if (rest !== undefined) {
+      for (let index = items.length; index < value.length; index += 1) {
+        const path = `${ctx.path}[${index}]`;
+        errors.push(
+          ...validateSchema(value[index], rest, childContext(ctx, path, undefined, index), depth + 1),
+        );
+      }
     }
   } finally {
     leave(value, ctx);
@@ -520,13 +609,45 @@ function validateSchema(
       if (!Array.isArray(value)) {
         return [createError(value, schema, ctx)];
       }
-      return validateTuple(value as readonly unknown[], items, schema, ctx, depth);
+      return validateTuple(value as readonly unknown[], items, schema[2], schema, ctx, depth);
+    }
+    case "lazy": {
+      const getSchema = schema[1];
+      const active = ctx.lazyActive.get(schema);
+      if (active !== undefined && active.has(value)) {
+        return [];
+      }
+      let resolved: TypeSchema;
+      try {
+        resolved = getSchema();
+      } catch {
+        return [createError(value, schema, ctx)];
+      }
+      if (active === undefined) {
+        const created = new Set<unknown>([value]);
+        ctx.lazyActive.set(schema, created);
+        try {
+          return validateSchema(value, resolved, ctx, depth + 1);
+        } finally {
+          ctx.lazyActive.delete(schema);
+        }
+      }
+      active.add(value);
+      try {
+        return validateSchema(value, resolved, ctx, depth + 1);
+      } finally {
+        active.delete(value);
+      }
     }
     case "union": {
       const branches = schema[1];
       for (const branch of branches) {
+        const mark = ctx.nested?.length ?? 0;
         if (validateSchema(value, branch, ctx, depth + 1).length === 0) {
           return [];
+        }
+        if (ctx.nested !== undefined && ctx.nested.length > mark) {
+          ctx.nested.length = mark;
         }
       }
       return [createError(value, schema, ctx)];
@@ -556,6 +677,10 @@ function validateSchema(
         return [createError(value, schema, ctx)];
       }
       const target = value as object;
+      if (ctx.nested !== undefined) {
+        ctx.nested.push({ instance: target, path: ctx.path });
+        return [];
+      }
       const fields = classFields(target, ctor);
       if (fields === null || depth + 1 > MAX_DEPTH) {
         return [];
@@ -638,6 +763,8 @@ export function validateType(
     config: context.config,
     locale: context.config.locale ?? DEFAULT_LOCALE,
     visiting: context.visiting ?? new WeakSet<object>(),
+    nested: context.nested,
+    lazyActive: new Map<TypeSchema, Set<unknown>>(),
     index: undefined,
   };
   const errors = validateSchema(value, schema, ctx, 0);

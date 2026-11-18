@@ -87,7 +87,7 @@ describe("валидация типов из схемы", () => {
     const result = validate(profile);
     expect(paths(result)).toEqual(["address.city"]);
     expect(result.errors[0]).toMatchObject({
-      field: "address",
+      field: "city",
       label: "city",
       params: { type: "string" },
     });

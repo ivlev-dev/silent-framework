@@ -33,14 +33,14 @@ const result: ValidationResult = validate(user);
 ```ts
 import { defineConfig } from "vite";
 import { silent } from "@ivlev-dev/silent-vite";
-import { validation } from "@ivlev-dev/silent-validation/vite";
+import { validation } from "@ivlev-dev/silent-validation-vite";
 
 export default defineConfig({
   plugins: [silent(), validation()],
 });
 ```
 
-Плагин поставляется из subpath `@ivlev-dev/silent-validation/vite`. Опции:
+Плагин поставляется отдельным пакетом `@ivlev-dev/silent-validation-vite` (устанавливается дополнительно к `@ivlev-dev/silent-validation`). Опции:
 
 | Опция | Тип | По умолчанию | Назначение |
 | --- | --- | --- | --- |
@@ -86,7 +86,7 @@ const result = validate(order);
 
 **Отключение.** `validate(instance, { types: false })` оставляет только правила декораторов. По умолчанию `types: true`. Каскад управляется `cascade` (по умолчанию `true`) глобально через `configureValidation` или на вызов.
 
-**Поддерживаемые типы.** Примитивы (`string`, `number`, `boolean`, `bigint`, `symbol`, `object`, `function`, `undefined`, `null`, `void`, `never`), литералы, union и intersection (включая `| null` и `| undefined`), массивы и `ReadonlyArray`, кортежи с optional-элементами, `Record` и строковые index-signature, `Map`/`WeakMap`/`Set`/`WeakSet`, `Promise`, `Date`, `RegExp`, `Error` и подклассы, `ArrayBuffer`/`SharedArrayBuffer`/`DataView`, typed arrays, `URL`/`URLSearchParams`, `Iterable`/`Iterator`/`AsyncIterable`/`AsyncIterator`, значения `enum`, пользовательские классы (вложенная проверка экземпляра) и структурные интерфейсы/type alias’ы (глубина 4).
+**Поддерживаемые типы.** Примитивы (`string`, `number`, `boolean`, `bigint`, `symbol`, `object`, `function`, `undefined`, `null`, `void`, `never`), литералы, union и intersection (включая `| null` и `| undefined`), массивы и `ReadonlyArray`, кортежи с optional-элементами и rest-хвостом (`[string, ...number[]]`), `Record` и строковые index-signature, `Map`/`WeakMap`/`Set`/`WeakSet`, `Promise`, `Date`, `RegExp`, `Error` и подклассы, `ArrayBuffer`/`SharedArrayBuffer`/`DataView`, typed arrays, `URL`/`URLSearchParams`, `Iterable`/`Iterator`/`AsyncIterable`/`AsyncIterator`, значения `enum`, пользовательские классы (вложенная проверка экземпляра) и структурные интерфейсы/type alias’ы (включая рекурсивные — через ленивые ссылки).
 
 **Стоимость.** Рантайм — около 3 µs на `validate` для 6 полей с вложенным классом и массивом; `types: false` — около 0.15 µs. TypeScript Program создаётся один раз на проект (~0.3–0.4 s холодная сборка для 120 файлов), повторные сборки/HMR используют кеш плагина.
 
@@ -122,6 +122,102 @@ function validateAsync(
 ```ts
 const result = await validateAsync(user, { groups: ["admin"] });
 ```
+
+### `validateProperty`
+
+```ts
+function validateProperty(
+  instance: object,
+  field: string,
+  options?: ValidationOptions,
+): ValidationResult;
+```
+
+Синхронно проверяет одно поле экземпляра по его правилам и возвращает `ValidationResult`. Остальные поля не проверяются.
+
+```ts
+const result = validateProperty(user, "email");
+```
+
+### `validatePropertyAsync`
+
+```ts
+function validatePropertyAsync(
+  instance: object,
+  field: string,
+  options?: ValidationOptions,
+): Promise<ValidationResult>;
+```
+
+Асинхронный вариант `validateProperty`: ожидает асинхронные правила выбранного поля.
+
+### `validatePartial`
+
+```ts
+function validatePartial(
+  instance: object,
+  fields: readonly string[],
+  options?: ValidationOptions,
+): ValidationResult;
+```
+
+Синхронно проверяет только перечисленные поля: схему из типов, декораторы и вложенные объекты. Неизвестные имена игнорируются, пустой список даёт валидный результат.
+
+```ts
+const result = validatePartial(user, ["email", "address"]);
+```
+
+### `validatePartialAsync`
+
+```ts
+function validatePartialAsync(
+  instance: object,
+  fields: readonly string[],
+  options?: ValidationOptions,
+): Promise<ValidationResult>;
+```
+
+Асинхронный вариант `validatePartial`: ожидает асинхронные правила и асинхронный `MessageResolver`.
+
+### `safeParse`
+
+```ts
+type SafeParseSuccess<T extends object> = {
+  readonly success: true;
+  readonly data: T;
+  readonly errors: readonly [];
+};
+type SafeParseFailure = {
+  readonly success: false;
+  readonly errors: readonly ValidationError[];
+};
+type SafeParseResult<T extends object> = SafeParseSuccess<T> | SafeParseFailure;
+
+function safeParse<T extends object>(
+  instance: T,
+  options?: ValidationOptions,
+): SafeParseResult<T>;
+```
+
+Проверяет экземпляр и не бросает `ValidationException`: при успехе возвращает `{ success: true, data: instance, errors: [] }`, при ошибках — `{ success: false, errors }`. `data` — исходный объект без копирования.
+
+```ts
+const result = safeParse(user);
+if (!result.success) {
+  console.log(result.errors[0]?.message);
+}
+```
+
+### `safeParseAsync`
+
+```ts
+function safeParseAsync<T extends object>(
+  instance: T,
+  options?: ValidationOptions,
+): Promise<SafeParseResult<T>>;
+```
+
+Асинхронный вариант `safeParse`.
 
 ### `validateOrThrow`
 
@@ -690,6 +786,24 @@ function Groups(...groups: string[]): RuleDecorator;
 
 Относит поле к группам. Поле проверяется, если `ValidationOptions.groups` пуст или пересекается с группами поля; поле без групп проверяется всегда.
 
+### `ValidateOnSet`
+
+```ts
+function ValidateOnSet(): RuleDecorator;
+```
+
+Включает проверку поля при каждом присваивании: после записи значения выполняется `validateProperty` для этого поля, а при ошибках бросается `ValidationException`. Валидация при инициализации поля не запускается; невалидное значение остаётся в поле.
+
+```ts
+class User {
+  @ValidateOnSet()
+  @IsEmail()
+  public accessor email: string = "";
+}
+```
+
+Ограничение: работает только с синхронными правилами; асинхронное правило приводит к `AsyncRuleError`.
+
 ## Типы
 
 ### `ValidationModel`
@@ -742,6 +856,37 @@ interface ValidationError {
 
 Ошибка одного правила. `path` содержит полный путь (`address.city`, `items[2].name`), `index` заполняется для ошибок элементов коллекций.
 
+### `SafeParseSuccess`
+
+```ts
+type SafeParseSuccess<T extends object> = {
+  readonly success: true;
+  readonly data: T;
+  readonly errors: readonly [];
+};
+```
+
+Успешный результат `safeParse`: исходный экземпляр без копирования и пустой список ошибок.
+
+### `SafeParseFailure`
+
+```ts
+type SafeParseFailure = {
+  readonly success: false;
+  readonly errors: readonly ValidationError[];
+};
+```
+
+Неуспешный результат `safeParse` без исключения.
+
+### `SafeParseResult`
+
+```ts
+type SafeParseResult<T extends object> = SafeParseSuccess<T> | SafeParseFailure;
+```
+
+Объединение успешного и неуспешного результатов `safeParse`/`safeParseAsync`. Дискриминант — `success`.
+
 ### `ValidationConfig`
 
 ```ts
@@ -787,10 +932,12 @@ type MessageFactory = (context: MessageContext) => string;
 ### `MessageResolver`
 
 ```ts
-type MessageResolver = (context: MessageContext) => string | undefined;
+type MessageResolver = (
+  context: MessageContext,
+) => string | undefined | Promise<string | undefined>;
 ```
 
-Резолвер сообщений (например, обёртка над i18next). Возвращает строку или `undefined`, чтобы передать формирование сообщения каталогу. Строка резолвера интерполируется.
+Резолвер сообщений (например, обёртка над i18next). Возвращает строку или `undefined`, чтобы передать формирование сообщения каталогу. Строка резолвера интерполируется. Асинхронный резолвер поддерживается только в `validateAsync` и других async-функциях; синхронный `validate` в этом случае бросает `Error`.
 
 ```ts
 configureValidation({
@@ -798,6 +945,16 @@ configureValidation({
   resolve: ({ key, params, locale }) => i18next.t(key, { ...params, lng: locale }),
 });
 ```
+
+### `I18nextLike`
+
+```ts
+interface I18nextLike {
+  t(key: string, options?: Readonly<Record<string, unknown>>): string;
+}
+```
+
+Минимальный структурный интерфейс i18next для `createI18nextResolver`: достаточно метода `t`. Зависимости от пакета i18next нет.
 
 ### `RuleOptions`
 
@@ -847,6 +1004,26 @@ class AsyncRuleError extends Error {
 
 Бросается синхронным `validate`, если правило вернуло промис. Содержит имя поля и правила.
 
+## Функции сообщений
+
+### `createI18nextResolver`
+
+```ts
+function createI18nextResolver(
+  i18n: I18nextLike,
+  options?: { readonly keyPrefix?: string },
+): MessageResolver;
+```
+
+Адаптер i18next: резолвер вызывает `i18n.t(prefix + key, { ...params, label, defaultValue })`, где `defaultValue` — шаблон из встроенного каталога. Если перевод пустой или вернулся сам ключ, используется встроенное сообщение.
+
+```ts
+import { configureValidation, createI18nextResolver } from "@ivlev-dev/silent-validation";
+import i18next from "i18next";
+
+configureValidation({ resolve: createI18nextResolver(i18next) });
+```
+
 ## Константы
 
 ### `DEFAULT_LOCALE`
@@ -866,6 +1043,8 @@ const validationMessages: Readonly<
 ```
 
 Встроенные каталоги сообщений `ru` и `en`. Ключи имеют вид `validation.<rule>`, шаблоны поддерживают `{label}`, `{value}`, `{field}`, `{index}` и параметры правила (`{min}`, `{max}` и т. д.).
+
+Для правил размера и длины есть плюральные варианты с суффиксами категорий `Intl.PluralRules`: `validation.arrayMinSize_one`, `_few`, `_many` для `ru` и `_one`/`_other` для `en` (аналогично `arrayMaxSize`, `minLength`, `maxLength`). Нужная форма выбирается по числу: `params.count`, затем `min`, `max`, `length`, затем число из значения или длина массива/строки.
 
 ```ts
 const template = validationMessages.en?.["validation.min"];

@@ -10,6 +10,8 @@ export interface ValidationCodegenOptions {
   readonly checker: ts.TypeChecker;
   readonly runtimeRef: (symbol: ts.Symbol) => string;
   readonly shouldGenerate?: ((declaration: ts.ClassDeclaration) => boolean) | undefined;
+  readonly diagnostics?: ((message: string) => void) | undefined;
+  readonly strict?: boolean | undefined;
 }
 
 type PrimitiveName =
@@ -58,6 +60,10 @@ interface ObjectField {
   readonly schema: SchemaNode;
 }
 
+interface LazyCell {
+  node: SchemaNode | null;
+}
+
 interface BooleanLiteralType {
   readonly intrinsicName?: string;
 }
@@ -65,7 +71,7 @@ interface BooleanLiteralType {
 type SchemaNode =
   | { readonly kind: "primitive"; readonly name: PrimitiveName }
   | { readonly kind: "array"; readonly element: SchemaNode }
-  | { readonly kind: "tuple"; readonly elements: readonly (SchemaNode | null)[] }
+  | { readonly kind: "tuple"; readonly elements: readonly (SchemaNode | null)[]; readonly rest: SchemaNode | null }
   | { readonly kind: "union"; readonly members: readonly SchemaNode[] }
   | { readonly kind: "intersection"; readonly members: readonly SchemaNode[] }
   | { readonly kind: "literal"; readonly value: string | number | boolean }
@@ -76,16 +82,21 @@ type SchemaNode =
   | { readonly kind: "mapof"; readonly key: SchemaNode; readonly value: SchemaNode }
   | { readonly kind: "setof"; readonly element: SchemaNode }
   | { readonly kind: "optional"; readonly inner: SchemaNode }
-  | { readonly kind: "nullable"; readonly inner: SchemaNode };
+  | { readonly kind: "nullable"; readonly inner: SchemaNode }
+  | { readonly kind: "lazy"; readonly cell: LazyCell };
 
 interface SerializeState {
   readonly checker: ts.TypeChecker;
   readonly runtimeRef: (symbol: ts.Symbol) => string;
   readonly seen: Set<ts.Type>;
+  readonly cache: WeakMap<ts.Type, SchemaNode | null>;
+  readonly lazy: Map<ts.Type, LazyCell>;
+  readonly queue: ts.Type[];
+  depth: number;
 }
 
 const SCHEMA_KEY = "silent.validation.schema";
-const MAX_DEPTH = 4;
+const MAX_DEPTH = 64;
 const INDENT_UNIT = "  ";
 
 const BUILTIN_NAMES: Readonly<Record<string, PrimitiveName>> = {
@@ -277,7 +288,6 @@ function booleanLiteralValue(type: ts.Type): boolean | null {
 function serializeUnion(
   type: ts.UnionType,
   state: SerializeState,
-  depth: number,
 ): SchemaNode | null {
   const rest: ts.Type[] = [];
   let optional = false;
@@ -313,14 +323,14 @@ function serializeUnion(
     if (values !== null) {
       base = { kind: "enum", values };
     } else if (rest.length === 1) {
-      base = serializeType(rest[0]!, state, depth);
+      base = serializeType(rest[0]!, state);
     } else {
       const members: SchemaNode[] = [];
       if (hasBoolean) {
         members.push(primitive("boolean"));
       }
       for (const member of rest) {
-        const schema = serializeType(member, state, depth);
+        const schema = serializeType(member, state);
         if (schema === null) {
           return null;
         }
@@ -364,11 +374,10 @@ function mergeObjects(members: readonly SchemaNode[]): readonly SchemaNode[] {
 function serializeIntersection(
   type: ts.IntersectionType,
   state: SerializeState,
-  depth: number,
 ): SchemaNode | null {
   const members: SchemaNode[] = [];
   for (const member of type.types) {
-    const schema = serializeType(member, state, depth);
+    const schema = serializeType(member, state);
     if (schema === null) {
       return null;
     }
@@ -384,21 +393,48 @@ function serializeIntersection(
 function serializeTuple(
   type: ts.TypeReference,
   state: SerializeState,
-  depth: number,
 ): SchemaNode | null {
   const args = state.checker.getTypeArguments(type);
   const target = type.target as ts.TupleType;
   const elementFlags = target.elementFlags;
+  let restIndex = -1;
   let variadic = false;
-  for (const flag of elementFlags) {
-    if ((flag & (ts.ElementFlags.Rest | ts.ElementFlags.Variadic)) !== 0) {
+  for (let index = 0; index < elementFlags.length; index += 1) {
+    const flag = elementFlags[index];
+    if (flag === undefined) {
+      continue;
+    }
+    if ((flag & ts.ElementFlags.Variadic) !== 0) {
       variadic = true;
     }
+    if ((flag & ts.ElementFlags.Rest) !== 0) {
+      restIndex = index;
+    }
   }
-  if (variadic) {
+  if (!variadic && restIndex >= 0 && restIndex === args.length - 1) {
+    const elements: (SchemaNode | null)[] = [];
+    for (let index = 0; index < restIndex; index += 1) {
+      const flag = elementFlags[index];
+      if (flag !== undefined && (flag & ts.ElementFlags.Optional) !== 0) {
+        elements.push(null);
+        continue;
+      }
+      const schema = serializeType(args[index]!, state);
+      if (schema === null) {
+        return null;
+      }
+      elements.push(schema);
+    }
+    const rest = serializeType(args[restIndex]!, state);
+    if (rest === null) {
+      return null;
+    }
+    return { kind: "tuple", elements, rest };
+  }
+  if (variadic || restIndex >= 0) {
     const elements: SchemaNode[] = [];
     for (const arg of args) {
-      const schema = serializeType(arg, state, depth);
+      const schema = serializeType(arg, state);
       if (schema === null) {
         return null;
       }
@@ -414,33 +450,44 @@ function serializeTuple(
       elements.push(null);
       continue;
     }
-    const schema = serializeType(args[index]!, state, depth);
+    const schema = serializeType(args[index]!, state);
     if (schema === null) {
       return null;
     }
     elements.push(schema);
   }
-  return { kind: "tuple", elements };
+  return { kind: "tuple", elements, rest: null };
+}
+
+function lazyCell(type: ts.Type, state: SerializeState): LazyCell {
+  const existing = state.lazy.get(type);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const cell: LazyCell = { node: null };
+  state.lazy.set(type, cell);
+  state.queue.push(type);
+  return cell;
 }
 
 function serializeObjectProperties(
   type: ts.Type,
   state: SerializeState,
-  depth: number,
 ): SchemaNode | null {
-  if (depth > MAX_DEPTH) {
-    return null;
-  }
   if (state.seen.has(type)) {
-    return null;
+    return { kind: "lazy", cell: lazyCell(type, state) };
+  }
+  if (state.depth >= MAX_DEPTH) {
+    return { kind: "lazy", cell: lazyCell(type, state) };
   }
   state.seen.add(type);
+  state.depth += 1;
   try {
     const fields: ObjectField[] = [];
     for (const property of state.checker.getPropertiesOfType(type)) {
       const declaration = property.valueDeclaration ?? property.declarations?.[0];
       const propertyType = state.checker.getTypeOfSymbol(property);
-      let schema = serializeType(propertyType, state, depth + 1);
+      let schema = serializeType(propertyType, state);
       if (schema === null) {
         continue;
       }
@@ -453,6 +500,7 @@ function serializeObjectProperties(
     }
     return { kind: "object", fields };
   } finally {
+    state.depth -= 1;
     state.seen.delete(type);
   }
 }
@@ -460,10 +508,9 @@ function serializeObjectProperties(
 function serializeObject(
   type: ts.Type,
   state: SerializeState,
-  depth: number,
 ): SchemaNode | null {
   if (state.checker.isTupleType(type)) {
-    return serializeTuple(type as ts.TypeReference, state, depth);
+    return serializeTuple(type as ts.TypeReference, state);
   }
   const args = typeArguments(type, state.checker);
   const names = symbolNames(type);
@@ -472,7 +519,7 @@ function serializeObject(
     if (element === undefined) {
       return null;
     }
-    const schema = serializeType(element, state, depth);
+    const schema = serializeType(element, state);
     return schema === null ? null : { kind: "array", element: schema };
   }
   if (names.includes("Map") || names.includes("WeakMap") || names.includes("ReadonlyMap")) {
@@ -481,8 +528,8 @@ function serializeObject(
     if (key === undefined || value === undefined) {
       return primitive(names.includes("WeakMap") ? "weakmap" : "map");
     }
-    const keySchema = serializeType(key, state, depth);
-    const valueSchema = serializeType(value, state, depth);
+    const keySchema = serializeType(key, state);
+    const valueSchema = serializeType(value, state);
     if (keySchema === null || valueSchema === null) {
       return null;
     }
@@ -493,7 +540,7 @@ function serializeObject(
     if (element === undefined) {
       return primitive(names.includes("WeakSet") ? "weakset" : "set");
     }
-    const schema = serializeType(element, state, depth);
+    const schema = serializeType(element, state);
     return schema === null ? null : { kind: "setof", element: schema };
   }
   if (names.includes("Promise")) {
@@ -516,13 +563,13 @@ function serializeObject(
     return primitive("function");
   }
   if (names.includes("Record") && args.length === 2) {
-    const valueSchema = serializeType(args[1]!, state, depth);
+    const valueSchema = serializeType(args[1]!, state);
     return valueSchema === null ? null : { kind: "record", value: valueSchema };
   }
   const properties = state.checker.getPropertiesOfType(type);
   const stringIndex = state.checker.getIndexTypeOfType(type, ts.IndexKind.String);
   if (properties.length === 0 && stringIndex !== undefined) {
-    const valueSchema = serializeType(stringIndex, state, depth);
+    const valueSchema = serializeType(stringIndex, state);
     return valueSchema === null ? null : { kind: "record", value: valueSchema };
   }
   const symbol = resolveSymbol(type.getSymbol(), state.checker);
@@ -533,10 +580,10 @@ function serializeObject(
     }
     return { kind: "class", reference: state.runtimeRef(symbol) };
   }
-  return serializeObjectProperties(type, state, depth);
+  return serializeObjectProperties(type, state);
 }
 
-function serializeType(type: ts.Type, state: SerializeState, depth: number): SchemaNode | null {
+function serializeTypeUncached(type: ts.Type, state: SerializeState): SchemaNode | null {
   const flags = type.flags;
   if ((flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.TypeParameter)) !== 0) {
     return null;
@@ -564,10 +611,10 @@ function serializeType(type: ts.Type, state: SerializeState, depth: number): Sch
     return values === null ? null : { kind: "enum", values };
   }
   if ((flags & ts.TypeFlags.Union) !== 0) {
-    return serializeUnion(type as ts.UnionType, state, depth);
+    return serializeUnion(type as ts.UnionType, state);
   }
   if ((flags & ts.TypeFlags.Intersection) !== 0) {
-    return serializeIntersection(type as ts.IntersectionType, state, depth);
+    return serializeIntersection(type as ts.IntersectionType, state);
   }
   if ((flags & ts.TypeFlags.Enum) !== 0) {
     const values = enumValuesOfSymbol(type, state.checker);
@@ -590,42 +637,150 @@ function serializeType(type: ts.Type, state: SerializeState, depth: number): Sch
     return primitive("null");
   }
   if ((flags & ts.TypeFlags.Object) !== 0) {
-    return serializeObject(type, state, depth);
+    const object = type as ts.ObjectType;
+    if (
+      (object.objectFlags & ts.ObjectFlags.Mapped) !== 0
+      && state.checker.getPropertiesOfType(type).length === 0
+      && state.checker.getIndexTypeOfType(type, ts.IndexKind.String) === undefined
+      && state.checker.getIndexTypeOfType(type, ts.IndexKind.Number) === undefined
+    ) {
+      return null;
+    }
+    return serializeObject(type, state);
   }
   return null;
 }
 
-function renderNode(node: SchemaNode): string {
+function serializeType(type: ts.Type, state: SerializeState): SchemaNode | null {
+  const cacheable = !state.seen.has(type);
+  if (cacheable) {
+    const cached = state.cache.get(type);
+    if (cached !== undefined) {
+      return cached;
+    }
+  }
+  const node = serializeTypeUncached(type, state);
+  if (cacheable) {
+    state.cache.set(type, node);
+  }
+  return node;
+}
+
+function formatTuple(node: Extract<SchemaNode, { kind: "tuple" }>, names: ReadonlyMap<LazyCell, string>): string {
+  const elements = node.elements
+    .map((element) => (element === null ? "null" : renderNode(element, names)))
+    .join(",");
+  if (node.rest === null) {
+    return `["tuple",[${elements}]]`;
+  }
+  return `["tuple",[${elements}],${renderNode(node.rest, names)}]`;
+}
+
+function renderNode(node: SchemaNode, names: ReadonlyMap<LazyCell, string>): string {
   switch (node.kind) {
     case "primitive":
       return JSON.stringify(node.name);
     case "array":
-      return `["array",${renderNode(node.element)}]`;
+      return `["array",${renderNode(node.element, names)}]`;
     case "tuple":
-      return `["tuple",[${node.elements.map((element) => (element === null ? "null" : renderNode(element))).join(",")}]]`;
+      return formatTuple(node, names);
     case "union":
-      return `["union",[${node.members.map(renderNode).join(",")}]]`;
+      return `["union",[${node.members.map((member) => renderNode(member, names)).join(",")}]]`;
     case "intersection":
-      return `["intersection",[${node.members.map(renderNode).join(",")}]]`;
+      return `["intersection",[${node.members.map((member) => renderNode(member, names)).join(",")}]]`;
     case "literal":
       return `["literal",${JSON.stringify(node.value)}]`;
     case "enum":
       return `["enum",[${node.values.map((value) => JSON.stringify(value)).join(",")}]]`;
     case "class":
       return `["class",()=>${node.reference}]`;
+    case "lazy":
+      return `["lazy",()=>${names.get(node.cell) ?? "undefined"}]`;
     case "object":
-      return `["object",{${node.fields.map((field) => `${JSON.stringify(field.name)}:${renderNode(field.schema)}`).join(",")}}]`;
+      return `["object",{${node.fields.map((field) => `${JSON.stringify(field.name)}:${renderNode(field.schema, names)}`).join(",")}}]`;
     case "record":
-      return `["record",${renderNode(node.value)}]`;
+      return `["record",${renderNode(node.value, names)}]`;
     case "mapof":
-      return `["mapof",${renderNode(node.key)},${renderNode(node.value)}]`;
+      return `["mapof",${renderNode(node.key, names)},${renderNode(node.value, names)}]`;
     case "setof":
-      return `["setof",${renderNode(node.element)}]`;
+      return `["setof",${renderNode(node.element, names)}]`;
     case "optional":
-      return `["optional",${renderNode(node.inner)}]`;
+      return `["optional",${renderNode(node.inner, names)}]`;
     case "nullable":
-      return `["nullable",${renderNode(node.inner)}]`;
+      return `["nullable",${renderNode(node.inner, names)}]`;
   }
+}
+
+interface RenderedFields {
+  readonly fields: string;
+  readonly definitions: readonly string[];
+}
+
+function renderFields(entries: readonly ObjectField[]): RenderedFields {
+  const names = new Map<LazyCell, string>();
+  const collect = (node: SchemaNode): void => {
+    switch (node.kind) {
+      case "array":
+        collect(node.element);
+        return;
+      case "tuple":
+        for (const element of node.elements) {
+          if (element !== null) {
+            collect(element);
+          }
+        }
+        if (node.rest !== null) {
+          collect(node.rest);
+        }
+        return;
+      case "union":
+      case "intersection":
+        for (const member of node.members) {
+          collect(member);
+        }
+        return;
+      case "object":
+        for (const field of node.fields) {
+          collect(field.schema);
+        }
+        return;
+      case "record":
+        collect(node.value);
+        return;
+      case "mapof":
+        collect(node.key);
+        collect(node.value);
+        return;
+      case "setof":
+        collect(node.element);
+        return;
+      case "optional":
+      case "nullable":
+        collect(node.inner);
+        return;
+      case "lazy":
+        if (names.has(node.cell)) {
+          return;
+        }
+        names.set(node.cell, `lazy${names.size}`);
+        if (node.cell.node !== null) {
+          collect(node.cell.node);
+        }
+        return;
+      default:
+        return;
+    }
+  };
+  for (const entry of entries) {
+    collect(entry.schema);
+  }
+  const definitions = [...names].map(
+    ([cell, name]) => `const ${name} = ${renderNode(cell.node ?? primitive("object"), names)};`,
+  );
+  const fields = entries
+    .map((entry) => `${JSON.stringify(entry.name)}: ${renderNode(entry.schema, names)}`)
+    .join(", ");
+  return { fields, definitions };
 }
 
 function fieldSchema(field: ts.AutoAccessorPropertyDeclaration, state: SerializeState): SchemaNode | null {
@@ -633,7 +788,7 @@ function fieldSchema(field: ts.AutoAccessorPropertyDeclaration, state: Serialize
     return null;
   }
   const type = state.checker.getTypeFromTypeNode(field.type);
-  return serializeType(type, state, 0);
+  return serializeType(type, state);
 }
 
 function hasStaticModifier(member: ts.ClassElement): boolean {
@@ -667,6 +822,21 @@ function blockIndentation(sourceFile: ts.SourceFile, position: number, declarati
   return { closing, lead: `\n${closing}` };
 }
 
+function flushLazy(state: SerializeState): void {
+  while (state.queue.length > 0) {
+    const type = state.queue.shift();
+    if (type === undefined) {
+      continue;
+    }
+    const cell = state.lazy.get(type);
+    if (cell === undefined || cell.node !== null) {
+      continue;
+    }
+    const node = serializeType(type, { ...state, seen: new Set<ts.Type>(), depth: 0 });
+    cell.node = node ?? primitive("object");
+  }
+}
+
 function buildBlock(
   sourceFile: ts.SourceFile,
   declaration: ts.ClassDeclaration,
@@ -676,12 +846,12 @@ function buildBlock(
   const indentation = blockIndentation(sourceFile, position, declaration);
   const inner = `${indentation.closing}${INDENT_UNIT}${INDENT_UNIT}`;
   const memberIndent = `${indentation.closing}${INDENT_UNIT}`;
-  const fields = entries
-    .map((entry) => `${JSON.stringify(entry.name)}: ${renderNode(entry.schema)}`)
-    .join(", ");
-  const assignment = `this[Symbol.for(${JSON.stringify(SCHEMA_KEY)})] = { fields: { ${fields} } };`;
+  const rendered = renderFields(entries);
+  const definitions = rendered.definitions.map((definition) => `${inner}${definition}`);
+  const assignment = `this[Symbol.for(${JSON.stringify(SCHEMA_KEY)})] = { version: 1, fields: { ${rendered.fields} } };`;
   const code = [
     `${indentation.lead}${INDENT_UNIT}static {`,
+    ...definitions,
     `${inner}${assignment}`,
     `${memberIndent}}`,
     `${indentation.closing}`,
@@ -704,6 +874,9 @@ export function generateValidationBlocks(
   const { sourceFile, checker, runtimeRef, shouldGenerate } = options;
   const blocks: ValidationBlock[] = [];
   const classes: ts.ClassDeclaration[] = [];
+  const cache = new WeakMap<ts.Type, SchemaNode | null>();
+  const lazy = new Map<ts.Type, LazyCell>();
+  const queue: ts.Type[] = [];
   collectClasses(sourceFile, classes);
   for (const statement of classes) {
     if (statement.name === undefined) {
@@ -715,7 +888,7 @@ export function generateValidationBlocks(
     if (sourceFile.text.slice(statement.getStart(sourceFile), statement.getEnd()).includes(SCHEMA_KEY)) {
       continue;
     }
-    const state: SerializeState = { checker, runtimeRef, seen: new Set<ts.Type>() };
+    const state: SerializeState = { checker, runtimeRef, seen: new Set<ts.Type>(), cache, lazy, queue, depth: 0 };
     const entries: ObjectField[] = [];
     for (const member of statement.members) {
       if (!ts.isAutoAccessorPropertyDeclaration(member)) {
@@ -730,6 +903,14 @@ export function generateValidationBlocks(
       const name = member.name.text;
       const schema = fieldSchema(member, state);
       if (schema === null) {
+        if (member.type !== undefined) {
+          const type = checker.getTypeFromTypeNode(member.type);
+          const message = `${sourceFile.fileName}: ${statement.name.text}.${name}: тип ${checker.typeToString(type)} не поддерживается`;
+          options.diagnostics?.(message);
+          if (options.strict === true) {
+            throw new Error(message);
+          }
+        }
         continue;
       }
       entries.push({ name, schema });
@@ -737,6 +918,7 @@ export function generateValidationBlocks(
     if (entries.length === 0) {
       continue;
     }
+    flushLazy(state);
     blocks.push(buildBlock(sourceFile, statement, entries));
   }
   return blocks;

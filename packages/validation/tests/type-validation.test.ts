@@ -351,6 +351,146 @@ describe("validateType: классы", () => {
   });
 });
 
+describe("validateType: ленивые схемы", () => {
+  interface NodeValue {
+    value: string;
+    next?: NodeValue | null;
+  }
+
+  const nodeSchema: TypeSchema = [
+    "object",
+    {
+      value: "string",
+      next: ["optional", ["nullable", ["lazy", () => nodeSchema]]],
+    },
+  ];
+
+  it("разрешает рекурсивный интерфейс на трёх уровнях", () => {
+    const node: NodeValue = {
+      value: "a",
+      next: { value: "b", next: { value: "c", next: null } },
+    };
+    expect(valid(node, nodeSchema)).toBe(true);
+    expect(valid({ value: "a" }, nodeSchema)).toBe(true);
+    expect(valid({ value: "a", next: null }, nodeSchema)).toBe(true);
+  });
+
+  it("находит ошибку во вложенном рекурсивном поле", () => {
+    const broken = {
+      value: "a",
+      next: { value: "b", next: { value: 5, next: null } },
+    };
+    const errors = run(broken, nodeSchema);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.path).toBe("value.next.next.value");
+  });
+
+  it("валидирует массив рекурсивных элементов", () => {
+    const schema: TypeSchema = ["array", ["lazy", () => nodeSchema]];
+    expect(valid([{ value: "a" }, { value: "b", next: null }], schema)).toBe(true);
+    const errors = run([{ value: "a" }, { value: 5 }], schema);
+    expect(errors[0]?.path).toBe("value[1].value");
+  });
+
+  it("комбинирует lazy с nullable", () => {
+    const schema: TypeSchema = ["nullable", ["lazy", () => nodeSchema]];
+    expect(valid(null, schema)).toBe(true);
+    expect(valid({ value: "a" }, schema)).toBe(true);
+    expect(valid(5, schema)).toBe(false);
+  });
+
+  it("вызывает thunk только при валидации", () => {
+    let calls = 0;
+    const schema: TypeSchema = ["lazy", () => {
+      calls += 1;
+      return "string";
+    }];
+    expect(calls).toBe(0);
+    expect(valid("text", schema)).toBe(true);
+    expect(calls).toBe(1);
+    expect(valid(1, schema)).toBe(false);
+    expect(calls).toBe(2);
+  });
+
+  it("возвращает ошибку, если thunk бросает исключение", () => {
+    const schema: TypeSchema = ["lazy", () => {
+      throw new Error("boom");
+    }];
+    const errors = run("text", schema);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.rule).toBe("type");
+  });
+
+  it("не зацикливается на thunk, вернувшем сам себя", () => {
+    const schema: TypeSchema = ["lazy", () => schema];
+    expect(() => run("text", schema)).not.toThrow();
+    expect(run("text", schema)).toHaveLength(0);
+  });
+
+  it("пропускает циклическое значение без ошибок", () => {
+    const node: { value: string; next: unknown } = { value: "a", next: null };
+    node.next = node;
+    expect(() => run(node, nodeSchema)).not.toThrow();
+    expect(run(node, nodeSchema)).toHaveLength(0);
+  });
+
+  it("не падает на большой глубине рекурсивных данных", () => {
+    let node: NodeValue = { value: "end", next: null };
+    for (let index = 0; index < 500; index += 1) {
+      node = { value: String(index), next: node };
+    }
+    expect(() => run(node, nodeSchema)).not.toThrow();
+    expect(run(node, nodeSchema)).toHaveLength(0);
+  });
+});
+
+describe("validateType: rest-кортежи", () => {
+  it("валидирует фиксированную часть и хвост", () => {
+    const schema: TypeSchema = ["tuple", ["string", "number"], "boolean"];
+    expect(valid(["a", 1], schema)).toBe(true);
+    expect(valid(["a", 1, true], schema)).toBe(true);
+    expect(valid(["a", 1, true, false], schema)).toBe(true);
+    expect(valid(["a"], schema)).toBe(false);
+    expect(valid([], schema)).toBe(false);
+    const errors = run(["a", 1, true, 5], schema);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.path).toBe("value[3]");
+  });
+
+  it("сообщает тип кортежа с rest", () => {
+    const schema: TypeSchema = ["tuple", ["string", "number"], "boolean"];
+    expect(run([], schema)[0]?.params).toEqual({
+      type: "[string, number, ...boolean[]]",
+    });
+  });
+
+  it("поддерживает кортеж только из rest", () => {
+    const schema: TypeSchema = ["tuple", [], "number"];
+    expect(valid([], schema)).toBe(true);
+    expect(valid([1, 2, 3], schema)).toBe(true);
+    expect(valid(["x"], schema)).toBe(false);
+    const errors = run([1, "x"], schema);
+    expect(errors[0]?.path).toBe("value[1]");
+  });
+
+  it("сочетает необязательные элементы и rest", () => {
+    const schema: TypeSchema = ["tuple", ["string", null], "number"];
+    expect(valid(["a"], schema)).toBe(true);
+    expect(valid(["a", 1, 2], schema)).toBe(true);
+    expect(valid([], schema)).toBe(false);
+    const errors = run(["a", 1, "x"], schema);
+    expect(errors[0]?.path).toBe("value[2]");
+  });
+
+  it("не меняет поведение обычного кортежа", () => {
+    const schema: TypeSchema = ["tuple", ["string", "number", null]];
+    expect(valid(["a", 1], schema)).toBe(true);
+    expect(valid(["a", 1, true], schema)).toBe(true);
+    expect(valid([], schema)).toBe(false);
+    expect(valid(["a", 1, true, false], schema)).toBe(false);
+  });
+});
+
 describe("validateType: сообщения", () => {
   it("формирует ошибку с полями и параметрами", () => {
     const errors = run(5, "string");

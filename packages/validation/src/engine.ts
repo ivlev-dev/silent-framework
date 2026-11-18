@@ -1,8 +1,9 @@
-import { DEFAULT_LOCALE, getValidationConfig, resolveMessage } from "./messages.js";
+import { DEFAULT_LOCALE, getValidationConfig, resolveMessage, resolveMessageAsync } from "./messages.js";
 import { validationStateFor } from "./registry.js";
 import { readInstanceSchema } from "./schema.js";
-import { validateType } from "./type-validation.js";
+import { validateFastPrimitive, validateType } from "./type-validation.js";
 import { AsyncRuleError, ValidationException } from "./types.js";
+import type { NestedInstance } from "./type-validation.js";
 import type { TypeSchema } from "./schema.js";
 import type {
   FieldKey,
@@ -11,6 +12,7 @@ import type {
   MessageContext,
   RuleCheck,
   RuleRunContext,
+  SafeParseResult,
   ValidationConfig,
   ValidationError,
   ValidationOptions,
@@ -27,6 +29,7 @@ interface RuntimeState {
   readonly cascade: boolean;
   readonly types: boolean;
   readonly visiting: WeakSet<object>;
+  readonly nestedSeen: WeakMap<object, Set<string>>;
   stopped: boolean;
 }
 
@@ -44,9 +47,12 @@ interface PlanCache {
 
 const planCache = new WeakMap<Function, PlanCache>();
 
+const EMPTY_NESTED: readonly NestedInstance[] = [];
+
 interface PreparedField {
   readonly value: unknown;
   readonly path: string;
+  readonly nested: readonly NestedInstance[];
 }
 
 interface RuleCall {
@@ -91,6 +97,7 @@ function createState(options: ValidationOptions | undefined): RuntimeState {
     cascade: options?.cascade ?? config.cascade ?? true,
     types: options?.types !== false,
     visiting: new WeakSet<object>(),
+    nestedSeen: new WeakMap<object, Set<string>>(),
     stopped: false,
   };
 }
@@ -144,9 +151,17 @@ function labelOf(call: RuleCall): string {
 }
 
 function buildMessage(call: RuleCall, label: string): string {
+  return resolveMessage(messageContext(call, label), call.state.config);
+}
+
+async function buildMessageAsync(call: RuleCall, label: string): Promise<string> {
+  return resolveMessageAsync(messageContext(call, label), call.state.config);
+}
+
+function messageContext(call: RuleCall, label: string): MessageContext {
   const rule = call.entry.rule;
   const options = call.entry.options;
-  const context: MessageContext = {
+  return {
     rule: rule.name,
     key: `validation.${rule.name}`,
     field: call.slot.fieldName,
@@ -160,7 +175,6 @@ function buildMessage(call: RuleCall, label: string): string {
     ...(options.message === undefined ? {} : { message: options.message }),
     ...(options.messageKey === undefined ? {} : { messageKey: options.messageKey }),
   };
-  return resolveMessage(context, call.state.config);
 }
 
 function createError(call: RuleCall): ValidationError {
@@ -177,10 +191,77 @@ function createError(call: RuleCall): ValidationError {
   };
 }
 
+async function createErrorAsync(call: RuleCall): Promise<ValidationError> {
+  const label = labelOf(call);
+  return {
+    field: call.slot.fieldName,
+    rule: call.entry.rule.name,
+    message: await buildMessageAsync(call, label),
+    params: call.entry.rule.params,
+    value: call.value,
+    path: call.path,
+    label,
+    ...(call.index === undefined ? {} : { index: call.index }),
+  };
+}
+
 function pushError(call: RuleCall): void {
   call.state.errors.push(createError(call));
   if (call.state.stopAtFirst) {
     call.state.stopped = true;
+  }
+}
+
+async function pushErrorAsync(call: RuleCall): Promise<void> {
+  call.state.errors.push(await createErrorAsync(call));
+  if (call.state.stopAtFirst) {
+    call.state.stopped = true;
+  }
+}
+
+function withoutResolver(config: ValidationConfig): ValidationConfig {
+  return {
+    ...(config.locale === undefined ? {} : { locale: config.locale }),
+    ...(config.messages === undefined ? {} : { messages: config.messages }),
+    ...(config.cascade === undefined ? {} : { cascade: config.cascade }),
+  };
+}
+
+async function resolveErrorAsync(
+  error: ValidationError,
+  target: object,
+  state: RuntimeState,
+): Promise<ValidationError> {
+  const key = `validation.${error.rule}`;
+  const context: MessageContext = {
+    rule: error.rule,
+    key,
+    field: error.field,
+    label: error.label,
+    value: error.value,
+    params: error.params,
+    locale: state.locale,
+    instance: target,
+    path: error.path,
+    ...(error.index === undefined ? {} : { index: error.index }),
+  };
+  return {
+    ...error,
+    message: await resolveMessageAsync(context, state.config),
+  };
+}
+
+async function rerenderErrorsAsync(
+  state: RuntimeState,
+  start: number,
+  target: object,
+): Promise<void> {
+  for (let index = start; index < state.errors.length; index += 1) {
+    const error = state.errors[index];
+    if (error === undefined) {
+      continue;
+    }
+    state.errors[index] = await resolveErrorAsync(error, target, state);
   }
 }
 
@@ -308,11 +389,33 @@ function schemaSkips(schema: TypeSchema, value: unknown): boolean {
   return false;
 }
 
+function uniqueNested(entries: readonly NestedInstance[]): readonly NestedInstance[] {
+  if (entries.length <= 1) {
+    return entries;
+  }
+  const seen = new Map<object, Set<string>>();
+  const unique: NestedInstance[] = [];
+  for (const entry of entries) {
+    let paths = seen.get(entry.instance);
+    if (paths === undefined) {
+      paths = new Set<string>();
+      seen.set(entry.instance, paths);
+    }
+    if (paths.has(entry.path)) {
+      continue;
+    }
+    paths.add(entry.path);
+    unique.push(entry);
+  }
+  return unique;
+}
+
 function prepareField(
   target: object,
   run: FieldRun,
   prefix: string,
   state: RuntimeState,
+  asyncTypes = false,
 ): PreparedField | null {
   const value = readField(target, run.key);
   const slot = run.slot;
@@ -331,34 +434,108 @@ function prepareField(
     if (schemaSkips(run.schema, value)) {
       return null;
     }
+    const typeConfig =
+      asyncTypes && state.config.resolve !== undefined
+        ? withoutResolver(state.config)
+        : state.config;
     const label = slot?.label ?? state.labels?.[run.fieldName] ?? run.fieldName;
-    const result = validateType(value, run.schema, {
+    let nested: readonly NestedInstance[] = EMPTY_NESTED;
+    let failed = false;
+    const fast = validateFastPrimitive(value, run.schema, {
       instance: target,
       field: run.fieldName,
       label,
       path,
-      config: state.config,
-      visiting: state.visiting,
+      config: typeConfig,
     });
-    if (result !== null) {
-      const errors = Array.isArray(result) ? result : [result];
-      const limit = state.stopAtFirst ? 1 : errors.length;
-      for (let index = 0; index < limit; index += 1) {
-        const error = errors[index];
-        if (error !== undefined) {
-          state.errors.push(error);
+    if (fast !== undefined) {
+      if (fast !== null) {
+        failed = true;
+        state.errors.push(fast);
+      }
+    } else {
+      const collected: NestedInstance[] = [];
+      const result = validateType(value, run.schema, {
+        instance: target,
+        field: run.fieldName,
+        label,
+        path,
+        config: typeConfig,
+        visiting: state.visiting,
+        nested: collected,
+      });
+      if (result !== null) {
+        failed = true;
+        const errors = Array.isArray(result) ? result : [result];
+        const limit = state.stopAtFirst ? 1 : errors.length;
+        for (let index = 0; index < limit; index += 1) {
+          const error = errors[index];
+          if (error !== undefined) {
+            state.errors.push(error);
+          }
         }
       }
-      if (state.stopAtFirst) {
-        state.stopped = true;
-        return null;
-      }
-      if (!state.cascade) {
-        return null;
-      }
+      nested = uniqueNested(collected);
     }
+    if (state.stopAtFirst && failed) {
+      state.stopped = true;
+      return null;
+    }
+    if (failed && !state.cascade) {
+      return null;
+    }
+    return { value, path, nested };
   }
-  return { value, path };
+  return { value, path, nested: EMPTY_NESTED };
+}
+
+function shouldVisitNested(
+  instance: object,
+  path: string,
+  state: RuntimeState,
+): boolean {
+  const seen = state.nestedSeen.get(instance);
+  if (seen?.has(path) === true) {
+    return false;
+  }
+  if (seen === undefined) {
+    state.nestedSeen.set(instance, new Set<string>([path]));
+  } else {
+    seen.add(path);
+  }
+  return true;
+}
+
+function runNestedSync(
+  nested: readonly NestedInstance[],
+  state: RuntimeState,
+): void {
+  for (const entry of nested) {
+    if (state.stopped) {
+      return;
+    }
+    const path = `${entry.path}.`;
+    if (!shouldVisitNested(entry.instance, path, state)) {
+      continue;
+    }
+    runInstanceSync(entry.instance, path, state);
+  }
+}
+
+async function runNestedAsync(
+  nested: readonly NestedInstance[],
+  state: RuntimeState,
+): Promise<void> {
+  for (const entry of nested) {
+    if (state.stopped) {
+      return;
+    }
+    const path = `${entry.path}.`;
+    if (!shouldVisitNested(entry.instance, path, state)) {
+      continue;
+    }
+    await runInstanceAsync(entry.instance, path, state);
+  }
 }
 
 function runFieldSync(
@@ -370,6 +547,12 @@ function runFieldSync(
   const prepared = prepareField(target, run, prefix, state);
   if (prepared === null) {
     return;
+  }
+  if (prepared.nested.length > 0) {
+    runNestedSync(prepared.nested, state);
+    if (state.stopped) {
+      return;
+    }
   }
   const slot = run.slot;
   if (slot === undefined) {
@@ -423,7 +606,9 @@ function runRuleSync(
       return;
     }
     if (isNestedObject(value)) {
-      runInstanceSync(value, `${path}.`, state);
+      if (shouldVisitNested(value, `${path}.`, state)) {
+        runInstanceSync(value, `${path}.`, state);
+      }
     } else {
       pushError(callFor(target, slot, entry, value, path, undefined, state));
     }
@@ -442,7 +627,9 @@ function runRuleSync(
       const item = items[index];
       const itemPath = `${path}[${index}]`;
       if (isNestedObject(item)) {
-        runInstanceSync(item, `${itemPath}.`, state);
+        if (shouldVisitNested(item, `${itemPath}.`, state)) {
+          runInstanceSync(item, `${itemPath}.`, state);
+        }
       } else {
         pushError(callFor(target, slot, entry, item, itemPath, index, state));
       }
@@ -478,9 +665,19 @@ async function runFieldAsync(
   prefix: string,
   state: RuntimeState,
 ): Promise<void> {
-  const prepared = prepareField(target, run, prefix, state);
+  const start = state.errors.length;
+  const prepared = prepareField(target, run, prefix, state, true);
+  if (state.config.resolve !== undefined && state.errors.length > start) {
+    await rerenderErrorsAsync(state, start, target);
+  }
   if (prepared === null) {
     return;
+  }
+  if (prepared.nested.length > 0) {
+    await runNestedAsync(prepared.nested, state);
+    if (state.stopped) {
+      return;
+    }
   }
   const slot = run.slot;
   if (slot === undefined) {
@@ -513,7 +710,7 @@ async function runRuleAsync(
   if (entry.options.each === true) {
     const items = toItems(value);
     if (items === undefined) {
-      pushError(callFor(target, slot, entry, value, path, undefined, state));
+      await pushErrorAsync(callFor(target, slot, entry, value, path, undefined, state));
       return;
     }
     for (let index = 0; index < items.length; index += 1) {
@@ -523,7 +720,7 @@ async function runRuleAsync(
       const item = items[index];
       const itemCall = callFor(target, slot, entry, item, `${path}[${index}]`, index, state);
       if (!(await evaluateAsync(rule.check, item, itemCall))) {
-        pushError(itemCall);
+        await pushErrorAsync(itemCall);
       }
     }
     return;
@@ -531,20 +728,22 @@ async function runRuleAsync(
   if (rule.nested === "object") {
     const call = callFor(target, slot, entry, value, path, undefined, state);
     if (!(await evaluateAsync(rule.check, value, call))) {
-      pushError(call);
+      await pushErrorAsync(call);
       return;
     }
     if (isNestedObject(value)) {
-      await runInstanceAsync(value, `${path}.`, state);
+      if (shouldVisitNested(value, `${path}.`, state)) {
+        await runInstanceAsync(value, `${path}.`, state);
+      }
     } else {
-      pushError(call);
+      await pushErrorAsync(call);
     }
     return;
   }
   if (rule.nested === "each") {
     const items = toItems(value);
     if (items === undefined) {
-      pushError(callFor(target, slot, entry, value, path, undefined, state));
+      await pushErrorAsync(callFor(target, slot, entry, value, path, undefined, state));
       return;
     }
     for (let index = 0; index < items.length; index += 1) {
@@ -554,16 +753,18 @@ async function runRuleAsync(
       const item = items[index];
       const itemPath = `${path}[${index}]`;
       if (isNestedObject(item)) {
-        await runInstanceAsync(item, `${itemPath}.`, state);
+        if (shouldVisitNested(item, `${itemPath}.`, state)) {
+          await runInstanceAsync(item, `${itemPath}.`, state);
+        }
       } else {
-        pushError(callFor(target, slot, entry, item, itemPath, index, state));
+        await pushErrorAsync(callFor(target, slot, entry, item, itemPath, index, state));
       }
     }
     return;
   }
   const call = callFor(target, slot, entry, value, path, undefined, state);
   if (!(await evaluateAsync(rule.check, value, call))) {
-    pushError(call);
+    await pushErrorAsync(call);
   }
 }
 
@@ -607,6 +808,104 @@ export async function validateAsync(
   const state = createState(options);
   await runInstanceAsync(instance, "", state);
   return makeResult(state);
+}
+
+function runFieldsSync(
+  instance: object,
+  fields: ReadonlySet<string>,
+  options: ValidationOptions | undefined,
+): ValidationResult {
+  assertInstance(instance);
+  const state = createState(options);
+  if (fields.size === 0) {
+    return makeResult(state);
+  }
+  for (const run of fieldPlan(instance, state.types)) {
+    if (state.stopped) {
+      break;
+    }
+    if (!fields.has(run.fieldName)) {
+      continue;
+    }
+    runFieldSync(instance, run, "", state);
+  }
+  return makeResult(state);
+}
+
+async function runFieldsAsync(
+  instance: object,
+  fields: ReadonlySet<string>,
+  options: ValidationOptions | undefined,
+): Promise<ValidationResult> {
+  assertInstance(instance);
+  const state = createState(options);
+  if (fields.size === 0) {
+    return makeResult(state);
+  }
+  for (const run of fieldPlan(instance, state.types)) {
+    if (state.stopped) {
+      break;
+    }
+    if (!fields.has(run.fieldName)) {
+      continue;
+    }
+    await runFieldAsync(instance, run, "", state);
+  }
+  return makeResult(state);
+}
+
+export function validateProperty(
+  instance: object,
+  field: string,
+  options?: ValidationOptions,
+): ValidationResult {
+  return runFieldsSync(instance, new Set([field]), options);
+}
+
+export async function validatePropertyAsync(
+  instance: object,
+  field: string,
+  options?: ValidationOptions,
+): Promise<ValidationResult> {
+  return runFieldsAsync(instance, new Set([field]), options);
+}
+
+export function validatePartial(
+  instance: object,
+  fields: readonly string[],
+  options?: ValidationOptions,
+): ValidationResult {
+  return runFieldsSync(instance, new Set(fields), options);
+}
+
+export async function validatePartialAsync(
+  instance: object,
+  fields: readonly string[],
+  options?: ValidationOptions,
+): Promise<ValidationResult> {
+  return runFieldsAsync(instance, new Set(fields), options);
+}
+
+export function safeParse<T extends object>(
+  instance: T,
+  options?: ValidationOptions,
+): SafeParseResult<T> {
+  const result = validate(instance, options);
+  if (result.valid) {
+    return { success: true, data: instance, errors: [] };
+  }
+  return { success: false, errors: result.errors };
+}
+
+export async function safeParseAsync<T extends object>(
+  instance: T,
+  options?: ValidationOptions,
+): Promise<SafeParseResult<T>> {
+  const result = await validateAsync(instance, options);
+  if (result.valid) {
+    return { success: true, data: instance, errors: [] };
+  }
+  return { success: false, errors: result.errors };
 }
 
 export function validateOrThrow(instance: object, options?: ValidationOptions): void {

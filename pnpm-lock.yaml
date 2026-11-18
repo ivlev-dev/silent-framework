@@ -467,6 +467,21 @@ importers:
         version: 5.1.0(@types/node@26.6.6)(jsdom@31.0.0)(vite@8.3.7(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15))
 
   packages/validation:
+    devDependencies:
+      '@ivlev-dev/silent-swc':
+        specifier: workspace:*
+        version: link:../swc
+      '@ivlev-dev/silent-vite':
+        specifier: workspace:*
+        version: link:../vite
+      vite:
+        specifier: ^8.3.6
+        version: 8.3.7(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)
+      vitest:
+        specifier: ^5.1.0
+        version: 5.1.0(@types/node@26.6.6)(jsdom@31.0.0)(vite@8.3.7(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15))
+
+  packages/validation-vite:
     dependencies:
       magic-string:
         specifier: ^0.30.0
@@ -475,9 +490,9 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
     devDependencies:
-      '@ivlev-dev/silent-swc':
+      '@ivlev-dev/silent-validation':
         specifier: workspace:*
-        version: link:../swc
+        version: link:../validation
       '@ivlev-dev/silent-vite':
         specifier: workspace:*
         version: link:../vite

@@ -39,7 +39,9 @@ export interface MessageContext {
 
 export type MessageFactory = (context: MessageContext) => string;
 
-export type MessageResolver = (context: MessageContext) => string | undefined;
+export type MessageResolver = (
+  context: MessageContext,
+) => string | undefined | Promise<string | undefined>;
 
 export type InstancePredicate = {
   bivarianceHack(instance: object): boolean;
@@ -84,6 +86,19 @@ export interface ValidationResult {
   readonly valid: boolean;
   readonly errors: readonly ValidationError[];
 }
+
+export type SafeParseSuccess<T extends object> = {
+  readonly success: true;
+  readonly data: T;
+  readonly errors: readonly [];
+};
+
+export type SafeParseFailure = {
+  readonly success: false;
+  readonly errors: readonly ValidationError[];
+};
+
+export type SafeParseResult<T extends object> = SafeParseSuccess<T> | SafeParseFailure;
 
 export interface FieldRuleEntry {
   readonly field: FieldKey;

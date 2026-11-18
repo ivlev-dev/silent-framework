@@ -2,6 +2,8 @@ export const SCHEMA_SYMBOL: symbol = Symbol.for(
   "silent.validation.schema",
 );
 
+export const SCHEMA_VERSION = 1;
+
 export type TypeSchema =
   | "string"
   | "number"
@@ -43,12 +45,13 @@ export type TypeSchema =
   | "bigint64array"
   | "biguint64array"
   | readonly ["array", TypeSchema]
-  | readonly ["tuple", readonly (TypeSchema | null)[]]
+  | readonly ["tuple", readonly (TypeSchema | null)[], TypeSchema?]
   | readonly ["union", readonly TypeSchema[]]
   | readonly ["intersection", readonly TypeSchema[]]
   | readonly ["literal", string | number | boolean]
   | readonly ["enum", readonly (string | number)[]]
   | readonly ["class", () => Function]
+  | readonly ["lazy", () => TypeSchema]
   | readonly ["object", Readonly<Record<string, TypeSchema>>]
   | readonly ["record", TypeSchema]
   | readonly ["mapof", TypeSchema, TypeSchema]
@@ -59,6 +62,7 @@ export type TypeSchema =
 export type FieldSchemaMap = Readonly<Record<string, TypeSchema>>;
 
 export type ClassSchema = Readonly<{
+  version?: number;
   fields: FieldSchemaMap;
 }>;
 
@@ -77,6 +81,19 @@ function isFieldSchemaMap(value: unknown): value is FieldSchemaMap {
 const classCache = new WeakMap<Function, ClassSchema | null>();
 const instanceCache = new WeakMap<Function, FieldSchemaMap | null>();
 
+function resolveVersion(ctor: Function, version: unknown): number | undefined {
+  if (version === undefined) {
+    return undefined;
+  }
+  if (version !== SCHEMA_VERSION) {
+    const name = ctor.name.length > 0 ? ctor.name : "anonymous";
+    throw new Error(
+      `Неподдерживаемая версия схемы ${String(version)} для класса ${name}: поддерживается версия ${SCHEMA_VERSION}`,
+    );
+  }
+  return SCHEMA_VERSION;
+}
+
 export function readClassSchema(ctor: Function): ClassSchema | null {
   const cached = classCache.get(ctor);
   if (cached !== undefined) {
@@ -85,10 +102,15 @@ export function readClassSchema(ctor: Function): ClassSchema | null {
   const own: unknown = holder(ctor)[SCHEMA_SYMBOL];
   let schema: ClassSchema | null = null;
   if (typeof own === "object" && own !== null) {
-    const candidate = own as { readonly fields?: unknown };
-    schema = isFieldSchemaMap(candidate.fields)
-      ? { fields: candidate.fields }
-      : { fields: own as FieldSchemaMap };
+    const candidate = own as { readonly fields?: unknown; readonly version?: unknown };
+    if (isFieldSchemaMap(candidate.fields)) {
+      const version = resolveVersion(ctor, candidate.version);
+      schema = version === undefined
+        ? { fields: candidate.fields }
+        : { version, fields: candidate.fields };
+    } else {
+      schema = { fields: own as FieldSchemaMap };
+    }
   }
   classCache.set(ctor, schema);
   return schema;

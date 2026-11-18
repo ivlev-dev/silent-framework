@@ -1,5 +1,6 @@
 import type {
   MessageContext,
+  MessageResolver,
   ValidationConfig,
 } from "./types.js";
 
@@ -34,7 +35,13 @@ export const validationMessages: Readonly<
     "validation.nonPositive": "Значение поля {label} не может быть положительным",
     "validation.multipleOf": "Значение поля {label} должно быть кратно {factor}",
     "validation.minLength": "Длина поля {label} должна быть не меньше {min}",
+    "validation.minLength_one": "Длина поля {label} должна быть не меньше {min} символа",
+    "validation.minLength_few": "Длина поля {label} должна быть не меньше {min} символов",
+    "validation.minLength_many": "Длина поля {label} должна быть не меньше {min} символов",
     "validation.maxLength": "Длина поля {label} должна быть не больше {max}",
+    "validation.maxLength_one": "Длина поля {label} должна быть не больше {max} символа",
+    "validation.maxLength_few": "Длина поля {label} должна быть не больше {max} символов",
+    "validation.maxLength_many": "Длина поля {label} должна быть не больше {max} символов",
     "validation.length": "Длина поля {label} должна быть равна {length}",
     "validation.matches": "Поле {label} имеет неверный формат",
     "validation.isEmail": "Поле {label} должно быть корректным email",
@@ -49,7 +56,13 @@ export const validationMessages: Readonly<
     "validation.isBase64": "Поле {label} должно быть корректным Base64",
     "validation.isJSON": "Поле {label} должно содержать корректный JSON",
     "validation.arrayMinSize": "В поле {label} должно быть не меньше {min} элементов",
+    "validation.arrayMinSize_one": "В поле {label} должно быть не меньше {min} элемента",
+    "validation.arrayMinSize_few": "В поле {label} должно быть не меньше {min} элементов",
+    "validation.arrayMinSize_many": "В поле {label} должно быть не меньше {min} элементов",
     "validation.arrayMaxSize": "В поле {label} должно быть не больше {max} элементов",
+    "validation.arrayMaxSize_one": "В поле {label} должно быть не больше {max} элемента",
+    "validation.arrayMaxSize_few": "В поле {label} должно быть не больше {max} элементов",
+    "validation.arrayMaxSize_many": "В поле {label} должно быть не больше {max} элементов",
     "validation.arrayNotEmpty": "Поле {label} не может быть пустым массивом",
     "validation.arrayUnique": "Элементы поля {label} не должны повторяться",
     "validation.hasKey": "В поле {label} должен быть ключ {key}",
@@ -88,7 +101,11 @@ export const validationMessages: Readonly<
     "validation.nonPositive": "{label} must not be positive",
     "validation.multipleOf": "{label} must be a multiple of {factor}",
     "validation.minLength": "{label} must be at least {min} characters",
+    "validation.minLength_one": "{label} must be at least {min} character",
+    "validation.minLength_other": "{label} must be at least {min} characters",
     "validation.maxLength": "{label} must be at most {max} characters",
+    "validation.maxLength_one": "{label} must be at most {max} character",
+    "validation.maxLength_other": "{label} must be at most {max} characters",
     "validation.length": "{label} must be exactly {length} characters",
     "validation.matches": "{label} has an invalid format",
     "validation.isEmail": "{label} must be a valid email",
@@ -103,7 +120,11 @@ export const validationMessages: Readonly<
     "validation.isBase64": "{label} must be valid Base64",
     "validation.isJSON": "{label} must be valid JSON",
     "validation.arrayMinSize": "{label} must contain at least {min} items",
+    "validation.arrayMinSize_one": "{label} must contain at least {min} item",
+    "validation.arrayMinSize_other": "{label} must contain at least {min} items",
     "validation.arrayMaxSize": "{label} must contain at most {max} items",
+    "validation.arrayMaxSize_one": "{label} must contain at most {max} item",
+    "validation.arrayMaxSize_other": "{label} must contain at most {max} items",
     "validation.arrayNotEmpty": "{label} must not be an empty array",
     "validation.arrayUnique": "{label} items must be unique",
     "validation.hasKey": "{label} must contain the key {key}",
@@ -117,6 +138,11 @@ export const validationMessages: Readonly<
     "validation.type": "{label} must be of type {type}",
   },
 };
+
+const ASYNC_RESOLVER_ERROR =
+  "Асинхронный резолвер сообщений поддерживается только в validateAsync";
+
+const pluralRulesCache = new Map<string, Intl.PluralRules | null>();
 
 let currentConfig: ValidationConfig = {};
 
@@ -136,6 +162,63 @@ export function resetValidationConfig(): void {
 
 export function getValidationConfig(): ValidationConfig {
   return currentConfig;
+}
+
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return (
+    typeof value === "object"
+    && value !== null
+    && typeof (value as { then?: unknown }).then === "function"
+  );
+}
+
+function pluralRulesFor(locale: string): Intl.PluralRules | null {
+  const cached = pluralRulesCache.get(locale);
+  if (cached !== undefined) {
+    return cached;
+  }
+  let rules: Intl.PluralRules | null = null;
+  try {
+    rules = new Intl.PluralRules(locale);
+  } catch {
+    rules = null;
+  }
+  pluralRulesCache.set(locale, rules);
+  return rules;
+}
+
+function pluralCount(context: MessageContext): number | undefined {
+  for (const name of ["count", "min", "max", "length"] as const) {
+    const value = context.params[name];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  if (typeof context.value === "number" && Number.isFinite(context.value)) {
+    return context.value;
+  }
+  if (Array.isArray(context.value)) {
+    return context.value.length;
+  }
+  if (typeof context.value === "string") {
+    return context.value.length;
+  }
+  return undefined;
+}
+
+function pluralSuffix(
+  locale: string,
+  context: MessageContext,
+): string | undefined {
+  const count = pluralCount(context);
+  if (count === undefined) {
+    return undefined;
+  }
+  const rules = pluralRulesFor(locale);
+  if (rules === null) {
+    return undefined;
+  }
+  return rules.select(count);
 }
 
 function formatValue(value: unknown): string {
@@ -174,17 +257,71 @@ function interpolate(
   });
 }
 
-function lookup(
+type MessageCatalog = Readonly<Record<string, string>>;
+
+function lookupCatalog(
+  catalog: MessageCatalog | undefined,
+  key: string,
+  suffix: string | undefined,
+): string | undefined {
+  if (catalog === undefined) {
+    return undefined;
+  }
+  if (suffix !== undefined) {
+    const variant = catalog[`${key}_${suffix}`];
+    if (variant !== undefined) {
+      return variant;
+    }
+  }
+  return catalog[key];
+}
+
+function lookupSources(
+  sources: readonly (MessageCatalog | undefined)[],
+  key: string,
+  suffix: string | undefined,
+): string | undefined {
+  for (const source of sources) {
+    const template = lookupCatalog(source, key, suffix);
+    if (template !== undefined) {
+      return template;
+    }
+  }
+  return undefined;
+}
+
+function catalogTemplate(
   config: ValidationConfig,
   locale: string,
   key: string,
+  context: MessageContext,
 ): string | undefined {
-  return (
-    config.messages?.[locale]?.[key]
-    ?? config.messages?.[DEFAULT_LOCALE]?.[key]
-    ?? validationMessages[locale]?.[key]
-    ?? validationMessages[DEFAULT_LOCALE]?.[key]
-    ?? validationMessages.en?.[key]
+  return lookupSources(
+    [
+      config.messages?.[locale],
+      config.messages?.[DEFAULT_LOCALE],
+      validationMessages[locale],
+      validationMessages[DEFAULT_LOCALE],
+      validationMessages.en,
+    ],
+    key,
+    pluralSuffix(locale, context),
+  );
+}
+
+function builtinTemplate(
+  locale: string,
+  key: string,
+  context: MessageContext,
+): string | undefined {
+  return lookupSources(
+    [
+      validationMessages[locale],
+      validationMessages[DEFAULT_LOCALE],
+      validationMessages.en,
+    ],
+    key,
+    pluralSuffix(locale, context),
   );
 }
 
@@ -194,19 +331,78 @@ export function resolveMessage(
 ): string {
   const locale = config.locale ?? DEFAULT_LOCALE;
   if (typeof context.message === "function") {
-    return context.message({ ...context, locale });
+    const produced: unknown = context.message({ ...context, locale });
+    if (isThenable(produced)) {
+      throw new Error(ASYNC_RESOLVER_ERROR);
+    }
+    return produced as string;
   }
   if (typeof context.message === "string") {
     return interpolate(context.message, context);
   }
   const key = context.messageKey ?? context.key;
   const resolved = config.resolve?.({ ...context, key, locale });
+  if (isThenable(resolved)) {
+    throw new Error(ASYNC_RESOLVER_ERROR);
+  }
   if (resolved !== undefined) {
     return interpolate(resolved, context);
   }
-  const template = lookup(config, locale, key);
+  const template = catalogTemplate(config, locale, key, context);
   if (template !== undefined) {
     return interpolate(template, context);
   }
   return `${context.label}: ${key}`;
+}
+
+export async function resolveMessageAsync(
+  context: MessageContext,
+  config: ValidationConfig,
+): Promise<string> {
+  const locale = config.locale ?? DEFAULT_LOCALE;
+  if (typeof context.message === "function") {
+    const produced: unknown = await context.message({ ...context, locale });
+    if (isThenable(produced)) {
+      throw new Error(ASYNC_RESOLVER_ERROR);
+    }
+    return produced as string;
+  }
+  if (typeof context.message === "string") {
+    return interpolate(context.message, context);
+  }
+  const key = context.messageKey ?? context.key;
+  const resolved = await config.resolve?.({ ...context, key, locale });
+  if (resolved !== undefined) {
+    return interpolate(resolved, context);
+  }
+  const template = catalogTemplate(config, locale, key, context);
+  if (template !== undefined) {
+    return interpolate(template, context);
+  }
+  return `${context.label}: ${key}`;
+}
+
+export interface I18nextLike {
+  t(key: string, options?: Readonly<Record<string, unknown>>): string;
+}
+
+export function createI18nextResolver(
+  i18n: I18nextLike,
+  options?: { readonly keyPrefix?: string },
+): MessageResolver {
+  const keyPrefix = options?.keyPrefix ?? "";
+  return (context) => {
+    const key = `${keyPrefix}${context.key}`;
+    const defaultValue = builtinTemplate(context.locale, context.key, context)
+      ?? key;
+    const translated = i18n.t(key, {
+      ...context.params,
+      label: context.label,
+      defaultValue,
+    });
+    if (translated.trim().length === 0 || translated === key) {
+      return undefined;
+    }
+    return translated;
+  };
 }

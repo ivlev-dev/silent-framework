@@ -3,12 +3,19 @@ export {
   validateAsync,
   validateOrThrow,
   validateOrThrowAsync,
+  validateProperty,
+  validatePropertyAsync,
+  validatePartial,
+  validatePartialAsync,
+  safeParse,
+  safeParseAsync,
 } from "./engine.js";
 export {
   Label,
   Groups,
   Optional,
   ValidateIf,
+  ValidateOnSet,
 } from "./modifiers.js";
 export {
   Required,
@@ -79,7 +86,9 @@ export {
   configureValidation,
   resetValidationConfig,
   getValidationConfig,
+  createI18nextResolver,
 } from "./messages.js";
+export type { I18nextLike } from "./messages.js";
 export { AsyncRuleError, ValidationException } from "./types.js";
 export { ValidationModel } from "./model.js";
 export type {
@@ -88,6 +97,9 @@ export type {
   MessageResolver,
   RuleDecorator,
   RuleOptions,
+  SafeParseFailure,
+  SafeParseResult,
+  SafeParseSuccess,
   ValidationConfig,
   ValidationError,
   ValidationOptions,

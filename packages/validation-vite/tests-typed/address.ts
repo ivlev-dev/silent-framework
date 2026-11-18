@@ -1,4 +1,4 @@
-import { ValidationModel } from "../src/index.js";
+import { ValidationModel } from "@ivlev-dev/silent-validation";
 
 export class Address extends ValidationModel {
   public accessor city: string = "";

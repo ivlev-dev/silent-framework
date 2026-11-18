@@ -1526,6 +1526,11 @@
         "type": "(config: ValidationConfig) => void",
         "signature": "export declare function configureValidation(config: ValidationConfig): void;"
       },
+      "createI18nextResolver": {
+        "kind": "function",
+        "type": "(i18n: I18nextLike, options?: { readonly keyPrefix?: string; }) => MessageResolver",
+        "signature": "export declare function createI18nextResolver(i18n: I18nextLike, options?: { readonly keyPrefix?: string; }): MessageResolver;"
+      },
       "Custom": {
         "kind": "function",
         "type": "(check: RuleCheck, options?: RuleOptions) => RuleDecorator",
@@ -1560,6 +1565,10 @@
         "kind": "function",
         "type": "(key: PropertyKey, options?: RuleOptions) => RuleDecorator",
         "signature": "export declare function HasKey(key: PropertyKey, options?: RuleOptions): RuleDecorator;"
+      },
+      "I18nextLike": {
+        "kind": "interface",
+        "signature": "export interface I18nextLike { t(key: string, options?: Readonly<Record<string, unknown>>): string; }"
       },
       "IsAlpha": {
         "kind": "function",
@@ -1716,7 +1725,7 @@
       },
       "MessageResolver": {
         "kind": "type",
-        "signature": "export type MessageResolver = (context: MessageContext) => string | undefined;"
+        "signature": "export type MessageResolver = (context: MessageContext) => string | undefined | Promise<string | undefined>;"
       },
       "Min": {
         "kind": "function",
@@ -1806,6 +1815,28 @@
         "kind": "interface",
         "signature": "export interface RuleOptions { readonly message?: string | MessageFactory | undefined; readonly messageKey?: string | undefined; readonly label?: string | undefined; readonly groups?: readonly string[] | undefined; readonly when?: InstancePredicate | undefined; readonly each?: boolean | undefined; }"
       },
+      "safeParse": {
+        "kind": "function",
+        "type": "<T extends object>(instance: T, options?: ValidationOptions) => SafeParseResult<T>",
+        "signature": "export declare function safeParse<T extends object>(instance: T, options?: ValidationOptions): SafeParseResult<T>;"
+      },
+      "safeParseAsync": {
+        "kind": "function",
+        "type": "<T extends object>(instance: T, options?: ValidationOptions) => Promise<SafeParseResult<T>>",
+        "signature": "export declare function safeParseAsync<T extends object>(instance: T, options?: ValidationOptions): Promise<SafeParseResult<T>>;"
+      },
+      "SafeParseFailure": {
+        "kind": "type",
+        "signature": "export type SafeParseFailure = { readonly success: false; readonly errors: readonly ValidationError[]; };"
+      },
+      "SafeParseResult": {
+        "kind": "type",
+        "signature": "export type SafeParseResult<T extends object> = SafeParseSuccess<T> | SafeParseFailure;"
+      },
+      "SafeParseSuccess": {
+        "kind": "type",
+        "signature": "export type SafeParseSuccess<T extends object> = { readonly success: true; readonly data: T; readonly errors: readonly []; };"
+      },
       "validate": {
         "kind": "function",
         "type": "(instance: object, options?: ValidationOptions) => ValidationResult",
@@ -1821,6 +1852,11 @@
         "type": "(predicate: InstancePredicate) => RuleDecorator",
         "signature": "export declare function ValidateIf(predicate: InstancePredicate): RuleDecorator;"
       },
+      "ValidateOnSet": {
+        "kind": "function",
+        "type": "() => RuleDecorator",
+        "signature": "export declare function ValidateOnSet(): RuleDecorator;"
+      },
       "validateOrThrow": {
         "kind": "function",
         "type": "(instance: object, options?: ValidationOptions) => void",
@@ -1830,6 +1866,26 @@
         "kind": "function",
         "type": "(instance: object, options?: ValidationOptions) => Promise<void>",
         "signature": "export declare function validateOrThrowAsync(instance: object, options?: ValidationOptions): Promise<void>;"
+      },
+      "validatePartial": {
+        "kind": "function",
+        "type": "(instance: object, fields: readonly string[], options?: ValidationOptions) => ValidationResult",
+        "signature": "export declare function validatePartial(instance: object, fields: readonly string[], options?: ValidationOptions): ValidationResult;"
+      },
+      "validatePartialAsync": {
+        "kind": "function",
+        "type": "(instance: object, fields: readonly string[], options?: ValidationOptions) => Promise<ValidationResult>",
+        "signature": "export declare function validatePartialAsync(instance: object, fields: readonly string[], options?: ValidationOptions): Promise<ValidationResult>;"
+      },
+      "validateProperty": {
+        "kind": "function",
+        "type": "(instance: object, field: string, options?: ValidationOptions) => ValidationResult",
+        "signature": "export declare function validateProperty(instance: object, field: string, options?: ValidationOptions): ValidationResult;"
+      },
+      "validatePropertyAsync": {
+        "kind": "function",
+        "type": "(instance: object, field: string, options?: ValidationOptions) => Promise<ValidationResult>",
+        "signature": "export declare function validatePropertyAsync(instance: object, field: string, options?: ValidationOptions): Promise<ValidationResult>;"
       },
       "ValidationConfig": {
         "kind": "interface",
@@ -1859,6 +1915,17 @@
       "ValidationResult": {
         "kind": "interface",
         "signature": "export interface ValidationResult { readonly valid: boolean; readonly errors: readonly ValidationError[]; }"
+      }
+    },
+    "@ivlev-dev/silent-validation-vite": {
+      "validation": {
+        "kind": "function",
+        "type": "(options?: ValidationPluginOptions) => Plugin",
+        "signature": "export declare function validation(options?: ValidationPluginOptions): Plugin;"
+      },
+      "ValidationPluginOptions": {
+        "kind": "interface",
+        "signature": "export interface ValidationPluginOptions { readonly include?: RegExp; readonly exclude?: RegExp; readonly tsconfig?: string; readonly base?: string; readonly strict?: boolean; }"
       }
     },
     "@ivlev-dev/silent-vite": {

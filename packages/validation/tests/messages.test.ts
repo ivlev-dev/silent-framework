@@ -2,16 +2,34 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_LOCALE,
   configureValidation,
+  createI18nextResolver,
   getValidationConfig,
   resetValidationConfig,
   resolveMessage,
   validationMessages,
 } from "../src/messages.js";
+import {
+  Nested,
+  Required,
+  safeParseAsync,
+  validate,
+  validateAsync,
+  validatePropertyAsync,
+} from "../src/index.js";
+import { SCHEMA_SYMBOL } from "../src/schema.js";
+import type { ClassSchema, FieldSchemaMap } from "../src/schema.js";
 import type {
   MessageContext,
   MessageResolver,
   ValidationConfig,
 } from "../src/types.js";
+
+function defineSchema(ctor: Function, schema: ClassSchema | FieldSchemaMap): void {
+  Object.defineProperty(ctor, SCHEMA_SYMBOL, {
+    value: schema,
+    configurable: true,
+  });
+}
 
 const contextOf = (overrides: Partial<MessageContext> = {}): MessageContext => ({
   rule: "min",
@@ -54,9 +72,15 @@ describe("Встроенные каталоги", () => {
     expect(message).toBe("Age must be at least 3");
   });
 
-  it("содержит одинаковый набор ключей в ru и en", () => {
-    const ruKeys = Object.keys(validationMessages.ru ?? {}).sort();
-    const enKeys = Object.keys(validationMessages.en ?? {}).sort();
+  it("содержит одинаковый набор базовых ключей в ru и en", () => {
+    const isPluralVariant = (key: string): boolean =>
+      /_(one|few|many|other)$/.test(key);
+    const baseKeys = (locale: string): string[] =>
+      Object.keys(validationMessages[locale] ?? {})
+        .filter((key) => !isPluralVariant(key))
+        .sort();
+    const ruKeys = baseKeys("ru");
+    const enKeys = baseKeys("en");
     expect(ruKeys).toEqual(enKeys);
     expect(ruKeys).toContain("validation.min");
   });
@@ -295,5 +319,369 @@ describe("Глобальный конфиг", () => {
     expect(resolveMessage(contextOf(), getValidationConfig())).toBe(
       "Значение поля Возраст должно быть не меньше 3",
     );
+  });
+});
+
+describe("Плюрализация", () => {
+  const pluralContext = (
+    key: string,
+    params: Readonly<Record<string, unknown>>,
+    overrides: Partial<MessageContext> = {},
+  ): MessageContext =>
+    contextOf({
+      rule: key.replace("validation.", ""),
+      key,
+      params,
+      value: null,
+      ...overrides,
+    });
+
+  it("выбирает ru-формы one/few/many для arrayMinSize", () => {
+    const message = (min: number): string =>
+      resolveMessage(
+        pluralContext("validation.arrayMinSize", { min }, { label: "Теги" }),
+        { locale: "ru" },
+      );
+
+    expect(message(1)).toBe("В поле Теги должно быть не меньше 1 элемента");
+    expect(message(2)).toBe("В поле Теги должно быть не меньше 2 элементов");
+    expect(message(5)).toBe("В поле Теги должно быть не меньше 5 элементов");
+  });
+
+  it("выбирает ru-формы для arrayMaxSize, minLength и maxLength", () => {
+    expect(
+      resolveMessage(
+        pluralContext("validation.arrayMaxSize", { max: 1 }, { label: "Теги" }),
+        { locale: "ru" },
+      ),
+    ).toBe("В поле Теги должно быть не больше 1 элемента");
+    expect(
+      resolveMessage(
+        pluralContext("validation.minLength", { min: 1 }, { label: "Имя" }),
+        { locale: "ru" },
+      ),
+    ).toBe("Длина поля Имя должна быть не меньше 1 символа");
+    expect(
+      resolveMessage(
+        pluralContext("validation.minLength", { min: 2 }, { label: "Имя" }),
+        { locale: "ru" },
+      ),
+    ).toBe("Длина поля Имя должна быть не меньше 2 символов");
+    expect(
+      resolveMessage(
+        pluralContext("validation.maxLength", { max: 5 }, { label: "Имя" }),
+        { locale: "ru" },
+      ),
+    ).toBe("Длина поля Имя должна быть не больше 5 символов");
+  });
+
+  it("выбирает en-формы one/other", () => {
+    const arrayMessage = (min: number): string =>
+      resolveMessage(
+        pluralContext("validation.arrayMinSize", { min }, { label: "Tags" }),
+        { locale: "en" },
+      );
+    const lengthMessage = (min: number): string =>
+      resolveMessage(
+        pluralContext("validation.minLength", { min }, { label: "Name" }),
+        { locale: "en" },
+      );
+
+    expect(arrayMessage(1)).toBe("Tags must contain at least 1 item");
+    expect(arrayMessage(2)).toBe("Tags must contain at least 2 items");
+    expect(lengthMessage(1)).toBe("Name must be at least 1 character");
+    expect(lengthMessage(2)).toBe("Name must be at least 2 characters");
+  });
+
+  it("использует params.count раньше min, max и length", () => {
+    const message = resolveMessage(
+      pluralContext("validation.arrayMinSize", { min: 1, count: 5 }, { label: "Теги" }),
+      { locale: "ru" },
+    );
+    expect(message).toBe("В поле Теги должно быть не меньше 1 элементов");
+  });
+
+  it("использует params.length, если других чисел нет", () => {
+    const config: ValidationConfig = {
+      locale: "ru",
+      messages: {
+        ru: {
+          "validation.customCount": "базовое",
+          "validation.customCount_one": "один",
+          "validation.customCount_few": "несколько",
+          "validation.customCount_many": "много",
+        },
+      },
+    };
+    expect(
+      resolveMessage(pluralContext("validation.customCount", { length: 2 }), config),
+    ).toBe("несколько");
+  });
+
+  it("использует число из value и длину массива или строки", () => {
+    const config: ValidationConfig = {
+      locale: "ru",
+      messages: {
+        ru: {
+          "validation.customCount": "базовое",
+          "validation.customCount_one": "один",
+          "validation.customCount_few": "несколько",
+          "validation.customCount_many": "много",
+        },
+      },
+    };
+    expect(
+      resolveMessage(pluralContext("validation.customCount", {}, { value: 5 }), config),
+    ).toBe("много");
+    expect(
+      resolveMessage(
+        pluralContext("validation.customCount", {}, { value: [1, 2] }),
+        config,
+      ),
+    ).toBe("несколько");
+    expect(
+      resolveMessage(
+        pluralContext("validation.customCount", {}, { value: "abc" }),
+        config,
+      ),
+    ).toBe("несколько");
+  });
+
+  it("возвращает базовое сообщение, если для ключа нет вариантов", () => {
+    const message = resolveMessage(
+      pluralContext(
+        "validation.required",
+        { count: 1 },
+        { label: "Email", rule: "required" },
+      ),
+      { locale: "ru" },
+    );
+    expect(message).toBe("Поле Email обязательно");
+  });
+
+  it("использует базовое сообщение ru для локали без своих вариантов", () => {
+    const message = resolveMessage(
+      pluralContext("validation.arrayMinSize", { min: 2 }, { label: "Теги" }),
+      { locale: "de" },
+    );
+    expect(message).toBe("В поле Теги должно быть не меньше 2 элементов");
+  });
+
+  it("возвращает базовое сообщение, если число не определено", () => {
+    const message = resolveMessage(
+      pluralContext("validation.arrayMinSize", {}, { label: "Теги" }),
+      { locale: "ru" },
+    );
+    expect(message).toBe("В поле Теги должно быть не меньше {min} элементов");
+  });
+
+  it("использует плюральные варианты из config.messages", () => {
+    const config: ValidationConfig = {
+      locale: "ru",
+      messages: {
+        ru: {
+          "validation.arrayMinSize_one": "Минимум {min} элемент",
+          "validation.arrayMinSize_few": "Минимум {min} элемента",
+        },
+      },
+    };
+    expect(
+      resolveMessage(
+        pluralContext("validation.arrayMinSize", { min: 1 }, { label: "Теги" }),
+        config,
+      ),
+    ).toBe("Минимум 1 элемент");
+    expect(
+      resolveMessage(
+        pluralContext("validation.arrayMinSize", { min: 3 }, { label: "Теги" }),
+        config,
+      ),
+    ).toBe("Минимум 3 элемента");
+  });
+});
+
+describe("Асинхронный MessageResolver", () => {
+  class Model {
+    @Required()
+    public accessor name = "";
+  }
+
+  it("подставляет сообщение из асинхронного резолвера в validateAsync", async () => {
+    const result = await validateAsync(new Model(), {
+      resolve: async ({ label }) => `async:${label}`,
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors[0]?.message).toBe("async:name");
+  });
+
+  it("бросает ошибку в синхронном validate", () => {
+    expect(() =>
+      validate(new Model(), { resolve: async () => "async" }),
+    ).toThrow(/Асинхронный резолвер сообщений поддерживается только в validateAsync/);
+  });
+
+  it("поддерживает асинхронный резолвер во вложенных классах", async () => {
+    class Child {
+      @Required()
+      public accessor value = "";
+    }
+    class Parent {
+      @Nested()
+      public accessor child = new Child();
+    }
+
+    const result = await validateAsync(new Parent(), {
+      resolve: async ({ path }) => `async:${path}`,
+    });
+
+    expect(result.errors[0]?.path).toBe("child.value");
+    expect(result.errors[0]?.message).toBe("async:child.value");
+  });
+
+  it("поддерживает асинхронный резолвер в safeParseAsync", async () => {
+    const result = await safeParseAsync(new Model(), {
+      resolve: async () => "async-safe",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.errors[0]?.message).toBe("async-safe");
+  });
+
+  it("поддерживает асинхронный резолвер в validatePropertyAsync", async () => {
+    const result = await validatePropertyAsync(new Model(), "name", {
+      resolve: async () => "async-property",
+    });
+
+    expect(result.errors[0]?.message).toBe("async-property");
+  });
+
+  it("применяет асинхронный резолвер к ошибкам схемы типов", async () => {
+    class Typed {
+      public accessor value: unknown = 1;
+    }
+    defineSchema(Typed, { fields: { value: "number" } });
+    const model = new Typed();
+    model.value = "text";
+
+    const result = await validateAsync(model, {
+      resolve: async ({ key }) => `async:${key}`,
+    });
+
+    expect(result.errors[0]?.rule).toBe("type");
+    expect(result.errors[0]?.message).toBe("async:validation.type");
+  });
+});
+
+describe("createI18nextResolver", () => {
+  it("передаёт ключ, params, label и defaultValue из встроенного каталога", () => {
+    const calls: Array<{
+      readonly key: string;
+      readonly options: Readonly<Record<string, unknown>> | undefined;
+    }> = [];
+    const i18n = {
+      t(key: string, options?: Readonly<Record<string, unknown>>): string {
+        calls.push({ key, options });
+        return "translated";
+      },
+    };
+    const message = resolveMessage(
+      contextOf({
+        rule: "arrayMinSize",
+        key: "validation.arrayMinSize",
+        label: "Теги",
+        params: { min: 3 },
+        value: null,
+      }),
+      { locale: "ru", resolve: createI18nextResolver(i18n) },
+    );
+
+    expect(message).toBe("translated");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.key).toBe("validation.arrayMinSize");
+    expect(calls[0]?.options?.min).toBe(3);
+    expect(calls[0]?.options?.label).toBe("Теги");
+    expect(calls[0]?.options?.defaultValue).toBe(
+      "В поле {label} должно быть не меньше {min} элементов",
+    );
+  });
+
+  it("применяет keyPrefix", () => {
+    const keys: string[] = [];
+    const i18n = {
+      t(key: string): string {
+        keys.push(key);
+        return "translated";
+      },
+    };
+    resolveMessage(
+      contextOf({ key: "validation.required", label: "Email" }),
+      { locale: "en", resolve: createI18nextResolver(i18n, { keyPrefix: "app." }) },
+    );
+
+    expect(keys).toEqual(["app.validation.required"]);
+  });
+
+  it("возвращает undefined при пустом переводе", () => {
+    const i18n = {
+      t: (): string => "",
+    };
+    const message = resolveMessage(
+      contextOf({ key: "validation.required", label: "Email" }),
+      { locale: "ru", resolve: createI18nextResolver(i18n) },
+    );
+
+    expect(message).toBe("Поле Email обязательно");
+  });
+
+  it("возвращает undefined, если перевод совпадает с ключом", () => {
+    const i18n = {
+      t(key: string): string {
+        return key;
+      },
+    };
+    const message = resolveMessage(
+      contextOf({ key: "validation.required", label: "Email" }),
+      { locale: "ru", resolve: createI18nextResolver(i18n) },
+    );
+
+    expect(message).toBe("Поле Email обязательно");
+  });
+
+  it("возвращает undefined при пустом переводе и на en откатывается к каталогу", () => {
+    const i18n = {
+      t(key: string): string {
+        return key;
+      },
+    };
+    const message = resolveMessage(
+      contextOf({ key: "validation.required", label: "Email" }),
+      { locale: "en", resolve: createI18nextResolver(i18n) },
+    );
+
+    expect(message).toBe("Email is required");
+  });
+
+  it("интерполирует defaultValue, если i18n его возвращает", () => {
+    const i18n = {
+      t(
+        _key: string,
+        options?: Readonly<Record<string, unknown>>,
+      ): string {
+        return String(options?.defaultValue);
+      },
+    };
+    const message = resolveMessage(
+      contextOf({
+        rule: "arrayMinSize",
+        key: "validation.arrayMinSize",
+        label: "Теги",
+        params: { min: 3 },
+        value: null,
+      }),
+      { locale: "ru", resolve: createI18nextResolver(i18n) },
+    );
+
+    expect(message).toBe("В поле Теги должно быть не меньше 3 элементов");
   });
 });

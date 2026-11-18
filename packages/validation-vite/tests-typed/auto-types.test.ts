@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { IsEmail, validate, ValidationModel } from "../src/index.js";
+import { IsEmail, Nested, Required, validate, ValidationModel } from "@ivlev-dev/silent-validation";
 import { Address } from "./address.js";
 
 enum Role {
@@ -108,6 +108,22 @@ describe("валидация из TS-типов", () => {
     order.point = [] as unknown as Point;
     const errors = validate(order).errors;
     expect(errors.map((error) => error.path)).toEqual(["point", "counts[a]"]);
+  });
+
+  it("не дублирует ошибки при схеме и @Nested одновременно", () => {
+    class Child extends ValidationModel {
+      @Required()
+      public accessor name: string = "";
+    }
+
+    class Parent extends ValidationModel {
+      @Nested()
+      public accessor child: Child = new Child();
+    }
+
+    expect(validate(new Parent()).errors.map((error) => error.path)).toEqual([
+      "child.name",
+    ]);
   });
 
   it("генерирует схему для многоуровневых потомков", () => {

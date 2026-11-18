@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const packages = ["reactivity", "di", "core", "swc", "vite", "server", "router", "silent"];
+const packages = ["reactivity", "di", "core", "swc", "vite", "server", "router", "validation", "validation-vite", "silent"];
 const semverPattern = /^(\d+)\.(\d+)\.(\d+)$/;
 
 function fail(message) {

@@ -59,15 +59,15 @@
    ```
 
 7. Что делает CI (`.github/workflows/release.yml`, запуск по тегу `v*`):
-   - проверяет совпадение тега с версиями всех 8 пакетов;
+   - проверяет совпадение тега с версиями всех 10 пакетов;
    - собирает нативные бинарники (Linux/Windows);
    - прогоняет `build`, `typecheck`, `cargo fmt`, `cargo test`, `pnpm test`, `pnpm api:check`, `pnpm pack:check`, `pnpm install:check`;
    - публикует пакеты в npm (требуется секрет `NPM_TOKEN`);
-   - проверяет, что `dist-tags` всех 8 пакетов в реестре совпадают с версией (`pnpm published:check`, до 10 попыток по 10 с — npm отдаёт обновление не сразу).
+   - проверяет, что `dist-tags` всех 10 пакетов в реестре совпадают с версией (`pnpm published:check`, до 10 попыток по 10 с — npm отдаёт обновление не сразу).
 
 ## Требования к релизу
 
-- Версия одна во всех 8 пакетах `packages/{core,di,reactivity,server,router,silent,swc,vite}/package.json` и в `Cargo.toml` (`[workspace.package] version`).
+- Версия одна во всех 10 пакетах `packages/{core,di,reactivity,server,router,validation,validation-vite,silent,swc,vite}/package.json` и в `Cargo.toml` (`[workspace.package] version`).
 - `pnpm version:check` зелёный.
 - `pnpm api:check` зелёный.
 - Тег имеет вид `vX.Y.Z` и совпадает с версией в пакетах.
@@ -77,5 +77,5 @@
 - Подняли `minor` вместо `patch` для изменений производительности или рефакторинга без изменения публичного API.
 - Забыли обновить версию в `Cargo.toml`.
 - Тег не совпадает с версией в `package.json` (CI прервёт релиз).
-- Обновили не все 8 пакетов или часть версий осталась старой.
+- Обновили не все 10 пакетов или часть версий осталась старой.
 - Забыли пересчитать диапазоны `>=0.X.0 <0.(X+1).0` после `minor`-бампа (это делает `pnpm version:bump`).
