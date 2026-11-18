@@ -1,4 +1,9 @@
-import type { FieldCondition, InstancePredicate, RuleDecorator } from "./types.js";
+import type {
+  FieldCondition,
+  InstancePredicate,
+  RuleDecorator,
+  ValidationOptions,
+} from "./types.js";
 import { validateProperty } from "./engine.js";
 import { decorateField, fieldNameOf } from "./rule.js";
 import {
@@ -40,7 +45,7 @@ export function Groups(...groups: string[]): RuleDecorator {
   });
 }
 
-export function ValidateOnSet(): RuleDecorator {
+export function ValidateOnSet(options?: ValidationOptions): RuleDecorator {
   return <C extends object, V>(
     target: ClassAccessorDecoratorTarget<C, V>,
     context: ClassAccessorDecoratorContext<C, V>,
@@ -59,7 +64,7 @@ export function ValidateOnSet(): RuleDecorator {
     const fieldName = fieldNameOf(context.name);
     const set = function (this: C, value: V): void {
       target.set.call(this, value);
-      const result = validateProperty(this, fieldName);
+      const result = validateProperty(this, fieldName, options);
       if (!result.valid) {
         throw new ValidationException(result);
       }

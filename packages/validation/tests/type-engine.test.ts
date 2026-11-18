@@ -122,6 +122,20 @@ describe("валидация типов из схемы", () => {
     expect(rules(validate(model))).toEqual(["type"]);
   });
 
+  it("подхватывает схему, навешенную после первой валидации", () => {
+    class LateModel {
+      public accessor value = 0;
+    }
+
+    const model = new LateModel();
+    expect(validate(model).valid).toBe(true);
+
+    defineSchema(LateModel, { fields: { value: "number" } });
+    model.value = "x" as unknown as number;
+
+    expect(rules(validate(model))).toEqual(["type"]);
+  });
+
   it("сохраняет порядок: сначала схема, затем только декораторы", () => {
     class Mixed {
       public accessor first = 0;
@@ -261,6 +275,22 @@ describe("наследование схем", () => {
     entity.id = "x" as unknown as number;
     entity.title = 5 as unknown as string;
     expect(validate(entity, { types: false }).valid).toBe(true);
+  });
+
+  it("не читает неподдерживаемую схему при types: false", () => {
+    class Future {
+      public accessor value = 0;
+    }
+    defineSchema(Future, {
+      version: 2,
+      fields: { value: "number" },
+    });
+
+    const model = new Future();
+    model.value = "x" as unknown as number;
+
+    expect(() => validate(model, { types: false })).not.toThrow();
+    expect(validate(model, { types: false }).valid).toBe(true);
   });
 
   it("останавливается на первой ошибке", () => {

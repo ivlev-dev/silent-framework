@@ -263,6 +263,15 @@ describe("silent()", () => {
     expect(optionsJson.requirePreloader).toBe(false);
     expect(optionsJson.runtime).toBe("@ivlev-dev/silent-core");
     expect(optionsJson.hmr).toBe(true);
+    expect(optionsJson.hydrate).toBe(true);
+  });
+
+  it("options JSON передаёт hydrate", async () => {
+    const plugin = createPlugin({ hydrate: false });
+    await plugin.transform?.("code", fileFor("src", "app.ts"));
+
+    const optionsJson = JSON.parse(transformMock.mock.calls[0]?.[2] ?? "{}");
+    expect(optionsJson.hydrate).toBe(false);
   });
 
   it("передаёт результат scan как indexJson", async () => {

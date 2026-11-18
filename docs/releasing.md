@@ -16,7 +16,7 @@
 
 - Версия одна на все пакеты `@ivlev-dev/silent*` и `Cargo.toml`; рассинхрон не допускается.
 - Внутренние зависимости библиотечных пакетов (`core`, `server`, `router`, `vite`) объявлены как `peerDependencies` с диапазоном `>=0.X.0 <0.(X+1).0`; для локальной разработки те же пакеты продублированы в `devDependencies` со значением `workspace:*`.
-- Метапакет `@ivlev-dev/silent` держит внутренние пакеты в `dependencies` с тем же диапазоном `>=0.X.0 <0.(X+1).0`.
+- Метапакет `@ivlev-dev/silent` держит в `dependencies` шесть пакетов (core, di, reactivity, router, swc, vite) с диапазоном `>=0.X.0 <0.(X+1).0`. `server`, `validation` и `validation-vite` устанавливаются отдельно.
 - Диапазон описывает всю текущую `0.X`-линейку: патч-релизы (`0.X.Y`) совместимы между собой, а `minor` (`0.(X+1).0`) требует согласованного обновления.
 - `pnpm version:bump` обновляет не только поле `version`, но и диапазоны внутренних зависимостей и peer-зависимостей в манифестах.
 
@@ -29,7 +29,7 @@
    pnpm version:bump patch   # или minor / major
    ```
 
-   Скрипт обновляет 8 `package.json`, диапазоны внутренних зависимостей, `[workspace.package] version` в `Cargo.toml` и добавляет заголовок `## X.Y.Z` в `CHANGELOG.md`. После этого обновите `Cargo.lock` командой `cargo check -p silent-transform`.
+   Скрипт обновляет 10 `package.json`, диапазоны внутренних зависимостей, `[workspace.package] version` в `Cargo.toml` и переносит заметки из `## Unreleased` в новый раздел `## X.Y.Z`, оставляя `## Unreleased` пустым. После этого обновите `Cargo.lock` командой `cargo check -p silent-transform`.
 
    Для точечной установки версии и проверки без изменений:
 
@@ -63,7 +63,7 @@
    - собирает нативные бинарники (Linux/Windows);
    - прогоняет `build`, `typecheck`, `cargo fmt`, `cargo test`, `pnpm test`, `pnpm api:check`, `pnpm pack:check`, `pnpm install:check`;
    - публикует пакеты в npm (требуется секрет `NPM_TOKEN`);
-   - проверяет, что `dist-tags` всех 10 пакетов в реестре совпадают с версией (`pnpm published:check`, до 10 попыток по 10 с — npm отдаёт обновление не сразу).
+   - проверяет, что `dist-tags` всех 10 пакетов в реестре совпадают с версией (`pnpm published:check`, до 30 попыток по 15 с — npm отдаёт обновление не сразу).
 
 ## Требования к релизу
 

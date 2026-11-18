@@ -125,6 +125,15 @@ describe("presenceRules.notEmpty", () => {
     expect(check(presenceRules.notEmpty, { a: undefined })).toBe(true);
   });
 
+  it("считает не-plain объекты непустыми", () => {
+    class Model {}
+    expect(check(presenceRules.notEmpty, new Model())).toBe(true);
+    expect(check(presenceRules.notEmpty, new Date())).toBe(true);
+    expect(check(presenceRules.notEmpty, new Date(Number.NaN))).toBe(true);
+    expect(check(presenceRules.notEmpty, /x/)).toBe(true);
+    expect(check(presenceRules.notEmpty, Object.create(null))).toBe(false);
+  });
+
   it("принимает прочие значения", () => {
     expect(check(presenceRules.notEmpty, 0)).toBe(true);
     expect(check(presenceRules.notEmpty, false)).toBe(true);

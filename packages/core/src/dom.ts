@@ -29,7 +29,6 @@ import {
   shapeMatches,
   withWindow,
 } from "./hydration-proxy.js";
-import { significantChildren, significantChildrenFromEnd } from "./significant.js";
 import {
   getDomHydrationRuntime,
   hydratedEffect,
@@ -95,6 +94,8 @@ export interface TemplatePlan {
 }
 
 export type TemplateNamespace = "svg";
+
+export { resolvePath } from "./plan-paths.js";
 
 export interface TemplateParse {
   readonly content: DocumentFragment;
@@ -677,6 +678,9 @@ export interface TemplateClone {
   readonly attrs: readonly Element[];
 }
 
+const EMPTY_HOLES: readonly (Comment | ServerHole)[] = [];
+const EMPTY_ATTRS: readonly Element[] = [];
+
 export interface TemplateHydrationSource {
   readonly providedPlan: TemplatePlan | undefined;
   readonly parse: () => TemplateParse;
@@ -785,101 +789,9 @@ export function collectPartsMany(nodes: readonly Node[]): { holes: Comment[]; at
   return { holes: denseParts(holesByIndex), attrs: denseParts(attrsByIndex) };
 }
 
-function pickSignificantChild(
-  parent: Node,
-  index: number,
-  size: number | undefined,
-): Node | null {
-  if (size === 1 && index === 0) {
-    const first = parent.firstChild;
-    if (first !== null) {
-      if (first.nodeType !== Node.COMMENT_NODE) {
-        return first;
-      }
-      const data = (first as Comment).data;
-      if (data !== INSERT_START && data !== INSERT_END) {
-        return first;
-      }
-    }
-  }
-  if (size === undefined || size <= 0) {
-    return significantChildren(parent, index);
-  }
-  const last = size - 1;
-  if (index >= last - index) {
-    return significantChildrenFromEnd(parent, last - index);
-  }
-  return significantChildren(parent, index);
-}
-
-export function resolvePath(
-  root: Node,
-  entry: PartPath,
-  significant: boolean,
-): Node | null {
-  const path = entry.path;
-  const first = path[0];
-  if (first === undefined) {
-    return null;
-  }
-  let node: Node | null;
-  if (root instanceof DocumentFragment) {
-    node = significant
-      ? pickSignificantChild(root, first, entry.counts[0])
-      : root.childNodes[first] ?? null;
-  } else {
-    node = first === 0 ? root : null;
-  }
-  for (let index = 1; node !== null && index < path.length; index += 1) {
-    const childIndex = path[index];
-    if (childIndex === undefined) {
-      return null;
-    }
-    node = significant
-      ? pickSignificantChild(node, childIndex, entry.counts[index])
-      : node.childNodes[childIndex] ?? null;
-  }
-  return node;
-}
-
-function applyPartsPlan(
-  root: Node,
-  plan: TemplatePlan,
-  strip: boolean,
-  significant: boolean,
-): { holes: Comment[]; attrs: Element[] } {
-  const holes: Comment[] = [];
-  for (const entry of plan.holes) {
-    const node = resolvePath(root, entry, significant);
-    if (node !== null) {
-      holes.push(node as Comment);
-    }
-  }
-  if (strip) {
-    for (const entry of plan.strips) {
-      const node = resolvePath(root, entry, significant);
-      if (node === null) {
-        continue;
-      }
-      const element = node as Element;
-      for (const name of entry.names) {
-        element.removeAttribute(name);
-      }
-    }
-  }
-  const attrs: Element[] = [];
-  for (const entry of plan.attrs) {
-    const node = resolvePath(root, entry, significant);
-    if (node !== null) {
-      attrs.push(node as Element);
-    }
-  }
-  return { holes, attrs };
-}
-
 export function templateHoles(
   html: string,
-  plan?: TemplatePlan,
+  plan?: TemplatePlan | false,
   namespace?: TemplateNamespace,
 ): () => TemplateClone {
   let clientFactory: (() => TemplateClone) | null = null;
@@ -901,10 +813,16 @@ export function templateHoles(
 
 function createClientTemplateHoles(
   html: string,
-  providedPlan?: TemplatePlan,
+  providedPlan?: TemplatePlan | false,
   namespace?: TemplateNamespace,
 ): () => TemplateClone {
   let parsed: TemplateParse | null = null;
+  const staticParts =
+    providedPlan === false
+    || (providedPlan !== undefined
+      && providedPlan.holes.length === 0
+      && providedPlan.attrs.length === 0
+      && providedPlan.strips.length === 0);
   const parse = (): TemplateParse => {
     parsed ??= readTemplate(html, namespace);
     return parsed;
@@ -926,16 +844,13 @@ function createClientTemplateHoles(
   };
   const create = (): TemplateClone => {
     const node = mark(cloneNode());
-    if (providedPlan === undefined) {
-      return { node, ...collectPartsMany([node]) };
+    if (staticParts) {
+      return { node, holes: EMPTY_HOLES, attrs: EMPTY_ATTRS };
     }
-    return {
-      node,
-      ...applyPartsPlan(node, providedPlan, !isServerMode(), true),
-    };
+    return { node, ...collectPartsMany([node]) };
   };
   const source: TemplateHydrationSource = {
-    providedPlan,
+    providedPlan: providedPlan === false ? undefined : providedPlan,
     parse,
     cloneNode,
   };

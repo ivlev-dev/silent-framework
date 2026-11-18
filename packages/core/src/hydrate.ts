@@ -177,8 +177,6 @@ async function hydrateWith(
       return handleFor(fresh.result, fresh.dispose);
     }
 
-    boundaryStart.remove();
-    boundaryEnd.remove();
     handedOff = true;
     return handleFor(adopted.result, adopted.dispose);
   } finally {

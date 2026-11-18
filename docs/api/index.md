@@ -17,6 +17,8 @@
 | `@ivlev-dev/silent-server` | [core.md](./core.md#ssr) | `renderToString` и серверный мини-DOM |
 | `@ivlev-dev/silent-swc` | [swc.md](./swc.md) | нативный Node-API addon |
 | `@ivlev-dev/silent-vite` | [vite.md](./vite.md) | Vite-плагин и его опции |
+| `@ivlev-dev/silent-validation` | [validation.md](./validation.md) | классовая валидация: декораторы, схемы из TS-типов, i18n |
+| `@ivlev-dev/silent-validation-vite` | [validation-vite.md](./validation-vite.md) | Vite-плагин генерации схем валидации |
 | `@ivlev-dev/silent` | [getting-started.md](../getting-started.md) | метапакет: рантайм и плагин одной установкой |
 
 ## Гайды

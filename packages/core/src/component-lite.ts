@@ -510,7 +510,9 @@ function lightResult(instance: LightInstance): ComponentResult {
     },
     ready,
     get settled(): Promise<void> {
-      return Promise.race([settledReady, instance.whenDisposed]);
+      return settledReady === RESOLVED_READY
+        ? RESOLVED_READY
+        : Promise.race([settledReady, instance.whenDisposed]);
     },
     update: instance.updateProps,
     dispose: instance.dispose,

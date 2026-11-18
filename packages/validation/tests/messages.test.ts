@@ -155,6 +155,18 @@ describe("Каталоги из config", () => {
     );
     expect(message).toBe("Поле: validation.unknown");
   });
+
+  it("не читает ключи каталога из прототипа", () => {
+    expect(
+      resolveMessage(contextOf({ messageKey: "constructor", label: "Поле" }), {}),
+    ).toBe("Поле: constructor");
+    expect(
+      resolveMessage(contextOf({ messageKey: "__proto__", label: "Поле" }), {}),
+    ).toBe("Поле: __proto__");
+    expect(
+      resolveMessage(contextOf({ messageKey: "toString", label: "Поле" }), {}),
+    ).toBe("Поле: toString");
+  });
 });
 
 describe("MessageResolver", () => {
@@ -251,6 +263,15 @@ describe("Интерполяция", () => {
       {},
     );
     expect(message).toBe("Привет, {name}!");
+  });
+
+  it("не подставляет унаследованные свойства params", () => {
+    expect(
+      resolveMessage(contextOf({ message: "{constructor}", params: {} }), {}),
+    ).toBe("{constructor}");
+    expect(
+      resolveMessage(contextOf({ message: "{toString}", params: {} }), {}),
+    ).toBe("{toString}");
   });
 
   it("подставляет index, если он задан", () => {
@@ -498,6 +519,52 @@ describe("Плюрализация", () => {
       ),
     ).toBe("Минимум 3 элемента");
   });
+
+  it("использует форму other для ru при дробном числе", () => {
+    expect(
+      resolveMessage(
+        pluralContext("validation.arrayMinSize", { min: 1.5 }, { label: "Теги" }),
+        { locale: "ru" },
+      ),
+    ).toBe("В поле Теги должно быть не меньше 1.5 элементов");
+  });
+
+  it("не теряет сообщение при частичном каталоге", () => {
+    const config: ValidationConfig = {
+      locale: "ru",
+      messages: {
+        ru: {
+          "validation.arrayMinSize_one": "Минимум {min} элемент",
+          "validation.arrayMinSize_few": "Минимум {min} элемента",
+        },
+      },
+    };
+
+    expect(
+      resolveMessage(
+        pluralContext("validation.arrayMinSize", { min: 1 }, { label: "Теги" }),
+        config,
+      ),
+    ).toBe("Минимум 1 элемент");
+    expect(
+      resolveMessage(
+        pluralContext("validation.arrayMinSize", { min: 3 }, { label: "Теги" }),
+        config,
+      ),
+    ).toBe("Минимум 3 элемента");
+    expect(
+      resolveMessage(
+        pluralContext("validation.arrayMinSize", { min: 5 }, { label: "Теги" }),
+        config,
+      ),
+    ).toBe("В поле Теги должно быть не меньше 5 элементов");
+    expect(
+      resolveMessage(
+        pluralContext("validation.arrayMinSize", { min: 1.5 }, { label: "Теги" }),
+        config,
+      ),
+    ).toBe("В поле Теги должно быть не меньше 1.5 элементов");
+  });
 });
 
 describe("Асинхронный MessageResolver", () => {
@@ -620,6 +687,39 @@ describe("createI18nextResolver", () => {
     );
 
     expect(keys).toEqual(["app.validation.required"]);
+  });
+
+  it("передаёт локаль в lng", () => {
+    const options: Array<Readonly<Record<string, unknown>> | undefined> = [];
+    const i18n = {
+      t(_key: string, received?: Readonly<Record<string, unknown>>): string {
+        options.push(received);
+        return "translated";
+      },
+    };
+
+    resolveMessage(
+      contextOf({ key: "validation.required", label: "Email" }),
+      { locale: "en", resolve: createI18nextResolver(i18n) },
+    );
+
+    expect(options[0]?.lng).toBe("en");
+  });
+
+  it("возвращает undefined, если t вернул не строку", () => {
+    const i18n = {
+      t: (() => null) as unknown as (
+        key: string,
+        options?: Readonly<Record<string, unknown>>,
+      ) => string,
+    };
+
+    const message = resolveMessage(
+      contextOf({ key: "validation.required", label: "Email" }),
+      { locale: "ru", resolve: createI18nextResolver(i18n) },
+    );
+
+    expect(message).toBe("Поле Email обязательно");
   });
 
   it("возвращает undefined при пустом переводе", () => {

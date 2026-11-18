@@ -9,6 +9,7 @@ import {
   Required,
   ValidateOnSet,
   ValidationException,
+  validate,
 } from "../src/index.js";
 import { resetValidationConfig } from "../src/messages.js";
 import { SCHEMA_SYMBOL } from "../src/schema.js";
@@ -88,6 +89,26 @@ describe("ValidateOnSet: базовое поведение", () => {
     }).not.toThrow();
     expect(plain.value).toBeNull();
   });
+
+  it("видит поля потомка после валидации в конструкторе", () => {
+    class Base {
+      @ValidateOnSet()
+      public accessor ready = "ok";
+
+      constructor() {
+        this.ready = "ok";
+      }
+    }
+
+    class Child extends Base {
+      @Required()
+      public accessor name = "";
+    }
+
+    const child = new Child();
+
+    expect(validate(child).errors.map((error) => error.field)).toEqual(["name"]);
+  });
 });
 
 describe("ValidateOnSet: комбинации", () => {
@@ -150,6 +171,68 @@ describe("ValidateOnSet: комбинации", () => {
     expect(() => {
       draft.score = 6;
     }).not.toThrow();
+  });
+
+  it("прокидывает groups из опций", () => {
+    class Draft {
+      @ValidateOnSet({ groups: ["update"] })
+      @Groups("update")
+      @Min(5)
+      public accessor score = 10;
+    }
+
+    const draft = new Draft();
+
+    expect(() => {
+      draft.score = 1;
+    }).toThrow(ValidationException);
+  });
+
+  it("прокидывает labels из опций", () => {
+    class Labelled {
+      @ValidateOnSet({ labels: { name: "Имя" } })
+      @Required()
+      public accessor name = "ok";
+    }
+
+    const model = new Labelled();
+    const thrown = capture(() => {
+      model.name = "";
+    });
+
+    expect(thrown).toBeInstanceOf(ValidationException);
+    expect((thrown as ValidationException).errors[0]?.label).toBe("Имя");
+  });
+
+  it("прокидывает types: false из опций", () => {
+    class Typed {
+      @ValidateOnSet({ types: false })
+      public accessor value: unknown = 1;
+    }
+    defineSchema(Typed, { fields: { value: "number" } });
+
+    const model = new Typed();
+
+    expect(() => {
+      model.value = "text";
+    }).not.toThrow();
+  });
+
+  it("прокидывает stopAtFirst из опций", () => {
+    class Single {
+      @ValidateOnSet({ stopAtFirst: true })
+      @Required()
+      @Min(5)
+      public accessor value: unknown = 10;
+    }
+
+    const model = new Single();
+    const thrown = capture(() => {
+      model.value = "";
+    });
+
+    expect(thrown).toBeInstanceOf(ValidationException);
+    expect((thrown as ValidationException).errors).toHaveLength(1);
   });
 
   it("проверяет вложенный объект по схеме", () => {

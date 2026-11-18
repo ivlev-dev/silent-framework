@@ -6,6 +6,7 @@ use swc_core::ecma::ast::{
 };
 
 const ATTR_MARKER: &str = "data-silent-a-";
+const TEXT_MARKER: &str = "data-silent-text";
 const HOLE_MARKER: &str = "silent-hole-";
 const METADATA_TAGS: [&str; 3] = ["title", "meta", "link"];
 const RISKY_TAGS: [&str; 22] = [
@@ -109,6 +110,10 @@ impl TemplatePlan {
         }
     }
 
+    pub(crate) fn is_static(&self) -> bool {
+        self.roots.iter().all(node_is_static)
+    }
+
     pub(crate) fn finish(self) -> Option<Expr> {
         if self.roots.iter().any(refuses_plan) {
             return None;
@@ -185,11 +190,17 @@ fn walk(
 ) {
     match node {
         ModelNode::Element(element) => {
-            if !element.marker_attrs.is_empty() {
+            let text_strips: Vec<String> = element
+                .marker_attrs
+                .iter()
+                .filter(|name| name.as_str() == TEXT_MARKER)
+                .cloned()
+                .collect();
+            if !text_strips.is_empty() {
                 strips.push(StripPlan {
                     path: path.clone(),
                     counts: counts.clone(),
-                    names: element.marker_attrs.clone(),
+                    names: text_strips,
                 });
             }
             for name in &element.marker_attrs {
@@ -224,6 +235,16 @@ fn attr_marker_index(name: &str) -> Option<usize> {
 fn is_refused_tag(tag: &str) -> bool {
     let tag = tag.to_ascii_lowercase();
     METADATA_TAGS.contains(&tag.as_str()) || RISKY_TAGS.contains(&tag.as_str())
+}
+
+fn node_is_static(node: &ModelNode) -> bool {
+    match node {
+        ModelNode::Element(element) => {
+            element.marker_attrs.is_empty() && element.children.iter().all(node_is_static)
+        }
+        ModelNode::Text(_) => true,
+        ModelNode::Comment { .. } => false,
+    }
 }
 
 fn refuses_plan(node: &ModelNode) -> bool {

@@ -107,7 +107,11 @@ export const typeRules = {
       if (ctor === undefined) {
         return false;
       }
-      return value instanceof ctor;
+      try {
+        return value instanceof ctor;
+      } catch {
+        return false;
+      }
     },
   },
 } satisfies Record<string, RuleDefinition>;

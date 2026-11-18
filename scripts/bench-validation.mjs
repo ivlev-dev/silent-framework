@@ -1,10 +1,16 @@
+import { existsSync } from "node:fs";
 import { performance } from "node:perf_hooks";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const entry = path.join(root, "packages/validation/dist/index.js");
+if (!existsSync(entry)) {
+  console.error("bench:validation: нет packages/validation/dist — выполните pnpm build");
+  process.exit(2);
+}
 const { validate, validateProperty, IsEmail, Required } = await import(
-  path.join(root, "packages/validation/dist/index.js")
+  pathToFileURL(entry).href
 );
 
 const SCHEMA = Symbol.for("silent.validation.schema");

@@ -813,8 +813,8 @@
       },
       "templateHoles": {
         "kind": "function",
-        "type": "(html: string, plan?: TemplatePlan, namespace?: TemplateNamespace) => () => TemplateClone",
-        "signature": "export declare function templateHoles(html: string, plan?: TemplatePlan, namespace?: TemplateNamespace): () => TemplateClone;"
+        "type": "(html: string, plan?: TemplatePlan | false, namespace?: TemplateNamespace) => () => TemplateClone",
+        "signature": "export declare function templateHoles(html: string, plan?: TemplatePlan | false, namespace?: TemplateNamespace): () => TemplateClone;"
       },
       "text": {
         "kind": "function",
@@ -1854,8 +1854,8 @@
       },
       "ValidateOnSet": {
         "kind": "function",
-        "type": "() => RuleDecorator",
-        "signature": "export declare function ValidateOnSet(): RuleDecorator;"
+        "type": "(options?: ValidationOptions) => RuleDecorator",
+        "signature": "export declare function ValidateOnSet(options?: ValidationOptions): RuleDecorator;"
       },
       "validateOrThrow": {
         "kind": "function",

@@ -1,10 +1,11 @@
 import { DEFAULT_LOCALE, getValidationConfig, resolveMessage, resolveMessageAsync } from "./messages.js";
-import { validationStateFor } from "./registry.js";
+import { classStateRevision, validationStateFor } from "./registry.js";
 import { readInstanceSchema } from "./schema.js";
+import { isThenable, suppress } from "./thenable.js";
 import { validateFastPrimitive, validateType } from "./type-validation.js";
 import { AsyncRuleError, ValidationException } from "./types.js";
 import type { NestedInstance } from "./type-validation.js";
-import type { TypeSchema } from "./schema.js";
+import type { FieldSchemaMap, TypeSchema } from "./schema.js";
 import type {
   FieldKey,
   FieldRuleEntry,
@@ -41,8 +42,10 @@ interface FieldRun {
 }
 
 interface PlanCache {
-  readonly withSchema: readonly FieldRun[];
-  readonly plain: readonly FieldRun[];
+  readonly revision: number;
+  readonly schema: FieldSchemaMap | null | undefined;
+  readonly withSchema: readonly FieldRun[] | undefined;
+  readonly plain: readonly FieldRun[] | undefined;
 }
 
 const planCache = new WeakMap<Function, PlanCache>();
@@ -106,14 +109,6 @@ function readField(target: object, field: FieldKey): unknown {
   return (target as Record<FieldKey, unknown>)[field];
 }
 
-function isThenable(value: unknown): boolean {
-  return (
-    typeof value === "object"
-    && value !== null
-    && typeof (value as { then?: unknown }).then === "function"
-  );
-}
-
 function toItems(value: unknown): readonly unknown[] | undefined {
   if (Array.isArray(value)) {
     return value;
@@ -141,11 +136,35 @@ function groupsMatch(
   return ruleGroups.some((group) => callGroups.includes(group));
 }
 
+function labelAtPath(
+  labels: Readonly<Record<string, string>> | undefined,
+  fieldName: string,
+  path: string,
+): string | undefined {
+  if (labels === undefined) {
+    return undefined;
+  }
+  if (Object.hasOwn(labels, path)) {
+    const exact = labels[path];
+    if (typeof exact === "string") {
+      return exact;
+    }
+  }
+  if (path !== fieldName && !path.startsWith(`${fieldName}[`)) {
+    return undefined;
+  }
+  if (!Object.hasOwn(labels, fieldName)) {
+    return undefined;
+  }
+  const short = labels[fieldName];
+  return typeof short === "string" ? short : undefined;
+}
+
 function labelOf(call: RuleCall): string {
   return (
     call.entry.options.label
     ?? call.slot.label
-    ?? call.state.labels?.[call.slot.fieldName]
+    ?? labelAtPath(call.state.labels, call.slot.fieldName, call.path)
     ?? call.slot.fieldName
   );
 }
@@ -161,6 +180,10 @@ async function buildMessageAsync(call: RuleCall, label: string): Promise<string>
 function messageContext(call: RuleCall, label: string): MessageContext {
   const rule = call.entry.rule;
   const options = call.entry.options;
+  const messageKey = options.messageKey
+    ?? (rule.name === "each" && call.index === undefined
+      ? "validation.eachValue"
+      : undefined);
   return {
     rule: rule.name,
     key: `validation.${rule.name}`,
@@ -173,7 +196,7 @@ function messageContext(call: RuleCall, label: string): MessageContext {
     path: call.path,
     ...(call.index === undefined ? {} : { index: call.index }),
     ...(options.message === undefined ? {} : { message: options.message }),
-    ...(options.messageKey === undefined ? {} : { messageKey: options.messageKey }),
+    ...(messageKey === undefined ? {} : { messageKey }),
   };
 }
 
@@ -282,6 +305,7 @@ function evaluateSync(
 ): boolean {
   const result = check(value, createRunContext(call));
   if (isThenable(result)) {
+    suppress(result);
     throw new AsyncRuleError(call.slot.fieldName, call.entry.rule.name);
   }
   return result === true;
@@ -296,8 +320,15 @@ async function evaluateAsync(
 }
 
 function isRunnable(entry: FieldRuleEntry, slot: FieldSlot, target: object, state: RuntimeState): boolean {
-  if (entry.options.when !== undefined && !entry.options.when(target)) {
-    return false;
+  if (entry.options.when !== undefined) {
+    const condition: unknown = entry.options.when(target);
+    if (isThenable(condition)) {
+      suppress(condition);
+      throw new AsyncRuleError(slot.fieldName, "when");
+    }
+    if (!condition) {
+      return false;
+    }
   }
   return groupsMatch(entry.options.groups ?? slot.groups, state.callGroups);
 }
@@ -319,34 +350,56 @@ function fieldPlan(target: object, withSchema: boolean): readonly FieldRun[] {
   if (typeof ctor !== "function") {
     return buildFieldPlan(target, withSchema);
   }
+  const revision = classStateRevision(ctor);
+  const schema = withSchema ? readInstanceSchema(target) : undefined;
   let cached = planCache.get(ctor);
-  if (cached === undefined) {
-    cached = {
-      withSchema: buildFieldPlan(target, true),
-      plain: buildFieldPlan(target, false),
-    };
+  if (cached === undefined || cached.revision !== revision) {
+    cached = { revision, schema, withSchema: undefined, plain: undefined };
+    planCache.set(ctor, cached);
+  } else if (withSchema && cached.schema !== schema) {
+    cached = { ...cached, schema, withSchema: undefined };
     planCache.set(ctor, cached);
   }
-  return withSchema ? cached.withSchema : cached.plain;
+  const existing = withSchema ? cached.withSchema : cached.plain;
+  if (existing !== undefined) {
+    return existing;
+  }
+  const built = buildFieldPlan(target, withSchema, schema);
+  cached = {
+    revision,
+    schema,
+    withSchema: withSchema ? built : cached.withSchema,
+    plain: withSchema ? cached.plain : built,
+  };
+  planCache.set(ctor, cached);
+  return built;
 }
 
-function buildFieldPlan(target: object, withSchema: boolean): readonly FieldRun[] {
+function buildFieldPlan(
+  target: object,
+  withSchema: boolean,
+  schema: FieldSchemaMap | null | undefined = undefined,
+): readonly FieldRun[] {
   const validation = validationStateFor(target);
   const byName = new Map<string, FieldSlot>();
   for (const slot of validation.fields.values()) {
-    if (!byName.has(slot.fieldName)) {
+    if (typeof slot.field === "string" && !byName.has(slot.fieldName)) {
       byName.set(slot.fieldName, slot);
     }
   }
   const plan: FieldRun[] = [];
   const used = new Set<FieldSlot>();
   if (withSchema) {
-    const schema = readInstanceSchema(target);
-    if (schema !== null) {
-      for (const [name, typeSchema] of Object.entries(schema)) {
+    const resolved = schema === undefined ? readInstanceSchema(target) : schema;
+    if (resolved !== null) {
+      for (const [name, typeSchema] of Object.entries(resolved)) {
         const slot = byName.get(name);
         if (slot !== undefined) {
-          used.add(slot);
+          for (const candidate of validation.fields.values()) {
+            if (typeof candidate.field === "string" && candidate.fieldName === name) {
+              used.add(candidate);
+            }
+          }
         }
         plan.push({
           key: slot?.field ?? name,
@@ -438,7 +491,9 @@ function prepareField(
       asyncTypes && state.config.resolve !== undefined
         ? withoutResolver(state.config)
         : state.config;
-    const label = slot?.label ?? state.labels?.[run.fieldName] ?? run.fieldName;
+    const label = slot?.label
+      ?? labelAtPath(state.labels, run.fieldName, path)
+      ?? run.fieldName;
     let nested: readonly NestedInstance[] = EMPTY_NESTED;
     let failed = false;
     const fast = validateFastPrimitive(value, run.schema, {

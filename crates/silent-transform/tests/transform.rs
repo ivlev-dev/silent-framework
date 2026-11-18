@@ -2,8 +2,12 @@ use silent_transform::{transform, Index};
 use std::collections::HashMap;
 
 fn run(source: &str, filename: &str, index: Index) -> String {
+    run_with(source, filename, "{}", index)
+}
+
+fn run_with(source: &str, filename: &str, options: &str, index: Index) -> String {
     let index_json = serde_json::to_string(&index).unwrap();
-    let result = transform(source, filename, "{}", &index_json).unwrap();
+    let result = transform(source, filename, options, &index_json).unwrap();
     let value: serde_json::Value = serde_json::from_str(&result).unwrap();
     value["code"].as_str().unwrap().to_string()
 }
@@ -697,4 +701,79 @@ fn keeps_dynamic_index_prop() {
     );
     assert!(!code.contains("index: false"), "{code}");
     assert_eq!(code.matches("index").count(), 1, "{code}");
+}
+
+#[test]
+fn skips_adoption_plan_when_hydration_disabled() {
+    let source = "import { value } from \"./state\"; const a = <div>{value()}</div>;";
+    let code = run_with(
+        source,
+        "/proj/src/view.tsx",
+        "{\"hydrate\":false}",
+        Index::default(),
+    );
+    assert!(!code.contains("holes:"), "{code}");
+    let default_code = run(source, "/proj/src/view.tsx", Index::default());
+    assert!(default_code.contains("holes:"), "{default_code}");
+}
+
+#[test]
+fn skips_static_rows_when_hydration_disabled() {
+    let code = run_with(
+        &for_source("{(row) => <li>{row.label}</li>}"),
+        "/proj/src/view.tsx",
+        "{\"hydrate\":false}",
+        Index::default(),
+    );
+    assert!(!code.contains("staticRows"), "{code}");
+    assert!(code.contains("index: false"), "{code}");
+}
+
+#[test]
+fn emits_static_marker_for_static_template_without_hydration() {
+    let code = run_with(
+        "const el = <section class=\"static\"><h2>Заголовок</h2><p>Текст</p></section>;",
+        "/proj/src/view.tsx",
+        "{\"hydrate\":false}",
+        Index::default(),
+    );
+    assert!(code.contains("_$templateHoles('<section"), "{code}");
+    assert!(code.contains(", false),") || code.contains(", false);"), "{code}");
+    assert!(!code.contains("holes:"), "{code}");
+}
+
+#[test]
+fn emits_static_marker_for_static_svg_template_without_hydration() {
+    let code = run_with(
+        "const el = <svg viewBox=\"0 0 10 10\"><path d=\"M0 0\" /></svg>;",
+        "/proj/src/view.tsx",
+        "{\"hydrate\":false}",
+        Index::default(),
+    );
+    assert!(code.contains("_$templateHoles('<svg"), "{code}");
+    assert!(code.contains(", false)"), "{code}");
+}
+
+#[test]
+fn keeps_marker_scan_for_dynamic_template_without_hydration() {
+    let code = run_with(
+        "const el = <div title={label}>{value}<textarea class=\"field\">{value}</textarea></div>;",
+        "/proj/src/view.tsx",
+        "{\"hydrate\":false}",
+        Index::default(),
+    );
+    assert!(code.contains("_$templateHoles('<div"), "{code}");
+    assert!(!code.contains("false"), "{code}");
+    assert!(!code.contains("holes:"), "{code}");
+}
+
+#[test]
+fn keeps_static_template_plan_with_hydration() {
+    let code = run(
+        "const el = <section class=\"static\"><h2>Заголовок</h2></section>;",
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(code.contains("holes: []"), "{code}");
+    assert!(!code.contains(", false"), "{code}");
 }

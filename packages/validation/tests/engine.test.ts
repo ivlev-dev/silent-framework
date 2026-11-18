@@ -58,6 +58,21 @@ const asyncCheck: RuleDefinition = {
   check: async (value) => value === "ok",
 };
 
+const rejectingCheck: RuleDefinition = {
+  name: "rejectingCheck",
+  params: {},
+  check: async () => {
+    throw new Error("boom");
+  },
+};
+
+const eachCollection: RuleDefinition = {
+  name: "each",
+  params: {},
+  nested: "each",
+  check: () => true,
+};
+
 function firstError(result: ValidationResult): ValidationError {
   const [error] = result.errors;
   if (error === undefined) {
@@ -432,6 +447,104 @@ describe("validate", () => {
     expect(error.rule).toBe("nestedEach");
     expect(error.path).toBe("items");
     expect(error.index).toBeUndefined();
+  });
+
+  it("пересобирает план после поздней регистрации полей", () => {
+    class Late {
+      public probe = validate(this);
+
+      @ruleDecorator(required)
+      public accessor name = "";
+    }
+
+    const late = new Late();
+
+    expect(late.probe.valid).toBe(true);
+    expect(validate(late).errors.map((error) => error.field)).toEqual(["name"]);
+  });
+
+  it("гасит отклонённый промис асинхронного правила", async () => {
+    class Box {
+      @ruleDecorator(rejectingCheck)
+      public accessor value = "x";
+    }
+
+    const rejections: unknown[] = [];
+    const onRejection = (reason: unknown): void => {
+      rejections.push(reason);
+    };
+    const proc = (globalThis as unknown as {
+      process: {
+        on(event: "unhandledRejection", listener: (reason: unknown) => void): void;
+        off(event: "unhandledRejection", listener: (reason: unknown) => void): void;
+      };
+    }).process;
+    proc.on("unhandledRejection", onRejection);
+    try {
+      expect(() => validate(new Box())).toThrow(AsyncRuleError);
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 0);
+      });
+    } finally {
+      proc.off("unhandledRejection", onRejection);
+    }
+
+    expect(rejections).toEqual([]);
+  });
+
+  it("считает thenable в when асинхронным условием", async () => {
+    const when = (() => Promise.resolve(true)) as unknown as (instance: object) => boolean;
+
+    class Box {
+      @ruleDecorator(alwaysInvalid, { when })
+      public accessor value = "x";
+    }
+
+    let thrown: unknown;
+    try {
+      validate(new Box());
+    } catch (error: unknown) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(AsyncRuleError);
+    expect((thrown as AsyncRuleError).field).toBe("value");
+    expect((thrown as AsyncRuleError).rule).toBe("when");
+
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+  });
+
+  it("распознаёт функцию-thenable в синхронной проверке", () => {
+    const functionThenable = Object.assign(() => undefined, {
+      then: () => undefined,
+    }) as unknown as boolean;
+    const rule: RuleDefinition = {
+      name: "functionThenable",
+      params: {},
+      check: () => functionThenable,
+    };
+
+    class Box {
+      @ruleDecorator(rule)
+      public accessor value = "x";
+    }
+
+    expect(() => validate(new Box())).toThrow(AsyncRuleError);
+  });
+
+  it("сообщает о не-коллекции без литерала {index}", () => {
+    class Tags {
+      @ruleDecorator(eachCollection)
+      public accessor tags: unknown = "nope";
+    }
+
+    const error = firstError(validate(new Tags()));
+
+    expect(error.rule).toBe("each");
+    expect(error.message).toBe("Поле tags должно быть коллекцией");
+    expect(error.message).not.toContain("{index}");
   });
 
   it("бросает TypeError для не-объекта", () => {

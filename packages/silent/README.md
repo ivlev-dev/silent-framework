@@ -8,7 +8,8 @@
 
 ## Возможности
 
-- Один пакет вместо семи: `silent-core`, `silent-di`, `silent-reactivity`, `silent-router`, `silent-swc`, `silent-vite`.
+- Один пакет вместо шести: `silent-core`, `silent-di`, `silent-reactivity`, `silent-router`, `silent-swc`, `silent-vite`.
+- Валидация ставится отдельно: `@ivlev-dev/silent-validation` (рантайм) и `@ivlev-dev/silent-validation-vite` (плагин).
 - Реэкспорт всего публичного API `@ivlev-dev/silent-core`.
 - Реэкспорт роутера: `Router`, `RouterView`, `Link` и остальной API `@ivlev-dev/silent-router`.
 - Плагин Vite доступен как `silent` из того же пакета.

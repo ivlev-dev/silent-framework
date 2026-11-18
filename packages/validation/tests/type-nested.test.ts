@@ -331,13 +331,21 @@ describe("вложенные классы: groups и labels", () => {
     ]);
   });
 
-  it("учитывает labels вложенного класса", () => {
+  it("учитывает labels вложенного класса по полному пути", () => {
+    const result = validate(new GroupedParent(), {
+      groups: ["create"],
+      labels: { "child.token": "Токен" },
+    });
+    expect(result.errors[0]?.label).toBe("Токен");
+    expect(result.errors[0]?.message).toContain("Токен");
+  });
+
+  it("не применяет короткий label к вложенному полю", () => {
     const result = validate(new GroupedParent(), {
       groups: ["create"],
       labels: { token: "Токен" },
     });
-    expect(result.errors[0]?.label).toBe("Токен");
-    expect(result.errors[0]?.message).toContain("Токен");
+    expect(result.errors[0]?.label).toBe("token");
   });
 });
 

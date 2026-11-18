@@ -25,7 +25,11 @@ use swc_core::ecma::parser::Syntax;
 use swc_core::ecma::transforms::proposal::DecoratorVersion;
 use swc_core::ecma::visit::{VisitMut, VisitMutWith};
 
-#[derive(Debug, Default, Deserialize)]
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SilentOptions {
     #[serde(default)]
@@ -38,8 +42,24 @@ pub struct SilentOptions {
     pub hmr: bool,
     #[serde(default)]
     pub ssr: bool,
+    #[serde(default = "default_true")]
+    pub hydrate: bool,
     #[serde(default)]
     pub aliases: Vec<crate::alias::AliasRule>,
+}
+
+impl Default for SilentOptions {
+    fn default() -> Self {
+        Self {
+            swc: serde_json::Value::Null,
+            require_preloader: false,
+            runtime: None,
+            hmr: false,
+            ssr: false,
+            hydrate: true,
+            aliases: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -69,6 +89,7 @@ pub(crate) struct SilentPass {
     pub(crate) view_stack: Vec<bool>,
     pub(crate) hmr: bool,
     pub(crate) ssr: bool,
+    pub(crate) hydrate: bool,
     pub(crate) hmr_deps: Vec<String>,
     pub(crate) aliases: Vec<crate::alias::AliasRule>,
     pub(crate) hoisted_templates: Vec<(Ident, Expr)>,
@@ -102,6 +123,7 @@ impl SilentPass {
             view_stack: Vec::new(),
             hmr: options.hmr,
             ssr: options.ssr,
+            hydrate: options.hydrate,
             hmr_deps: Vec::new(),
             aliases: options.aliases.clone(),
             hoisted_templates: Vec::new(),

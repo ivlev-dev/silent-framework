@@ -62,6 +62,7 @@ interface ObjectField {
 
 interface LazyCell {
   node: SchemaNode | null;
+  readonly path: readonly string[];
 }
 
 interface BooleanLiteralType {
@@ -88,12 +89,18 @@ type SchemaNode =
 interface SerializeState {
   readonly checker: ts.TypeChecker;
   readonly runtimeRef: (symbol: ts.Symbol) => string;
-  readonly seen: Set<ts.Type>;
+  readonly sourceFile: ts.SourceFile;
+  readonly report: (message: string) => void;
+  readonly strict: boolean;
+  readonly active: Set<ts.Type>;
   readonly cache: WeakMap<ts.Type, SchemaNode | null>;
   readonly lazy: Map<ts.Type, LazyCell>;
   readonly queue: ts.Type[];
+  readonly path: string[];
   depth: number;
 }
+
+type ClassLikeDeclaration = ts.ClassDeclaration | ts.ClassExpression;
 
 const SCHEMA_KEY = "silent.validation.schema";
 const MAX_DEPTH = 64;
@@ -148,19 +155,6 @@ function resolveSymbol(symbol: ts.Symbol | undefined, checker: ts.TypeChecker): 
   return symbol;
 }
 
-function symbolNames(type: ts.Type): readonly string[] {
-  const names: string[] = [];
-  const symbol = type.getSymbol();
-  if (symbol !== undefined) {
-    names.push(symbol.getName());
-  }
-  const alias = type.aliasSymbol;
-  if (alias !== undefined) {
-    names.push(alias.getName());
-  }
-  return names;
-}
-
 function typeArguments(type: ts.Type, checker: ts.TypeChecker): readonly ts.Type[] {
   if (type.aliasTypeArguments !== undefined && type.aliasTypeArguments.length > 0) {
     return type.aliasTypeArguments;
@@ -172,6 +166,67 @@ function typeArguments(type: ts.Type, checker: ts.TypeChecker): readonly ts.Type
     }
   }
   return [];
+}
+
+function isDefaultLibFile(sourceFile: ts.SourceFile): boolean {
+  const name = sourceFile.fileName;
+  const slash = Math.max(name.lastIndexOf("/"), name.lastIndexOf("\\"));
+  return /^lib(?:\.[^/\\]+)?\.d\.ts$/.test(name.slice(slash + 1));
+}
+
+function defaultLibSymbolName(
+  symbol: ts.Symbol | undefined,
+  checker: ts.TypeChecker,
+): string | null {
+  const resolved = resolveSymbol(symbol, checker);
+  if (resolved === undefined) {
+    return null;
+  }
+  const valueDeclaration = resolved.valueDeclaration;
+  if (
+    valueDeclaration !== undefined
+    && (ts.isClassDeclaration(valueDeclaration) || ts.isClassExpression(valueDeclaration))
+    && !isDefaultLibFile(valueDeclaration.getSourceFile())
+  ) {
+    return null;
+  }
+  const declarations = resolved.declarations ?? [];
+  for (const declaration of declarations) {
+    if (isDefaultLibFile(declaration.getSourceFile())) {
+      return resolved.getName();
+    }
+  }
+  return null;
+}
+
+function builtinNameOfType(type: ts.Type, checker: ts.TypeChecker): string | null {
+  const alias = defaultLibSymbolName(type.aliasSymbol, checker);
+  if (alias !== null) {
+    return alias;
+  }
+  return defaultLibSymbolName(type.getSymbol(), checker);
+}
+
+function hasBuiltinBase(
+  type: ts.Type,
+  name: string,
+  checker: ts.TypeChecker,
+  visited: Set<ts.Type>,
+): boolean {
+  if (visited.has(type)) {
+    return false;
+  }
+  visited.add(type);
+  const bases = type.getBaseTypes() ?? [];
+  for (const base of bases) {
+    if (defaultLibSymbolName(base.getSymbol(), checker) === name) {
+      return true;
+    }
+    if (hasBuiltinBase(base, name, checker, visited)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function enumValueOf(type: ts.Type, checker: ts.TypeChecker): string | number | undefined {
@@ -229,27 +284,6 @@ function enumValuesOfSymbol(type: ts.Type, checker: ts.TypeChecker): readonly (s
     return values;
   }
   return null;
-}
-
-function hasBaseNamed(
-  type: ts.Type,
-  name: string,
-  visited: Set<ts.Type>,
-): boolean {
-  if (visited.has(type)) {
-    return false;
-  }
-  visited.add(type);
-  const bases = type.getBaseTypes() ?? [];
-  for (const base of bases) {
-    if (base.getSymbol()?.getName() === name) {
-      return true;
-    }
-    if (hasBaseNamed(base, name, visited)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 function stripUndefined(node: SchemaNode): SchemaNode {
@@ -310,19 +344,19 @@ function serializeUnion(
       restWithoutBooleans.push(member);
     }
   }
-  if (booleans >= 2) {
+  const hasBoolean = booleans >= 2;
+  if (hasBoolean) {
     rest.length = 0;
     rest.push(...restWithoutBooleans);
   }
-  const hasBoolean = booleans >= 2;
   let base: SchemaNode | null;
   if (rest.length === 0) {
     base = hasBoolean ? primitive("boolean") : primitive(optional ? "undefined" : "null");
   } else {
-    const values = enumValuesOf(rest, state.checker);
+    const values = hasBoolean ? null : enumValuesOf(rest, state.checker);
     if (values !== null) {
       base = { kind: "enum", values };
-    } else if (rest.length === 1) {
+    } else if (rest.length === 1 && !hasBoolean) {
       base = serializeType(rest[0]!, state);
     } else {
       const members: SchemaNode[] = [];
@@ -464,31 +498,63 @@ function lazyCell(type: ts.Type, state: SerializeState): LazyCell {
   if (existing !== undefined) {
     return existing;
   }
-  const cell: LazyCell = { node: null };
+  const cell: LazyCell = { node: null, path: [...state.path] };
   state.lazy.set(type, cell);
   state.queue.push(type);
   return cell;
+}
+
+function reportUnsupported(
+  state: SerializeState,
+  path: readonly string[],
+  type: ts.Type,
+): void {
+  const message = `${state.sourceFile.fileName}: ${path.join(".")}: тип ${state.checker.typeToString(type)} не поддерживается`;
+  state.report(message);
+  if (state.strict) {
+    throw new Error(message);
+  }
+}
+
+function isWellKnownSymbolProperty(property: ts.Symbol): boolean {
+  if (property.getName().startsWith("__@")) {
+    return true;
+  }
+  for (const declaration of property.declarations ?? []) {
+    const name = ts.getNameOfDeclaration(declaration);
+    if (name === undefined || !ts.isComputedPropertyName(name)) {
+      continue;
+    }
+    const expression = name.expression;
+    if (
+      ts.isPropertyAccessExpression(expression)
+      && ts.isIdentifier(expression.expression)
+      && expression.expression.text === "Symbol"
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function serializeObjectProperties(
   type: ts.Type,
   state: SerializeState,
 ): SchemaNode | null {
-  if (state.seen.has(type)) {
-    return { kind: "lazy", cell: lazyCell(type, state) };
-  }
-  if (state.depth >= MAX_DEPTH) {
-    return { kind: "lazy", cell: lazyCell(type, state) };
-  }
-  state.seen.add(type);
-  state.depth += 1;
-  try {
-    const fields: ObjectField[] = [];
-    for (const property of state.checker.getPropertiesOfType(type)) {
-      const declaration = property.valueDeclaration ?? property.declarations?.[0];
-      const propertyType = state.checker.getTypeOfSymbol(property);
-      let schema = serializeType(propertyType, state);
+  const fields: ObjectField[] = [];
+  for (const property of state.checker.getPropertiesOfType(type)) {
+    if (isWellKnownSymbolProperty(property)) {
+      continue;
+    }
+    const name = property.getName();
+    const declaration = property.valueDeclaration ?? property.declarations?.[0];
+    const propertyType = state.checker.getTypeOfSymbol(property);
+    state.path.push(name);
+    let schema: SchemaNode | null;
+    try {
+      schema = serializeType(propertyType, state);
       if (schema === null) {
+        reportUnsupported(state, state.path, propertyType);
         continue;
       }
       const optional = (property.flags & ts.SymbolFlags.Optional) !== 0
@@ -496,13 +562,12 @@ function serializeObjectProperties(
       if (optional) {
         schema = wrapOptional(stripUndefined(schema));
       }
-      fields.push({ name: property.getName(), schema });
+      fields.push({ name, schema });
+    } finally {
+      state.path.pop();
     }
-    return { kind: "object", fields };
-  } finally {
-    state.depth -= 1;
-    state.seen.delete(type);
   }
+  return { kind: "object", fields };
 }
 
 function serializeObject(
@@ -513,8 +578,8 @@ function serializeObject(
     return serializeTuple(type as ts.TypeReference, state);
   }
   const args = typeArguments(type, state.checker);
-  const names = symbolNames(type);
-  if (state.checker.isArrayType(type) || names.includes("Array") || names.includes("ReadonlyArray")) {
+  const builtin = builtinNameOfType(type, state.checker);
+  if (builtin === "Array" || builtin === "ReadonlyArray" || state.checker.isArrayType(type)) {
     const element = args[0] ?? state.checker.getIndexTypeOfType(type, ts.IndexKind.Number);
     if (element === undefined) {
       return null;
@@ -522,11 +587,17 @@ function serializeObject(
     const schema = serializeType(element, state);
     return schema === null ? null : { kind: "array", element: schema };
   }
-  if (names.includes("Map") || names.includes("WeakMap") || names.includes("ReadonlyMap")) {
+  if (builtin === "WeakMap") {
+    return primitive("weakmap");
+  }
+  if (builtin === "WeakSet") {
+    return primitive("weakset");
+  }
+  if (builtin === "Map" || builtin === "ReadonlyMap") {
     const key = args[0];
     const value = args[1];
     if (key === undefined || value === undefined) {
-      return primitive(names.includes("WeakMap") ? "weakmap" : "map");
+      return primitive("map");
     }
     const keySchema = serializeType(key, state);
     const valueSchema = serializeType(value, state);
@@ -535,34 +606,34 @@ function serializeObject(
     }
     return { kind: "mapof", key: keySchema, value: valueSchema };
   }
-  if (names.includes("Set") || names.includes("WeakSet") || names.includes("ReadonlySet")) {
+  if (builtin === "Set" || builtin === "ReadonlySet") {
     const element = args[0];
     if (element === undefined) {
-      return primitive(names.includes("WeakSet") ? "weakset" : "set");
+      return primitive("set");
     }
     const schema = serializeType(element, state);
     return schema === null ? null : { kind: "setof", element: schema };
   }
-  if (names.includes("Promise")) {
+  if (builtin === "Promise") {
     return primitive("promise");
   }
-  for (const name of names) {
-    const builtin = BUILTIN_NAMES[name];
-    if (builtin !== undefined) {
-      return primitive(builtin);
+  if (builtin !== null) {
+    const named = BUILTIN_NAMES[builtin];
+    if (named !== undefined) {
+      return primitive(named);
     }
-    const collection = COLLECTION_NAMES[name];
+    const collection = COLLECTION_NAMES[builtin];
     if (collection !== undefined) {
       return primitive(collection);
     }
   }
-  if (hasBaseNamed(type, "Error", new Set<ts.Type>())) {
+  if (hasBuiltinBase(type, "Error", state.checker, new Set<ts.Type>())) {
     return primitive("error");
   }
   if (type.getCallSignatures().length > 0) {
     return primitive("function");
   }
-  if (names.includes("Record") && args.length === 2) {
+  if (builtin === "Record" && args.length === 2) {
     const valueSchema = serializeType(args[1]!, state);
     return valueSchema === null ? null : { kind: "record", value: valueSchema };
   }
@@ -572,6 +643,9 @@ function serializeObject(
     const valueSchema = serializeType(stringIndex, state);
     return valueSchema === null ? null : { kind: "record", value: valueSchema };
   }
+  if (builtin !== null) {
+    return primitive("object");
+  }
   const symbol = resolveSymbol(type.getSymbol(), state.checker);
   const declaration = symbol?.valueDeclaration ?? symbol?.declarations?.[0];
   if (symbol !== undefined && declaration !== undefined && (ts.isClassDeclaration(declaration) || ts.isClassExpression(declaration))) {
@@ -580,7 +654,17 @@ function serializeObject(
     }
     return { kind: "class", reference: state.runtimeRef(symbol) };
   }
-  return serializeObjectProperties(type, state);
+  const objectNode = serializeObjectProperties(type, state);
+  if (objectNode === null) {
+    return null;
+  }
+  if (properties.length > 0 && stringIndex !== undefined) {
+    const valueSchema = serializeType(stringIndex, state);
+    if (valueSchema !== null) {
+      return { kind: "intersection", members: [objectNode, { kind: "record", value: valueSchema }] };
+    }
+  }
+  return objectNode;
 }
 
 function serializeTypeUncached(type: ts.Type, state: SerializeState): SchemaNode | null {
@@ -618,7 +702,7 @@ function serializeTypeUncached(type: ts.Type, state: SerializeState): SchemaNode
   }
   if ((flags & ts.TypeFlags.Enum) !== 0) {
     const values = enumValuesOfSymbol(type, state.checker);
-    return { kind: "enum", values: values ?? [] };
+    return values === null ? null : { kind: "enum", values };
   }
   const literal = serializeLiteral(type);
   if (literal !== null) {
@@ -652,18 +736,26 @@ function serializeTypeUncached(type: ts.Type, state: SerializeState): SchemaNode
 }
 
 function serializeType(type: ts.Type, state: SerializeState): SchemaNode | null {
-  const cacheable = !state.seen.has(type);
-  if (cacheable) {
-    const cached = state.cache.get(type);
-    if (cached !== undefined) {
-      return cached;
-    }
+  if (state.active.has(type)) {
+    return { kind: "lazy", cell: lazyCell(type, state) };
   }
-  const node = serializeTypeUncached(type, state);
-  if (cacheable) {
+  const cached = state.cache.get(type);
+  if (cached !== undefined) {
+    return cached;
+  }
+  if (state.depth >= MAX_DEPTH) {
+    return { kind: "lazy", cell: lazyCell(type, state) };
+  }
+  state.active.add(type);
+  state.depth += 1;
+  try {
+    const node = serializeTypeUncached(type, state);
     state.cache.set(type, node);
+    return node;
+  } finally {
+    state.depth -= 1;
+    state.active.delete(type);
   }
-  return node;
 }
 
 function formatTuple(node: Extract<SchemaNode, { kind: "tuple" }>, names: ReadonlyMap<LazyCell, string>): string {
@@ -799,7 +891,11 @@ function hasStaticModifier(member: ts.ClassElement): boolean {
   return modifiers.some((modifier) => modifier.kind === ts.SyntaxKind.StaticKeyword);
 }
 
-function closingPosition(sourceFile: ts.SourceFile, declaration: ts.ClassDeclaration): number {
+function lineBreakOf(sourceFile: ts.SourceFile): string {
+  return sourceFile.text.includes("\r\n") ? "\r\n" : "\n";
+}
+
+function closingPosition(sourceFile: ts.SourceFile, declaration: ClassLikeDeclaration): number {
   const end = declaration.getEnd();
   const position = end - 1;
   if (sourceFile.text[position] === "}") {
@@ -809,7 +905,7 @@ function closingPosition(sourceFile: ts.SourceFile, declaration: ts.ClassDeclara
   return fallback >= 0 ? fallback : position;
 }
 
-function blockIndentation(sourceFile: ts.SourceFile, position: number, declaration: ts.ClassDeclaration): { readonly closing: string; readonly lead: string } {
+function blockIndentation(sourceFile: ts.SourceFile, position: number, declaration: ClassLikeDeclaration): { readonly closing: string; readonly lead: string } {
   const lineStart = sourceFile.text.lastIndexOf("\n", position - 1) + 1;
   const prefix = sourceFile.text.slice(lineStart, position);
   if (lineStart > 0 && /^[ \t]*$/.test(prefix)) {
@@ -819,7 +915,7 @@ function blockIndentation(sourceFile: ts.SourceFile, position: number, declarati
   const declarationLineStart = sourceFile.text.lastIndexOf("\n", declarationStart - 1) + 1;
   const declarationPrefix = sourceFile.text.slice(declarationLineStart, declarationStart);
   const closing = /^[ \t]*$/.test(declarationPrefix) ? declarationPrefix : "";
-  return { closing, lead: `\n${closing}` };
+  return { closing, lead: `${lineBreakOf(sourceFile)}${closing}` };
 }
 
 function flushLazy(state: SerializeState): void {
@@ -832,18 +928,27 @@ function flushLazy(state: SerializeState): void {
     if (cell === undefined || cell.node !== null) {
       continue;
     }
-    const node = serializeType(type, { ...state, seen: new Set<ts.Type>(), depth: 0 });
-    cell.node = node ?? primitive("object");
+    const traversal: SerializeState = {
+      ...state,
+      active: new Set<ts.Type>(),
+      path: [...cell.path],
+      depth: 0,
+    };
+    const node = serializeType(type, traversal);
+    cell.node = node === null || (node.kind === "lazy" && node.cell === cell)
+      ? primitive("object")
+      : node;
   }
 }
 
 function buildBlock(
   sourceFile: ts.SourceFile,
-  declaration: ts.ClassDeclaration,
+  declaration: ClassLikeDeclaration,
   entries: readonly ObjectField[],
 ): ValidationBlock {
   const position = closingPosition(sourceFile, declaration);
   const indentation = blockIndentation(sourceFile, position, declaration);
+  const newline = lineBreakOf(sourceFile);
   const inner = `${indentation.closing}${INDENT_UNIT}${INDENT_UNIT}`;
   const memberIndent = `${indentation.closing}${INDENT_UNIT}`;
   const rendered = renderFields(entries);
@@ -855,12 +960,12 @@ function buildBlock(
     `${inner}${assignment}`,
     `${memberIndent}}`,
     `${indentation.closing}`,
-  ].join("\n");
+  ].join(newline);
   return { position, code };
 }
 
-function collectClasses(node: ts.Node, classes: ts.ClassDeclaration[]): void {
-  if (ts.isClassDeclaration(node)) {
+function collectClasses(node: ts.Node, classes: ClassLikeDeclaration[]): void {
+  if (ts.isClassDeclaration(node) || ts.isClassExpression(node)) {
     classes.push(node);
   }
   ts.forEachChild(node, (child) => {
@@ -868,29 +973,74 @@ function collectClasses(node: ts.Node, classes: ts.ClassDeclaration[]): void {
   });
 }
 
+function classLikeName(declaration: ClassLikeDeclaration): string | undefined {
+  if (declaration.name !== undefined) {
+    return declaration.name.text;
+  }
+  const parent = declaration.parent;
+  if (ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)) {
+    return parent.name.text;
+  }
+  if (ts.isPropertyDeclaration(parent) && ts.isIdentifier(parent.name)) {
+    return parent.name.text;
+  }
+  return undefined;
+}
+
+function shouldEmit(
+  shouldGenerate: ((declaration: ts.ClassDeclaration) => boolean) | undefined,
+  declaration: ClassLikeDeclaration,
+): boolean {
+  if (shouldGenerate === undefined) {
+    return true;
+  }
+  return shouldGenerate(declaration as ts.ClassDeclaration);
+}
+
 export function generateValidationBlocks(
   options: ValidationCodegenOptions,
 ): readonly ValidationBlock[] {
   const { sourceFile, checker, runtimeRef, shouldGenerate } = options;
   const blocks: ValidationBlock[] = [];
-  const classes: ts.ClassDeclaration[] = [];
+  const classes: ClassLikeDeclaration[] = [];
   const cache = new WeakMap<ts.Type, SchemaNode | null>();
   const lazy = new Map<ts.Type, LazyCell>();
   const queue: ts.Type[] = [];
+  const reported = new Set<string>();
+  const report = (message: string): void => {
+    if (reported.has(message)) {
+      return;
+    }
+    reported.add(message);
+    options.diagnostics?.(message);
+  };
   collectClasses(sourceFile, classes);
-  for (const statement of classes) {
-    if (statement.name === undefined) {
+  for (const declaration of classes) {
+    const className = classLikeName(declaration);
+    if (className === undefined) {
       continue;
     }
-    if (shouldGenerate !== undefined && !shouldGenerate(statement)) {
+    if (!shouldEmit(shouldGenerate, declaration)) {
       continue;
     }
-    if (sourceFile.text.slice(statement.getStart(sourceFile), statement.getEnd()).includes(SCHEMA_KEY)) {
+    if (sourceFile.text.slice(declaration.getStart(sourceFile), declaration.getEnd()).includes(SCHEMA_KEY)) {
       continue;
     }
-    const state: SerializeState = { checker, runtimeRef, seen: new Set<ts.Type>(), cache, lazy, queue, depth: 0 };
+    const state: SerializeState = {
+      checker,
+      runtimeRef,
+      sourceFile,
+      report,
+      strict: options.strict === true,
+      active: new Set<ts.Type>(),
+      cache,
+      lazy,
+      queue,
+      path: [className],
+      depth: 0,
+    };
     const entries: ObjectField[] = [];
-    for (const member of statement.members) {
+    for (const member of declaration.members) {
       if (!ts.isAutoAccessorPropertyDeclaration(member)) {
         continue;
       }
@@ -901,15 +1051,17 @@ export function generateValidationBlocks(
         continue;
       }
       const name = member.name.text;
-      const schema = fieldSchema(member, state);
+      state.path.push(name);
+      let schema: SchemaNode | null;
+      try {
+        schema = fieldSchema(member, state);
+      } finally {
+        state.path.pop();
+      }
       if (schema === null) {
         if (member.type !== undefined) {
           const type = checker.getTypeFromTypeNode(member.type);
-          const message = `${sourceFile.fileName}: ${statement.name.text}.${name}: тип ${checker.typeToString(type)} не поддерживается`;
-          options.diagnostics?.(message);
-          if (options.strict === true) {
-            throw new Error(message);
-          }
+          reportUnsupported(state, [className, name], type);
         }
         continue;
       }
@@ -919,7 +1071,7 @@ export function generateValidationBlocks(
       continue;
     }
     flushLazy(state);
-    blocks.push(buildBlock(sourceFile, statement, entries));
+    blocks.push(buildBlock(sourceFile, declaration, entries));
   }
   return blocks;
 }

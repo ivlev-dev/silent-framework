@@ -39,6 +39,7 @@ jobs:
       - run: pnpm api:check
       - run: pnpm api:check:self
       - run: pnpm install:check
+      - run: pnpm consumer:check
       - run: pnpm --filter @ivlev-dev/silent-example-counter build
       - run: pnpm --filter @ivlev-dev/silent-example-ssr-counter build
       - run: pnpm --filter @ivlev-dev/silent-example-router build

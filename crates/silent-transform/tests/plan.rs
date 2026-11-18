@@ -324,19 +324,13 @@ fn merges_adjacent_text_roots() {
 }
 
 #[test]
-fn builds_plan_for_attrs_and_strips() {
+fn builds_plan_for_attrs_without_attr_strips() {
     let plan = plan("const el = <div id=\"x\" title={x} class={y}><span data-z={z} /></div>;");
     assert_eq!(
         plan.attrs,
         vec![part(&[0], &[1]), part(&[0], &[1]), part(&[0, 0], &[1, 1]),]
     );
-    assert_eq!(
-        plan.strips,
-        vec![
-            strip(&[0], &[1], &["data-silent-a-0", "data-silent-a-1"]),
-            strip(&[0, 0], &[1, 1], &["data-silent-a-2"]),
-        ]
-    );
+    assert_eq!(plan.strips, Vec::new());
 }
 
 #[test]
@@ -365,7 +359,7 @@ fn builds_plan_for_dynamic_textarea() {
             roots: 1,
             holes: Vec::new(),
             attrs: vec![part(&[0], &[1])],
-            strips: vec![strip(&[0], &[1], &["data-silent-a-0", "data-silent-text"],)],
+            strips: vec![strip(&[0], &[1], &["data-silent-text"],)],
         }
     );
 }

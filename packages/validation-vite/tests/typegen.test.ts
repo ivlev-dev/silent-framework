@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import ts from "typescript";
+import { validate } from "@ivlev-dev/silent-validation";
 import { generateValidationBlocks } from "../src/typegen.js";
 import type { ValidationBlock } from "../src/typegen.js";
 
@@ -206,8 +207,8 @@ class Collections {
       + '"tuple": ["tuple",["string",null]], "record": ["record","boolean"], '
       + '"dictionary": ["record","date"], "map": ["mapof","string","number"], '
       + '"set": ["setof","string"], "readonlyMap": ["mapof","string","number"], '
-      + '"readonlySet": ["setof","string"], "weakMap": ["mapof","object","date"], '
-      + '"weakSet": ["setof","object"], "promise": "promise"',
+      + '"readonlySet": ["setof","string"], "weakMap": "weakmap", '
+      + '"weakSet": "weakset", "promise": "promise"',
     );
   });
 
@@ -502,10 +503,10 @@ class Tree {
 `);
     expect(blocks).toHaveLength(1);
     const code = blocks[0]!.code;
-    const node = '["object",{"value":"string","next":["nullable",["lazy",()=>lazy0]]}]';
+    const node = '["object",{"value":"string","next":["lazy",()=>lazy0]}]';
     expect(code).toContain(`"head": ["nullable",${node}]`);
     expect(code).toContain(`"nodes": ["array",${node}]`);
-    expect(code).toContain(`const lazy0 = ${node};`);
+    expect(code).toContain(`const lazy0 = ["nullable",${node}];`);
     expect(code.match(/const lazy0/g)).toHaveLength(1);
   });
 
@@ -572,6 +573,292 @@ class Plain {
 `);
     expect(fields).toBe(
       '"tuple": ["tuple",["string",null]], "readonlyTuple": ["tuple",["string","number"]]',
+    );
+  });
+
+  it("не зацикливается на рекурсивных union и массивах", () => {
+    const code = blocksFor(`
+type Nested = string | Nested[];
+
+class Recursive {
+  accessor nested: Nested = "";
+}
+`)[0]!.code;
+    expect(code).toContain('"nested": ["union",["string",["array",["lazy",()=>lazy0]]]]');
+    expect(code).toContain('const lazy0 = ["union",["string",["array",["lazy",()=>lazy0]]]];');
+  });
+
+  it("не зацикливается на рекурсивном JSON-типе", () => {
+    const code = blocksFor(`
+type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
+
+class JsonHolder {
+  accessor value: Json = null;
+}
+`)[0]!.code;
+    expect(code).toContain('["array",["lazy",()=>lazy0]]');
+    expect(code).toContain('["record",["lazy",()=>lazy0]]');
+    expect(code).toContain('const lazy0 = ');
+    expect(code.match(/lazy0/g)!.length).toBeGreaterThan(2);
+  });
+
+  it("разворачивает типы глубже шести уровней", () => {
+    const fields = fieldsFor(`
+interface L7 { value: string }
+interface L6 { child: L7 }
+interface L5 { child: L6 }
+interface L4 { child: L5 }
+interface L3 { child: L4 }
+interface L2 { child: L3 }
+interface L1 { child: L2 }
+interface L0 { child: L1 }
+
+class DeepEnough {
+  accessor root: L0 = null as unknown as L0;
+}
+`);
+    expect(fields.match(/\["object"/g)).toHaveLength(8);
+    expect(fields).toContain('"value":"string"');
+  });
+
+  it("не зацикливается на взаимной рекурсии через массивы", () => {
+    const code = blocksFor(`
+interface A {
+  items: B[];
+}
+
+interface B {
+  items: A[];
+}
+
+class MutualArrays {
+  accessor root: A = { items: [] };
+}
+`)[0]!.code;
+    expect(code).toContain('["lazy",()=>lazy0]');
+    expect(code).toContain('const lazy0 = ');
+    expect(code.match(/const lazy0/g)).toHaveLength(1);
+  });
+
+  it("сохраняет boolean в union с одним не-boolean членом", () => {
+    const fields = fieldsFor(`
+class Flags {
+  accessor boolString: boolean | string = "";
+  accessor boolNumber: boolean | number = 0;
+  accessor boolLiteral: boolean | "a" = "a";
+  accessor bothLiterals: true | false | "a" = "a";
+}
+`);
+    expect(fields).toBe(
+      '"boolString": ["union",["boolean","string"]], '
+      + '"boolNumber": ["union",["boolean","number"]], '
+      + '"boolLiteral": ["union",["boolean",["literal","a"]]], '
+      + '"bothLiterals": ["union",["boolean",["literal","a"]]]',
+    );
+  });
+
+  it("не подменяет пользовательские классы встроенными типами", () => {
+    const fields = fieldsFor(`
+export {};
+
+class Date { }
+class Map<K, V> { }
+class Array<T> { }
+class Error { }
+class Promise<T> { }
+class CustomError extends Error { }
+
+class Shadowed {
+  accessor date: Date = null as unknown as Date;
+  accessor map: Map<string, number> = null as unknown as Map<string, number>;
+  accessor list: Array<string> = null as unknown as Array<string>;
+  accessor failure: Error = null as unknown as Error;
+  accessor promise: Promise<string> = null as unknown as Promise<string>;
+  accessor custom: CustomError = null as unknown as CustomError;
+  accessor record: Record<string, string> = {};
+}
+`);
+    expect(fields).toBe(
+      '"date": ["class",()=>Date], "map": ["class",()=>Map], '
+      + '"list": ["class",()=>Array], "failure": ["class",()=>Error], '
+      + '"promise": ["class",()=>Promise], "custom": ["class",()=>CustomError], '
+      + '"record": ["record","string"]',
+    );
+  });
+
+  it("не подменяет пользовательский Record встроенным типом", () => {
+    const fields = fieldsFor(`
+export {};
+
+type Record<K, V> = { key: K; value: V };
+
+class RecordHolder {
+  accessor pair: Record<string, number> = { key: "", value: 0 };
+}
+`);
+    expect(fields).toBe('"pair": ["object",{"key":"string","value":"number"}]');
+  });
+
+  it("не сериализует структурно интерфейсы из lib.dom", () => {
+    const fields = fieldsFor(`
+class DomHolder {
+  accessor event: Event = null as unknown as Event;
+  accessor node: Node = null as unknown as Node;
+  accessor rawElement: Element = null as unknown as Element;
+  accessor element: HTMLElement = null as unknown as HTMLElement;
+  accessor form: FormData = null as unknown as FormData;
+}
+`);
+    expect(fields).toBe(
+      '"event": "object", "node": "object", "rawElement": "object", '
+      + '"element": "object", "form": "object"',
+    );
+  });
+
+  it("пропускает well-known symbol-свойства", () => {
+    const fields = fieldsFor(`
+interface IterableContainer {
+  size: number;
+  [Symbol.iterator](): Iterator<number>;
+}
+
+class Symbols {
+  accessor container: IterableContainer = null as unknown as IterableContainer;
+}
+`);
+    expect(fields).toBe('"container": ["object",{"size":"number"}]');
+  });
+
+  it("не создаёт невыполнимую схему для вычисляемого enum", () => {
+    const messages: string[] = [];
+    const { sourceFile, checker } = programFor(`
+const seed = Date.now();
+
+enum Dynamic {
+  A = seed,
+  B = seed + 1,
+}
+
+class DynamicHolder {
+  accessor value: Dynamic = 0 as Dynamic;
+  accessor ok: string = "";
+}
+`);
+    const blocks = generateValidationBlocks({
+      sourceFile,
+      checker,
+      runtimeRef: (symbol) => symbol.getName(),
+      diagnostics: (message) => messages.push(message),
+    });
+    expect(blocks).toHaveLength(1);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain("DynamicHolder.value");
+    expect(blocks[0]!.code).toContain('"ok": "string"');
+    expect(blocks[0]!.code).not.toContain('"value"');
+  });
+
+  it("исполняет примитивы weakmap и weakset рантаймом", () => {
+    const fields = fieldsFor(`
+class WeakCollections {
+  accessor weakMap: WeakMap<object, Date> = new WeakMap();
+  accessor weakSet: WeakSet<object> = new WeakSet();
+}
+`);
+    expect(fields).toBe('"weakMap": "weakmap", "weakSet": "weakset"');
+    const schema = new Function(`return ({ ${fields} });`)() as Readonly<Record<string, unknown>>;
+    const key = Symbol.for("silent.validation.schema");
+    class Holder {
+      weakMap: WeakMap<object, Date> = new WeakMap();
+      weakSet: WeakSet<object> = new WeakSet();
+    }
+    (Holder as unknown as Record<symbol, unknown>)[key] = { version: 1, fields: schema };
+    expect(validate(new Holder()).valid).toBe(true);
+  });
+
+  it("диагностирует неподдерживаемые вложенные поля", () => {
+    const messages: string[] = [];
+    const { sourceFile, checker } = programFor(`
+interface Broken {
+  value: string;
+  bad: unknown;
+}
+
+class Outer {
+  accessor data: Broken = null as unknown as Broken;
+}
+`);
+    const blocks = generateValidationBlocks({
+      sourceFile,
+      checker,
+      runtimeRef: (symbol) => symbol.getName(),
+      diagnostics: (message) => messages.push(message),
+    });
+    expect(blocks).toHaveLength(1);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain("Outer.data.bad");
+    expect(blocks[0]!.code).toContain('"data": ["object",{"value":"string"}]');
+  });
+
+  it("генерирует схему для class expression", () => {
+    const source = "export const Inline = class {\n  accessor n: number = 0;\n};\n";
+    const blocks = blocksFor(source);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]!.code).toContain('"n": "number"');
+    expect(applyBlocks(source, blocks)).toContain("static {");
+  });
+
+  it("учитывает index signature вместе с именованными свойствами", () => {
+    const fields = fieldsFor(`
+interface Dictionary {
+  a: string;
+  [key: string]: string;
+}
+
+interface Loose {
+  a: string;
+  [key: string]: unknown;
+}
+
+class Indexed {
+  accessor dictionary: Dictionary = { a: "" };
+  accessor loose: Loose = { a: "" };
+}
+`);
+    expect(fields).toBe(
+      '"dictionary": ["intersection",[["object",{"a":"string"}],["record","string"]]], '
+      + '"loose": ["object",{"a":"string"}]',
+    );
+  });
+
+  it("достраивает узлы, усечённые по глубине", () => {
+    const depth = 70;
+    const lines: string[] = [];
+    for (let index = depth - 1; index >= 0; index -= 1) {
+      lines.push(
+        index === depth - 1
+          ? `interface L${index} { value: string }`
+          : `interface L${index} { child: L${index + 1} }`,
+      );
+    }
+    lines.push("class VeryDeep {");
+    lines.push("  accessor root: L0 = null as unknown as L0;");
+    lines.push("}");
+    const code = blocksFor(lines.join("\n"))[0]!.code;
+    expect(code).toContain('"value":"string"');
+    expect(code).not.toMatch(/const lazy(\d+) = \["lazy",\(\)=>lazy\1\]/);
+  });
+
+  it("сохраняет CRLF в вставляемом блоке", () => {
+    const source = 'class Crlf {\r\n  accessor name: string = "";\r\n}\r\n';
+    const blocks = blocksFor(source);
+    expect(blocks).toHaveLength(1);
+    expect(applyBlocks(source, blocks)).toBe(
+      "class Crlf {\r\n"
+      + '  accessor name: string = "";\r\n'
+      + "  static {\r\n"
+      + '    this[Symbol.for("silent.validation.schema")] = { version: 1, fields: { "name": "string" } };\r\n'
+      + "  }\r\n"
+      + "}\r\n",
     );
   });
 });

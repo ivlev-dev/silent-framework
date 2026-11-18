@@ -79,7 +79,12 @@ function isFieldSchemaMap(value: unknown): value is FieldSchemaMap {
 }
 
 const classCache = new WeakMap<Function, ClassSchema | null>();
-const instanceCache = new WeakMap<Function, FieldSchemaMap | null>();
+interface InstanceCacheEntry {
+  readonly nodes: readonly Function[];
+  readonly chain: readonly (ClassSchema | null)[];
+  readonly fields: FieldSchemaMap;
+}
+const instanceCache = new WeakMap<Function, InstanceCacheEntry>();
 
 function resolveVersion(ctor: Function, version: unknown): number | undefined {
   if (version === undefined) {
@@ -99,6 +104,9 @@ export function readClassSchema(ctor: Function): ClassSchema | null {
   if (cached !== undefined) {
     return cached;
   }
+  if (!Object.hasOwn(ctor, SCHEMA_SYMBOL)) {
+    return null;
+  }
   const own: unknown = holder(ctor)[SCHEMA_SYMBOL];
   let schema: ClassSchema | null = null;
   if (typeof own === "object" && own !== null) {
@@ -112,7 +120,9 @@ export function readClassSchema(ctor: Function): ClassSchema | null {
       schema = { fields: own as FieldSchemaMap };
     }
   }
-  classCache.set(ctor, schema);
+  if (schema !== null) {
+    classCache.set(ctor, schema);
+  }
   return schema;
 }
 
@@ -123,7 +133,17 @@ export function readInstanceSchema(instance: object): FieldSchemaMap | null {
   }
   const cached = instanceCache.get(ctor);
   if (cached !== undefined) {
-    return cached;
+    let unchanged = true;
+    for (let index = 0; index < cached.nodes.length; index += 1) {
+      const node = cached.nodes[index];
+      if (node === undefined || readClassSchema(node) !== cached.chain[index]) {
+        unchanged = false;
+        break;
+      }
+    }
+    if (unchanged) {
+      return cached.fields;
+    }
   }
   const chain: Function[] = [];
   let current: unknown = ctor;
@@ -132,15 +152,40 @@ export function readInstanceSchema(instance: object): FieldSchemaMap | null {
     const prototype: unknown = Object.getPrototypeOf(current);
     current = prototype;
   }
+  const nodes = [...chain].reverse();
+  const schemas: (ClassSchema | null)[] = [];
+  for (const node of nodes) {
+    schemas.push(readClassSchema(node));
+  }
+  if (cached !== undefined && sameChain(cached.chain, schemas)) {
+    return cached.fields;
+  }
   let merged: Record<string, TypeSchema> | null = null;
-  for (let index = chain.length - 1; index >= 0; index -= 1) {
-    const schema = readClassSchema(chain[index]!);
+  for (const schema of schemas) {
     if (schema === null) {
       continue;
     }
     merged ??= {};
     Object.assign(merged, schema.fields);
   }
-  instanceCache.set(ctor, merged);
+  if (merged === null) {
+    return null;
+  }
+  instanceCache.set(ctor, { nodes, chain: schemas, fields: merged });
   return merged;
+}
+
+function sameChain(
+  left: readonly (ClassSchema | null)[],
+  right: readonly (ClassSchema | null)[],
+): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
 }

@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
+import ts from "typescript";
 import { afterEach, describe, expect, it } from "vitest";
 import { build } from "vite";
 import type { Plugin } from "vite";
@@ -17,6 +18,7 @@ interface TransformHooks {
   readonly transform?:
     | TransformHandler
     | { readonly order?: string; readonly handler: TransformHandler };
+  readonly watchChange?: (id: string) => void;
 }
 
 const projects: string[] = [];
@@ -168,6 +170,15 @@ function getTransform(plugin: Plugin): TransformHandler {
   throw new Error("Плагин validation() не предоставляет transform");
 }
 
+function getWatchChange(plugin: Plugin): (id: string) => void {
+  const hooks = plugin as unknown as TransformHooks;
+  const watchChange = hooks.watchChange;
+  if (typeof watchChange !== "function") {
+    throw new Error("Плагин validation() не предоставляет watchChange");
+  }
+  return watchChange;
+}
+
 function outputCode(result: unknown): string {
   const outputs = Array.isArray(result) ? (result as readonly unknown[]) : [result];
   const chunks: string[] = [];
@@ -183,7 +194,11 @@ function outputCode(result: unknown): string {
   return chunks.join("\n");
 }
 
-const buildProject = async (directory: string, plugins: readonly Plugin[]): Promise<string> => {
+const buildProject = async (
+  directory: string,
+  plugins: readonly Plugin[],
+  entry = "main.ts",
+): Promise<string> => {
   const result: unknown = await build({
     root: directory,
     configFile: false,
@@ -194,12 +209,23 @@ const buildProject = async (directory: string, plugins: readonly Plugin[]): Prom
       minify: false,
       target: "esnext",
       rollupOptions: {
-        input: path.join(directory, "main.ts"),
+        input: path.join(directory, entry),
       },
     },
   });
   return outputCode(result);
 };
+
+function parseDiagnostics(code: string): readonly ts.Diagnostic[] {
+  const result = ts.transpileModule(code, {
+    compilerOptions: {
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.ESNext,
+    },
+    reportDiagnostics: true,
+  });
+  return result.diagnostics ?? [];
+}
 
 describe("validation()", () => {
   it("вставляет схему из типов и namespace-импорт внешнего класса", () => {
@@ -463,5 +489,296 @@ describe("validation()", () => {
     const directory = createProject();
     const code = await buildProject(directory, []);
     expect(code).not.toMatch(/Symbol\.for\(["']silent\.validation\.schema["']\)/);
+  });
+
+  it("пропускает ?raw и не изменяет raw-модуль", async () => {
+    const directory = createProject();
+    writeFileSync(
+      path.join(directory, "raw-model.ts"),
+      [
+        'import { ValidationModel } from "@ivlev-dev/silent-validation";',
+        "",
+        "export class RawModel extends ValidationModel {",
+        '  accessor name: string = "";',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      path.join(directory, "raw-main.ts"),
+      [
+        'import raw from "./raw-model.ts?raw";',
+        "",
+        "console.log(raw);",
+        "",
+      ].join("\n"),
+    );
+    const code = await buildProject(directory, [validation()], "raw-main.ts");
+    expect(code).toContain("RawModel");
+    expect(code).not.toMatch(/Symbol\.for\(["']silent\.validation\.schema["']\)/);
+  });
+
+  it("включает declaration-файлы tsconfig и резолвит ambient-класс", () => {
+    const directory = createProject();
+    writeFileSync(
+      path.join(directory, "types.d.ts"),
+      ["declare class Money {", "  amount: number;", "}", ""].join("\n"),
+    );
+    const file = path.join(directory, "wallet.ts");
+    writeFileSync(
+      file,
+      [
+        'import { ValidationModel } from "@ivlev-dev/silent-validation";',
+        "",
+        "export class Wallet extends ValidationModel {",
+        "  accessor money: Money = new Money();",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const result = getTransform(validation())(readFileSync(file, "utf8"), file);
+    expect(result).not.toBeNull();
+    expect((result as TransformOutput).code).toMatch(/\["class",\(\)=>Money\]/);
+  });
+
+  it("пропускает поле из types-only модуля и предупреждает", async () => {
+    const directory = createProject();
+    writeFileSync(
+      path.join(directory, "money.d.ts"),
+      ["export declare class Money {", "  amount: number;", "}", ""].join("\n"),
+    );
+    const file = path.join(directory, "holder.ts");
+    writeFileSync(
+      file,
+      [
+        'import type { Money } from "./money";',
+        'import { ValidationModel } from "@ivlev-dev/silent-validation";',
+        "",
+        "export class Holder extends ValidationModel {",
+        "  accessor money: Money = null as unknown as Money;",
+        '  accessor name: string = "";',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const source = readFileSync(file, "utf8");
+    const warnings: string[] = [];
+    const result = getTransform(validation()).call(
+      { warn: (message: string) => warnings.push(message) },
+      source,
+      file,
+    );
+    expect(result).not.toBeNull();
+    const code = (result as TransformOutput).code;
+    expect(code).toMatch(/["']name["']\s*:/);
+    expect(code).not.toMatch(/["']money["']\s*:/);
+    expect(code).not.toMatch(/import \* as __silent_validation_\d+ from ["']\.\/money["']/);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("Holder.money");
+    expect(warnings[0]).toContain("./money");
+    const strictTransform = getTransform(validation({ strict: true }));
+    expect(() => strictTransform(source, file)).toThrow(/Holder\.money/);
+    writeFileSync(
+      path.join(directory, "main-holder.ts"),
+      ['import { Holder } from "./holder";', "", "console.log(new Holder());", ""].join("\n"),
+    );
+    const built = await buildProject(directory, [validation()], "main-holder.ts");
+    expect(built).toMatch(/["']name["']\s*:/);
+  });
+
+  it("не дублирует статический блок при повторном transform результата", () => {
+    const directory = createProject();
+    const plugin = validation();
+    const file = path.join(directory, "a.ts");
+    const source = readFileSync(file, "utf8");
+    const transform = getTransform(plugin);
+    const first = transform(source, file) as TransformOutput | null;
+    expect(first).not.toBeNull();
+    const second = transform((first as TransformOutput).code, file);
+    expect(second).toBeNull();
+  });
+
+  it("сборка с двумя экземплярами плагина проходит", async () => {
+    const directory = createProject();
+    const code = await buildProject(directory, [validation(), validation()]);
+    const schemas = code.match(/Symbol\.for\(["']silent\.validation\.schema["']\)/g) ?? [];
+    expect(schemas).toHaveLength(2);
+  });
+
+  it("находит ValidationModel во второй копии пакета", () => {
+    const directory = createProject();
+    const nested = path.join(directory, "nested");
+    writeValidationPackage(nested);
+    const file = path.join(nested, "copy.ts");
+    writeFileSync(
+      file,
+      [
+        'import { ValidationModel } from "@ivlev-dev/silent-validation";',
+        "",
+        "export class Copy extends ValidationModel {",
+        '  accessor value: string = "";',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const result = getTransform(validation())(readFileSync(file, "utf8"), file);
+    expect(result).not.toBeNull();
+    expect((result as TransformOutput).code).toMatch(/["']value["']\s*:/);
+  });
+
+  it("строит квалифицированное имя класса из namespace", () => {
+    const directory = createProject();
+    const file = path.join(directory, "namespaced.ts");
+    writeFileSync(
+      file,
+      [
+        'import { ValidationModel } from "@ivlev-dev/silent-validation";',
+        "",
+        "export namespace Domain {",
+        "  export class Item {",
+        "    accessor id: number = 0;",
+        "  }",
+        "}",
+        "",
+        "export class Box extends ValidationModel {",
+        "  accessor item: Domain.Item = new Domain.Item();",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const result = getTransform(validation())(readFileSync(file, "utf8"), file);
+    expect(result).not.toBeNull();
+    expect((result as TransformOutput).code).toMatch(/\["class",\(\)=>Domain\.Item\]/);
+  });
+
+  it("сдвигает позиции, если код изменён до плагина", () => {
+    const directory = createProject();
+    const file = path.join(directory, "a.ts");
+    const source = `// leading line\n${readFileSync(file, "utf8")}`;
+    const result = getTransform(validation())(source, file);
+    expect(result).not.toBeNull();
+    const code = (result as TransformOutput).code;
+    expect(code.startsWith("// leading line\n")).toBe(true);
+    expect(code).toMatch(
+      /import \* as __silent_validation_\d+ from ["']\.\/b["'];/,
+    );
+    expect(parseDiagnostics(code)).toHaveLength(0);
+  });
+
+  it("пропускает трансформацию при несовпадении кода с Program", () => {
+    const directory = createProject();
+    const file = path.join(directory, "a.ts");
+    const source = readFileSync(file, "utf8").replace(
+      "accessor age: number = 0;",
+      "accessor years: number = 0;",
+    );
+    const warnings: string[] = [];
+    const result = getTransform(validation()).call(
+      { warn: (message: string) => warnings.push(message) },
+      source,
+      file,
+    );
+    expect(result).toBeNull();
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("код изменён");
+  });
+
+  it("вставляет импорты после shebang и директив", () => {
+    const directory = createProject();
+    const file = path.join(directory, "directive.ts");
+    writeFileSync(
+      file,
+      [
+        "#!/usr/bin/env node",
+        '"use client";',
+        "",
+        'import type { Address } from "./b";',
+        'import { ValidationModel } from "@ivlev-dev/silent-validation";',
+        "",
+        "export class Directive extends ValidationModel {",
+        "  accessor address: Address = null as unknown as Address;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const source = `\uFEFF${readFileSync(file, "utf8")}`;
+    const result = getTransform(validation())(source, file);
+    expect(result).not.toBeNull();
+    const code = (result as TransformOutput).code;
+    expect(code.startsWith('\uFEFF#!/usr/bin/env node\n"use client";')).toBe(true);
+    const directiveIndex = code.indexOf('"use client";');
+    const namespaceIndex = code.indexOf("import * as");
+    const typeImportIndex = code.indexOf("import type");
+    expect(namespaceIndex).toBeGreaterThan(directiveIndex);
+    expect(namespaceIndex).toBeLessThan(typeImportIndex);
+  });
+
+  it("поддерживает .mts при расширенном include", () => {
+    const directory = createProject();
+    const file = path.join(directory, "module.mts");
+    writeFileSync(
+      file,
+      [
+        'import { ValidationModel } from "@ivlev-dev/silent-validation";',
+        "",
+        "export class ModuleClass extends ValidationModel {",
+        '  accessor name: string = "";',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const result = getTransform(validation({ include: /\.mts$/ }))(
+      readFileSync(file, "utf8"),
+      file,
+    );
+    expect(result).not.toBeNull();
+    expect((result as TransformOutput).code).toMatch(/["']name["']\s*:/);
+  });
+
+  it("дедуплицирует предупреждения в рамках Program", () => {
+    const directory = createProject();
+    const file = path.join(directory, "warn.ts");
+    writeFileSync(
+      file,
+      [
+        'import { ValidationModel } from "@ivlev-dev/silent-validation";',
+        "",
+        "export class Warned extends ValidationModel {",
+        "  accessor data: unknown = undefined;",
+        '  accessor name: string = "";',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const source = readFileSync(file, "utf8");
+    const transform = getTransform(validation());
+    const warnings: string[] = [];
+    const context = { warn: (message: string) => warnings.push(message) };
+    const first = transform.call(context, source, file);
+    const second = transform.call(context, source, file);
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    expect(warnings).toHaveLength(1);
+  });
+
+  it("пересобирает Program после watchChange", () => {
+    const directory = createProject();
+    const plugin = validation();
+    const transform = getTransform(plugin);
+    const watchChange = getWatchChange(plugin);
+    const file = path.join(directory, "a.ts");
+    const source = readFileSync(file, "utf8");
+    const first = transform(source, file);
+    expect(first).not.toBeNull();
+    expect((first as TransformOutput).code).not.toMatch(/["']years["']\s*:/);
+    const updated = source.replace(
+      "accessor age: number = 0;",
+      "accessor age: number = 0;\n  accessor years: number = 0;",
+    );
+    writeFileSync(file, updated);
+    watchChange(file);
+    const second = transform(updated, file);
+    expect(second).not.toBeNull();
+    expect((second as TransformOutput).code).toMatch(/["']years["']\s*:/);
   });
 });

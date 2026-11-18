@@ -135,6 +135,29 @@ describe("validatePartial: декораторы и вложенность", () =
     expect(rules(result)).toEqual(["min"]);
     expect(result.errors).toHaveLength(1);
   });
+
+  it("валидирует оба символьных поля и не смешивает их со схемой", () => {
+    const first = Symbol("secret");
+    const second = Symbol("secret");
+
+    class Symbols {
+      @Required()
+      public accessor [first] = "";
+
+      @Required()
+      public accessor [second] = "";
+    }
+    defineSchema(Symbols, { fields: { secret: "string" } });
+
+    const result = validatePartial(new Symbols(), ["secret"]);
+
+    expect(result.errors.map((error) => error.rule).sort()).toEqual([
+      "required",
+      "required",
+      "type",
+    ]);
+    expect(result.errors.every((error) => error.field === "secret")).toBe(true);
+  });
 });
 
 describe("validatePartialAsync", () => {

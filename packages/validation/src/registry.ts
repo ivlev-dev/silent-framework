@@ -17,6 +17,11 @@ export function classStateFor(ctor: Function): ClassValidationState {
   return state;
 }
 
+export function classStateRevision(ctor: Function): number {
+  const state = classStateFor(ctor);
+  return state.tokens.size + state.fields.size;
+}
+
 export function fieldSlot(
   state: ClassValidationState,
   field: FieldKey,

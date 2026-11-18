@@ -1,5 +1,6 @@
 import { DEFAULT_LOCALE, resolveMessage } from "./messages.js";
 import { readClassSchema, readInstanceSchema } from "./schema.js";
+import { isThenable, suppress } from "./thenable.js";
 import type { FieldSchemaMap, TypeSchema } from "./schema.js";
 import type {
   MessageContext,
@@ -111,17 +112,19 @@ function isInstanceOf(value: unknown, name: string): boolean {
 }
 
 function isInstanceOfCtor(value: unknown, ctor: Function): boolean {
-  return value instanceof (ctor as InstanceCtor);
+  try {
+    return value instanceof (ctor as InstanceCtor);
+  } catch {
+    return false;
+  }
 }
 
-function isThenable(value: unknown): boolean {
-  if (typeof value !== "object" && typeof value !== "function") {
+function isPlainObject(value: unknown): value is object {
+  if (typeof value !== "object" || value === null) {
     return false;
   }
-  if (value === null) {
-    return false;
-  }
-  return typeof (value as { then?: unknown }).then === "function";
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 function isIterable(value: unknown): boolean {
@@ -296,6 +299,9 @@ function typeNameAt(schema: TypeSchema, depth: number): string {
   if (typeof schema === "string") {
     return PRIMITIVE_NAMES[schema] ?? schema;
   }
+  if (!Array.isArray(schema)) {
+    return "unknown";
+  }
   switch (schema[0]) {
     case "array":
       return `Array<${typeNameAt(schema[1], depth + 1)}>`;
@@ -316,7 +322,11 @@ function typeNameAt(schema: TypeSchema, depth: number): string {
         return "object";
       }
       try {
-        return typeNameAt(schema[1](), depth + 1);
+        const produced: unknown = schema[1]();
+        if (typeof produced !== "string" && !Array.isArray(produced)) {
+          return "unknown";
+        }
+        return typeNameAt(produced as TypeSchema, depth + 1);
       } catch {
         return "object";
       }
@@ -619,7 +629,15 @@ function validateSchema(
       }
       let resolved: TypeSchema;
       try {
-        resolved = getSchema();
+        const produced: unknown = getSchema();
+        if (isThenable(produced)) {
+          suppress(produced);
+          return [createError(value, schema, ctx)];
+        }
+        if (typeof produced !== "string" && !Array.isArray(produced)) {
+          return [createError(value, schema, ctx)];
+        }
+        resolved = produced as TypeSchema;
       } catch {
         return [createError(value, schema, ctx)];
       }
@@ -669,7 +687,8 @@ function validateSchema(
       const getCtor = schema[1];
       let ctor: Function | undefined;
       try {
-        ctor = getCtor();
+        const produced: unknown = getCtor();
+        ctor = typeof produced === "function" ? produced : undefined;
       } catch {
         ctor = undefined;
       }
@@ -710,7 +729,7 @@ function validateSchema(
     }
     case "record": {
       const fieldSchema = schema[1];
-      if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      if (!isPlainObject(value)) {
         return [createError(value, schema, ctx)];
       }
       if (!enter(value, ctx)) {

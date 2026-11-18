@@ -7,7 +7,6 @@ import {
   collectPartsMany,
   disposeNode,
   markerIndex,
-  resolvePath,
   resolveValue,
   stringOf,
   svgAttributeTarget,
@@ -20,7 +19,10 @@ import {
   type TemplateHydrationSource,
   type TemplatePlan,
 } from "./dom.js";
+import { resolvePath } from "./plan-paths.js";
 import { registerDomHydrationRuntime, isStaticHydration } from "./dom-hydration-state.js";
+import { registerListHydration } from "./list-hydration-state.js";
+import { listHydration } from "./list-hydration.js";
 import { createEffectUnlessStatic } from "./static-effect.js";
 import {
   INSERT_END,
@@ -187,7 +189,6 @@ function tryAdoptPartsPlanByPath(
           (next as Comment).data === HOLE_ZERO
         ) {
           holes[0] = next as Comment;
-          recordInsertRegion(next as Comment);
           return true;
         }
       }
@@ -216,7 +217,6 @@ function tryAdoptPartsPlanByPath(
         holeMatches((next as Comment).data, entry.key, index)
       ) {
         holes[index] = next as Comment;
-        recordInsertRegion(next as Comment);
         continue;
       }
     }
@@ -1095,6 +1095,7 @@ export function installDomHydrationRuntime(): void {
     staticRowAllowed,
     adoptPartsPlan,
   });
+  registerListHydration(listHydration);
 }
 
 installDomHydrationRuntime();

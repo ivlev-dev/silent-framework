@@ -79,6 +79,11 @@ describe("safeParse", () => {
 
     expect(() => safeParse(new AsyncModel())).toThrow(AsyncRuleError);
   });
+
+  it("бросает TypeError для не-объекта", () => {
+    expect(() => safeParse(null as unknown as object)).toThrow(TypeError);
+    expect(() => safeParse("text" as unknown as object)).toThrow(TypeError);
+  });
 });
 
 describe("safeParseAsync", () => {
@@ -120,5 +125,11 @@ describe("safeParseAsync", () => {
 
     expect(result.success).toBe(false);
     expect(result.errors[0]?.rule).toBe("type");
+  });
+
+  it("бросает TypeError для не-объекта", async () => {
+    await expect(safeParseAsync(null as unknown as object)).rejects.toBeInstanceOf(
+      TypeError,
+    );
   });
 });

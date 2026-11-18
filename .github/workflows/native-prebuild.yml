@@ -51,8 +51,5 @@ jobs:
           pattern: native-*
           path: packages/swc/native
           merge-multiple: true
-      - run: pnpm --filter @ivlev-dev/silent-reactivity build
-      - run: pnpm --filter @ivlev-dev/silent-di build
-      - run: pnpm --filter @ivlev-dev/silent-core build
-      - run: pnpm --filter @ivlev-dev/silent-vite build
+      - run: pnpm build
       - run: pnpm pack:check

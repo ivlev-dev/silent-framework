@@ -10,7 +10,7 @@ import {
 } from "@ivlev-dev/silent-reactivity";
 import { createEffectUnlessStatic } from "./static-effect.js";
 import { markDirectComponent } from "./match-node.js";
-import { staticRowAllowed } from "./dom-hydration-state.js";
+import { settleNodes } from "./dom-hydration-state.js";
 import type { Children } from "./jsx.js";
 import {
   attachItemState,
@@ -19,8 +19,9 @@ import {
   createMountPoint,
   disposeNode,
   isServerMode,
+  type MountPoint,
 } from "./dom.js";
-import { hydratedEffect, settleNodes, withStaticHydration } from "./dom-hydration-state.js";
+import { getListHydration } from "./list-hydration-state.js";
 import { beginRegion, regionMatches, settleWindow } from "./hydration-cursor.js";
 import { normalizeItems, type ListSource } from "./list-items.js";
 import { getServerBackend, serializeServerValue } from "./server-proxy.js";
@@ -338,6 +339,7 @@ export function For<T>(props: ForProps<T>): Node {
     return renderForServer(props);
   }
   const hydrating = HYDRATE && isHydrating();
+  const hydration = hydrating ? getListHydration() : null;
   const target = props.parent ?? null;
   let outer = hydrating ? currentWindow() : null;
   if (hydrating && target !== null && props.marker !== undefined && props.marker !== null) {
@@ -599,24 +601,16 @@ export function For<T>(props: ForProps<T>): Node {
     let seeded = itemEnd !== null;
     let mountTail: Node | null = tail;
     const run = (): void => {
-      if (seeded) {
+      if (seeded && hydration !== null) {
         seeded = false;
-        const start = anchor as Comment;
-        const end = itemEnd as Node;
-        let window = runWindow;
-        if (window === null) {
-          window = { start, end, cursor: start.nextSibling };
-          runWindow = window;
-        } else {
-          window.start = start;
-          window.end = end;
-          window.cursor = start.nextSibling;
-        }
-        const value = withWindow(window, children, item, state.index);
-        settleNodes(end, value);
-        if (!regionMatches(window, end, value)) {
-          mismatch("содержимое элемента списка не совпало");
-        }
+        runWindow = hydration.seedItem(
+          runWindow,
+          anchor as Comment,
+          itemEnd as Node,
+          children,
+          item,
+          state.index,
+        );
         return;
       }
       renderItem(state, children(state.item, state.index), initialMount, mountTail);
@@ -628,19 +622,10 @@ export function For<T>(props: ForProps<T>): Node {
         pendingRerender();
       }
     };
-    if (
-      hydrating &&
-      staticRows &&
-      anchor !== null &&
-      itemEnd !== null &&
-      staticRowAllowed(item)
-    ) {
-      state.cleanup = noopCleanup;
-      withStaticHydration(run);
+    if (hydration !== null) {
+      state.cleanup = hydration.effect(run, staticRows, anchor, itemEnd, item);
     } else {
-      state.cleanup = hydrating
-        ? hydratedEffect(run) ?? noopCleanup
-        : createEffectUnlessStatic(run) ?? noopCleanup;
+      state.cleanup = createEffectUnlessStatic(run) ?? noopCleanup;
     }
 
     if (anchor !== null) {
@@ -678,60 +663,26 @@ export function For<T>(props: ForProps<T>): Node {
     children: ForProps<T>["children"] | undefined = undefined,
   ): ItemState<T> => makeState(item, null, null, position, sink, tail, children);
 
-  let fallbackSeed: Node[] = [];
+  let fallbackMount: MountPoint;
   let skipFirst = hydrating;
 
-  if (hydrating) {
-    if (outer === null) {
-      return mismatch("For вне окна гидрации");
-    }
-    const candidate = outer.end.previousSibling;
-    if (!isMarker(candidate, LIST_END)) {
-      return mismatch("не найден конец списка");
-    }
-    endAnchor = candidate;
-    const items: readonly T[] = untrack(() =>
-      normalizeItems<T>(typeof props.each === "function" ? props.each() : props.each),
+  if (hydration !== null) {
+    const seeded = hydration.preseed(
+      props,
+      fallback,
+      hasFallback,
+      outer,
+      parentOwner,
+      (item, anchor, itemEnd, position, children) =>
+        makeState(item, anchor, itemEnd, position, null, null, children),
     );
-    if (items.length === 0) {
-      if (hasFallback) {
-        const window = beginRegion(outer, endAnchor);
-        const value = withWindow(window, () => resolve(fallback));
-        if (!regionMatches(window, endAnchor, value)) {
-          return mismatch("содержимое fallback списка не совпало");
-        }
-        fallbackSeed = collectBetween(outer.start, endAnchor);
-      }
-    }
-    let cursor: Node | null = items.length === 0 ? endAnchor : outer.start.nextSibling;
-    let position = 0;
-    const children = untrack(() => props.children);
-    runWithOwner(parentOwner, () => {
-      while (cursor !== null && cursor !== endAnchor) {
-        if (cursor.nodeType !== Node.COMMENT_NODE || (cursor as Comment).data !== ITEM) {
-          return mismatch("ожидался маркер элемента списка");
-        }
-        const anchor = cursor as Comment;
-        let node = cursor.nextSibling;
-        while (node !== null && node !== endAnchor) {
-          if (node.nodeType === Node.COMMENT_NODE && (node as Comment).data === ITEM) {
-            break;
-          }
-          node = node.nextSibling;
-        }
-        const item = items[position];
-        if (item === undefined) {
-          return mismatch("лишний элемент списка");
-        }
-        states.push(makeState(item, anchor, node ?? endAnchor, position, null, null, children));
-        position += 1;
-        cursor = node;
-      }
-    });
-    if (position !== items.length) {
-      return mismatch("число элементов списка не совпало");
-    }
-    settleWindow(outer, endAnchor);
+    states = seeded.states;
+    endAnchor = seeded.endAnchor;
+    fallbackMount = createMountPoint(
+      seeded.fallbackParent,
+      endAnchor,
+      seeded.fallbackSeed,
+    );
   } else {
     endAnchor = document.createComment(LIST_END);
     if (target !== null) {
@@ -746,18 +697,11 @@ export function For<T>(props: ForProps<T>): Node {
       const sink = container ?? (container = document.createDocumentFragment());
       sink.appendChild(endAnchor);
     }
+    fallbackMount = createMountPoint(
+      target ?? (container ??= document.createDocumentFragment()),
+      endAnchor,
+    );
   }
-
-  const fallbackParent = hydrating ? endAnchor.parentNode : null;
-  if (hydrating && fallbackParent === null) {
-    return mismatch("список отсоединён от документа");
-  }
-  const fallbackMount = hydrating
-    ? createMountPoint(fallbackParent as Node, endAnchor, fallbackSeed)
-    : createMountPoint(
-        target ?? (container ??= document.createDocumentFragment()),
-        endAnchor,
-      );
 
   const renderList = (): void => {
     const parent = endAnchor.parentNode;

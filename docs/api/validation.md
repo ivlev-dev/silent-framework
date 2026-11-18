@@ -48,8 +48,9 @@ export default defineConfig({
 | `exclude` | `RegExp` | `/node_modules/` | Файлы, которые пропускаются |
 | `tsconfig` | `string` | ближайший `tsconfig.json` | Путь к конфигу относительно корня проекта |
 | `base` | `string` | `"ValidationModel"` | Имя базового класса, потомки которого получают схему |
+| `strict` | `boolean` | `false` | Бросать ошибку вместо предупреждения при неподдерживаемом типе |
 
-Опция `base` нужна, если маркерный класс называется иначе: плагин ищет наследников по имени, а не по конкретному импорту.
+Базовый класс определяется по символу `ValidationModel` из `@ivlev-dev/silent-validation`: плагин находит импорт/резолвит модуль и сравнивает цепочку наследования по символу. Если символ пакета не найден, используется fallback по имени класса `base`.
 
 ```ts
 import { IsEmail, Min, validate, ValidationModel } from "@ivlev-dev/silent-validation";
@@ -80,7 +81,7 @@ class Order extends ValidationModel {
 const result = validate(order);
 ```
 
-Плагин вставляет в класс статический блок `static { this[Symbol.for("silent.validation.schema")] = { fields: ... } }`. По этой схеме `validate` проверяет `string`, `number`, вложенный `Address`, элементы `Item[]` и значения `Record`. Ошибка типа имеет `rule: "type"`, `params.type` с именем ожидаемого типа, сообщение по ключу `validation.type` (ru/en) и обычные `field`/`path`/`index`, например `address.city`, `items[0].name`; ключи `Record` и объектов идут через точку (`counts.apples`), ключи `Map` — в скобках (`map[key]`).
+Плагин вставляет в класс статический блок `static { this[Symbol.for("silent.validation.schema")] = { version: 1, fields: ... } }`. По этой схеме `validate` проверяет `string`, `number`, вложенный `Address`, элементы `Item[]` и значения `Record`. Ошибка типа имеет `rule: "type"`, `params.type` с именем ожидаемого типа, сообщение по ключу `validation.type` (ru/en) и обычные `field`/`path`/`index`, например `address.city`, `items[0].name`; ключи `Record` и объектов идут через точку (`counts.apples`), ключи `Map` — в скобках (`map[key]`).
 
 **Порядок проверок.** Тип проверяется первым. По умолчанию `cascade: true`: декораторы поля выполняются и при неверном типе, поэтому `@Min(18)` на строке даст две ошибки — `type` и `min`. `cascade: false` останавливает декораторы поля после ошибки типа. Для верного типа декораторы работают как обычно.
 
@@ -789,10 +790,10 @@ function Groups(...groups: string[]): RuleDecorator;
 ### `ValidateOnSet`
 
 ```ts
-function ValidateOnSet(): RuleDecorator;
+function ValidateOnSet(options?: ValidationOptions): RuleDecorator;
 ```
 
-Включает проверку поля при каждом присваивании: после записи значения выполняется `validateProperty` для этого поля, а при ошибках бросается `ValidationException`. Валидация при инициализации поля не запускается; невалидное значение остаётся в поле.
+Включает проверку поля при каждом присваивании: после записи значения выполняется `validateProperty` для этого поля с переданными опциями (`groups`, `stopAtFirst`, `types`, `cascade`, сообщения), а при ошибках бросается `ValidationException`. Валидация при инициализации поля не запускается; невалидное значение остаётся в поле.
 
 ```ts
 class User {

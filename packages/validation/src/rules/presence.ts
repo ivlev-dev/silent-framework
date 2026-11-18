@@ -19,6 +19,10 @@ function hasContent(value: unknown): boolean {
     return value.length > 0;
   }
   if (typeof value === "object") {
+    const prototype: unknown = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      return true;
+    }
     return Object.keys(value).length > 0;
   }
   return true;

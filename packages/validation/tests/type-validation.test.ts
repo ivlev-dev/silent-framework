@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { getValidationConfig, resetValidationConfig } from "../src/messages";
-import { SCHEMA_SYMBOL } from "../src/schema";
+import { SCHEMA_SYMBOL, readClassSchema, readInstanceSchema } from "../src/schema";
 import type { ClassSchema, FieldSchemaMap, TypeSchema } from "../src/schema";
 import { validateType } from "../src/type-validation";
 import type { ValidationConfig, ValidationError } from "../src/types";
@@ -237,6 +237,17 @@ describe("validateType: составные схемы", () => {
     expect(errors[0]?.path).toBe("value.a");
   });
 
+  it("отклоняет record для не-plain объектов", () => {
+    class Model {}
+    const schema: TypeSchema = ["record", "number"];
+
+    expect(valid({ a: 1 }, schema)).toBe(true);
+    expect(valid(Object.create(null), schema)).toBe(true);
+    expect(run(new Model(), schema)).toHaveLength(1);
+    expect(run(new Date(), schema)).toHaveLength(1);
+    expect(run(new Map(), schema)).toHaveLength(1);
+  });
+
   it("валидирует mapof и setof", () => {
     const mapSchema: TypeSchema = ["mapof", "string", "number"];
     expect(valid(new Map([["a", 1]]), mapSchema)).toBe(true);
@@ -421,6 +432,24 @@ describe("validateType: ленивые схемы", () => {
     expect(errors[0]?.rule).toBe("type");
   });
 
+  it("возвращает ошибку типа для thunk с некорректной схемой", () => {
+    const numberThunk = ["lazy", () => 42] as unknown as TypeSchema;
+    const nullThunk = ["lazy", () => null] as unknown as TypeSchema;
+
+    expect(run("text", numberThunk)).toHaveLength(1);
+    expect(run("text", numberThunk)[0]?.rule).toBe("type");
+    expect(run("text", nullThunk)).toHaveLength(1);
+    expect(run("text", nullThunk)[0]?.rule).toBe("type");
+  });
+
+  it("возвращает ошибку для class с некорректным конструктором", () => {
+    const arrow = (() => undefined) as unknown as Function;
+    const schema = ["class", () => arrow] as unknown as TypeSchema;
+
+    expect(() => run({}, schema)).not.toThrow();
+    expect(run({}, schema)).toHaveLength(1);
+  });
+
   it("не зацикливается на thunk, вернувшем сам себя", () => {
     const schema: TypeSchema = ["lazy", () => schema];
     expect(() => run("text", schema)).not.toThrow();
@@ -488,6 +517,29 @@ describe("validateType: rest-кортежи", () => {
     expect(valid(["a", 1, true], schema)).toBe(true);
     expect(valid([], schema)).toBe(false);
     expect(valid(["a", 1, true, false], schema)).toBe(false);
+  });
+});
+
+describe("чтение схем", () => {
+  it("не читает символ схемы по цепочке прототипов функции", () => {
+    class Parent {}
+    defineSchema(Parent, { fields: { value: "string" } });
+
+    class Child extends Parent {}
+
+    expect(readClassSchema(Child)).toBeNull();
+    expect(readInstanceSchema(new Child())).toEqual({ value: "string" });
+  });
+
+  it("не кеширует отсутствие схемы", () => {
+    class Late {}
+    expect(readClassSchema(Late)).toBeNull();
+    expect(readInstanceSchema(new Late())).toBeNull();
+
+    defineSchema(Late, { fields: { value: "number" } });
+
+    expect(readClassSchema(Late)).not.toBeNull();
+    expect(readInstanceSchema(new Late())).toEqual({ value: "number" });
   });
 });
 

@@ -11,6 +11,8 @@
 - `@ivlev-dev/silent-vite` — Vite-плагин.
 - `@ivlev-dev/silent-server` — SSR: мини-DOM, `renderToString`, сериализация без внешних DOM-зависимостей.
 - `@ivlev-dev/silent-router` — опциональный router: `IRouter`, route-классы `Route`, `Link`, `RouterView`, browser/memory history, guards/loaders, DI-доставка и SSR.
+- `@ivlev-dev/silent-validation` — опциональная валидация: stage-3 accessor-декораторы, правила, i18n и рантайм-проверка схем.
+- `@ivlev-dev/silent-validation-vite` — Vite-плагин `validation()`: генерирует схемы из TS-типов для потомков `ValidationModel`.
 
 Все пакеты публикуются как ESM; относительные импорты в собранном коде содержат явное расширение `.js`, чтобы пакеты грузились в чистом Node без бандлера.
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -103,6 +103,7 @@ function runNegativeSelfCheck() {
 
 runNegativeSelfCheck();
 
+try {
 for (const [name, required] of Object.entries(expectations)) {
   const directory = join(root, "packages", name);
   const sourceManifest = JSON.parse(
@@ -120,11 +121,11 @@ for (const [name, required] of Object.entries(expectations)) {
     cwd: directory,
     encoding: "utf8",
   });
-  const tarball = readdirSync(output).find((file) =>
+  const expectedTarball =
     name === "silent"
-      ? file === `ivlev-dev-silent-${sourceManifest.version}.tgz`
-      : file.startsWith(`ivlev-dev-silent-${name}-`),
-  );
+      ? `ivlev-dev-silent-${sourceManifest.version}.tgz`
+      : `ivlev-dev-silent-${name}-${sourceManifest.version}.tgz`;
+  const tarball = readdirSync(output).find((file) => file === expectedTarball);
   assert.ok(tarball, `не найден tarball для @ivlev-dev/silent-${name}`);
   const file = join(output, tarball);
   const entries = execFileSync("tar", ["-tzf", file], { encoding: "utf8" })
@@ -182,3 +183,6 @@ for (const [name, required] of Object.entries(expectations)) {
 }
 
 console.log("pack: ok");
+} finally {
+  rmSync(output, { recursive: true, force: true });
+}

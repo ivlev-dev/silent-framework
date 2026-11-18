@@ -493,9 +493,28 @@ impl SilentPass {
             svg,
         } = parts;
         let runtime = Expr::Ident(self.helper("templateHoles"));
-        let init = match plan.finish() {
+        let mount_static = !self.hydrate && !self.ssr && plan.is_static();
+        let planned = if self.hydrate || self.ssr {
+            plan.finish()
+        } else {
+            None
+        };
+        let init = match planned {
             Some(plan) => {
                 let mut args = vec![string_expr(&html), plan];
+                if svg {
+                    args.push(string_expr("svg"));
+                }
+                call_expr(runtime, args)
+            }
+            None if mount_static => {
+                let mut args = vec![
+                    string_expr(&html),
+                    Expr::Lit(Lit::Bool(Bool {
+                        span: DUMMY_SP,
+                        value: false,
+                    })),
+                ];
                 if svg {
                     args.push(string_expr("svg"));
                 }
@@ -784,7 +803,9 @@ impl SilentPass {
             }
         }
 
-        self.add_static_rows_hint(element, &mut properties);
+        if self.hydrate || self.ssr {
+            self.add_static_rows_hint(element, &mut properties);
+        }
         self.add_index_hint(element, &mut properties);
         call_expr(
             Expr::Ident(self.helper("component")),

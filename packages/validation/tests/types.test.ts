@@ -215,6 +215,13 @@ describe("typeRules.isInstanceOf", () => {
     expect(check(typeRules.isInstanceOf, new Animal(), { type: "Animal" })).toBe(false);
   });
 
+  it("возвращает false для некорректной функции-конструктора", () => {
+    const arrow = (() => undefined) as unknown as new () => unknown;
+    expect(
+      check(typeRules.isInstanceOf, new Animal(), { type: "Arrow", ctor: arrow }),
+    ).toBe(false);
+  });
+
   it("использует имя конструктора в параметрах декоратора", () => {
     class Sample {
       value!: Animal;

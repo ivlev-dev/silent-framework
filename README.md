@@ -71,6 +71,10 @@ class User {
   @IsInt() @Min(0) @Max(120) public accessor age!: number;
 }
 
+const user = new User();
+user.email = "user@example.com";
+user.age = 30;
+
 const result = validate(user);
 if (!result.valid) {
   console.log(result.errors[0]?.message);
@@ -380,6 +384,8 @@ pnpm build
 pnpm test
 pnpm typecheck
 pnpm api:check
+pnpm version:check
+pnpm pack:check
 pnpm dev
 pnpm bench
 pnpm bench:ssr
@@ -387,7 +393,10 @@ pnpm bench:hydrate
 pnpm bench:browser
 pnpm bench:vm
 pnpm bench:alloc
+pnpm bench:validation
+pnpm bench:validation-build
 pnpm published:check
+pnpm consumer:check
 pnpm test:e2e
 pnpm test:ssr
 pnpm install:check
@@ -396,11 +405,11 @@ pnpm deprecate:legacy --dry-run
 
 ## Релиз
 
-Все пакеты `@ivlev-dev/silent-*` версионируются синхронно (сейчас `0.11.16`). Внутренние зависимости записаны диапазоном `>=0.11.0 <0.12.0`. Правила и пошаговый процесс — [docs/releasing.md](./docs/releasing.md). Релиз запускается тегом:
+Все пакеты `@ivlev-dev/silent-*` версионируются синхронно (сейчас `0.11.21`). Внутренние зависимости записаны диапазоном `>=0.11.0 <0.12.0`. Правила и пошаговый процесс — [docs/releasing.md](./docs/releasing.md). Релиз запускается тегом:
 
 ```bash
-git tag v0.11.16
-git push origin v0.11.16
+git tag v0.11.21
+git push origin v0.11.21
 ```
 
 GitHub Actions `Release` соберёт нативные бинарники под Linux/Windows, прогонит тесты, проверит совпадение тега и версий, соберёт пакеты и опубликует их в npm. Для публикации нужен секрет репозитория `NPM_TOKEN`. Локальная проверка установки из tarball'ов — `pnpm install:check`.

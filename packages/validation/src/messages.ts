@@ -3,6 +3,7 @@ import type {
   MessageResolver,
   ValidationConfig,
 } from "./types.js";
+import { isThenable, suppress } from "./thenable.js";
 
 export const DEFAULT_LOCALE = "ru";
 
@@ -38,10 +39,12 @@ export const validationMessages: Readonly<
     "validation.minLength_one": "Длина поля {label} должна быть не меньше {min} символа",
     "validation.minLength_few": "Длина поля {label} должна быть не меньше {min} символов",
     "validation.minLength_many": "Длина поля {label} должна быть не меньше {min} символов",
+    "validation.minLength_other": "Длина поля {label} должна быть не меньше {min} символов",
     "validation.maxLength": "Длина поля {label} должна быть не больше {max}",
     "validation.maxLength_one": "Длина поля {label} должна быть не больше {max} символа",
     "validation.maxLength_few": "Длина поля {label} должна быть не больше {max} символов",
     "validation.maxLength_many": "Длина поля {label} должна быть не больше {max} символов",
+    "validation.maxLength_other": "Длина поля {label} должна быть не больше {max} символов",
     "validation.length": "Длина поля {label} должна быть равна {length}",
     "validation.matches": "Поле {label} имеет неверный формат",
     "validation.isEmail": "Поле {label} должно быть корректным email",
@@ -59,10 +62,12 @@ export const validationMessages: Readonly<
     "validation.arrayMinSize_one": "В поле {label} должно быть не меньше {min} элемента",
     "validation.arrayMinSize_few": "В поле {label} должно быть не меньше {min} элементов",
     "validation.arrayMinSize_many": "В поле {label} должно быть не меньше {min} элементов",
+    "validation.arrayMinSize_other": "В поле {label} должно быть не меньше {min} элементов",
     "validation.arrayMaxSize": "В поле {label} должно быть не больше {max} элементов",
     "validation.arrayMaxSize_one": "В поле {label} должно быть не больше {max} элемента",
     "validation.arrayMaxSize_few": "В поле {label} должно быть не больше {max} элементов",
     "validation.arrayMaxSize_many": "В поле {label} должно быть не больше {max} элементов",
+    "validation.arrayMaxSize_other": "В поле {label} должно быть не больше {max} элементов",
     "validation.arrayNotEmpty": "Поле {label} не может быть пустым массивом",
     "validation.arrayUnique": "Элементы поля {label} не должны повторяться",
     "validation.hasKey": "В поле {label} должен быть ключ {key}",
@@ -72,6 +77,7 @@ export const validationMessages: Readonly<
     "validation.notIn": "Поле {label} не должно быть одним из: {values}",
     "validation.nested": "Поле {label} содержит некорректный объект",
     "validation.each": "Элемент {index} поля {label} некорректен",
+    "validation.eachValue": "Поле {label} должно быть коллекцией",
     "validation.custom": "Поле {label} не прошло проверку",
     "validation.type": "Поле {label} должно быть типа {type}",
   },
@@ -134,6 +140,7 @@ export const validationMessages: Readonly<
     "validation.notIn": "{label} must not be one of: {values}",
     "validation.nested": "{label} contains an invalid object",
     "validation.each": "Item {index} of {label} is invalid",
+    "validation.eachValue": "{label} must be a collection",
     "validation.custom": "{label} failed validation",
     "validation.type": "{label} must be of type {type}",
   },
@@ -158,18 +165,11 @@ export function configureValidation(config: ValidationConfig): void {
 
 export function resetValidationConfig(): void {
   currentConfig = {};
+  pluralRulesCache.clear();
 }
 
 export function getValidationConfig(): ValidationConfig {
   return currentConfig;
-}
-
-function isThenable(value: unknown): value is PromiseLike<unknown> {
-  return (
-    typeof value === "object"
-    && value !== null
-    && typeof (value as { then?: unknown }).then === "function"
-  );
 }
 
 function pluralRulesFor(locale: string): Intl.PluralRules | null {
@@ -252,6 +252,9 @@ function interpolate(
     if (name === "index" && context.index !== undefined) {
       return String(context.index);
     }
+    if (!Object.hasOwn(context.params, name)) {
+      return match;
+    }
     const value = context.params[name];
     return value === undefined ? match : formatValue(value);
   });
@@ -259,21 +262,25 @@ function interpolate(
 
 type MessageCatalog = Readonly<Record<string, string>>;
 
-function lookupCatalog(
+function ownTemplate(
   catalog: MessageCatalog | undefined,
   key: string,
-  suffix: string | undefined,
 ): string | undefined {
-  if (catalog === undefined) {
+  if (catalog === undefined || !Object.hasOwn(catalog, key)) {
     return undefined;
   }
-  if (suffix !== undefined) {
-    const variant = catalog[`${key}_${suffix}`];
-    if (variant !== undefined) {
-      return variant;
-    }
+  const template = catalog[key];
+  return typeof template === "string" ? template : undefined;
+}
+
+function variantKeys(key: string, suffix: string | undefined): readonly string[] {
+  if (suffix === undefined) {
+    return [key];
   }
-  return catalog[key];
+  if (suffix === "other") {
+    return [`${key}_other`, key];
+  }
+  return [`${key}_${suffix}`, `${key}_other`, key];
 }
 
 function lookupSources(
@@ -282,9 +289,11 @@ function lookupSources(
   suffix: string | undefined,
 ): string | undefined {
   for (const source of sources) {
-    const template = lookupCatalog(source, key, suffix);
-    if (template !== undefined) {
-      return template;
+    for (const candidate of variantKeys(key, suffix)) {
+      const template = ownTemplate(source, candidate);
+      if (template !== undefined) {
+        return template;
+      }
     }
   }
   return undefined;
@@ -333,6 +342,7 @@ export function resolveMessage(
   if (typeof context.message === "function") {
     const produced: unknown = context.message({ ...context, locale });
     if (isThenable(produced)) {
+      suppress(produced);
       throw new Error(ASYNC_RESOLVER_ERROR);
     }
     return produced as string;
@@ -343,6 +353,7 @@ export function resolveMessage(
   const key = context.messageKey ?? context.key;
   const resolved = config.resolve?.({ ...context, key, locale });
   if (isThenable(resolved)) {
+    suppress(resolved);
     throw new Error(ASYNC_RESOLVER_ERROR);
   }
   if (resolved !== undefined) {
@@ -363,6 +374,7 @@ export async function resolveMessageAsync(
   if (typeof context.message === "function") {
     const produced: unknown = await context.message({ ...context, locale });
     if (isThenable(produced)) {
+      suppress(produced);
       throw new Error(ASYNC_RESOLVER_ERROR);
     }
     return produced as string;
@@ -395,11 +407,15 @@ export function createI18nextResolver(
     const key = `${keyPrefix}${context.key}`;
     const defaultValue = builtinTemplate(context.locale, context.key, context)
       ?? key;
-    const translated = i18n.t(key, {
+    const translated: unknown = i18n.t(key, {
       ...context.params,
       label: context.label,
+      lng: context.locale,
       defaultValue,
     });
+    if (typeof translated !== "string") {
+      return undefined;
+    }
     if (translated.trim().length === 0 || translated === key) {
       return undefined;
     }

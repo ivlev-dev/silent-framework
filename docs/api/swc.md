@@ -48,6 +48,8 @@ interface SwcAddonOptions {
   requirePreloader?: boolean;
   runtime?: string;
   hmr?: boolean;
+  ssr?: boolean;
+  hydrate?: boolean;
 }
 ```
 
@@ -55,6 +57,8 @@ interface SwcAddonOptions {
 - `requirePreloader` — требовать `preloader` у view-компонентов.
 - `runtime` — путь/модуль runtime-импортов Silent (по умолчанию задаётся компилятором).
 - `hmr` — включить генерацию HMR-кода.
+- `ssr` — SSR-кодогенерация: JSX превращается в строковую конкатенацию без `templateHoles`/`insert`, статические фрагменты выносятся в массив; клиентские планы адоптации при этом сохраняются.
+- `hydrate` — генерировать клиентские дескрипторы адоптации для гидрации (по умолчанию `true`). При `false` (mount-only сборка) планы `templateHoles` не эмитятся, а полностью статические шаблоны получают третий вариант второго аргумента — `templateHoles(html, false)` — и рантайм не обходит дерево при клонировании.
 
 При отсутствии значений применяются умолчания: синтаксис TypeScript с `decorators: true`, цель `es2024` (если не задана ни цель, ни `env`), версия декораторов `2023-11`, source maps включены, если `sourceMaps` не указан. Если `options.swc` равно `null` или отсутствует, берётся `Options` по умолчанию.
 

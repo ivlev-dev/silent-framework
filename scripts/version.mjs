@@ -106,6 +106,33 @@ function changelogWithVersion(version) {
       changed: true,
     };
   }
+  const unreleasedIndex = lines.findIndex(
+    (line) => line.trim() === "## Unreleased",
+  );
+  if (unreleasedIndex !== -1) {
+    const nextHeading = lines.findIndex(
+      (line, index) => index > unreleasedIndex && /^##\s/.test(line.trim()),
+    );
+    const end = nextHeading === -1 ? lines.length : nextHeading;
+    const notes = lines
+      .slice(unreleasedIndex + 1, end)
+      .join(eol)
+      .replace(/^\s*\n/, "")
+      .replace(/\s+$/, "");
+    const head = lines.slice(0, titleIndex + 1);
+    const tail = nextHeading === -1 ? [] : lines.slice(nextHeading);
+    const result = [
+      ...head,
+      "",
+      heading,
+      "",
+      ...(notes.length === 0 ? [] : [notes, ""]),
+      "## Unreleased",
+      "",
+      ...tail,
+    ];
+    return { text: result.join(eol), changed: true };
+  }
   const rest = lines.slice(titleIndex + 1);
   const body = rest[0]?.trim() === "" ? rest.slice(1) : rest;
   const result = [

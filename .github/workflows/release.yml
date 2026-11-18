@@ -68,6 +68,7 @@ jobs:
       - run: pnpm api:check
       - run: pnpm pack:check
       - run: pnpm install:check
+      - run: pnpm consumer:check
       - run: pnpm -r --filter "./packages/**" publish --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -50,6 +50,7 @@ export function silent(options: SilentOptions = {}): Plugin {
       runtime: opts.runtime,
       hmr: opts.hmr,
       ssr,
+      hydrate: opts.hydrate,
       aliases: aliasRules,
     });
   let aliasRules: AliasRule[] = [];
