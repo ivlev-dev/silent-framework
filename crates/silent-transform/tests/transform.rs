@@ -259,11 +259,21 @@ fn marks_static_rows_for_item_only_text() {
 }
 
 #[test]
-fn marks_static_rows_with_item_attributes_and_handler() {
+fn skips_static_rows_with_event_handler() {
     let code = run(
         &for_source(
             "{(row) => <li class={row.kind} data-id={row.id} onClick={() => remove(row.id)}>{row.label}</li>}",
         ),
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(!code.contains("staticRows: true"), "{code}");
+}
+
+#[test]
+fn marks_static_rows_with_item_attributes_without_handler() {
+    let code = run(
+        &for_source("{(row) => <li class={row.kind} data-id={row.id}>{row.label}</li>}"),
         "/proj/src/view.tsx",
         Index::default(),
     );
@@ -383,4 +393,308 @@ fn keeps_explicit_static_rows_prop() {
         Index::default(),
     );
     assert_eq!(code.matches("staticRows").count(), 1, "{code}");
+}
+
+#[test]
+fn marks_static_rows_for_optional_chaining() {
+    for children in [
+        "{(row) => <li>{row?.label}</li>}",
+        "{(row) => <li>{row.a?.b}</li>}",
+        "{(row) => <li>{row?.a.b}</li>}",
+        "{(row) => <li title={row?.label}></li>}",
+    ] {
+        let code = run(
+            &for_source(children),
+            "/proj/src/view.tsx",
+            Index::default(),
+        );
+        assert!(code.contains("staticRows: true"), "{children}: {code}");
+    }
+}
+
+#[test]
+fn marks_static_rows_ignoring_jsx_comments() {
+    let code = run(
+        &for_source("{/* row */}{(row) => <li>{row.label}</li>}"),
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(code.contains("staticRows: true"), "{code}");
+}
+
+#[test]
+fn marks_static_rows_for_function_expression_row() {
+    for children in [
+        "{function (row) { return <li>{row.label}</li>; }}",
+        "{(row) => { return <li>{row.label}</li>; }}",
+        "{(row: Row) => <li>{row.label}</li>}",
+        "{<T,>(row: T) => <li>{row}</li>}",
+    ] {
+        let code = run(
+            &for_source(children),
+            "/proj/src/view.tsx",
+            Index::default(),
+        );
+        assert!(code.contains("staticRows: true"), "{children}: {code}");
+    }
+}
+
+#[test]
+fn marks_static_rows_for_namespaced_and_dashed_attributes() {
+    let code = run(
+        &for_source(
+            "{(row) => <a xlink:href={row.href} data-row-id={row.id} aria-label=\"row\">{row.label}</a>}",
+        ),
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(code.contains("staticRows: true"), "{code}");
+}
+
+#[test]
+fn marks_static_rows_for_fragment_and_multiple_children() {
+    for children in [
+        "{(row) => <><li>{row.label}</li><li>{row.id}</li></>}",
+        "{(row) => <li>{row.label}{row.id}</li>}",
+        "{(row) => <li>{row.ok ? <b>{row.x}</b> : <i>{row.y}</i>}</li>}",
+        "{(row) => <li>\n  {row.label}\n</li>}",
+    ] {
+        let code = run(
+            &for_source(children),
+            "/proj/src/view.tsx",
+            Index::default(),
+        );
+        assert!(code.contains("staticRows: true"), "{children}: {code}");
+    }
+}
+
+#[test]
+fn marks_static_rows_for_object_and_array_attribute_values() {
+    for children in [
+        "{(row) => <li data-row={{ id: row.id, tags: [row.kind, \"x\"] }}></li>}",
+        "{(row) => <li data-row={{ id: row.id, nested: { ok: true } }}></li>}",
+        "{(row) => <li style={`--row: ${row.id}`}></li>}",
+    ] {
+        let code = run(
+            &for_source(children),
+            "/proj/src/view.tsx",
+            Index::default(),
+        );
+        assert!(code.contains("staticRows: true"), "{children}: {code}");
+    }
+}
+
+#[test]
+fn marks_static_rows_for_lowercase_on_attribute_values() {
+    for children in [
+        "{(row) => <li onclick={row.label}></li>}",
+        "{(row) => <li on={row.label}></li>}",
+        "{(row) => <li binding={row.label}></li>}",
+    ] {
+        let code = run(
+            &for_source(children),
+            "/proj/src/view.tsx",
+            Index::default(),
+        );
+        assert!(code.contains("staticRows: true"), "{children}: {code}");
+    }
+}
+
+#[test]
+fn marks_static_rows_for_ts_wrappers() {
+    for children in [
+        "{(row) => <li>{(row.label as string)}</li>}",
+        "{(row) => <li>{(row.label satisfies string)}</li>}",
+        "{(row) => <li>{row.label!}</li>}",
+        "{(row) => <li>{`${row.label}`}</li>}",
+        "{(row) => <li>{(row.label)}</li>}",
+        "{(row) => <li>{row.a ?? row.b}</li>}",
+    ] {
+        let code = run(
+            &for_source(children),
+            "/proj/src/view.tsx",
+            Index::default(),
+        );
+        assert!(code.contains("staticRows: true"), "{children}: {code}");
+    }
+}
+
+#[test]
+fn skips_static_rows_for_event_lookalike_attributes() {
+    for children in [
+        "{(row) => <li one={flag}></li>}",
+        "{(row) => <li only={flag}></li>}",
+        "{(row) => <li on={flag}></li>}",
+        "{(row) => <li binding={flag}></li>}",
+        "{(row) => <li bindings={flag}></li>}",
+    ] {
+        let code = run(
+            &for_source(children),
+            "/proj/src/view.tsx",
+            Index::default(),
+        );
+        assert!(!code.contains("staticRows"), "{children}: {code}");
+    }
+}
+
+#[test]
+fn skips_static_rows_for_shadowed_item() {
+    for children in [
+        "{(row) => { const row2 = external; return <li>{row2.x}</li>; }}",
+        "{(row) => { const row = external; return <li>{row.x}</li>; }}",
+        "{(row) => { let row = external; return <li>{row}</li>; }}",
+    ] {
+        let code = run(
+            &for_source(children),
+            "/proj/src/view.tsx",
+            Index::default(),
+        );
+        assert!(!code.contains("staticRows"), "{children}: {code}");
+    }
+}
+
+#[test]
+fn skips_static_rows_for_item_parameters_that_are_not_plain() {
+    for children in [
+        "{(...rows) => <li>{rows[0]}</li>}",
+        "{(row = fallback) => <li>{row.label}</li>}",
+        "{(row, second) => <li>{row.label}</li>}",
+        "{(row, _second) => <li>{row.label}</li>}",
+        "{function (row) { return <li>{arguments[0].label}</li>; }}",
+        "{async (row) => <li>{row.label}</li>}",
+        "{function* (row) { return <li>{row.label}</li>; }}",
+    ] {
+        let code = run(
+            &for_source(children),
+            "/proj/src/view.tsx",
+            Index::default(),
+        );
+        assert!(!code.contains("staticRows"), "{children}: {code}");
+    }
+}
+
+#[test]
+fn skips_static_rows_for_mutating_and_control_flow_expressions() {
+    for children in [
+        "{(row) => <li>{row.x = 1}</li>}",
+        "{(row) => <li>{row.x++}</li>}",
+        "{(row) => <li>{delete row.x}</li>}",
+        "{(row) => <li>{row.x in row.y}</li>}",
+        "{(row) => <li>{row.x instanceof row.y}</li>}",
+        "{(row) => <li>{(row.x, row.y)}</li>}",
+        "{(row) => <li>{new Date(row.x)}</li>}",
+        "{async (row) => <li>{await row.x}</li>}",
+        "{(row) => <li>{row?.get?.()}</li>}",
+        "{(row) => <li>{row?.()}</li>}",
+        "{(row) => <li>{row.x.toString()}</li>}",
+        "{(row) => <li>{String(row.x)}</li>}",
+        "{(row) => <li>{Math.max(row.x, 1)}</li>}",
+        "{(row) => <li>{((value) => value)(row.x)}</li>}",
+    ] {
+        let code = run(
+            &for_source(children),
+            "/proj/src/view.tsx",
+            Index::default(),
+        );
+        assert!(!code.contains("staticRows"), "{children}: {code}");
+    }
+}
+
+#[test]
+fn skips_static_rows_for_object_features() {
+    for children in [
+        "{(row) => <li data-row={{ get id() { return row.id; } }}></li>}",
+        "{(row) => <li data-row={{ set id(value) { row.id = value; } }}></li>}",
+        "{(row) => <li data-row={{ id() { return row.id; } }}></li>}",
+        "{(row) => <li data-row={{ [flag]: row.id }}></li>}",
+        "{(row) => <li data-row={{ ...row.meta }}></li>}",
+        "{(row) => <li data-row={[row.id, ...row.list]}></li>}",
+        "{(row) => <li>{...row.parts}</li>}",
+        "{(row) => <li>{row[flag]}</li>}",
+        "{(row) => <li>{row?.[flag]}</li>}",
+    ] {
+        let code = run(
+            &for_source(children),
+            "/proj/src/view.tsx",
+            Index::default(),
+        );
+        assert!(!code.contains("staticRows"), "{children}: {code}");
+    }
+}
+
+#[test]
+fn skips_static_rows_for_component_elements() {
+    for children in [
+        "{(row) => <li><Row value={row} /></li>}",
+        "{(row) => <li><ui.Row value={row} /></li>}",
+        "{(row) => <li><svg:path d={row.d} /></li>}",
+    ] {
+        let code = run(
+            &for_source(children),
+            "/proj/src/view.tsx",
+            Index::default(),
+        );
+        assert!(!code.contains("staticRows"), "{children}: {code}");
+    }
+}
+
+#[test]
+fn skips_static_rows_for_dangerous_html_and_bind_attributes() {
+    for children in [
+        "{(row) => <li dangerouslySetInnerHTML={{ __html: row.html }}></li>}",
+        "{(row) => <li innerHTML={row.html}></li>}",
+        "{(row) => <li bindValue={row.value}></li>}",
+        "{(row) => <li bindChecked={row.checked}></li>}",
+        "{(row) => <li prop:value={row.value}></li>}",
+    ] {
+        let code = run(
+            &for_source(children),
+            "/proj/src/view.tsx",
+            Index::default(),
+        );
+        assert!(!code.contains("staticRows"), "{children}: {code}");
+    }
+}
+
+#[test]
+fn skips_static_rows_for_foreign_for_component() {
+    let code = run(
+        "import { For } from \"./custom-for\"; const a = <ul><For each={items}>{(row) => <li>{row.label}</li>}</For></ul>;",
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(!code.contains("staticRows"), "{code}");
+}
+
+#[test]
+fn skips_static_rows_when_for_props_are_spread() {
+    let code = run(
+        "import { For } from \"@ivlev-dev/silent-core\"; const a = <ul><For {...p} each={items}>{(row) => <li>{row.label}</li>}</For></ul>;",
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(!code.contains("staticRows"), "{code}");
+    assert!(!code.contains("index: false"), "{code}");
+}
+
+#[test]
+fn keeps_dynamic_static_rows_prop() {
+    let code = run(
+        "import { For } from \"@ivlev-dev/silent-core\"; const a = <ul><For each={items} staticRows={flag}>{(row) => <li>{row.label}</li>}</For></ul>;",
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(!code.contains("staticRows: true"), "{code}");
+    assert_eq!(code.matches("staticRows").count(), 1, "{code}");
+}
+
+#[test]
+fn keeps_dynamic_index_prop() {
+    let code = run(
+        "import { For } from \"@ivlev-dev/silent-core\"; const a = <ul><For each={items} index={flag}>{(row) => <li>{row.label}</li>}</For></ul>;",
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(!code.contains("index: false"), "{code}");
+    assert_eq!(code.matches("index").count(), 1, "{code}");
 }

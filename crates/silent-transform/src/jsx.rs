@@ -6,9 +6,9 @@ use swc_core::ecma::ast::{
     BindingIdent, Bool, CallExpr, Callee, ComputedPropName, Expr, ExprOrSpread, Function,
     FunctionBody, GetterProp, Ident, IdentName, JSXAttr, JSXAttrName, JSXAttrOrSpread,
     JSXAttrValue, JSXElement, JSXElementChild, JSXElementName, JSXExpr, JSXExprContainer,
-    JSXFragment, JSXObject, KeyValueProp, Lit, MemberExpr, MemberProp, ObjectLit, ParenExpr, Pat,
-    Prop, PropName, PropOrSpread, ReturnStmt, SimpleAssignTarget, SpreadElement, Stmt, Str,
-    UnaryOp, VarDecl, VarDeclKind, VarDeclarator,
+    JSXFragment, JSXObject, KeyValueProp, Lit, MemberExpr, MemberProp, ObjectLit, OptChainBase,
+    ParenExpr, Pat, Prop, PropName, PropOrSpread, ReturnStmt, SimpleAssignTarget, SpreadElement,
+    Stmt, Str, UnaryOp, VarDecl, VarDeclKind, VarDeclarator,
 };
 use swc_core::ecma::visit::{Visit, VisitMutWith, VisitWith};
 
@@ -936,7 +936,8 @@ impl SilentPass {
         if !self.is_direct_for_component(name) {
             return;
         }
-        if properties_have_key(properties, "staticRows") || properties_have_key(properties, "index")
+        if properties_may_have_key(properties, "staticRows")
+            || properties_may_have_key(properties, "index")
         {
             return;
         }
@@ -982,7 +983,7 @@ impl SilentPass {
         if self.children_use_index(element) != Some(false) {
             return;
         }
-        if properties_have_key(properties, "index") {
+        if properties_may_have_key(properties, "index") {
             return;
         }
         properties.push(PropOrSpread::Prop(Box::new(Prop::KeyValue(KeyValueProp {
@@ -1056,20 +1057,29 @@ fn has_prop(object: &ObjectLit, name: &str) -> bool {
     })
 }
 
-fn properties_have_key(properties: &[PropOrSpread], name: &str) -> bool {
+fn properties_may_have_key(properties: &[PropOrSpread], name: &str) -> bool {
     properties.iter().any(|prop| {
         let PropOrSpread::Prop(prop) = prop else {
-            return false;
+            return true;
         };
-        let Prop::KeyValue(entry) = &**prop else {
-            return false;
-        };
-        match &entry.key {
-            PropName::Ident(key) => key.sym.as_ref() == name,
-            PropName::Str(key) => key.value.to_string_lossy() == name,
-            _ => false,
+        match &**prop {
+            Prop::Shorthand(key) => key.sym.as_ref() == name,
+            Prop::KeyValue(entry) => prop_name_may_be(&entry.key, name),
+            Prop::Assign(entry) => entry.key.sym.as_ref() == name,
+            Prop::Getter(entry) => prop_name_may_be(&entry.key, name),
+            Prop::Setter(entry) => prop_name_may_be(&entry.key, name),
+            Prop::Method(entry) => prop_name_may_be(&entry.key, name),
         }
     })
+}
+
+fn prop_name_may_be(key: &PropName, name: &str) -> bool {
+    match key {
+        PropName::Ident(key) => key.sym.as_ref() == name,
+        PropName::Str(key) => key.value.to_string_lossy() == name,
+        PropName::Num(_) | PropName::BigInt(_) => false,
+        PropName::Computed(_) => true,
+    }
 }
 
 fn unwrap_static_expr(expr: &Expr) -> &Expr {
@@ -1094,6 +1104,9 @@ fn for_row_body(element: &JSXElement) -> Option<(&str, &Expr)> {
                 }
             }
             JSXElementChild::JSXExprContainer(container) => {
+                if matches!(container.expr, JSXExpr::JSXEmptyExpr(_)) {
+                    continue;
+                }
                 if row.is_some() {
                     return None;
                 }
@@ -1164,6 +1177,10 @@ fn row_static_expr(expr: &Expr, item: &str) -> bool {
         }
         Expr::Ident(ident) => ident.sym.as_ref() == item,
         Expr::Member(member) => row_static_member(member, item),
+        Expr::OptChain(chain) => match &*chain.base {
+            OptChainBase::Member(member) => row_static_member(member, item),
+            OptChainBase::Call(_) => false,
+        },
         Expr::Array(array) => array.elems.iter().all(|elem| match elem {
             Some(elem) => elem.spread.is_none() && row_static_expr(&elem.expr, item),
             None => true,
@@ -1198,6 +1215,10 @@ fn row_static_member_root(expr: &Expr, item: &str) -> bool {
     match unwrap_static_expr(expr) {
         Expr::Ident(ident) => ident.sym.as_ref() == item,
         Expr::Member(member) => row_static_member(member, item),
+        Expr::OptChain(chain) => match &*chain.base {
+            OptChainBase::Member(member) => row_static_member(member, item),
+            OptChainBase::Call(_) => false,
+        },
         _ => false,
     }
 }
@@ -1247,15 +1268,16 @@ fn row_static_attr(attr: &JSXAttrOrSpread, item: &str) -> bool {
         return false;
     };
     let name = attr_name_string(&attr.name);
-    if name.starts_with("on") {
-        return true;
+    if is_event_attr_name(&name) {
+        return false;
     }
     let lower = name.to_ascii_lowercase();
     if lower == "ref"
         || lower == "innerhtml"
         || lower == "dangerouslysetinnerhtml"
         || name.starts_with("prop:")
-        || lower.starts_with("bind")
+        || name == "bindValue"
+        || name == "bindChecked"
     {
         return false;
     }
@@ -1288,6 +1310,15 @@ fn row_static_child(child: &JSXElementChild, item: &str) -> bool {
         },
         JSXElementChild::JSXSpreadChild(_) => false,
     }
+}
+
+fn is_event_attr_name(name: &str) -> bool {
+    let bytes = name.as_bytes();
+    name.starts_with("on:")
+        || (bytes.len() > 2
+            && bytes[0] == b'o'
+            && bytes[1] == b'n'
+            && bytes[2].is_ascii_uppercase())
 }
 
 fn jsx_object_expr(object: &JSXObject, property: &IdentName) -> Expr {
