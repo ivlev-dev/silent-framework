@@ -240,3 +240,147 @@ fn keeps_index_accessor_when_children_use_it() {
     );
     assert!(!code.contains("index: false"), "{code}");
 }
+
+fn for_source(children: &str) -> String {
+    format!(
+        "import {{ For }} from \"@ivlev-dev/silent-core\"; const a = <ul><For each={{items}}>{children}</For></ul>;"
+    )
+}
+
+#[test]
+fn marks_static_rows_for_item_only_text() {
+    let code = run(
+        &for_source("{(row) => <li>{row.label}</li>}"),
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(code.contains("staticRows: true"), "{code}");
+    assert!(code.contains("index: false"), "{code}");
+}
+
+#[test]
+fn marks_static_rows_with_item_attributes_and_handler() {
+    let code = run(
+        &for_source(
+            "{(row) => <li class={row.kind} data-id={row.id} onClick={() => remove(row.id)}>{row.label}</li>}",
+        ),
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(code.contains("staticRows: true"), "{code}");
+}
+
+#[test]
+fn marks_static_rows_across_allowed_expressions() {
+    let code = run(
+        &for_source(
+            "{(row) => <li title={row.ready ? \"yes\" : `no-${row.id}`}>{!row.hidden && row.label}</li>}",
+        ),
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(code.contains("staticRows: true"), "{code}");
+}
+
+#[test]
+fn marks_static_rows_for_aliased_for() {
+    let code = run(
+        "import { For as List } from \"@ivlev-dev/silent-core\"; const a = <ul><List each={items}>{(row) => <li>{row.label}</li>}</List></ul>;",
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(code.contains("staticRows: true"), "{code}");
+}
+
+#[test]
+fn skips_static_rows_when_index_is_used() {
+    let code = run(
+        &for_source("{(row, index) => <li>{row.label}{index()}</li>}"),
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(!code.contains("staticRows"), "{code}");
+}
+
+#[test]
+fn skips_static_rows_for_calls() {
+    let code = run(
+        &for_source("{(row) => <li>{row.label.toUpperCase()}</li>}"),
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(!code.contains("staticRows"), "{code}");
+}
+
+#[test]
+fn skips_static_rows_for_outer_identifiers() {
+    for children in [
+        "{(row) => <li>{props.suffix}</li>}",
+        "{(row) => <li>{format(row.label)}</li>}",
+        "{(row) => <li>{row.label + label}</li>}",
+    ] {
+        let code = run(
+            &for_source(children),
+            "/proj/src/view.tsx",
+            Index::default(),
+        );
+        assert!(!code.contains("staticRows"), "{children}: {code}");
+    }
+}
+
+#[test]
+fn skips_static_rows_for_nested_component() {
+    let code = run(
+        &for_source("{(row) => <li><Row value={row} /></li>}"),
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(!code.contains("staticRows"), "{code}");
+}
+
+#[test]
+fn skips_static_rows_for_spread_and_ref() {
+    for children in [
+        "{(row) => <li {...row.attrs}>{row.label}</li>}",
+        "{(row) => <li ref={row.element}>{row.label}</li>}",
+        "{(row) => <li innerHTML={row.label}></li>}",
+        "{(row) => <li bindValue={row.label}></li>}",
+    ] {
+        let code = run(
+            &for_source(children),
+            "/proj/src/view.tsx",
+            Index::default(),
+        );
+        assert!(!code.contains("staticRows"), "{children}: {code}");
+    }
+}
+
+#[test]
+fn skips_static_rows_for_destructured_parameter() {
+    let code = run(
+        &for_source("{({ label }) => <li>{label}</li>}"),
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(!code.contains("staticRows"), "{code}");
+}
+
+#[test]
+fn skips_static_rows_for_index_component() {
+    let code = run(
+        "import { Index } from \"@ivlev-dev/silent-core\"; const a = <div><Index each={items}>{(item) => <span>{item.label}</span>}</Index></div>;",
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(!code.contains("staticRows"), "{code}");
+}
+
+#[test]
+fn keeps_explicit_static_rows_prop() {
+    let code = run(
+        "import { For } from \"@ivlev-dev/silent-core\"; const a = <ul><For each={items} staticRows={false}>{(row) => <li>{row.label}</li>}</For></ul>;",
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert_eq!(code.matches("staticRows").count(), 1, "{code}");
+}

@@ -8,7 +8,7 @@ use swc_core::ecma::ast::{
     JSXAttrValue, JSXElement, JSXElementChild, JSXElementName, JSXExpr, JSXExprContainer,
     JSXFragment, JSXObject, KeyValueProp, Lit, MemberExpr, MemberProp, ObjectLit, ParenExpr, Pat,
     Prop, PropName, PropOrSpread, ReturnStmt, SimpleAssignTarget, SpreadElement, Stmt, Str,
-    VarDecl, VarDeclKind, VarDeclarator,
+    UnaryOp, VarDecl, VarDeclKind, VarDeclarator,
 };
 use swc_core::ecma::visit::{Visit, VisitMutWith, VisitWith};
 
@@ -784,6 +784,7 @@ impl SilentPass {
             }
         }
 
+        self.add_static_rows_hint(element, &mut properties);
         self.add_index_hint(element, &mut properties);
         call_expr(
             Expr::Ident(self.helper("component")),
@@ -915,6 +916,45 @@ impl SilentPass {
             || source == "@ivlev-dev/silent"
     }
 
+    fn is_direct_for_component(&self, name: &Ident) -> bool {
+        let Some(record) = self.imports.get(name.sym.as_ref()) else {
+            return false;
+        };
+        if record.type_only || record.imported.as_str() != "For" {
+            return false;
+        }
+        let source = record.source.trim_end_matches('/');
+        source == self.runtime.trim_end_matches('/')
+            || source.ends_with("silent-core")
+            || source == "@ivlev-dev/silent"
+    }
+
+    fn add_static_rows_hint(&self, element: &JSXElement, properties: &mut Vec<PropOrSpread>) {
+        let JSXElementName::Ident(name) = &element.opening.name else {
+            return;
+        };
+        if !self.is_direct_for_component(name) {
+            return;
+        }
+        if properties_have_key(properties, "staticRows") || properties_have_key(properties, "index")
+        {
+            return;
+        }
+        let Some((item, body)) = for_row_body(element) else {
+            return;
+        };
+        if !row_static_expr(body, item) {
+            return;
+        }
+        properties.push(PropOrSpread::Prop(Box::new(Prop::KeyValue(KeyValueProp {
+            key: prop_name("staticRows"),
+            value: Box::new(Expr::Lit(Lit::Bool(Bool {
+                span: DUMMY_SP,
+                value: true,
+            }))),
+        }))));
+    }
+
     fn children_use_index(&self, element: &JSXElement) -> Option<bool> {
         for child in &element.children {
             let JSXElementChild::JSXExprContainer(container) = child else {
@@ -942,18 +982,7 @@ impl SilentPass {
         if self.children_use_index(element) != Some(false) {
             return;
         }
-        if properties.iter().any(|prop| {
-            let PropOrSpread::Prop(prop) = prop else {
-                return false;
-            };
-            let Prop::KeyValue(entry) = &**prop else {
-                return false;
-            };
-            let PropName::Ident(key) = &entry.key else {
-                return false;
-            };
-            key.sym.as_ref() == "index"
-        }) {
+        if properties_have_key(properties, "index") {
             return;
         }
         properties.push(PropOrSpread::Prop(Box::new(Prop::KeyValue(KeyValueProp {
@@ -1025,6 +1054,240 @@ fn has_prop(object: &ObjectLit, name: &str) -> bool {
         };
         key.sym.as_ref() == name
     })
+}
+
+fn properties_have_key(properties: &[PropOrSpread], name: &str) -> bool {
+    properties.iter().any(|prop| {
+        let PropOrSpread::Prop(prop) = prop else {
+            return false;
+        };
+        let Prop::KeyValue(entry) = &**prop else {
+            return false;
+        };
+        match &entry.key {
+            PropName::Ident(key) => key.sym.as_ref() == name,
+            PropName::Str(key) => key.value.to_string_lossy() == name,
+            _ => false,
+        }
+    })
+}
+
+fn unwrap_static_expr(expr: &Expr) -> &Expr {
+    match expr {
+        Expr::Paren(paren) => unwrap_static_expr(&paren.expr),
+        Expr::TsAs(value) => unwrap_static_expr(&value.expr),
+        Expr::TsConstAssertion(value) => unwrap_static_expr(&value.expr),
+        Expr::TsNonNull(value) => unwrap_static_expr(&value.expr),
+        Expr::TsSatisfies(value) => unwrap_static_expr(&value.expr),
+        Expr::TsTypeAssertion(value) => unwrap_static_expr(&value.expr),
+        _ => expr,
+    }
+}
+
+fn for_row_body(element: &JSXElement) -> Option<(&str, &Expr)> {
+    let mut row: Option<(&str, &Expr)> = None;
+    for child in &element.children {
+        match child {
+            JSXElementChild::JSXText(text) => {
+                if !text.value.to_string_lossy().trim().is_empty() {
+                    return None;
+                }
+            }
+            JSXElementChild::JSXExprContainer(container) => {
+                if row.is_some() {
+                    return None;
+                }
+                let JSXExpr::Expr(expr) = &container.expr else {
+                    return None;
+                };
+                row = Some(row_function(expr)?);
+            }
+            _ => return None,
+        }
+    }
+    row
+}
+
+fn row_function(expr: &Expr) -> Option<(&str, &Expr)> {
+    match unwrap_static_expr(expr) {
+        Expr::Arrow(arrow) => {
+            if arrow.is_async || arrow.params.len() != 1 {
+                return None;
+            }
+            let Pat::Ident(binding) = &arrow.params[0] else {
+                return None;
+            };
+            let body = match &*arrow.body {
+                ArrowFunctionBody::Expr(value) => &**value,
+                ArrowFunctionBody::FunctionBody(body) => return_block(body)?,
+            };
+            Some((binding.id.sym.as_str(), body))
+        }
+        Expr::Fn(function) => {
+            let function = &function.function;
+            if function.is_async || function.is_generator || function.params.len() != 1 {
+                return None;
+            }
+            let Pat::Ident(binding) = &function.params[0].pat else {
+                return None;
+            };
+            let body = return_block(function.body.as_ref()?)?;
+            Some((binding.id.sym.as_str(), body))
+        }
+        _ => None,
+    }
+}
+
+fn return_block(block: &FunctionBody) -> Option<&Expr> {
+    let [Stmt::Return(stmt)] = block.stmts.as_slice() else {
+        return None;
+    };
+    stmt.arg.as_deref()
+}
+
+fn row_static_expr(expr: &Expr, item: &str) -> bool {
+    match unwrap_static_expr(expr) {
+        Expr::Lit(lit) => matches!(lit, Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_)),
+        Expr::Tpl(tpl) => tpl.exprs.iter().all(|expr| row_static_expr(expr, item)),
+        Expr::Unary(unary) => {
+            !matches!(unary.op, UnaryOp::Delete) && row_static_expr(&unary.arg, item)
+        }
+        Expr::Bin(bin) => {
+            !matches!(bin.op, BinaryOp::In | BinaryOp::InstanceOf)
+                && row_static_expr(&bin.left, item)
+                && row_static_expr(&bin.right, item)
+        }
+        Expr::Cond(cond) => {
+            row_static_expr(&cond.test, item)
+                && row_static_expr(&cond.cons, item)
+                && row_static_expr(&cond.alt, item)
+        }
+        Expr::Ident(ident) => ident.sym.as_ref() == item,
+        Expr::Member(member) => row_static_member(member, item),
+        Expr::Array(array) => array.elems.iter().all(|elem| match elem {
+            Some(elem) => elem.spread.is_none() && row_static_expr(&elem.expr, item),
+            None => true,
+        }),
+        Expr::Object(object) => object
+            .props
+            .iter()
+            .all(|prop| row_static_object_prop(prop, item)),
+        Expr::JSXElement(element) => row_static_element(element, item),
+        Expr::JSXFragment(fragment) => fragment
+            .children
+            .iter()
+            .all(|child| row_static_child(child, item)),
+        _ => false,
+    }
+}
+
+fn row_static_member(member: &MemberExpr, item: &str) -> bool {
+    match &member.prop {
+        MemberProp::Ident(_) => {}
+        MemberProp::Computed(computed) => {
+            if !row_static_expr(&computed.expr, item) {
+                return false;
+            }
+        }
+        _ => return false,
+    }
+    row_static_member_root(&member.obj, item)
+}
+
+fn row_static_member_root(expr: &Expr, item: &str) -> bool {
+    match unwrap_static_expr(expr) {
+        Expr::Ident(ident) => ident.sym.as_ref() == item,
+        Expr::Member(member) => row_static_member(member, item),
+        _ => false,
+    }
+}
+
+fn row_static_object_prop(prop: &PropOrSpread, item: &str) -> bool {
+    let PropOrSpread::Prop(prop) = prop else {
+        return false;
+    };
+    match &**prop {
+        Prop::Shorthand(ident) => ident.sym.as_ref() == item,
+        Prop::KeyValue(entry) => {
+            matches!(
+                entry.key,
+                PropName::Ident(_) | PropName::Str(_) | PropName::Num(_)
+            ) && row_static_expr(&entry.value, item)
+        }
+        _ => false,
+    }
+}
+
+fn row_static_element(element: &JSXElement, item: &str) -> bool {
+    let JSXElementName::Ident(name) = &element.opening.name else {
+        return false;
+    };
+    if name
+        .sym
+        .chars()
+        .next()
+        .map(|character| character.is_uppercase())
+        .unwrap_or(true)
+    {
+        return false;
+    }
+    element
+        .opening
+        .attrs
+        .iter()
+        .all(|attr| row_static_attr(attr, item))
+        && element
+            .children
+            .iter()
+            .all(|child| row_static_child(child, item))
+}
+
+fn row_static_attr(attr: &JSXAttrOrSpread, item: &str) -> bool {
+    let JSXAttrOrSpread::JSXAttr(attr) = attr else {
+        return false;
+    };
+    let name = attr_name_string(&attr.name);
+    if name.starts_with("on") {
+        return true;
+    }
+    let lower = name.to_ascii_lowercase();
+    if lower == "ref"
+        || lower == "innerhtml"
+        || lower == "dangerouslysetinnerhtml"
+        || name.starts_with("prop:")
+        || lower.starts_with("bind")
+    {
+        return false;
+    }
+    match &attr.value {
+        None => true,
+        Some(JSXAttrValue::Str(_)) => true,
+        Some(JSXAttrValue::JSXExprContainer(container)) => match &container.expr {
+            JSXExpr::JSXEmptyExpr(_) => false,
+            JSXExpr::Expr(expr) => row_static_expr(expr, item),
+        },
+        Some(JSXAttrValue::JSXElement(element)) => row_static_element(element, item),
+        Some(JSXAttrValue::JSXFragment(fragment)) => fragment
+            .children
+            .iter()
+            .all(|child| row_static_child(child, item)),
+    }
+}
+
+fn row_static_child(child: &JSXElementChild, item: &str) -> bool {
+    match child {
+        JSXElementChild::JSXText(_) => true,
+        JSXElementChild::JSXElement(element) => row_static_element(element, item),
+        JSXElementChild::JSXFragment(fragment) => fragment
+            .children
+            .iter()
+            .all(|child| row_static_child(child, item)),
+        JSXElementChild::JSXExprContainer(container) => match &container.expr {
+            JSXExpr::JSXEmptyExpr(_) => true,
+            JSXExpr::Expr(expr) => row_static_expr(expr, item),
+        },
+        JSXElementChild::JSXSpreadChild(_) => false,
+    }
 }
 
 fn jsx_object_expr(object: &JSXObject, property: &IdentName) -> Expr {

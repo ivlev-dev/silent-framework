@@ -3,6 +3,7 @@ import {
   createRenderEffect,
   createSignal,
   getOwner,
+  isReactive,
   onCleanup,
   runWithOwner,
   untrack,
@@ -18,7 +19,7 @@ import {
   disposeNode,
   isServerMode,
 } from "./dom.js";
-import { hydratedEffect, settleNodes } from "./dom-hydration-state.js";
+import { hydratedEffect, settleNodes, withStaticHydration } from "./dom-hydration-state.js";
 import { beginRegion, regionMatches, settleWindow } from "./hydration-cursor.js";
 import { normalizeItems, type ListSource } from "./list-items.js";
 import { getServerBackend, serializeServerValue } from "./server-proxy.js";
@@ -71,6 +72,14 @@ interface MutableWindow {
 }
 
 const NO_INDEX: Accessor<number> = () => 0;
+
+function isPlainItem(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) {
+    return true;
+  }
+  const prototype = Object.getPrototypeOf(value) as object | null;
+  return prototype === Object.prototype || prototype === null;
+}
 
 class KeyedState<T> implements ItemState<T> {
   item: T;
@@ -138,6 +147,7 @@ export interface ForProps<T> {
   parent?: Node;
   marker?: Node | null;
   index?: boolean;
+  readonly staticRows?: boolean;
 }
 
 function sameItem(a: unknown, b: unknown): boolean {
@@ -347,6 +357,7 @@ export function For<T>(props: ForProps<T>): Node {
   const hasFallback = fallback !== undefined;
   const keyOf = props.keyOf;
   const usesIndex = props.index !== false;
+  const staticRows = props.staticRows === true;
   const keyAt = (item: T, index: number): unknown => {
     if (keyOf === undefined) {
       return item;
@@ -561,9 +572,21 @@ export function For<T>(props: ForProps<T>): Node {
       initialMount = null;
       mountTail = null;
     };
-    state.cleanup = hydrating
-      ? hydratedEffect(run) ?? noopCleanup
-      : createEffectUnlessStatic(run) ?? noopCleanup;
+    if (
+      hydrating &&
+      staticRows &&
+      anchor !== null &&
+      itemEnd !== null &&
+      !isReactive(item) &&
+      isPlainItem(item)
+    ) {
+      state.cleanup = noopCleanup;
+      withStaticHydration(run);
+    } else {
+      state.cleanup = hydrating
+        ? hydratedEffect(run) ?? noopCleanup
+        : createEffectUnlessStatic(run) ?? noopCleanup;
+    }
 
     if (anchor !== null) {
       attachItemState(anchor, state);

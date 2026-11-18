@@ -34,6 +34,7 @@ import {
   getDomHydrationRuntime,
   hydratedEffect,
   insertHydrated,
+  isStaticHydration,
   settleNodes,
   writeRegion,
 } from "./dom-hydration-state.js";
@@ -1075,6 +1076,12 @@ export function text(node: Text, accessor: () => unknown): void {
     }
   };
   if (HYDRATE && isHydrating()) {
+    if (isStaticHydration()) {
+      if (node.data !== stringOf(accessor())) {
+        mismatch("текстовый узел не совпал с серверной разметкой");
+      }
+      return;
+    }
     hydratedEffect(apply);
     return;
   }
@@ -1140,6 +1147,86 @@ function applyServerStyle(server: ServerAttribute, value: unknown): void {
   server.setAttribute("style", record);
 }
 
+function classTokensMatch(element: Element, expected: string): boolean {
+  const current = element.getAttribute("class") ?? "";
+  if (current === expected) {
+    return true;
+  }
+  const tokens = new Set<string>();
+  for (const token of current.split(/\s+/)) {
+    if (token !== "") {
+      tokens.add(token);
+    }
+  }
+  let count = 0;
+  for (const token of expected.split(/\s+/)) {
+    if (token === "") {
+      continue;
+    }
+    if (!tokens.delete(token)) {
+      return false;
+    }
+    count += 1;
+  }
+  return count === tokens.size;
+}
+
+function svgLocalName(target: SvgAttributeTarget): string {
+  const separator = target.name.indexOf(":");
+  return separator === -1 ? target.name : target.name.slice(separator + 1);
+}
+
+function svgAttributeValue(el: Element, target: SvgAttributeTarget): string | null {
+  return target.namespace === null
+    ? el.getAttribute(target.name)
+    : el.getAttributeNS(target.namespace, svgLocalName(target));
+}
+
+function propertyValueMatches(el: Element, name: string, value: unknown): boolean {
+  const target = el as unknown as Record<string, unknown>;
+  if (name === "indeterminate") {
+    return target["indeterminate"] === (value === "mixed" || Boolean(value));
+  }
+  if (name === "value") {
+    const expected = value === null || value === undefined ? "" : value;
+    return (
+      valuesEqual(target["value"], expected)
+      || String(target["value"]) === String(expected)
+    );
+  }
+  const enabled = Boolean(value);
+  return Boolean(target[name]) === enabled && el.hasAttribute(name) === enabled;
+}
+
+function attrValueMatches(el: Element, name: string, value: unknown, svg: boolean): boolean {
+  if (name === "class" || name === "className") {
+    return classTokensMatch(el, normalizeClass(value as ClassNameValue));
+  }
+  if (name === "style") {
+    const declarations = styleDeclarations(value as StyleInput);
+    if (declarations.size === 0) {
+      return !el.hasAttribute("style");
+    }
+    const style = (el as HTMLElement).style;
+    for (const [property, expected] of declarations) {
+      if (style.getPropertyValue(property) !== expected) {
+        return false;
+      }
+    }
+    return true;
+  }
+  if (!svg && propertyNames.has(name)) {
+    return propertyValueMatches(el, name, value);
+  }
+  const target = svg ? svgAttributeTarget(name) : null;
+  if (value === null || value === undefined || value === false) {
+    return (target === null ? el.getAttribute(name) : svgAttributeValue(el, target)) === null;
+  }
+  const expected = value === true ? (booleanNames.has(name) ? "" : "true") : stringOf(value);
+  const current = target === null ? el.getAttribute(name) : svgAttributeValue(el, target);
+  return current === expected;
+}
+
 export function attr(el: Element, name: string, accessor: () => unknown): void {
   const server = serverAttribute(el);
   if (server !== null) {
@@ -1180,6 +1267,12 @@ export function attr(el: Element, name: string, accessor: () => unknown): void {
     applyAttr(el, name, value, svg);
   };
   if (HYDRATE && isHydrating()) {
+    if (isStaticHydration()) {
+      if (!attrValueMatches(el, name, accessor(), svg)) {
+        mismatch("значение атрибута не совпало с серверной разметкой");
+      }
+      return;
+    }
     hydratedEffect(apply);
   } else {
     createRenderEffect(apply);

@@ -24,9 +24,23 @@ export interface DomHydrationRuntime {
 }
 
 let runtime: DomHydrationRuntime | null = null;
+let staticDepth = 0;
 
 export function registerDomHydrationRuntime(next: DomHydrationRuntime): void {
   runtime = next;
+}
+
+export function withStaticHydration<T>(fn: () => T): T {
+  staticDepth += 1;
+  try {
+    return fn();
+  } finally {
+    staticDepth -= 1;
+  }
+}
+
+export function isStaticHydration(): boolean {
+  return staticDepth > 0;
 }
 
 export function getDomHydrationRuntime(): DomHydrationRuntime {

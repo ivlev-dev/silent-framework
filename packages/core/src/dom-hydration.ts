@@ -14,7 +14,7 @@ import {
   type TemplateHydrationSource,
   type TemplatePlan,
 } from "./dom.js";
-import { registerDomHydrationRuntime } from "./dom-hydration-state.js";
+import { registerDomHydrationRuntime, isStaticHydration } from "./dom-hydration-state.js";
 import { createEffectUnlessStatic } from "./static-effect.js";
 import {
   INSERT_END,
@@ -538,6 +538,16 @@ function textHydrated(
   marker: Node | null,
   initial: Text | null,
 ): void {
+  if (isStaticHydration()) {
+    const value = resolveValue(accessor());
+    if (isTextValue(value)) {
+      const expected = stringOf(value);
+      if ((initial === null ? "" : initial.data) !== expected) {
+        mismatch("текстовый узел не совпал с серверной разметкой");
+      }
+      return;
+    }
+  }
   let textNode = initial;
   let region: HydrationWindow | null = null;
   createEffectUnlessStatic(() => {
@@ -599,6 +609,19 @@ export function settleNodes(end: Node | null, value: unknown): void {
     markClientNodes();
     parent.insertBefore(value, end);
   }
+}
+
+function staticRegionText(window: HydrationWindow, expected: string): boolean {
+  let text = "";
+  let node: Node | null = window.start.nextSibling;
+  while (node !== null && node !== window.end) {
+    if (node.nodeType !== Node.TEXT_NODE) {
+      return false;
+    }
+    text += (node as Text).data;
+    node = node.nextSibling;
+  }
+  return node === window.end && text === expected;
 }
 
 interface RegionState {
@@ -876,6 +899,15 @@ export function insertHydrated(
     (start as Comment).data === INSERT_START
       ? { start, end: previous, cursor: previous }
       : findInsertWindow(marker, parent);
+  if (isStaticHydration()) {
+    const value = resolveValue(accessor());
+    if (isTextValue(value)) {
+      if (!staticRegionText(window, stringOf(value))) {
+        mismatch("содержимое региона вставки не совпало");
+      }
+      return;
+    }
+  }
   let initialized = false;
   createRenderEffect(() => {
     if (!initialized) {
