@@ -9,6 +9,7 @@ export interface ValidationCodegenOptions {
   readonly sourceFile: ts.SourceFile;
   readonly checker: ts.TypeChecker;
   readonly runtimeRef: (symbol: ts.Symbol) => string;
+  readonly shouldGenerate?: ((declaration: ts.ClassDeclaration) => boolean) | undefined;
 }
 
 type PrimitiveName =
@@ -474,7 +475,7 @@ function serializeObject(
     const schema = serializeType(element, state, depth);
     return schema === null ? null : { kind: "array", element: schema };
   }
-  if (names.includes("Map") || names.includes("WeakMap")) {
+  if (names.includes("Map") || names.includes("WeakMap") || names.includes("ReadonlyMap")) {
     const key = args[0];
     const value = args[1];
     if (key === undefined || value === undefined) {
@@ -487,7 +488,7 @@ function serializeObject(
     }
     return { kind: "mapof", key: keySchema, value: valueSchema };
   }
-  if (names.includes("Set") || names.includes("WeakSet")) {
+  if (names.includes("Set") || names.includes("WeakSet") || names.includes("ReadonlySet")) {
     const element = args[0];
     if (element === undefined) {
       return primitive(names.includes("WeakSet") ? "weakset" : "set");
@@ -700,12 +701,15 @@ function collectClasses(node: ts.Node, classes: ts.ClassDeclaration[]): void {
 export function generateValidationBlocks(
   options: ValidationCodegenOptions,
 ): readonly ValidationBlock[] {
-  const { sourceFile, checker, runtimeRef } = options;
+  const { sourceFile, checker, runtimeRef, shouldGenerate } = options;
   const blocks: ValidationBlock[] = [];
   const classes: ts.ClassDeclaration[] = [];
   collectClasses(sourceFile, classes);
   for (const statement of classes) {
     if (statement.name === undefined) {
+      continue;
+    }
+    if (shouldGenerate !== undefined && !shouldGenerate(statement)) {
       continue;
     }
     if (sourceFile.text.slice(statement.getStart(sourceFile), statement.getEnd()).includes(SCHEMA_KEY)) {

@@ -256,6 +256,18 @@ describe("validateType: составные схемы", () => {
     expect(valid(new Map(), setSchema)).toBe(false);
   });
 
+  it("пропускает вложенные optional/nullable и отвергает массивы для object", () => {
+    const schema: TypeSchema = ["optional", ["nullable", "string"]];
+    expect(valid(undefined, schema)).toBe(true);
+    expect(valid(null, schema)).toBe(true);
+    expect(valid("x", schema)).toBe(true);
+    expect(valid(1, schema)).toBe(false);
+
+    const objectSchema: TypeSchema = ["object", { name: "string" }];
+    expect(valid({ name: "x" }, objectSchema)).toBe(true);
+    expect(valid([], objectSchema)).toBe(false);
+  });
+
   it("пропускает undefined для optional и null для nullable", () => {
     expect(valid(undefined, ["optional", "string"])).toBe(true);
     expect(valid(null, ["optional", "string"])).toBe(false);

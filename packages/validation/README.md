@@ -74,6 +74,18 @@ if (!result.valid) {
 
 Типы полей уже описаны в TS-аннотациях, и дублировать их декораторами `@IsString()`/`@IsInt()` не нужно. Vite-плагин читает типы на этапе сборки через TypeScript API и вставляет в класс статическую схему. В рантайме `validate` проверяет по ней значения, а декораторы остаются для семантики: формат, диапазоны, сравнения.
 
+Схему получают только классы-потомки `ValidationModel`. Импортируйте базовый класс из пакета и укажите его в `extends`:
+
+```ts
+import { ValidationModel } from "@ivlev-dev/silent-validation";
+
+class User extends ValidationModel {
+  public accessor email: string = "";
+}
+```
+
+Наследование может быть многоуровневым: промежуточные классы сохраняют признак, и потомок на любой глубине получает схему. Класс без `ValidationModel` в цепочке наследования метаданных не получает.
+
 ### Подключение плагина
 
 ```ts
@@ -91,24 +103,25 @@ export default defineConfig({
 | `include` | `RegExp` | `/\.(ts\|tsx)$/` | Файлы, которые обрабатывает плагин |
 | `exclude` | `RegExp` | `/node_modules/` | Файлы, которые плагин пропускает |
 | `tsconfig` | `string` | ближайший `tsconfig.json` | Путь к конфигу относительно корня проекта |
+| `base` | `string` | `"ValidationModel"` | Имя базового класса, потомки которого получают схему |
 
 TypeScript используется только на сборке: `typescript` — зависимость пакета, рантайм от него не зависит. Плагин самостоятельный: `silent()` нужен только для JSX/VM-компиляции, в обычном Vite-конфиге достаточно `validation()`.
 
 ### Пример
 
 ```ts
-import { validate } from "@ivlev-dev/silent-validation";
+import { validate, ValidationModel } from "@ivlev-dev/silent-validation";
 
-class Address {
+class Address extends ValidationModel {
   public accessor city: string = "";
 }
 
-class Item {
+class Item extends ValidationModel {
   public accessor name: string = "";
   public accessor quantity: number = 0;
 }
 
-class Order {
+class Order extends ValidationModel {
   public accessor email: string = "";
   public accessor age: number | undefined = undefined;
   public accessor address: Address = new Address();
@@ -150,7 +163,7 @@ const { errors } = validate(broken);
 Вложенные классы, массивы, `Record` и index-signature дают те же пути, что и `@Nested`/`@Each`:
 
 ```ts
-class Order {
+class Order extends ValidationModel {
   public accessor address: Address = new Address();
   public accessor items: Item[] = [];
   public accessor counts: Record<string, number> = {};
@@ -164,9 +177,9 @@ class Order {
 Тип проверяется первым. По умолчанию включён каскад (`cascade: true`): даже при неверном типе выполняются декораторы поля, поэтому `@Min(0)` на строке даст и `type`, и `min`. Чтобы остановиться на типовой ошибке, передайте `cascade: false`:
 
 ```ts
-import { IsEmail, Min, validate } from "@ivlev-dev/silent-validation";
+import { IsEmail, Min, validate, ValidationModel } from "@ivlev-dev/silent-validation";
 
-class User {
+class User extends ValidationModel {
   @IsEmail()
   public accessor email: string = "";
 
@@ -203,9 +216,15 @@ validate(instance, { types: false });
 
 Валидируются только `accessor`-поля с явной аннотацией; обычные поля и поля без аннотации плагин пропускает.
 
+### Стоимость
+
+- Рантайм: около **3 µs** на `validate` для модели из 6 полей с вложенным классом и массивом из трёх элементов (Intel i5-10400); с `types: false` — около **0.15 µs**. Схемы и планы полей кешируются по конструктору.
+- Сборка: TypeScript Program создаётся один раз на проект (около **0.3–0.4 s** на холодную для проекта из 120 файлов); повторные сборки и HMR с тем же экземпляром плагина добавляют единицы миллисекунд. Файлы без `accessor`/`extends` плагин пропускает до создания Program.
+
 ### Ограничения
 
 - Метаданные получают только классы с `accessor`-полями и аннотациями; файл должен попадать под `include` и не попадать под `exclude`.
+- Схема генерируется только для классов-потомков `ValidationModel`; класс без базового класса не валидируется по типу.
 - Optional-поле описывается как `public accessor age: number | undefined = undefined;`. Синтаксис `accessor age?: number` в TypeScript запрещён.
 - Условные, mapped, template и indexed-типы, а также generic-параметры не поддерживаются и пропускаются.
 - Если класс импортирован только как тип (`import type { Item }`), плагин добавляет namespace-импорт, чтобы проверять экземпляры в рантайме.
@@ -223,6 +242,7 @@ validate(instance, { types: false });
 | `ValidationError` | Ошибка правила: `field`, `rule`, `message`, `params`, `value`, `path`, `label`, `index?` |
 | `ValidationException` | Исключение с полями `errors` и `result` |
 | `AsyncRuleError` | Бросается синхронным `validate`, если правило вернуло промис |
+| `ValidationModel` | Базовый класс-маркер: схема из TS-типов генерируется только для его потомков |
 | `ValidationOptions` | `groups`, `stopAtFirst`, `labels`, `types`, `locale`, `resolve`, `messages` |
 
 ```ts

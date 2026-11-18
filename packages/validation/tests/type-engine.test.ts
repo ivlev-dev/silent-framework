@@ -199,6 +199,17 @@ describe("комбинация типов и декораторов", () => {
     }
   });
 
+  it("кэш плана не замораживает значения и правила", () => {
+    const account = new Account();
+    account.name = "ok";
+    account.age = 10;
+    expect(rules(validate(account))).toEqual(["min"]);
+    account.age = 20;
+    expect(validate(account).valid).toBe(true);
+    account.name = "";
+    expect(rules(validate(account))).toEqual(["required"]);
+  });
+
   it("пропускает все правила для optional при undefined", () => {
     const account = new Account();
     account.name = "ok";

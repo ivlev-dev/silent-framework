@@ -8,11 +8,39 @@ export interface ValidationPluginOptions {
   readonly include?: RegExp;
   readonly exclude?: RegExp;
   readonly tsconfig?: string;
+  readonly base?: string;
 }
 
 const DEFAULT_INCLUDE = /\.(?:ts|tsx)$/;
 const DEFAULT_EXCLUDE = /node_modules/;
 const NAMESPACE_ALIAS_PREFIX = "__silent_validation_";
+const ACCESSOR_PATTERN = /\baccessor\b/;
+const EXTENDS_PATTERN = /\bextends\b/;
+
+function extendsBase(
+  type: ts.Type,
+  name: string,
+  seen: Set<ts.Type>,
+): boolean {
+  if (seen.has(type)) {
+    return false;
+  }
+  seen.add(type);
+  if (type.getSymbol()?.getName() === name) {
+    return true;
+  }
+  for (const base of type.getBaseTypes() ?? []) {
+    if (extendsBase(base, name, seen)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function needsValidation(file: string): boolean {
+  const text = ts.sys.readFile(file);
+  return text !== undefined && ACCESSOR_PATTERN.test(text) && EXTENDS_PATTERN.test(text);
+}
 
 const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions = {
   moduleResolution: ts.ModuleResolutionKind.Bundler,
@@ -324,7 +352,7 @@ function readProject(configPath: string): ParsedProject {
   }
   return {
     configPath,
-    rootNames: parsed.fileNames,
+    rootNames: parsed.fileNames.filter(needsValidation),
     options: { ...parsed.options, noEmit: true },
     projectReferences: parsed.projectReferences,
   };
@@ -342,6 +370,7 @@ function fallbackProject(): ParsedProject {
 export function validation(options: ValidationPluginOptions = {}): Plugin {
   const include = options.include ?? DEFAULT_INCLUDE;
   const exclude = options.exclude ?? DEFAULT_EXCLUDE;
+  const baseName = options.base ?? "ValidationModel";
   const programs = new Map<string, ProgramEntry>();
   let root = process.cwd();
 
@@ -432,16 +461,28 @@ export function validation(options: ValidationPluginOptions = {}): Plugin {
       handler(code, id) {
         const file = cleanModuleId(id);
         if (!shouldTransform(id, file)) return null;
+        if (!ACCESSOR_PATTERN.test(code) || !EXTENDS_PATTERN.test(code)) return null;
         const program = programFor(file);
         if (program === null) return null;
         const sourceFile = program.getSourceFile(file);
         if (sourceFile === undefined) return null;
         const checker = program.getTypeChecker();
         const resolver = createRuntimeRefResolver(sourceFile, checker);
+        const decisions = new Map<ts.ClassDeclaration, boolean>();
         const blocks = generateValidationBlocks({
           sourceFile,
           checker,
           runtimeRef: resolver.runtimeRef,
+          shouldGenerate: (declaration) => {
+            const cached = decisions.get(declaration);
+            if (cached !== undefined) {
+              return cached;
+            }
+            const type = checker.getTypeAtLocation(declaration);
+            const result = extendsBase(type, baseName, new Set<ts.Type>());
+            decisions.set(declaration, result);
+            return result;
+          },
         });
         if (blocks.length === 0) return null;
         const magic = new MagicString(code);

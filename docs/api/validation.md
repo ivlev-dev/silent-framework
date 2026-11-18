@@ -28,7 +28,7 @@ const result: ValidationResult = validate(user);
 
 ## Валидация из типов
 
-Типы `accessor`-полей можно не дублировать декораторами: отдельный Vite-плагин читает TS-аннотации на этапе сборки и добавляет классу статическую схему. В рантайме `validate` проверяет типы автоматически, а декораторы используются для семантики — формата, диапазонов, сравнений.
+Типы `accessor`-полей можно не дублировать декораторами: отдельный Vite-плагин читает TS-аннотации на этапе сборки и добавляет классу статическую схему. В рантайме `validate` проверяет типы автоматически, а декораторы используются для семантики — формата, диапазонов, сравнений. Схема генерируется только для классов, унаследованных от `ValidationModel` — напрямую или через промежуточные классы. Класс без `ValidationModel` в цепочке наследования метаданных не получает: у него проверяются только правила декораторов.
 
 ```ts
 import { defineConfig } from "vite";
@@ -47,20 +47,23 @@ export default defineConfig({
 | `include` | `RegExp` | `/\.(ts\|tsx)$/` | Файлы, которые обрабатывает плагин |
 | `exclude` | `RegExp` | `/node_modules/` | Файлы, которые пропускаются |
 | `tsconfig` | `string` | ближайший `tsconfig.json` | Путь к конфигу относительно корня проекта |
+| `base` | `string` | `"ValidationModel"` | Имя базового класса, потомки которого получают схему |
+
+Опция `base` нужна, если маркерный класс называется иначе: плагин ищет наследников по имени, а не по конкретному импорту.
 
 ```ts
-import { IsEmail, Min, validate } from "@ivlev-dev/silent-validation";
+import { IsEmail, Min, validate, ValidationModel } from "@ivlev-dev/silent-validation";
 
-class Address {
+class Address extends ValidationModel {
   public accessor city: string = "";
 }
 
-class Item {
+class Item extends ValidationModel {
   public accessor name: string = "";
   public accessor quantity: number = 0;
 }
 
-class Order {
+class Order extends ValidationModel {
   @IsEmail()
   public accessor email: string = "";
 
@@ -85,7 +88,9 @@ const result = validate(order);
 
 **Поддерживаемые типы.** Примитивы (`string`, `number`, `boolean`, `bigint`, `symbol`, `object`, `function`, `undefined`, `null`, `void`, `never`), литералы, union и intersection (включая `| null` и `| undefined`), массивы и `ReadonlyArray`, кортежи с optional-элементами, `Record` и строковые index-signature, `Map`/`WeakMap`/`Set`/`WeakSet`, `Promise`, `Date`, `RegExp`, `Error` и подклассы, `ArrayBuffer`/`SharedArrayBuffer`/`DataView`, typed arrays, `URL`/`URLSearchParams`, `Iterable`/`Iterator`/`AsyncIterable`/`AsyncIterator`, значения `enum`, пользовательские классы (вложенная проверка экземпляра) и структурные интерфейсы/type alias’ы (глубина 4).
 
-**Ограничения.** Проверяются только `accessor`-поля с явной аннотацией; обычные поля и поля без аннотации пропускаются. Optional-поле описывается как `public accessor age: number | undefined = undefined;` — `?` для `accessor` в TypeScript запрещён. Условные, mapped, template и indexed-типы, а также generic-параметры не поддерживаются и пропускаются. Если класс импортирован только как тип, плагин добавляет namespace-импорт для рантайм-проверки. Метаданные попадают в бандл статическим блоком; без плагина типы не проверяются.
+**Стоимость.** Рантайм — около 3 µs на `validate` для 6 полей с вложенным классом и массивом; `types: false` — около 0.15 µs. TypeScript Program создаётся один раз на проект (~0.3–0.4 s холодная сборка для 120 файлов), повторные сборки/HMR используют кеш плагина.
+
+**Ограничения.** Проверяются только `accessor`-поля с явной аннотацией; обычные поля и поля без аннотации пропускаются. Схема генерируется только для классов-потомков `ValidationModel` (наследование может быть многоуровневым); класс без базового класса не валидируется по типу. Optional-поле описывается как `public accessor age: number | undefined = undefined;` — `?` для `accessor` в TypeScript запрещён. Условные, mapped, template и indexed-типы, а также generic-параметры не поддерживаются и пропускаются. Если класс импортирован только как тип, плагин добавляет namespace-импорт для рантайм-проверки. Метаданные попадают в бандл статическим блоком; без плагина типы не проверяются.
 
 ## Функции
 
@@ -686,6 +691,14 @@ function Groups(...groups: string[]): RuleDecorator;
 Относит поле к группам. Поле проверяется, если `ValidationOptions.groups` пуст или пересекается с группами поля; поле без групп проверяется всегда.
 
 ## Типы
+
+### `ValidationModel`
+
+```ts
+class ValidationModel {}
+```
+
+Базовый класс-маркер для генерации схемы из TS-типов: наследуйтесь от него напрямую или через промежуточные классы, иначе плагин не создаст метаданные и `validate` увидит только правила декораторов.
 
 ### `ValidationOptions`
 

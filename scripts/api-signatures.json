@@ -1833,7 +1833,7 @@
       },
       "ValidationConfig": {
         "kind": "interface",
-        "signature": "export interface ValidationConfig { readonly locale?: string | undefined; readonly resolve?: MessageResolver | undefined; readonly messages?: Readonly<Record<string, Readonly<Record<string, string>>>> | undefined; }"
+        "signature": "export interface ValidationConfig { readonly cascade?: boolean | undefined; readonly locale?: string | undefined; readonly resolve?: MessageResolver | undefined; readonly messages?: Readonly<Record<string, Readonly<Record<string, string>>>> | undefined; }"
       },
       "ValidationError": {
         "kind": "interface",
@@ -1848,9 +1848,13 @@
         "type": "Readonly<Record<string, Readonly<Record<string, string>>>>",
         "signature": "export declare const validationMessages: Readonly<Record<string, Readonly<Record<string, string>>>>;"
       },
+      "ValidationModel": {
+        "kind": "class",
+        "signature": "export declare class ValidationModel {}"
+      },
       "ValidationOptions": {
         "kind": "interface",
-        "signature": "export interface ValidationOptions extends ValidationConfig { readonly groups?: readonly string[] | undefined; readonly stopAtFirst?: boolean | undefined; readonly labels?: Readonly<Record<string, string>> | undefined; readonly types?: boolean | undefined; }"
+        "signature": "export interface ValidationOptions extends ValidationConfig { readonly cascade?: boolean | undefined; readonly groups?: readonly string[] | undefined; readonly stopAtFirst?: boolean | undefined; readonly labels?: Readonly<Record<string, string>> | undefined; readonly types?: boolean | undefined; }"
       },
       "ValidationResult": {
         "kind": "interface",

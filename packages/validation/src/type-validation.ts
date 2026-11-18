@@ -571,7 +571,7 @@ function validateSchema(
     }
     case "object": {
       const fields = schema[1];
-      if (typeof value !== "object" || value === null) {
+      if (typeof value !== "object" || value === null || Array.isArray(value)) {
         return [createError(value, schema, ctx)];
       }
       if (!enter(value, ctx)) {

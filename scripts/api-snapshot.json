@@ -417,6 +417,7 @@
       "ValidationError",
       "ValidationException",
       "validationMessages",
+      "ValidationModel",
       "ValidationOptions",
       "ValidationResult"
     ],

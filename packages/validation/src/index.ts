@@ -81,6 +81,7 @@ export {
   getValidationConfig,
 } from "./messages.js";
 export { AsyncRuleError, ValidationException } from "./types.js";
+export { ValidationModel } from "./model.js";
 export type {
   MessageContext,
   MessageFactory,

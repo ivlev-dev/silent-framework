@@ -74,22 +74,34 @@ function isFieldSchemaMap(value: unknown): value is FieldSchemaMap {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+const classCache = new WeakMap<Function, ClassSchema | null>();
+const instanceCache = new WeakMap<Function, FieldSchemaMap | null>();
+
 export function readClassSchema(ctor: Function): ClassSchema | null {
+  const cached = classCache.get(ctor);
+  if (cached !== undefined) {
+    return cached;
+  }
   const own: unknown = holder(ctor)[SCHEMA_SYMBOL];
-  if (typeof own !== "object" || own === null) {
-    return null;
+  let schema: ClassSchema | null = null;
+  if (typeof own === "object" && own !== null) {
+    const candidate = own as { readonly fields?: unknown };
+    schema = isFieldSchemaMap(candidate.fields)
+      ? { fields: candidate.fields }
+      : { fields: own as FieldSchemaMap };
   }
-  const candidate = own as { readonly fields?: unknown };
-  if (isFieldSchemaMap(candidate.fields)) {
-    return { fields: candidate.fields };
-  }
-  return { fields: own as FieldSchemaMap };
+  classCache.set(ctor, schema);
+  return schema;
 }
 
 export function readInstanceSchema(instance: object): FieldSchemaMap | null {
   const ctor: unknown = instance.constructor;
   if (typeof ctor !== "function") {
     return null;
+  }
+  const cached = instanceCache.get(ctor);
+  if (cached !== undefined) {
+    return cached;
   }
   const chain: Function[] = [];
   let current: unknown = ctor;
@@ -107,5 +119,6 @@ export function readInstanceSchema(instance: object): FieldSchemaMap | null {
     merged ??= {};
     Object.assign(merged, schema.fields);
   }
+  instanceCache.set(ctor, merged);
   return merged;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { IsEmail, validate } from "../src/index.js";
+import { IsEmail, validate, ValidationModel } from "../src/index.js";
 import { Address } from "./address.js";
 
 enum Role {
@@ -17,13 +17,13 @@ interface Point {
   y: number;
 }
 
-class Item {
+class Item extends ValidationModel {
   public accessor name: string = "";
 
   public accessor quantity: number = 0;
 }
 
-class Order {
+class Order extends ValidationModel {
   public accessor email: string = "";
 
   public accessor age: number | null = null;
@@ -45,6 +45,8 @@ class Order {
   public accessor counts: Map<string, number> = new Map();
 
   public accessor maybe: string | undefined = undefined;
+
+  public accessor maybeNull: string | null | undefined = undefined;
 }
 
 function schemaOf(ctor: Function): unknown {
@@ -103,12 +105,31 @@ describe("валидация из TS-типов", () => {
     order.point = { x: "1" as unknown as number, y: 2 };
     order.counts.set("a", "b" as unknown as number);
 
+    order.point = [] as unknown as Point;
     const errors = validate(order).errors;
-    expect(errors.map((error) => error.path)).toEqual(["point.x", "counts[a]"]);
+    expect(errors.map((error) => error.path)).toEqual(["point", "counts[a]"]);
+  });
+
+  it("генерирует схему для многоуровневых потомков", () => {
+    class Base extends ValidationModel {
+      public accessor base: string = "";
+    }
+
+    class Child extends Base {
+      public accessor child: number = 0;
+    }
+
+    const child = new Child();
+    child.base = 1 as unknown as string;
+    child.child = "x" as unknown as number;
+    expect(validate(child).errors.map((error) => `${error.path}:${error.rule}`)).toEqual([
+      "base:type",
+      "child:type",
+    ]);
   });
 
   it("пропускает optional-поля и комбинируется с декораторами", () => {
-    class Decorated {
+    class Decorated extends ValidationModel {
       @IsEmail()
       public accessor contact: string = "not-email";
     }
@@ -116,10 +137,14 @@ describe("валидация из TS-типов", () => {
     expect(validate(new Decorated()).errors.map((error) => error.rule)).toEqual([
       "isEmail",
     ]);
-    new Order().maybe = undefined;
-    expect(validate(new Order()).valid).toBe(true);
+    const optional = new Order();
+    optional.maybe = undefined;
+    optional.maybeNull = null;
+    expect(validate(optional).valid).toBe(true);
+    optional.maybeNull = 1 as unknown as string;
+    expect(validate(optional).errors.map((error) => error.path)).toEqual(["maybeNull"]);
 
-    class Mixed {
+    class Mixed extends ValidationModel {
       @IsEmail()
       public accessor contact: string = "not-email";
     }

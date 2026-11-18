@@ -37,6 +37,13 @@ interface FieldRun {
   readonly schema: TypeSchema | undefined;
 }
 
+interface PlanCache {
+  readonly withSchema: readonly FieldRun[];
+  readonly plain: readonly FieldRun[];
+}
+
+const planCache = new WeakMap<Function, PlanCache>();
+
 interface PreparedField {
   readonly value: unknown;
   readonly path: string;
@@ -227,6 +234,22 @@ function callFor(
 }
 
 function fieldPlan(target: object, withSchema: boolean): readonly FieldRun[] {
+  const ctor: unknown = target.constructor;
+  if (typeof ctor !== "function") {
+    return buildFieldPlan(target, withSchema);
+  }
+  let cached = planCache.get(ctor);
+  if (cached === undefined) {
+    cached = {
+      withSchema: buildFieldPlan(target, true),
+      plain: buildFieldPlan(target, false),
+    };
+    planCache.set(ctor, cached);
+  }
+  return withSchema ? cached.withSchema : cached.plain;
+}
+
+function buildFieldPlan(target: object, withSchema: boolean): readonly FieldRun[] {
   const validation = validationStateFor(target);
   const byName = new Map<string, FieldSlot>();
   for (const slot of validation.fields.values()) {
@@ -268,15 +291,19 @@ function fieldPlan(target: object, withSchema: boolean): readonly FieldRun[] {
 }
 
 function schemaSkips(schema: TypeSchema, value: unknown): boolean {
-  if (typeof schema === "string") {
-    return false;
-  }
-  const tag = schema[0];
-  if (tag === "optional" && value === undefined) {
-    return true;
-  }
-  if (tag === "nullable" && value === null) {
-    return true;
+  let current = schema;
+  while (Array.isArray(current)) {
+    const tag = current[0];
+    if (tag === "optional" && value === undefined) {
+      return true;
+    }
+    if (tag === "nullable" && value === null) {
+      return true;
+    }
+    if (tag !== "optional" && tag !== "nullable") {
+      return false;
+    }
+    current = current[1];
   }
   return false;
 }

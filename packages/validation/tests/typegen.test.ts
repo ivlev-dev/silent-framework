@@ -143,6 +143,8 @@ class Collections {
   accessor dictionary: { [key: string]: Date } = {};
   accessor map: Map<string, number> = new Map();
   accessor set: Set<string> = new Set();
+  accessor readonlyMap: ReadonlyMap<string, number> = new Map();
+  accessor readonlySet: ReadonlySet<string> = new Set();
   accessor weakMap: WeakMap<object, Date> = new WeakMap();
   accessor weakSet: WeakSet<object> = new WeakSet();
   accessor promise: Promise<string> = Promise.resolve("");
@@ -152,7 +154,8 @@ class Collections {
       '"tags": ["array","string"], "readonlyTags": ["array","number"], '
       + '"tuple": ["tuple",["string",null]], "record": ["record","boolean"], '
       + '"dictionary": ["record","date"], "map": ["mapof","string","number"], '
-      + '"set": ["setof","string"], "weakMap": ["mapof","object","date"], '
+      + '"set": ["setof","string"], "readonlyMap": ["mapof","string","number"], '
+      + '"readonlySet": ["setof","string"], "weakMap": ["mapof","object","date"], '
       + '"weakSet": ["setof","object"], "promise": "promise"',
     );
   });

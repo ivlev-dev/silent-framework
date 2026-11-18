@@ -75,7 +75,7 @@ if (!result.valid) {
 }
 ```
 
-Пакет не зависит от core: декораторы вешаются на поля, валидация вызывается явно (`validate`/`validateAsync`), сообщения настраиваются через `configureValidation` с резолвером i18n. Типы `accessor`-полей можно не дублировать декораторами — плагин `validation()` из `@ivlev-dev/silent-validation/vite` читает TS-аннотации на сборке и проверяет их в рантайме. Подробнее — [`docs/api/validation.md`](./docs/api/validation.md).
+Пакет не зависит от core: декораторы вешаются на поля, валидация вызывается явно (`validate`/`validateAsync`), сообщения настраиваются через `configureValidation` с резолвером i18n. Типы `accessor`-полей можно не дублировать декораторами — плагин `validation()` из `@ivlev-dev/silent-validation/vite` читает TS-аннотации на сборке и проверяет их в рантайме. Для валидации из типов класс наследуется от `ValidationModel`: плагин генерирует схему только для потомков (наследование может быть многоуровневым). Подробнее — [`docs/api/validation.md`](./docs/api/validation.md).
 
 ## Компонент и ViewModel
 

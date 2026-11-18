@@ -50,9 +50,15 @@ function createProject(): string {
     ),
   );
   writeFileSync(
+    path.join(directory, "base.ts"),
+    ["export class ValidationModel {}", ""].join("\n"),
+  );
+  writeFileSync(
     path.join(directory, "b.ts"),
     [
-      "export class Address {",
+      'import { ValidationModel } from "./base";',
+      "",
+      "export class Address extends ValidationModel {",
       '  accessor street: string = "";',
       "}",
       "",
@@ -62,13 +68,14 @@ function createProject(): string {
     path.join(directory, "a.ts"),
     [
       'import type { Address } from "./b";',
+      'import { ValidationModel } from "./base";',
       "",
       "export enum Role {",
       '  Admin = "admin",',
       '  User = "user",',
       "}",
       "",
-      "export class User {",
+      "export class User extends ValidationModel {",
       '  accessor name: string = "";',
       "  accessor age: number = 0;",
       "  accessor role: Role = Role.User;",
@@ -163,6 +170,18 @@ describe("validation()", () => {
       /import \* as __silent_validation_\d+ from ["']\.\/b["'];/,
     );
     expect(transformed.code).toMatch(/__silent_validation_\d+\.Address/);
+  });
+
+  it("не генерирует схему для класса без базового ValidationModel", () => {
+    const directory = createProject();
+    writeFileSync(
+      path.join(directory, "other.ts"),
+      ["export class Other {", '  accessor value: string = "";', "}", ""].join("\n"),
+    );
+    const plugin = validation();
+    const file = path.join(directory, "other.ts");
+    const result = getTransform(plugin)(readFileSync(file, "utf8"), file);
+    expect(result).toBeNull();
   });
 
   it("не меняет код файла без accessor-полей", () => {
