@@ -22,11 +22,14 @@ export function decorateField(
   install: FieldInstaller,
 ): RuleDecorator {
   return <C extends object, V>(
-    _value: undefined | ClassAccessorDecoratorTarget<C, V>,
-    context:
-      | ClassFieldDecoratorContext<C, V>
-      | ClassAccessorDecoratorContext<C, V>,
+    _value: ClassAccessorDecoratorTarget<C, V>,
+    context: ClassAccessorDecoratorContext<C, V>,
   ): void => {
+    if (context.kind !== "accessor") {
+      throw new TypeError(
+        "Валидация поддерживает только stage-3 accessor-поля (public accessor)",
+      );
+    }
     if (context.private === true) {
       throw new TypeError("Приватные поля не поддерживаются валидацией");
     }

@@ -25,7 +25,7 @@ describe("ValidateIf", () => {
 
       @ValidateIf((instance) => (instance as ConditionalBefore).enabled)
       @ruleDecorator(required)
-      name = "";
+      public accessor name = "";
     }
 
     const instance = new ConditionalBefore();
@@ -41,7 +41,7 @@ describe("ValidateIf", () => {
 
       @ruleDecorator(required)
       @ValidateIf((instance) => (instance as ConditionalAfter).enabled)
-      name = "";
+      public accessor name = "";
     }
 
     const instance = new ConditionalAfter();
@@ -60,7 +60,7 @@ describe("ValidateIf", () => {
         return true;
       })
       @ruleDecorator(required)
-      name = "";
+      public accessor name = "";
     }
 
     const instance = new Conditional();
@@ -75,10 +75,10 @@ describe("ValidateIf", () => {
 
       @ValidateIf((instance) => (instance as Mixed).enabled)
       @ruleDecorator(required)
-      conditional = "";
+      public accessor conditional = "";
 
       @ruleDecorator(required)
-      always = "";
+      public accessor always = "";
     }
 
     const result = validate(new Mixed());
@@ -92,7 +92,7 @@ describe("Optional", () => {
     class Maybe {
       @Optional()
       @ruleDecorator(required)
-      name: string | null | undefined = undefined;
+      public accessor name: string | null | undefined = undefined;
     }
 
     const instance = new Maybe();
@@ -109,7 +109,7 @@ describe("Optional", () => {
     class Maybe {
       @Optional()
       @ruleDecorator(required)
-      name: string | null | undefined = "";
+      public accessor name: string | null | undefined = "";
     }
 
     expect(validate(new Maybe()).valid).toBe(false);
@@ -120,7 +120,7 @@ describe("Optional", () => {
     class Maybe {
       @ruleDecorator(required)
       @Optional()
-      name: string | undefined = undefined;
+      public accessor name: string | undefined = undefined;
     }
 
     expect(validate(new Maybe()).valid).toBe(true);
@@ -132,7 +132,7 @@ describe("Label", () => {
     class Labelled {
       @Label("Имя")
       @ruleDecorator(required)
-      name = "";
+      public accessor name = "";
     }
 
     expect(firstMessage(validate(new Labelled()))).toBe("Поле Имя обязательно");
@@ -142,7 +142,7 @@ describe("Label", () => {
     class Labelled {
       @ruleDecorator(required)
       @Label("Имя")
-      name = "";
+      public accessor name = "";
     }
 
     expect(firstMessage(validate(new Labelled()))).toBe("Поле Имя обязательно");
@@ -152,7 +152,7 @@ describe("Label", () => {
     class Labelled {
       @Label("Имя")
       @ruleDecorator(required)
-      name = "";
+      public accessor name = "";
     }
 
     const [error] = validate(new Labelled()).errors;
@@ -165,7 +165,7 @@ describe("Groups", () => {
     class Grouped {
       @Groups("update")
       @ruleDecorator(required)
-      name = "";
+      public accessor name = "";
     }
 
     const instance = new Grouped();
@@ -180,7 +180,7 @@ describe("Groups", () => {
     class Grouped {
       @ruleDecorator(required)
       @Groups("update")
-      name = "";
+      public accessor name = "";
     }
 
     expect(validate(new Grouped(), { groups: ["create"] }).valid).toBe(true);
@@ -198,7 +198,7 @@ describe("Groups", () => {
       @Groups("update")
       @ruleDecorator(required)
       @ruleDecorator(second)
-      name = "";
+      public accessor name = "";
     }
 
     expect(validate(new Grouped(), { groups: ["create"] }).valid).toBe(true);
@@ -216,7 +216,7 @@ describe("Groups", () => {
       @Groups("update")
       @ruleDecorator(required, { groups: ["create"] })
       @ruleDecorator(second)
-      name = "";
+      public accessor name = "";
     }
 
     const instance = new Grouped();

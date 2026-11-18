@@ -321,7 +321,7 @@ describe("регистрация декораторов", () => {
     class ContactForm {
       @IsEmail()
       @MinLength(3)
-      value = "";
+      public accessor value = "";
     }
 
     const state = validationStateFor(new ContactForm());

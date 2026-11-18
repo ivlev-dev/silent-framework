@@ -32,28 +32,28 @@ import {
 class Address {
   @Required()
   @IsString()
-  city = "";
+  public accessor city = "";
 
   @Required()
   @MinLength(5)
-  street = "";
+  public accessor street = "";
 }
 
 class Profile {
   @Required()
   @Label("Имя")
-  name = "";
+  public accessor name = "";
 
   @Optional()
   @Min(18)
-  age: number | undefined = undefined;
+  public accessor age: number | undefined = undefined;
 
   @Nested()
-  address = new Address();
+  public accessor address = new Address();
 
   @Each()
   @ArrayMinSize(1)
-  tags: Address[] = [];
+  public accessor tags: Address[] = [];
 }
 
 describe("интеграция пакета", () => {
@@ -147,14 +147,32 @@ describe("интеграция пакета", () => {
     ]);
   });
 
+  it("отклоняет обычные поля: только accessor", () => {
+    const decorator = Required();
+    const context = {
+      kind: "field",
+      name: "value",
+      static: false,
+      private: false,
+      addInitializer: () => {},
+    } as unknown as ClassAccessorDecoratorContext<object, unknown>;
+
+    expect(() =>
+      decorator(
+        { get: () => undefined, set: () => {} } as unknown as ClassAccessorDecoratorTarget<object, unknown>,
+        context,
+      ),
+    ).toThrow(TypeError);
+  });
+
   it("учитывает наследование правил", () => {
     class Base {
       @Required()
-      id = "";
+      public accessor id = "";
     }
     class Child extends Base {
       @IsEmail()
-      email = "nope";
+      public accessor email = "nope";
     }
 
     const result = validate(new Child());
@@ -169,7 +187,7 @@ describe("интеграция пакета", () => {
       @Required()
       @MinLength(5)
       @Groups("update")
-      name = "";
+      public accessor name = "";
     }
 
     const model = new Model();
@@ -185,11 +203,11 @@ describe("интеграция пакета", () => {
     class Model {
       @Optional()
       @Min(10)
-      optional: number | undefined = undefined;
+      public accessor optional: number | undefined = undefined;
 
       @ValidateIf((instance: Model) => instance.enabled)
       @Required()
-      requiredWhenEnabled = "";
+      public accessor requiredWhenEnabled = "";
 
       enabled = true;
     }
@@ -205,10 +223,10 @@ describe("интеграция пакета", () => {
   it("использует кастомные сообщения и резолвер i18n", () => {
     class Model {
       @Required({ message: "Нужно заполнить {label}", label: "почту" })
-      email = "";
+      public accessor email = "";
 
       @Min(18, { messageKey: "custom.age" })
-      age = 10;
+      public accessor age = 10;
     }
 
     const result = validate(new Model(), {
@@ -224,7 +242,7 @@ describe("интеграция пакета", () => {
   it("переключает локаль глобально и на вызов", () => {
     class Model {
       @Required()
-      email = "";
+      public accessor email = "";
     }
 
     configureValidation({ locale: "en" });
@@ -242,7 +260,7 @@ describe("интеграция пакета", () => {
     class Model {
       @Each()
       @ArrayMinSize(2)
-      items = [new Address(), new Address()];
+      public accessor items = [new Address(), new Address()];
     }
 
     const model = new Model();
@@ -261,10 +279,10 @@ describe("интеграция пакета", () => {
   it("поддерживает синхронный и асинхронный Custom", async () => {
     class Model {
       @Custom((value) => value === "ok")
-      sync = "bad";
+      public accessor sync = "bad";
 
       @Custom(async (value) => value === "ok")
-      async = "bad";
+      public accessor async = "bad";
     }
 
     const model = new Model();
@@ -276,11 +294,11 @@ describe("интеграция пакета", () => {
   it("не зацикливается на кольцевых ссылках", () => {
     class Node {
       @Required()
-      name = "node";
+      public accessor name = "node";
 
       @Optional()
       @Nested()
-      child: Node | null = null;
+      public accessor child: Node | null = null;
     }
 
     const first = new Node();
@@ -296,7 +314,7 @@ describe("интеграция пакета", () => {
       @NotNull()
       @IsInt()
       @Between(1, 3)
-      count: number | null = null;
+      public accessor count: number | null = null;
     }
 
     expect(() => validateOrThrow(new Model())).toThrow(ValidationException);
@@ -311,16 +329,16 @@ describe("интеграция пакета", () => {
   it("поддерживает Equals, IsIn, NotEmpty и строковые правила", () => {
     class Model {
       @Equals("fixed")
-      mode = "other";
+      public accessor mode = "other";
 
       @IsIn(["a", "b"])
-      choice = "c";
+      public accessor choice = "c";
 
       @NotEmpty()
-      name = "  ";
+      public accessor name = "  ";
 
       @IsString()
-      text = 42;
+      public accessor text = 42;
     }
 
     const result = validate(new Model());

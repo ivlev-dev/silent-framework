@@ -37,7 +37,7 @@ describe("Custom", () => {
   it("регистрирует синхронную проверку", async () => {
     class SyncForm {
       @Custom((value) => value === "ok")
-      value = "ok";
+      public accessor value = "ok";
     }
 
     const instance = new SyncForm();
@@ -56,7 +56,7 @@ describe("Custom", () => {
   it("передаёт контекст выполнения в проверку", async () => {
     class ContextForm {
       @Custom((_value, context) => context.field === "value")
-      value = "ok";
+      public accessor value = "ok";
     }
 
     const instance = new ContextForm();
@@ -72,7 +72,7 @@ describe("Custom", () => {
       @Custom(
         async (value) => typeof value === "string" && value.startsWith("a"),
       )
-      value = "abc";
+      public accessor value = "abc";
     }
 
     const instance = new AsyncForm();
@@ -92,7 +92,7 @@ describe("Custom", () => {
         label: "Поле",
         groups: ["create"],
       })
-      value = "ok";
+      public accessor value = "ok";
     }
 
     const entries = validationStateFor(new OptionsForm()).fields.get("value")

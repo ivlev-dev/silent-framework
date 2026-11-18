@@ -45,7 +45,7 @@ function applyDecorator(
 ): void {
   const initializers: Array<(this: object) => void> = [];
   const fakeContext = {
-    kind: "field" as const,
+    kind: "accessor" as const,
     name: field,
     static: false,
     private: false,
@@ -54,8 +54,8 @@ function applyDecorator(
     },
   };
   decorator(
-    undefined,
-    fakeContext as unknown as ClassFieldDecoratorContext<object, unknown>,
+    { get: () => undefined, set: () => {} } as unknown as ClassAccessorDecoratorTarget<object, unknown>,
+    fakeContext as unknown as ClassAccessorDecoratorContext<object, unknown>,
   );
   const instance = new ctor();
   for (const initializer of initializers) {

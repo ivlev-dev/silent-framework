@@ -58,7 +58,7 @@ user.email = "user@example.com";
 user.age = 30;
 
 const result = validate(user);
-// декораторы работают и на обычных полях, и на stage-3 accessor-полях
+// только stage-3 accessor-поля
 
 if (!result.valid) {
   for (const error of result.errors) {
@@ -339,7 +339,7 @@ const result = validate(order);
 
 ## Ограничения и совместимость
 
-- Поддерживаются обычные и stage-3 `accessor`-поля (`public accessor email!: string`). Приватные (`#field`) и статические поля не поддерживаются — декоратор бросает `TypeError`.
+- Поддерживаются только stage-3 `accessor`-поля (`public accessor email!: string`). Обычные поля, приватные (`#field`) и статические поля не поддерживаются — декоратор бросает `TypeError` (и типы не дадут применить его к обычному полю).
 - Валидация явная: декораторы не запускают проверку и не работают без вызова `validate`/`validateAsync`.
 - Нужны stage 3 декораторы: `experimentalDecorators: false`. Legacy-декораторы (`experimentalDecorators: true`) не поддерживаются.
 - ESM-only, Node.js >= 22.

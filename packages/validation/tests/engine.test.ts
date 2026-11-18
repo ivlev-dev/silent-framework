@@ -74,10 +74,10 @@ describe("validate", () => {
   it("валидирует несколько полей и правил", () => {
     class Person {
       @ruleDecorator(required)
-      name = "";
+      public accessor name = "";
 
       @ruleDecorator(minText)
-      age = 1;
+      public accessor age = 1;
     }
 
     const result = validate(new Person());
@@ -90,7 +90,7 @@ describe("validate", () => {
   it("возвращает валидный результат без ошибок", () => {
     class Person {
       @ruleDecorator(required)
-      name = "Иван";
+      public accessor name = "Иван";
     }
 
     const result = validate(new Person());
@@ -108,7 +108,7 @@ describe("validate", () => {
     class Ordered {
       @ruleDecorator(alwaysInvalid)
       @ruleDecorator(second)
-      value = "x";
+      public accessor value = "x";
     }
 
     const result = validate(new Ordered());
@@ -122,7 +122,7 @@ describe("validate", () => {
   it("поддерживает required-подобную проверку", () => {
     class Required {
       @ruleDecorator(required)
-      name = "";
+      public accessor name = "";
     }
 
     expect(validate(new Required()).valid).toBe(false);
@@ -143,7 +143,7 @@ describe("validate", () => {
           return (instance as Conditional).enabled;
         },
       })
-      value = "x";
+      public accessor value = "x";
     }
 
     const instance = new Conditional();
@@ -157,13 +157,13 @@ describe("validate", () => {
   it("учитывает группы вызова и правила", () => {
     class Grouped {
       @ruleDecorator(alwaysInvalid, { groups: ["create"] })
-      createValue = "x";
+      public accessor createValue = "x";
 
       @ruleDecorator(alwaysInvalid, { groups: ["update"] })
-      updateValue = "x";
+      public accessor updateValue = "x";
 
       @ruleDecorator(alwaysInvalid)
-      shared = "x";
+      public accessor shared = "x";
     }
 
     const instance = new Grouped();
@@ -182,10 +182,10 @@ describe("validate", () => {
   it("подставляет label из опций правила, слота и вызова", () => {
     class Labelled {
       @ruleDecorator(required, { label: "Из правила" })
-      first = "";
+      public accessor first = "";
 
       @ruleDecorator(required)
-      second = "";
+      public accessor second = "";
     }
 
     const instance = new Labelled();
@@ -205,7 +205,7 @@ describe("validate", () => {
   it("использует кастомное сообщение строкой", () => {
     class CustomMessage {
       @ruleDecorator(required, { message: "Поле {label}: {value}" })
-      name = "";
+      public accessor name = "";
     }
 
     const [error] = validate(new CustomMessage()).errors;
@@ -218,7 +218,7 @@ describe("validate", () => {
       @ruleDecorator(required, {
         message: (context) => `${context.rule}:${context.label}:${String(context.value)}`,
       })
-      name = "";
+      public accessor name = "";
     }
 
     expect(firstError(validate(new CustomMessage())).message).toBe("required:name:");
@@ -231,7 +231,7 @@ describe("validate", () => {
 
     class Keyed {
       @ruleDecorator(required, { messageKey: "custom.required" })
-      name = "";
+      public accessor name = "";
     }
 
     expect(firstError(validate(new Keyed())).message).toBe("Ключ name");
@@ -246,7 +246,7 @@ describe("validate", () => {
 
     class Resolved {
       @ruleDecorator(required)
-      name = "";
+      public accessor name = "";
     }
 
     expect(firstError(validate(new Resolved())).message).toBe("Резолвер: name");
@@ -259,7 +259,7 @@ describe("validate", () => {
 
     class Overridden {
       @ruleDecorator(required)
-      name = "";
+      public accessor name = "";
     }
 
     const instance = new Overridden();
@@ -276,7 +276,7 @@ describe("validate", () => {
   it("переключает локаль на уровне вызова", () => {
     class Localized {
       @ruleDecorator(required)
-      name = "";
+      public accessor name = "";
     }
 
     const result = validate(new Localized(), { locale: "en", labels: { name: "Name" } });
@@ -287,15 +287,15 @@ describe("validate", () => {
   it("останавливается на первой ошибке", () => {
     class Inner {
       @ruleDecorator(required)
-      name = "";
+      public accessor name = "";
     }
 
     class Outer {
       @ruleDecorator(nestedObject)
-      inner = new Inner();
+      public accessor inner = new Inner();
 
       @ruleDecorator(required)
-      title = "";
+      public accessor title = "";
     }
 
     const instance = new Outer();
@@ -308,7 +308,7 @@ describe("validate", () => {
   it("применяет правило к каждому элементу массива", () => {
     class Tags {
       @ruleDecorator(minText, { each: true })
-      tags: unknown = ["ab", "c"];
+      public accessor tags: unknown = ["ab", "c"];
     }
 
     const result = validate(new Tags());
@@ -324,7 +324,7 @@ describe("validate", () => {
   it("применяет правило к каждому элементу Set", () => {
     class Tags {
       @ruleDecorator(minText, { each: true })
-      tags: unknown = new Set(["ab", "c"]);
+      public accessor tags: unknown = new Set(["ab", "c"]);
     }
 
     const error = firstError(validate(new Tags()));
@@ -336,7 +336,7 @@ describe("validate", () => {
   it("сообщает одно нарушение, если each-значение не коллекция", () => {
     class Tags {
       @ruleDecorator(minText, { each: true })
-      tags: unknown = "abc";
+      public accessor tags: unknown = "abc";
     }
 
     const result = validate(new Tags());
@@ -351,12 +351,12 @@ describe("validate", () => {
   it("рекурсивно валидирует вложенный объект", () => {
     class Inner {
       @ruleDecorator(required)
-      name = "";
+      public accessor name = "";
     }
 
     class Outer {
       @ruleDecorator(nestedObject)
-      inner = new Inner();
+      public accessor inner = new Inner();
     }
 
     const result = validate(new Outer());
@@ -371,7 +371,7 @@ describe("validate", () => {
   it("сообщает ошибку nested-правила для не-объекта", () => {
     class Outer {
       @ruleDecorator(nestedObject)
-      inner: unknown = 42;
+      public accessor inner: unknown = 42;
     }
 
     const error = firstError(validate(new Outer()));
@@ -384,12 +384,12 @@ describe("validate", () => {
   it("рекурсивно валидирует каждый вложенный объект", () => {
     class Item {
       @ruleDecorator(required)
-      name = "";
+      public accessor name = "";
     }
 
     class Basket {
       @ruleDecorator(nestedEach)
-      items: unknown = [new Item(), new Item()];
+      public accessor items: unknown = [new Item(), new Item()];
     }
 
     const result = validate(new Basket());
@@ -403,12 +403,12 @@ describe("validate", () => {
   it("сообщает ошибку nested each для не-объекта", () => {
     class Item {
       @ruleDecorator(required)
-      name = "ok";
+      public accessor name = "ok";
     }
 
     class Basket {
       @ruleDecorator(nestedEach)
-      items: unknown = [new Item(), 5];
+      public accessor items: unknown = [new Item(), 5];
     }
 
     const result = validate(new Basket());
@@ -424,7 +424,7 @@ describe("validate", () => {
   it("сообщает ошибку nested each для не-коллекции", () => {
     class Basket {
       @ruleDecorator(nestedEach)
-      items: unknown = "nope";
+      public accessor items: unknown = "nope";
     }
 
     const error = firstError(validate(new Basket()));
@@ -443,7 +443,7 @@ describe("validate", () => {
   it("бросает AsyncRuleError при синхронной проверке", () => {
     class Box {
       @ruleDecorator(asyncCheck)
-      value = "bad";
+      public accessor value = "bad";
     }
 
     let thrown: unknown;
@@ -462,7 +462,7 @@ describe("validate", () => {
   it("бросает ValidationException из validateOrThrow", () => {
     class Box {
       @ruleDecorator(required)
-      value = "";
+      public accessor value = "";
     }
 
     let thrown: unknown;
@@ -480,7 +480,7 @@ describe("validate", () => {
   it("не бросает ValidationException при успехе", () => {
     class Box {
       @ruleDecorator(required)
-      value = "ok";
+      public accessor value = "ok";
     }
 
     expect(() => validateOrThrow(new Box())).not.toThrow();
@@ -491,7 +491,7 @@ describe("validateAsync", () => {
   it("ждёт асинхронные правила", async () => {
     class Box {
       @ruleDecorator(asyncCheck)
-      value = "bad";
+      public accessor value = "bad";
     }
 
     const result = await validateAsync(new Box());
@@ -503,7 +503,7 @@ describe("validateAsync", () => {
   it("возвращает валидный результат для асинхронного успеха", async () => {
     class Box {
       @ruleDecorator(asyncCheck)
-      value = "ok";
+      public accessor value = "ok";
     }
 
     await expect(validateAsync(new Box())).resolves.toEqual({ valid: true, errors: [] });
@@ -512,12 +512,12 @@ describe("validateAsync", () => {
   it("ждёт вложенные асинхронные правила", async () => {
     class Inner {
       @ruleDecorator(asyncCheck)
-      name = "bad";
+      public accessor name = "bad";
     }
 
     class Outer {
       @ruleDecorator(nestedObject)
-      inner = new Inner();
+      public accessor inner = new Inner();
     }
 
     const error = firstError(await validateAsync(new Outer()));
@@ -528,7 +528,7 @@ describe("validateAsync", () => {
   it("бросает ValidationException из validateOrThrowAsync", async () => {
     class Box {
       @ruleDecorator(asyncCheck)
-      value = "bad";
+      public accessor value = "bad";
     }
 
     await expect(validateOrThrowAsync(new Box())).rejects.toBeInstanceOf(ValidationException);
@@ -537,7 +537,7 @@ describe("validateAsync", () => {
   it("не бросает при успешной асинхронной проверке", async () => {
     class Box {
       @ruleDecorator(asyncCheck)
-      value = "ok";
+      public accessor value = "ok";
     }
 
     await expect(validateOrThrowAsync(new Box())).resolves.toBeUndefined();

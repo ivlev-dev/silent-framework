@@ -741,14 +741,12 @@ interface RuleOptions {
 
 ```ts
 type RuleDecorator = <C extends object, V>(
-  value: undefined | ClassAccessorDecoratorTarget<C, V>,
-  context:
-    | ClassFieldDecoratorContext<C, V>
-    | ClassAccessorDecoratorContext<C, V>,
+  value: ClassAccessorDecoratorTarget<C, V>,
+  context: ClassAccessorDecoratorContext<C, V>,
 ) => void;
 ```
 
-Тип декоратора для обычных и `accessor`-полей stage 3. Все правила и модификаторы возвращают этот тип.
+Тип декоратора для stage-3 `accessor`-полей. Все правила и модификаторы возвращают этот тип; обычные поля не поддерживаются.
 
 ### `ValidationException`
 
