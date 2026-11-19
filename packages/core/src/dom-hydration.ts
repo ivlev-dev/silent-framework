@@ -1,4 +1,4 @@
-import { createRenderEffect, isReactive } from "@ivlev-dev/silent-reactivity";
+import { createRenderEffect, isReactive, isReadonly } from "@ivlev-dev/silent-reactivity";
 import {
   ATTR_MARKER,
   HOLE_MARKER,
@@ -521,23 +521,50 @@ function attrValueMatches(el: Element, name: string, value: unknown, svg: boolea
 }
 
 export function staticRowAllowed(value: unknown): boolean {
+  return staticRowAllowedValue(value, new WeakSet<object>());
+}
+
+function staticRowAllowedValue(value: unknown, seen: WeakSet<object>): boolean {
   if (value === null || (typeof value !== "object" && typeof value !== "function")) {
     return true;
   }
-  if (isReactive(value)) {
+  if (isReactive(value) || isReadonly(value)) {
     return false;
   }
-  if (typeof value === "object") {
-    const prototype = Object.getPrototypeOf(value) as object | null;
-    if (prototype !== Object.prototype && prototype !== null) {
-      return false;
-    }
+  const target = value as object;
+  if (seen.has(target)) {
+    return true;
   }
-  for (const key of Reflect.ownKeys(value)) {
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (descriptor?.get !== undefined || descriptor?.set !== undefined) {
-      return false;
+  seen.add(target);
+  try {
+    if (typeof value === "object") {
+      const prototype = Object.getPrototypeOf(value) as object | null;
+      if (
+        prototype !== Object.prototype
+        && prototype !== null
+        && prototype !== Array.prototype
+      ) {
+        return false;
+      }
     }
+    for (const key of Reflect.ownKeys(target)) {
+      const descriptor = Object.getOwnPropertyDescriptor(target, key);
+      if (descriptor === undefined) {
+        continue;
+      }
+      if (descriptor.get !== undefined || descriptor.set !== undefined) {
+        return false;
+      }
+      if (
+        typeof value === "object"
+        && "value" in descriptor
+        && !staticRowAllowedValue(descriptor.value, seen)
+      ) {
+        return false;
+      }
+    }
+  } catch {
+    return false;
   }
   return true;
 }
@@ -875,15 +902,79 @@ export function writeRegion(start: Node, end: Node, value: unknown): void {
   writeNodes(state, value);
 }
 
-function claimTemplateRoots(plan: TemplatePlan): Node {
-  if (plan.roots === 1) {
-    const next = claimNext();
-    if (next === null) {
-      return mismatch("шаблон не совпал с серверной разметкой");
+function rootHole(plan: TemplatePlan, index: number): TemplatePlan["holes"][number] | undefined {
+  for (const entry of plan.holes) {
+    if (entry !== undefined && entry.path.length === 1 && entry.path[0] === index) {
+      return entry;
     }
-    markMetadataFree(next);
-    return next;
   }
+  return undefined;
+}
+
+function claimHoleSpan(
+  first: Node,
+  entry: TemplatePlan["holes"][number],
+  index: number,
+  claimed: Node[],
+): void {
+  if (first.nodeType === Node.TEXT_NODE) {
+    const marker = claimNext();
+    if (
+      marker === null ||
+      marker.nodeType !== Node.COMMENT_NODE ||
+      !holeMatches((marker as Comment).data, entry.key, index)
+    ) {
+      mismatch("шаблон не совпал с серверной разметкой");
+    }
+    claimed.push(marker);
+    return;
+  }
+  if (
+    first.nodeType === Node.COMMENT_NODE &&
+    (first as Comment).data !== INSERT_START
+  ) {
+    if (!holeMatches((first as Comment).data, entry.key, index)) {
+      mismatch("шаблон не совпал с серверной разметкой");
+    }
+    return;
+  }
+  if (
+    first.nodeType !== Node.COMMENT_NODE ||
+    (first as Comment).data !== INSERT_START
+  ) {
+    mismatch("шаблон не совпал с серверной разметкой");
+  }
+  let depth = 1;
+  for (;;) {
+    const node = claimNext();
+    if (node === null) {
+      mismatch("шаблон не совпал с серверной разметкой");
+    }
+    claimed.push(node);
+    if (node.nodeType === Node.COMMENT_NODE) {
+      const data = (node as Comment).data;
+      if (data === INSERT_START) {
+        depth += 1;
+      } else if (data === INSERT_END) {
+        depth -= 1;
+        if (depth === 0) {
+          break;
+        }
+      }
+    }
+  }
+  const marker = claimNext();
+  if (
+    marker === null ||
+    marker.nodeType !== Node.COMMENT_NODE ||
+    !holeMatches((marker as Comment).data, entry.key, index)
+  ) {
+    mismatch("шаблон не совпал с серверной разметкой");
+  }
+  claimed.push(marker);
+}
+
+function claimTemplateRoots(plan: TemplatePlan): Node {
   const claimed: Node[] = [];
   for (let index = 0; index < plan.roots; index += 1) {
     const next = claimNext();
@@ -893,6 +984,16 @@ function claimTemplateRoots(plan: TemplatePlan): Node {
     markMetadataFree(next);
     claimedNodes.add(next);
     claimed.push(next);
+    const entry = rootHole(plan, index);
+    if (entry !== undefined) {
+      claimHoleSpan(next, entry, plan.holes.indexOf(entry), claimed);
+      for (const node of claimed) {
+        claimedNodes.add(node);
+      }
+    }
+  }
+  if (plan.roots === 1 && claimed.length === 1) {
+    return claimed[0]!;
   }
   const container = document.createDocumentFragment();
   for (const node of claimed) {

@@ -159,8 +159,8 @@ function resolve(value: unknown): unknown {
 }
 
 function renderIndexServer<T>(props: IndexProps<T>): Node {
-  const fallback = props.fallback;
-  const hasFallback = fallback !== undefined;
+  const hasFallback = "fallback" in props;
+  const fallback = (): unknown => props.fallback;
   const items: readonly T[] = normalizeItems<T>(
     typeof props.each === "function" ? props.each() : props.each,
   );
@@ -168,7 +168,7 @@ function renderIndexServer<T>(props: IndexProps<T>): Node {
   if (backend?.createRaw !== undefined) {
     if (items.length === 0) {
       const out = hasFallback
-        ? serializeServerValue(resolve(fallback)) + LIST_END_MARKER
+        ? serializeServerValue(resolve(fallback())) + LIST_END_MARKER
         : LIST_END_MARKER;
       return backend.createRaw(out) as Node;
     }
@@ -197,7 +197,7 @@ function renderIndexServer<T>(props: IndexProps<T>): Node {
     let parts: string[];
     if (total === 0) {
       if (hasFallback) {
-        values.push(resolve(fallback));
+        values.push(resolve(fallback()));
         parts = ["", LIST_END_MARKER];
       } else {
         parts = [LIST_END_MARKER];
@@ -236,7 +236,7 @@ function renderIndexServer<T>(props: IndexProps<T>): Node {
     }
   }
   if (items.length === 0 && hasFallback) {
-    const nodes = extractMetadata(collectNodes(resolve(fallback) as Children));
+    const nodes = extractMetadata(collectNodes(resolve(fallback()) as Children));
     for (const node of nodes) {
       sink.insertBefore(node, endAnchor);
     }
@@ -259,8 +259,8 @@ export function Index<T>(props: IndexProps<T>): Node {
     }
   }
   let container: Node | null = null;
-  const fallback = props.fallback;
-  const hasFallback = fallback !== undefined;
+  const fallback = (): unknown => props.fallback;
+  const hasFallback = "fallback" in props;
   const parentOwner = getOwner();
   const usesIndex = props.index !== false;
   let states: IndexState<T>[] = [];
@@ -445,7 +445,7 @@ export function Index<T>(props: IndexProps<T>): Node {
     if (items.length === 0) {
       if (hasFallback) {
         const window = beginRegion(outer, endAnchor);
-        const value = withWindow(window, () => resolve(fallback));
+        const value = withWindow(window, () => resolve(fallback()));
         if (!regionMatches(window, endAnchor, value)) {
           return mismatch("содержимое fallback списка не совпало");
         }
@@ -540,7 +540,7 @@ export function Index<T>(props: IndexProps<T>): Node {
       parent.insertBefore(batch, endAnchor);
     }
 
-    fallbackMount.render(items.length === 0 && hasFallback ? resolve(fallback) : null);
+    fallbackMount.render(items.length === 0 && hasFallback ? resolve(fallback()) : null);
   };
 
   createRenderEffect(() => {

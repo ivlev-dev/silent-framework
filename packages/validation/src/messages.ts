@@ -36,13 +36,13 @@ export const validationMessages: Readonly<
     "validation.nonPositive": "Значение поля {label} не может быть положительным",
     "validation.multipleOf": "Значение поля {label} должно быть кратно {factor}",
     "validation.minLength": "Длина поля {label} должна быть не меньше {min}",
-    "validation.minLength_one": "Длина поля {label} должна быть не меньше {min} символа",
-    "validation.minLength_few": "Длина поля {label} должна быть не меньше {min} символов",
+    "validation.minLength_one": "Длина поля {label} должна быть не меньше {min} символ",
+    "validation.minLength_few": "Длина поля {label} должна быть не меньше {min} символа",
     "validation.minLength_many": "Длина поля {label} должна быть не меньше {min} символов",
     "validation.minLength_other": "Длина поля {label} должна быть не меньше {min} символов",
     "validation.maxLength": "Длина поля {label} должна быть не больше {max}",
-    "validation.maxLength_one": "Длина поля {label} должна быть не больше {max} символа",
-    "validation.maxLength_few": "Длина поля {label} должна быть не больше {max} символов",
+    "validation.maxLength_one": "Длина поля {label} должна быть не больше {max} символ",
+    "validation.maxLength_few": "Длина поля {label} должна быть не больше {max} символа",
     "validation.maxLength_many": "Длина поля {label} должна быть не больше {max} символов",
     "validation.maxLength_other": "Длина поля {label} должна быть не больше {max} символов",
     "validation.length": "Длина поля {label} должна быть равна {length}",
@@ -59,13 +59,13 @@ export const validationMessages: Readonly<
     "validation.isBase64": "Поле {label} должно быть корректным Base64",
     "validation.isJSON": "Поле {label} должно содержать корректный JSON",
     "validation.arrayMinSize": "В поле {label} должно быть не меньше {min} элементов",
-    "validation.arrayMinSize_one": "В поле {label} должно быть не меньше {min} элемента",
-    "validation.arrayMinSize_few": "В поле {label} должно быть не меньше {min} элементов",
+    "validation.arrayMinSize_one": "В поле {label} должно быть не меньше {min} элемент",
+    "validation.arrayMinSize_few": "В поле {label} должно быть не меньше {min} элемента",
     "validation.arrayMinSize_many": "В поле {label} должно быть не меньше {min} элементов",
     "validation.arrayMinSize_other": "В поле {label} должно быть не меньше {min} элементов",
     "validation.arrayMaxSize": "В поле {label} должно быть не больше {max} элементов",
-    "validation.arrayMaxSize_one": "В поле {label} должно быть не больше {max} элемента",
-    "validation.arrayMaxSize_few": "В поле {label} должно быть не больше {max} элементов",
+    "validation.arrayMaxSize_one": "В поле {label} должно быть не больше {max} элемент",
+    "validation.arrayMaxSize_few": "В поле {label} должно быть не больше {max} элемента",
     "validation.arrayMaxSize_many": "В поле {label} должно быть не больше {max} элементов",
     "validation.arrayMaxSize_other": "В поле {label} должно быть не больше {max} элементов",
     "validation.arrayNotEmpty": "Поле {label} не может быть пустым массивом",
@@ -79,6 +79,7 @@ export const validationMessages: Readonly<
     "validation.each": "Элемент {index} поля {label} некорректен",
     "validation.eachValue": "Поле {label} должно быть коллекцией",
     "validation.custom": "Поле {label} не прошло проверку",
+    "validation.depth": "Поле {label} слишком глубоко вложено",
     "validation.type": "Поле {label} должно быть типа {type}",
   },
   en: {
@@ -142,12 +143,15 @@ export const validationMessages: Readonly<
     "validation.each": "Item {index} of {label} is invalid",
     "validation.eachValue": "{label} must be a collection",
     "validation.custom": "{label} failed validation",
+    "validation.depth": "{label} is nested too deeply",
     "validation.type": "{label} must be of type {type}",
   },
 };
 
 const ASYNC_RESOLVER_ERROR =
   "Асинхронный резолвер сообщений поддерживается только в validateAsync";
+
+const PLURAL_RULES_CACHE_LIMIT = 50;
 
 const pluralRulesCache = new Map<string, Intl.PluralRules | null>();
 
@@ -161,6 +165,7 @@ export function configureValidation(config: ValidationConfig): void {
     ...(config.messages === undefined ? {} : { messages: config.messages }),
     ...(config.cascade === undefined ? {} : { cascade: config.cascade }),
   };
+  pluralRulesCache.clear();
 }
 
 export function resetValidationConfig(): void {
@@ -183,27 +188,65 @@ function pluralRulesFor(locale: string): Intl.PluralRules | null {
   } catch {
     rules = null;
   }
+  if (pluralRulesCache.size >= PLURAL_RULES_CACHE_LIMIT) {
+    pluralRulesCache.clear();
+  }
   pluralRulesCache.set(locale, rules);
   return rules;
 }
 
-function pluralCount(context: MessageContext): number | undefined {
+function paramCount(context: MessageContext): number | undefined {
   for (const name of ["count", "min", "max", "length"] as const) {
     const value = context.params[name];
     if (typeof value === "number" && Number.isFinite(value)) {
       return value;
     }
   }
+  return undefined;
+}
+
+function valueSize(value: unknown): number | undefined {
+  if (Array.isArray(value) || typeof value === "string") {
+    return value.length;
+  }
+  if (value instanceof Set) {
+    return value.size;
+  }
+  return undefined;
+}
+
+function pluralCount(context: MessageContext): number | undefined {
+  const fromParams = paramCount(context);
+  if (fromParams !== undefined) {
+    return fromParams;
+  }
   if (typeof context.value === "number" && Number.isFinite(context.value)) {
     return context.value;
   }
-  if (Array.isArray(context.value)) {
-    return context.value.length;
+  return valueSize(context.value);
+}
+
+const COUNT_RULE_NAMES: ReadonlySet<string> = new Set([
+  "arrayMinSize",
+  "arrayMaxSize",
+  "arrayNotEmpty",
+  "arrayUnique",
+  "length",
+  "minLength",
+  "maxLength",
+  "each",
+  "eachValue",
+]);
+
+function resolverCount(context: MessageContext): number | undefined {
+  const fromParams = paramCount(context);
+  if (fromParams !== undefined) {
+    return fromParams;
   }
-  if (typeof context.value === "string") {
-    return context.value.length;
+  if (!COUNT_RULE_NAMES.has(context.rule)) {
+    return undefined;
   }
-  return undefined;
+  return valueSize(context.value);
 }
 
 function pluralSuffix(
@@ -407,7 +450,7 @@ export function createI18nextResolver(
     const key = `${keyPrefix}${context.key}`;
     const defaultValue = builtinTemplate(context.locale, context.key, context)
       ?? key;
-    const count = pluralCount(context);
+    const count = resolverCount(context);
     const translated: unknown = i18n.t(key, {
       ...context.params,
       label: context.label,

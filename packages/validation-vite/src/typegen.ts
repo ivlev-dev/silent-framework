@@ -229,6 +229,42 @@ function isOpaqueDeclaration(sourceFile: ts.SourceFile): boolean {
   return isDomLibFile(sourceFile) || isNodeDeclarationFile(sourceFile);
 }
 
+function isGlobalAugmentation(declaration: ts.Node): boolean {
+  let node: ts.Node | undefined = declaration.parent;
+  while (node !== undefined) {
+    if (ts.isModuleDeclaration(node) && (node.flags & ts.NodeFlags.GlobalAugmentation) !== 0) {
+      return true;
+    }
+    node = node.parent;
+  }
+  return false;
+}
+
+function hasDeclareModifier(node: ts.Node): boolean {
+  if (!ts.canHaveModifiers(node)) {
+    return false;
+  }
+  const modifiers = ts.getModifiers(node);
+  return modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.DeclareKeyword) ?? false;
+}
+
+function isAmbientWithoutRuntime(declaration: ts.Node): boolean {
+  if (isGlobalAugmentation(declaration)) {
+    return true;
+  }
+  if (declaration.getSourceFile().isDeclarationFile) {
+    return false;
+  }
+  let node: ts.Node | undefined = declaration;
+  while (node !== undefined && !ts.isSourceFile(node)) {
+    if (hasDeclareModifier(node)) {
+      return true;
+    }
+    node = node.parent;
+  }
+  return false;
+}
+
 function typeIsOpaque(type: ts.Type, checker: ts.TypeChecker): boolean {
   const symbols = [type.aliasSymbol, type.getSymbol()];
   for (const symbol of symbols) {
@@ -298,6 +334,46 @@ function hasBuiltinBase(
     }
   }
   return false;
+}
+
+function builtinCollectionNode(name: string): SchemaNode | null {
+  const named = BUILTIN_NAMES.get(name);
+  if (named !== undefined) {
+    return primitive(named);
+  }
+  const collection = COLLECTION_NAMES.get(name);
+  if (collection !== undefined) {
+    return primitive(collection);
+  }
+  return null;
+}
+
+function builtinBaseNode(type: ts.Type, state: SerializeState): SchemaNode | null {
+  const bases = type.getBaseTypes() ?? [];
+  for (const base of bases) {
+    const name = builtinNameOfType(base, state.checker);
+    if (name !== null) {
+      const node = builtinCollectionNode(name);
+      if (node !== null) {
+        return node;
+      }
+      if (name === "Array" || name === "ReadonlyArray") {
+        const element = typeArguments(base, state.checker)[0];
+        const schema = element === undefined ? null : serializeType(element, state);
+        return { kind: "array", element: schema ?? wildcardNode() };
+      }
+      if (typeIsOpaque(base, state.checker)) {
+        return primitive("object");
+      }
+    } else if (typeIsOpaque(base, state.checker)) {
+      return primitive("object");
+    }
+    const nested = builtinBaseNode(base, state);
+    if (nested !== null) {
+      return nested;
+    }
+  }
+  return null;
 }
 
 function enumValueOf(type: ts.Type, checker: ts.TypeChecker): string | number | undefined {
@@ -767,6 +843,17 @@ function serializeObject(
   }
   const args = typeArguments(type, state.checker);
   const builtin = builtinNameOfType(type, state.checker);
+  if (builtin === "ArrayLike" || builtin === "ReadonlyArrayLike") {
+    const element = args[0];
+    const schema = element === undefined ? null : serializeType(element, state);
+    return {
+      kind: "union",
+      members: [
+        { kind: "array", element: schema ?? wildcardNode() },
+        { kind: "object", fields: [{ name: "length", schema: primitive("number") }] },
+      ],
+    };
+  }
   if (builtin === "Array" || builtin === "ReadonlyArray" || state.checker.isArrayType(type)) {
     const element = args[0] ?? state.checker.getIndexTypeOfType(type, ts.IndexKind.Number);
     if (element === undefined) {
@@ -823,6 +910,22 @@ function serializeObject(
   if (hasBuiltinBase(type, "Error", state.checker, new Set<ts.Type>())) {
     return primitive("error");
   }
+  const symbolName = type.getSymbol()?.getName();
+  if (builtin === null && symbolName === "Buffer" && typeIsOpaque(type, state.checker)) {
+    return primitive("uint8array");
+  }
+  const symbol = resolveSymbol(type.getSymbol(), state.checker);
+  const declaration = symbol?.valueDeclaration ?? symbol?.declarations?.[0];
+  if (symbol !== undefined && declaration !== undefined && (ts.isClassDeclaration(declaration) || ts.isClassExpression(declaration))) {
+    if (isAmbientWithoutRuntime(declaration)) {
+      return { kind: "class", reference: "undefined" };
+    }
+    return { kind: "class", reference: state.runtimeRef(symbol) };
+  }
+  const baseNode = builtinBaseNode(type, state);
+  if (baseNode !== null) {
+    return baseNode;
+  }
   if (type.getCallSignatures().length > 0) {
     return primitive("function");
   }
@@ -830,30 +933,21 @@ function serializeObject(
     const valueSchema = serializeType(args[1]!, state);
     return valueSchema === null ? primitive("object") : { kind: "record", value: valueSchema };
   }
-  const symbolName = type.getSymbol()?.getName();
-  if (builtin === null && symbolName === "Buffer" && typeIsOpaque(type, state.checker)) {
-    return primitive("uint8array");
-  }
   if (typeIsOpaque(type, state.checker)) {
     return primitive("object");
-  }
-  const symbol = resolveSymbol(type.getSymbol(), state.checker);
-  const declaration = symbol?.valueDeclaration ?? symbol?.declarations?.[0];
-  if (symbol !== undefined && declaration !== undefined && (ts.isClassDeclaration(declaration) || ts.isClassExpression(declaration))) {
-    if (declaration.name === undefined) {
-      return null;
-    }
-    return { kind: "class", reference: state.runtimeRef(symbol) };
   }
   const properties = state.checker.getPropertiesOfType(type);
   const stringIndex = state.checker.getIndexTypeOfType(type, ts.IndexKind.String);
   const numberIndex = state.checker.getIndexTypeOfType(type, ts.IndexKind.Number);
   const indexNodes: SchemaNode[] = [];
-  for (const index of [stringIndex, numberIndex]) {
-    if (index === undefined) {
-      continue;
+  if (stringIndex !== undefined) {
+    const valueSchema = serializeType(stringIndex, state);
+    if (valueSchema !== null) {
+      indexNodes.push({ kind: "record", value: valueSchema });
     }
-    const valueSchema = serializeType(index, state);
+  }
+  if (numberIndex !== undefined && properties.length === 0) {
+    const valueSchema = serializeType(numberIndex, state);
     if (valueSchema !== null) {
       indexNodes.push({ kind: "record", value: valueSchema });
     }
@@ -1021,6 +1115,10 @@ export function schemaHasClassRef(
   }
 }
 
+function renderFieldKey(name: string): string {
+  return name === "__proto__" ? '["__proto__"]' : JSON.stringify(name);
+}
+
 function renderNode(node: SchemaNode, names: ReadonlyMap<LazyCell, string>): string {
   switch (node.kind) {
     case "primitive":
@@ -1042,7 +1140,7 @@ function renderNode(node: SchemaNode, names: ReadonlyMap<LazyCell, string>): str
     case "lazy":
       return `["lazy",()=>${names.get(node.cell) ?? "undefined"}]`;
     case "object":
-      return `["object",{${node.fields.map((field) => `${JSON.stringify(field.name)}:${renderNode(field.schema, names)}`).join(",")}}]`;
+      return `["object",{${node.fields.map((field) => `${renderFieldKey(field.name)}:${renderNode(field.schema, names)}`).join(",")}}]`;
     case "record":
       return `["record",${renderNode(node.value, names)}]`;
     case "mapof":
@@ -1121,7 +1219,7 @@ function renderFields(entries: readonly ObjectField[]): RenderedFields {
     ([cell, name]) => `const ${name} = ${renderNode(cell.node ?? primitive("object"), names)};`,
   );
   const fields = entries
-    .map((entry) => `${JSON.stringify(entry.name)}: ${renderNode(entry.schema, names)}`)
+    .map((entry) => `${renderFieldKey(entry.name)}: ${renderNode(entry.schema, names)}`)
     .join(", ");
   return { fields, definitions };
 }
@@ -1224,7 +1322,10 @@ function collectClasses(node: ts.Node, classes: ClassLikeDeclaration[]): void {
   });
 }
 
-function classLikeName(declaration: ClassLikeDeclaration): string | undefined {
+function classLikeName(
+  declaration: ClassLikeDeclaration,
+  sourceFile: ts.SourceFile,
+): string {
   if (declaration.name !== undefined) {
     return declaration.name.text;
   }
@@ -1232,10 +1333,16 @@ function classLikeName(declaration: ClassLikeDeclaration): string | undefined {
   if (ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)) {
     return parent.name.text;
   }
-  if (ts.isPropertyDeclaration(parent) && ts.isIdentifier(parent.name)) {
-    return parent.name.text;
+  if (ts.isPropertyDeclaration(parent) || ts.isPropertyAssignment(parent)) {
+    return nameTextOf(parent.name, sourceFile);
   }
-  return undefined;
+  if (ts.isExportAssignment(parent)) {
+    return "default";
+  }
+  if (ts.isClassDeclaration(declaration)) {
+    return "default";
+  }
+  return "class";
 }
 
 function shouldEmit(
@@ -1267,10 +1374,10 @@ export function generateValidationBlocks(
   };
   collectClasses(sourceFile, classes);
   for (const declaration of classes) {
-    const className = classLikeName(declaration);
-    if (className === undefined) {
+    if (isAmbientWithoutRuntime(declaration)) {
       continue;
     }
+    const className = classLikeName(declaration, sourceFile);
     if (!shouldEmit(shouldGenerate, declaration)) {
       continue;
     }

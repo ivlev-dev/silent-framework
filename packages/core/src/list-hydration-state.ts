@@ -23,7 +23,7 @@ export interface ListPreseed<S extends ListItemHandle> {
 export interface ListHydrationRuntime {
   preseed<T, S extends ListItemHandle>(
     props: ForProps<T>,
-    fallback: unknown,
+    fallback: () => unknown,
     hasFallback: boolean,
     outer: ListWindow | null,
     parentOwner: Owner | null,

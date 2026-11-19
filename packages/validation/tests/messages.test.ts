@@ -104,6 +104,21 @@ describe("Встроенные каталоги", () => {
     }
   });
 
+  it("сообщает о превышении глубины на ru и en", () => {
+    expect(
+      resolveMessage(
+        contextOf({ rule: "type", key: "validation.depth", label: "Данные" }),
+        { locale: "ru" },
+      ),
+    ).toBe("Поле Данные слишком глубоко вложено");
+    expect(
+      resolveMessage(
+        contextOf({ rule: "type", key: "validation.depth", label: "Data" }),
+        { locale: "en" },
+      ),
+    ).toBe("Data is nested too deeply");
+  });
+
   it("сохраняет {value} при кастомном шаблоне", () => {
     const message = resolveMessage(
       contextOf({ message: "Недопустимое значение: {value}" }),
@@ -364,8 +379,8 @@ describe("Плюрализация", () => {
         { locale: "ru" },
       );
 
-    expect(message(1)).toBe("В поле Теги должно быть не меньше 1 элемента");
-    expect(message(2)).toBe("В поле Теги должно быть не меньше 2 элементов");
+    expect(message(1)).toBe("В поле Теги должно быть не меньше 1 элемент");
+    expect(message(2)).toBe("В поле Теги должно быть не меньше 2 элемента");
     expect(message(5)).toBe("В поле Теги должно быть не меньше 5 элементов");
   });
 
@@ -375,19 +390,19 @@ describe("Плюрализация", () => {
         pluralContext("validation.arrayMaxSize", { max: 1 }, { label: "Теги" }),
         { locale: "ru" },
       ),
-    ).toBe("В поле Теги должно быть не больше 1 элемента");
+    ).toBe("В поле Теги должно быть не больше 1 элемент");
     expect(
       resolveMessage(
         pluralContext("validation.minLength", { min: 1 }, { label: "Имя" }),
         { locale: "ru" },
       ),
-    ).toBe("Длина поля Имя должна быть не меньше 1 символа");
+    ).toBe("Длина поля Имя должна быть не меньше 1 символ");
     expect(
       resolveMessage(
         pluralContext("validation.minLength", { min: 2 }, { label: "Имя" }),
         { locale: "ru" },
       ),
-    ).toBe("Длина поля Имя должна быть не меньше 2 символов");
+    ).toBe("Длина поля Имя должна быть не меньше 2 символа");
     expect(
       resolveMessage(
         pluralContext("validation.maxLength", { max: 5 }, { label: "Имя" }),
@@ -486,6 +501,16 @@ describe("Плюрализация", () => {
       { locale: "de" },
     );
     expect(message).toBe("В поле Теги должно быть не меньше 2 элементов");
+  });
+
+  it("выдерживает большое число локалей", () => {
+    for (let index = 0; index < 60; index += 1) {
+      const message = resolveMessage(
+        pluralContext("validation.arrayMinSize", { min: 1 }, { label: "Теги" }),
+        { locale: `ru-x-${index}` },
+      );
+      expect(message).toContain("элемент");
+    }
   });
 
   it("возвращает базовое сообщение, если число не определено", () => {
@@ -669,7 +694,7 @@ describe("createI18nextResolver", () => {
     expect(calls[0]?.options?.min).toBe(3);
     expect(calls[0]?.options?.label).toBe("Теги");
     expect(calls[0]?.options?.defaultValue).toBe(
-      "В поле {label} должно быть не меньше {min} элементов",
+      "В поле {label} должно быть не меньше {min} элемента",
     );
   });
 
@@ -722,6 +747,64 @@ describe("createI18nextResolver", () => {
         label: "Теги",
         params: { min: 3 },
         value: null,
+      }),
+      { locale: "ru", resolve: createI18nextResolver(i18n) },
+    );
+
+    expect(options[0]?.count).toBe(3);
+  });
+
+  it("не передаёт count для Required и Each на числе", () => {
+    const options: Array<Readonly<Record<string, unknown>> | undefined> = [];
+    const i18n = {
+      t(_key: string, received?: Readonly<Record<string, unknown>>): string {
+        options.push(received);
+        return "translated";
+      },
+    };
+    const resolver = createI18nextResolver(i18n);
+
+    resolveMessage(
+      contextOf({
+        rule: "required",
+        key: "validation.required",
+        label: "Возраст",
+        params: {},
+        value: 42,
+      }),
+      { locale: "ru", resolve: resolver },
+    );
+    resolveMessage(
+      contextOf({
+        rule: "each",
+        key: "validation.eachValue",
+        label: "Возраст",
+        params: {},
+        value: 42,
+      }),
+      { locale: "ru", resolve: resolver },
+    );
+
+    expect(options[0]).not.toHaveProperty("count");
+    expect(options[1]).not.toHaveProperty("count");
+  });
+
+  it("передаёт count для each на коллекции", () => {
+    const options: Array<Readonly<Record<string, unknown>> | undefined> = [];
+    const i18n = {
+      t(_key: string, received?: Readonly<Record<string, unknown>>): string {
+        options.push(received);
+        return "translated";
+      },
+    };
+
+    resolveMessage(
+      contextOf({
+        rule: "each",
+        key: "validation.eachValue",
+        label: "Теги",
+        params: {},
+        value: [1, 2, 3],
       }),
       { locale: "ru", resolve: createI18nextResolver(i18n) },
     );
@@ -828,6 +911,6 @@ describe("createI18nextResolver", () => {
       { locale: "ru", resolve: createI18nextResolver(i18n) },
     );
 
-    expect(message).toBe("В поле Теги должно быть не меньше 3 элементов");
+    expect(message).toBe("В поле Теги должно быть не меньше 3 элемента");
   });
 });

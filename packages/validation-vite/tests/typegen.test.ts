@@ -147,6 +147,48 @@ function executeSource(source: string, names: readonly string[]): Readonly<Recor
   return execute(applyBlocks(source, blocksFor(source)), names);
 }
 
+function executeDefault(applied: string): unknown {
+  const js = ts.transpileModule(applied, {
+    compilerOptions: {
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.CommonJS,
+      useDefineForClassFields: true,
+    },
+  }).outputText;
+  const exports: Record<string, unknown> = {};
+  const module = { exports };
+  const factory = new Function("exports", "module", `${js}\n`);
+  factory(exports, module);
+  return module.exports.default;
+}
+
+function runtimeRefWithExpressionNames(symbol: ts.Symbol): string {
+  for (const declaration of symbol.declarations ?? []) {
+    if (!ts.isClassExpression(declaration) || declaration.name !== undefined) {
+      continue;
+    }
+    const parent = declaration.parent;
+    if (ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)) {
+      return parent.name.text;
+    }
+    if (ts.isPropertyAssignment(parent) && ts.isIdentifier(parent.name)) {
+      return parent.name.text;
+    }
+    if (ts.isExportAssignment(parent)) {
+      return "default";
+    }
+  }
+  return runtimeRefName(symbol);
+}
+
+function executeWithRuntimeRef(
+  source: string,
+  names: readonly string[],
+  runtimeRef: (symbol: ts.Symbol) => string,
+): Readonly<Record<string, unknown>> {
+  return execute(applyBlocks(source, blocksWithRuntimeRef(source, runtimeRef)), names);
+}
+
 function qualifiedName(symbol: ts.Symbol): string {
   const parts: string[] = [];
   let node: ts.Node | undefined = symbol.valueDeclaration ?? symbol.declarations?.[0];
@@ -987,7 +1029,7 @@ class Utilities {
     expect(fields).toContain('"omitted": ["object",{"b":"number"}]');
     expect(fields).toContain('"required": ["object",{"a":"string"}]');
     expect(fields).toContain('"readonly": ["object",{"a":"string"}]');
-    expect(fields).toContain('"list": ["intersection",[["object",{"length":"number"}],["record","string"]]]');
+    expect(fields).toContain('"list": ["union",[["array","string"],["object",{"length":"number"}]]]');
     expect(fields).not.toContain('"thenable": "object"');
     expect(fields).not.toContain('"generator": "object"');
     expect(fields).not.toContain('"iterator": "object"');
@@ -1185,6 +1227,207 @@ class PartialProfile {
     );
     expect(validate(entity(Inline, { n: 1 })).valid).toBe(true);
     expect(validate(entity(Inline, { n: "x" })).valid).toBe(false);
+  });
+
+  it("генерирует схему для анонимного default export и class expression", () => {
+    const defaultSource = [
+      "class ValidationModel {}",
+      "export default class extends ValidationModel {",
+      '  accessor name: string = "";',
+      "}",
+      "",
+    ].join("\n");
+    const defaultBlocks = blocksFor(defaultSource);
+    expect(defaultBlocks).toHaveLength(1);
+    expect(defaultBlocks[0]!.className).toBe("default");
+    expect(defaultBlocks[0]!.code).toContain('"name": "string"');
+    const Anonymous = executeDefault(applyBlocks(defaultSource, defaultBlocks)) as Constructed;
+    expect(validate(entity(Anonymous, { name: "x" })).valid).toBe(true);
+    expect(validate(entity(Anonymous, { name: 1 })).valid).toBe(false);
+
+    const propertySource = [
+      "const container = {",
+      "  User: class {",
+      "    accessor age: number = 0;",
+      "  },",
+      "};",
+      "",
+    ].join("\n");
+    const propertyBlocks = blocksFor(propertySource);
+    expect(propertyBlocks).toHaveLength(1);
+    expect(propertyBlocks[0]!.className).toBe("User");
+    expect(propertyBlocks[0]!.code).toContain('"age": "number"');
+    const { container } = executeSource(propertySource, ["container"]);
+    const User = (container as { readonly User: unknown }).User;
+    expect(validate(entity(User, { age: 1 })).valid).toBe(true);
+    expect(validate(entity(User, { age: "x" })).valid).toBe(false);
+
+    const arraySource = "const classes = [class {\n  accessor size: number = 0;\n}];\n";
+    const arrayBlocks = blocksFor(arraySource);
+    expect(arrayBlocks).toHaveLength(1);
+    expect(arrayBlocks[0]!.className).toBe("class");
+    expect(arrayBlocks[0]!.code).toContain('"size": "number"');
+    const { classes } = executeSource(arraySource, ["classes"]);
+    const Inline = (classes as readonly unknown[])[0];
+    expect(validate(entity(Inline, { size: 1 })).valid).toBe(true);
+    expect(validate(entity(Inline, { size: "x" })).valid).toBe(false);
+  });
+
+  it("исполняет схему для InstanceType анонимного класса", () => {
+    const source = [
+      "const AnonymousClass = class {",
+      "  accessor id: number = 0;",
+      "};",
+      "",
+      "class Holder {",
+      "  accessor item: InstanceType<typeof AnonymousClass> = new AnonymousClass();",
+      "}",
+      "",
+    ].join("\n");
+    const { AnonymousClass, Holder } = executeWithRuntimeRef(
+      source,
+      ["AnonymousClass", "Holder"],
+      runtimeRefWithExpressionNames,
+    );
+    expect(validate(entity(Holder, { item: entity(AnonymousClass, { id: 1 }) })).valid).toBe(true);
+    expect(validate(entity(Holder, { item: {} })).valid).toBe(false);
+  });
+
+  it("не создаёт невыполнимую схему для ArrayLike", () => {
+    const source = [
+      "class ArrayLikeHolder {",
+      "  accessor list: ArrayLike<string> = [];",
+      "  accessor numeric: { length: number; [index: number]: string } = { length: 0 };",
+      "}",
+      "",
+    ].join("\n");
+    const fields = fieldsFor(source);
+    expect(fields).toBe(
+      '"list": ["union",[["array","string"],["object",{"length":"number"}]]], '
+      + '"numeric": ["object",{"length":"number"}]',
+    );
+    const { ArrayLikeHolder } = executeSource(source, ["ArrayLikeHolder"]);
+    expect(validate(entity(ArrayLikeHolder, {
+      list: ["a", "b"],
+      numeric: { 0: "a", length: 1 },
+    })).valid).toBe(true);
+    expect(validate(entity(ArrayLikeHolder, {
+      list: { 0: "a", length: 1 },
+      numeric: { length: 1 },
+    })).valid).toBe(true);
+    const invalidElement = validate(entity(ArrayLikeHolder, {
+      list: ["a", 2],
+      numeric: { 0: "a", length: 1 },
+    }));
+    expect(invalidElement.valid).toBe(false);
+    expect(invalidElement.errors.some((error) => error.field === "length")).toBe(false);
+    expect(validate(entity(ArrayLikeHolder, {
+      list: [],
+      numeric: { length: "x" },
+    })).valid).toBe(false);
+  });
+
+  it("не разворачивает интерфейсы с DOM и стандартными базами", () => {
+    const fields = fieldsFor(`
+interface MyEl extends HTMLElement { extra: string }
+interface MyDate extends Date { extra: string }
+interface MyMap extends Map<string, number> { extra: string }
+class BaseHolder {
+  accessor el: MyEl = null as unknown as MyEl;
+  accessor date: MyDate = null as unknown as MyDate;
+  accessor map: MyMap = null as unknown as MyMap;
+}
+`);
+    expect(fields).toBe('"el": "object", "date": "date", "map": "map"');
+    expect(fields.length).toBeLessThan(200);
+  });
+
+  it("сериализует классы из @types/node как class", () => {
+    const fields = projectFieldsFor(
+      {
+        "main.ts": [
+          'import type { Stats } from "node:fs";',
+          'import type { EventEmitter } from "node:events";',
+          "",
+          "class NodeHolder {",
+          "  accessor stats: Stats = null as unknown as Stats;",
+          "  accessor emitter: EventEmitter = null as unknown as EventEmitter;",
+          "}",
+          "",
+        ].join("\n"),
+      },
+      "main.ts",
+    );
+    expect(fields).toBe('"stats": ["class",()=>Stats], "emitter": ["class",()=>EventEmitter]');
+  });
+
+  it("не добавляет глобальные сегменты для declare global и declare class", () => {
+    const { sourceFile, checker } = programFor(`
+declare global {
+  class GlobalThing {
+    accessor value: string;
+  }
+}
+
+declare class AmbientThing {}
+
+export {};
+
+class GlobalHolder {
+  accessor thing: GlobalThing = null as unknown as GlobalThing;
+  accessor ambient: AmbientThing = null as unknown as AmbientThing;
+  accessor name: string = "";
+}
+`);
+    const blocks = generateValidationBlocks({
+      sourceFile,
+      checker,
+      runtimeRef: (symbol) => symbol.getName(),
+    });
+    expect(blocks).toHaveLength(1);
+    const block = blocks[0]!;
+    expect(block.className).toBe("GlobalHolder");
+    expect(block.code).not.toContain("global.");
+    expect(block.code).toContain('"name": "string"');
+    expect(block.code).toContain('"thing": ["class",()=>undefined]');
+    expect(block.code).toContain('"ambient": ["class",()=>undefined]');
+    expect(block.unavailableFields).toEqual(["thing", "ambient"]);
+  });
+
+  it("сохраняет поле __proto__ в схеме и исполняет его", () => {
+    const source = [
+      "interface ProtoShape {",
+      "  __proto__: string;",
+      "  name: string;",
+      "}",
+      "",
+      "class ProtoHolder {",
+      '  accessor __proto__: string = "";',
+      '  accessor data: ProtoShape = { ["__proto__"]: "x", name: "" };',
+      "}",
+      "",
+    ].join("\n");
+    const blocks = blocksFor(source);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]!.code).toContain('["__proto__"]: "string"');
+    expect(blocks[0]!.code).toContain('["object",{["__proto__"]:"string","name":"string"}]');
+    const { ProtoHolder } = executeSource(source, ["ProtoHolder"]);
+    const valid = entity(ProtoHolder, { name: "n" });
+    Object.defineProperty(valid, "__proto__", {
+      value: "x",
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+    expect(validate(valid).valid).toBe(true);
+    const invalid = entity(ProtoHolder, { name: "n" });
+    Object.defineProperty(invalid, "__proto__", {
+      value: 1,
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+    expect(validate(invalid).valid).toBe(false);
   });
 
   it("исполняет сгенерированную схему с namespace-ссылкой", () => {

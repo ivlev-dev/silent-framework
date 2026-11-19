@@ -66,6 +66,7 @@ jobs:
       - run: cargo test -p silent-transform
       - run: pnpm test
       - run: pnpm api:check
+      - run: pnpm api:check:self
       - run: pnpm pack:check
       - run: pnpm install:check
       - run: pnpm consumer:check

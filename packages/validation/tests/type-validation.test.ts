@@ -237,6 +237,23 @@ describe("validateType: составные схемы", () => {
     expect(run({ a: true }, schema)).toHaveLength(2);
   });
 
+  it("не схлопывает ошибки intersection с одинаковым сообщением", () => {
+    const config: ValidationConfig = {
+      messages: { ru: { "validation.type": "Неверный тип" } },
+    };
+    const schema: TypeSchema = [
+      "intersection",
+      [["object", { a: "string" }], ["object", { a: "number" }]],
+    ];
+    const errors = run({ a: true }, schema, config);
+    expect(errors).toHaveLength(2);
+    expect(errors.map((error) => error.params["type"])).toEqual([
+      "string",
+      "number",
+    ]);
+    expect(errors[0]?.message).toBe("Неверный тип");
+  });
+
   it("валидирует literal и enum по SameValueZero", () => {
     expect(valid("admin", ["literal", "admin"])).toBe(true);
     expect(valid("user", ["literal", "admin"])).toBe(false);
@@ -351,6 +368,113 @@ describe("validateType: составные схемы", () => {
     expect(errors).toHaveLength(1);
     expect(errors[0]?.path).toBe("value.__proto__");
     expect(valid(JSON.parse('{"__proto__":"ok"}'), schema)).toBe(true);
+  });
+
+  it("не читает отсутствующие поля из Object.prototype", () => {
+    const fields: FieldSchemaMap = {
+      toString: ["optional", "string"] as TypeSchema,
+      constructor: ["optional", "string"] as TypeSchema,
+      valueOf: ["optional", "string"] as TypeSchema,
+      hasOwnProperty: ["optional", "string"] as TypeSchema,
+    };
+    expect(valid({}, ["object", fields])).toBe(true);
+    expect(
+      valid({}, [
+        "object",
+        JSON.parse('{"toString":"string"}') as FieldSchemaMap,
+      ]),
+    ).toBe(false);
+  });
+
+  it("читает собственные поля с именами из Object.prototype", () => {
+    const schema: TypeSchema = [
+      "object",
+      JSON.parse('{"toString":"number","constructor":"number"}') as FieldSchemaMap,
+    ];
+    expect(valid({ toString: 1, constructor: 2 }, schema)).toBe(true);
+    const errors = run({ toString: "1", constructor: 2 }, schema);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.path).toBe("value.toString");
+  });
+
+  it("читает auto-accessor с именем __proto__", () => {
+    class WithProto {
+      public accessor __proto__ = "ok";
+    }
+    const schema: TypeSchema = [
+      "object",
+      JSON.parse('{"__proto__":"string"}') as FieldSchemaMap,
+    ];
+    const instance = new WithProto();
+    expect(valid(instance, schema)).toBe(true);
+    instance.__proto__ = 5 as unknown as string;
+    expect(run(instance, schema)).toHaveLength(1);
+  });
+});
+
+describe("validateType: глубина данных", () => {
+  function arraySchema(levels: number): TypeSchema {
+    let schema: TypeSchema = "number";
+    for (let index = 0; index < levels; index += 1) {
+      schema = ["array", schema];
+    }
+    return schema;
+  }
+
+  function arrayValue(levels: number): unknown {
+    let value: unknown = 1;
+    for (let index = 0; index < levels; index += 1) {
+      value = [value];
+    }
+    return value;
+  }
+
+  function objectSchema(levels: number): TypeSchema {
+    let schema: TypeSchema = "number";
+    for (let index = 0; index < levels; index += 1) {
+      schema = ["object", { child: schema }];
+    }
+    return schema;
+  }
+
+  function objectValue(levels: number): unknown {
+    let value: unknown = 1;
+    for (let index = 0; index < levels; index += 1) {
+      value = { child: value };
+    }
+    return value;
+  }
+
+  it("пропускает 128 и 200 уровней рекурсивного массива", () => {
+    expect(valid(arrayValue(128), arraySchema(128))).toBe(true);
+    expect(valid(arrayValue(200), arraySchema(200))).toBe(true);
+  });
+
+  it("пропускает 128 и 200 уровней рекурсивного объекта", () => {
+    expect(valid(objectValue(128), objectSchema(128))).toBe(true);
+    expect(valid(objectValue(200), objectSchema(200))).toBe(true);
+  });
+
+  it("сообщает понятную ошибку глубины для 400 уровней массива", () => {
+    const errors = run(arrayValue(400), arraySchema(400));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.params).toEqual({ type: "depth" });
+    expect(errors[0]?.message).toContain("слишком глубоко вложено");
+  });
+
+  it("сообщает понятную ошибку глубины для 400 уровней объекта", () => {
+    const errors = run(objectValue(400), objectSchema(400));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.params).toEqual({ type: "depth" });
+    expect(errors[0]?.message).toContain("слишком глубоко вложено");
+  });
+
+  it("не считает обёртки optional, nullable и union глубиной", () => {
+    let schema: TypeSchema = "number";
+    for (let index = 0; index < 400; index += 1) {
+      schema = ["optional", ["nullable", ["union", [schema]]]];
+    }
+    expect(valid(1, schema)).toBe(true);
   });
 });
 
@@ -510,6 +634,34 @@ describe("validateType: ленивые схемы", () => {
     expect(errors[0]?.rule).toBe("type");
   });
 
+  it("вызывает lazy-thunk один раз при ошибке", () => {
+    let calls = 0;
+    const schema: TypeSchema = ["lazy", () => {
+      calls += 1;
+      return "number";
+    }];
+    const errors = run("text", schema);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.params).toEqual({ type: "number" });
+    expect(calls).toBe(1);
+  });
+
+  it("подписывается на thenable только один раз", async () => {
+    let subscriptions = 0;
+    const thenable = {
+      then(resolve: (value: unknown) => void): void {
+        subscriptions += 1;
+        resolve(undefined);
+      },
+    };
+    const schema = ["lazy", () => thenable] as unknown as TypeSchema;
+    expect(run("text", schema)).toHaveLength(1);
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+    expect(subscriptions).toBe(1);
+  });
+
   it("возвращает ошибку типа для thunk с некорректной схемой", () => {
     const numberThunk = ["lazy", () => 42] as unknown as TypeSchema;
     const nullThunk = ["lazy", () => null] as unknown as TypeSchema;
@@ -661,6 +813,60 @@ describe("чтение схем", () => {
 
     expect(readClassSchema(Replaced)).toEqual({ fields: { second: "number" } });
     expect(readInstanceSchema(new Replaced())).toEqual({ second: "number" });
+  });
+
+  it("подхватывает замену fields внутри объекта схемы", () => {
+    class Mutable {}
+    const schema: { version?: number; fields: FieldSchemaMap } = {
+      version: 1,
+      fields: { first: "string" },
+    };
+    defineSchema(Mutable, schema);
+    expect(readInstanceSchema(new Mutable())).toEqual({ first: "string" });
+
+    schema.fields = { second: "number" };
+
+    expect(readClassSchema(Mutable)).toEqual({
+      version: 1,
+      fields: { second: "number" },
+    });
+    expect(readInstanceSchema(new Mutable())).toEqual({ second: "number" });
+  });
+
+  it("инвалидирует кеш при росте цепочки прототипов", () => {
+    class Base {}
+    class Middle extends Base {}
+    class Child extends Base {}
+    defineSchema(Base, { fields: { base: "number" } });
+    defineSchema(Middle, { fields: { middle: "string" } });
+    defineSchema(Child, { fields: { child: "boolean" } });
+
+    const instance = new Child();
+    expect(readInstanceSchema(instance)).toEqual({
+      base: "number",
+      child: "boolean",
+    });
+
+    Object.setPrototypeOf(Child, Middle);
+    try {
+      expect(readInstanceSchema(instance)).toEqual({
+        base: "number",
+        middle: "string",
+        child: "boolean",
+      });
+    } finally {
+      Object.setPrototypeOf(Child, Base);
+    }
+  });
+
+  it("не считает версией нечисловое поле legacy bare-map", () => {
+    class Legacy {}
+    defineSchema(Legacy, { version: "string" });
+
+    expect(readClassSchema(Legacy)).toEqual({
+      fields: { version: "string" },
+    });
+    expect(readInstanceSchema(new Legacy())).toEqual({ version: "string" });
   });
 
   it("пересобирает кеш при удалении схемы", () => {

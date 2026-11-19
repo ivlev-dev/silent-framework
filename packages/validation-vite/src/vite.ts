@@ -125,11 +125,6 @@ function extendsTarget(
   return false;
 }
 
-function needsValidation(file: string): boolean {
-  const text = ts.sys.readFile(file);
-  return text !== undefined && ACCESSOR_PATTERN.test(text) && EXTENDS_PATTERN.test(text);
-}
-
 const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions = {
   moduleResolution: ts.ModuleResolutionKind.Bundler,
   module: ts.ModuleKind.ESNext,
@@ -163,6 +158,11 @@ interface ProgramEntry {
 interface ImportInsertion {
   readonly module: string;
   readonly alias: string;
+}
+
+interface TransformContext {
+  readonly warn?: (message: string) => void;
+  readonly addWatchFile?: (id: string) => void;
 }
 
 interface ImportBinding {
@@ -272,6 +272,23 @@ function ambientModuleName(declaration: ts.Declaration): string | null {
   return null;
 }
 
+function isGlobalModuleDeclaration(node: ts.ModuleDeclaration): boolean {
+  if ((node.flags & ts.NodeFlags.GlobalAugmentation) !== 0) return true;
+  return ts.isIdentifier(node.name) && node.name.text === "global";
+}
+
+function isGlobalAugmentation(declaration: ts.Declaration): boolean {
+  let node: ts.Node | undefined = declaration;
+  while (node !== undefined && !ts.isSourceFile(node)) {
+    if (ts.isModuleDeclaration(node)) {
+      if (isGlobalModuleDeclaration(node)) return true;
+      if (ts.isStringLiteral(node.name)) return false;
+    }
+    node = node.parent;
+  }
+  return false;
+}
+
 function declarationName(symbol: ts.Symbol): string | null {
   for (const declaration of symbol.declarations ?? []) {
     if (
@@ -301,7 +318,7 @@ function localQualifiedName(
   let node: ts.Node | undefined = declaration;
   while (node !== undefined && !ts.isSourceFile(node)) {
     if (ts.isModuleDeclaration(node) && ts.isIdentifier(node.name)) {
-      parts.unshift(node.name.text);
+      if (!isGlobalModuleDeclaration(node)) parts.unshift(node.name.text);
     } else if (
       (ts.isClassDeclaration(node) || ts.isClassExpression(node))
       && node.name !== undefined
@@ -327,13 +344,40 @@ function isDefaultLibraryFile(sourceFile: ts.SourceFile): boolean {
   return /^lib(?:\.[^/\\]+)?\.d\.ts$/.test(name.slice(slash + 1));
 }
 
-const BUILTIN_MODULES: ReadonlySet<string> = new Set(
-  builtinModules.map((name) => (name.startsWith("node:") ? name.slice(5) : name)),
+function isNodeModulesFile(fileName: string): boolean {
+  return fileName.split(/[\\/]/).includes("node_modules");
+}
+
+function programWatchFiles(entry: ProgramEntry): readonly string[] {
+  const files = new Set<string>();
+  if (entry.project.configPath !== null) {
+    files.add(path.resolve(entry.project.configPath));
+  }
+  for (const rootName of entry.project.rootNames) {
+    files.add(path.resolve(rootName));
+  }
+  for (const sourceFile of entry.program.getSourceFiles()) {
+    if (isDefaultLibraryFile(sourceFile)) continue;
+    const fileName = path.resolve(sourceFile.fileName);
+    if (isNodeModulesFile(fileName)) continue;
+    files.add(fileName);
+  }
+  return [...files];
+}
+
+const BARE_BUILTIN_MODULES: ReadonlySet<string> = new Set(
+  builtinModules.filter((name) => !name.startsWith("node:")),
+);
+const PREFIXED_BUILTIN_MODULES: ReadonlySet<string> = new Set(
+  builtinModules.filter((name) => name.startsWith("node:")),
 );
 
 function isBuiltinModule(moduleName: string): boolean {
-  const bare = moduleName.startsWith("node:") ? moduleName.slice(5) : moduleName;
-  return BUILTIN_MODULES.has(bare);
+  if (moduleName.startsWith("node:")) {
+    return PREFIXED_BUILTIN_MODULES.has(moduleName)
+      || BARE_BUILTIN_MODULES.has(moduleName.slice(5));
+  }
+  return BARE_BUILTIN_MODULES.has(moduleName);
 }
 
 function isRelativeModule(moduleName: string): boolean {
@@ -393,7 +437,11 @@ function packageRuntimeExists(fileName: string): boolean {
       if (data.exports !== undefined) collectRuntimeTargets(data.exports, "exports", targets);
       for (const target of targets) {
         const resolved = path.resolve(directory, target);
-        if (RUNTIME_FILE_PATTERN.test(resolved) && ts.sys.fileExists(resolved)) {
+        if (
+          RUNTIME_FILE_PATTERN.test(resolved)
+          && !isDeclarationFile(resolved)
+          && ts.sys.fileExists(resolved)
+        ) {
           return true;
         }
       }
@@ -703,6 +751,9 @@ function createRuntimeRefResolver(
   const runtimeIssue = (symbol: ts.Symbol): string | null => {
     const info = declarationInfo(checker, symbol);
     if (info === null) return null;
+    if (isGlobalAugmentation(info.declaration)) {
+      return "глобальная декларация без рантайм-модуля";
+    }
     if (info.file.fileName === sourceFile.fileName) return null;
     if (isGlobalDeclaration(info.file)) {
       if (!isDeclarationFile(info.file.fileName)) return null;
@@ -758,6 +809,7 @@ function createRuntimeRefResolver(
   const runtimeRef = (symbol: ts.Symbol): string => {
     const info = declarationInfo(checker, symbol);
     if (info === null) return "undefined";
+    if (isGlobalAugmentation(info.declaration)) return "undefined";
     if (info.file.fileName === sourceFile.fileName) {
       return localQualifiedName(checker, symbol) ?? "undefined";
     }
@@ -1083,9 +1135,7 @@ function readProject(configPath: string): ParsedProject {
   }
   return {
     configPath,
-    rootNames: parsed.fileNames.filter(
-      (fileName) => isDeclarationFile(fileName) || needsValidation(fileName),
-    ),
+    rootNames: parsed.fileNames,
     options: { ...parsed.options, noEmit: true },
     projectReferences: parsed.projectReferences,
   };
@@ -1134,7 +1184,34 @@ export function validation(options: ValidationPluginOptions = {}): Plugin {
   const strict = options.strict === true;
   const programs = new Map<string, ProgramEntry>();
   const baseSymbols = new WeakMap<ts.Program, ReadonlySet<ts.Symbol>>();
+  const watchedFiles = new WeakMap<ts.Program, readonly string[]>();
+  const registeredWatchFiles = new WeakMap<ts.Program, Set<string>>();
   let root = process.cwd();
+
+  const watchFilesFor = (entry: ProgramEntry): readonly string[] => {
+    const cached = watchedFiles.get(entry.program);
+    if (cached !== undefined) return cached;
+    const files = programWatchFiles(entry);
+    watchedFiles.set(entry.program, files);
+    return files;
+  };
+
+  const registerWatchFiles = (
+    entry: ProgramEntry,
+    context: TransformContext | undefined,
+  ): void => {
+    if (context?.addWatchFile === undefined) return;
+    let registered = registeredWatchFiles.get(entry.program);
+    if (registered === undefined) {
+      registered = new Set<string>();
+      registeredWatchFiles.set(entry.program, registered);
+    }
+    for (const file of watchFilesFor(entry)) {
+      if (registered.has(file)) continue;
+      registered.add(file);
+      context.addWatchFile(file);
+    }
+  };
 
   const baseSymbolsFor = (
     program: ts.Program,
@@ -1275,13 +1352,14 @@ export function validation(options: ValidationPluginOptions = {}): Plugin {
         const file = cleanModuleId(id);
         if (!shouldTransform(id, file)) return null;
         if (!ACCESSOR_PATTERN.test(code) || !EXTENDS_PATTERN.test(code)) return null;
+        const context: TransformContext | undefined = this;
         const entry = programEntryFor(file);
         if (entry === null) return null;
+        registerWatchFiles(entry, context);
         const sourceFile = entry.program.getSourceFile(file);
         if (sourceFile === undefined) return null;
         const transformedBefore = code !== sourceFile.text;
         if (transformedBefore && hasGeneratedSchema(code)) return null;
-        const context: { readonly warn?: (message: string) => void } | undefined = this;
         const warn = (message: string): void => {
           if (entry.warnings.has(message)) return;
           entry.warnings.add(message);

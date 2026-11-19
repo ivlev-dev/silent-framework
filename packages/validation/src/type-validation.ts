@@ -1,6 +1,7 @@
 import { DEFAULT_LOCALE, resolveMessage } from "./messages.js";
+import { constructorOf, readFieldValue } from "./property.js";
 import { readClassSchema, readInstanceSchema } from "./schema.js";
-import { isThenable, suppress } from "./thenable.js";
+import { isThenable, suppress, suppressThenable } from "./thenable.js";
 import type { FieldSchemaMap, TypeSchema } from "./schema.js";
 import type {
   MessageContext,
@@ -13,6 +14,19 @@ export interface NestedInstance {
   readonly path: string;
 }
 
+interface LazyResolution {
+  readonly schema: TypeSchema | null;
+  readonly name: string;
+}
+
+export interface TypeRuntime {
+  readonly visiting: WeakSet<object>;
+  lazyActive?: Map<TypeSchema, Set<unknown>> | undefined;
+  resolvedClasses?: WeakMap<object, Function | null> | undefined;
+  lazyResolutions?: WeakMap<object, LazyResolution> | undefined;
+  instanceFields?: WeakMap<Function, FieldSchemaMap | null> | undefined;
+}
+
 export interface TypeValidationContext {
   readonly instance: object;
   readonly field: string;
@@ -21,6 +35,7 @@ export interface TypeValidationContext {
   readonly config: ValidationConfig;
   readonly labels?: Readonly<Record<string, string>> | undefined;
   readonly visiting?: WeakSet<object>;
+  readonly runtime?: TypeRuntime | undefined;
   readonly nested?: NestedInstance[] | undefined;
 }
 
@@ -36,10 +51,8 @@ interface ErrorContext {
 }
 
 interface RunContext extends ErrorContext {
-  readonly visiting: WeakSet<object>;
+  readonly runtime: TypeRuntime;
   readonly nested: NestedInstance[] | undefined;
-  readonly lazyActive: Map<TypeSchema, Set<unknown>>;
-  readonly resolvedClasses: WeakMap<object, Function | null>;
 }
 
 type InstanceCtor = new (...args: never[]) => unknown;
@@ -380,11 +393,12 @@ function buildError(
   value: unknown,
   params: Readonly<Record<string, unknown>>,
   ctx: ErrorContext,
+  key = "validation.type",
 ): ValidationError {
   const label = labelFor(ctx);
   const context: MessageContext = {
     rule: "type",
-    key: "validation.type",
+    key,
     field: ctx.field,
     label,
     value,
@@ -419,7 +433,7 @@ function createError(
 }
 
 function depthError(value: unknown, ctx: ErrorContext): ValidationError {
-  return buildError(value, { type: "depth" }, ctx);
+  return buildError(value, { type: "depth" }, ctx, "validation.depth");
 }
 
 function childContext(
@@ -437,32 +451,36 @@ function childContext(
 }
 
 function enter(value: object, ctx: RunContext): boolean {
-  if (ctx.visiting.has(value)) {
+  const visiting = ctx.runtime.visiting;
+  if (visiting.has(value)) {
     return false;
   }
-  ctx.visiting.add(value);
+  visiting.add(value);
   return true;
 }
 
 function leave(value: object, ctx: RunContext): void {
-  ctx.visiting.delete(value);
+  ctx.runtime.visiting.delete(value);
 }
 
-function readProp(target: object, key: string): unknown {
-  if (key === "__proto__") {
-    const descriptor = Object.getOwnPropertyDescriptor(target, key);
-    if (descriptor === undefined || !("value" in descriptor)) {
-      return undefined;
+function classFields(
+  value: object,
+  ctor: Function,
+  runtime: TypeRuntime,
+): FieldSchemaMap | null {
+  const actual = constructorOf(value);
+  if (actual !== null) {
+    const cache = runtime.instanceFields ??= new WeakMap();
+    const cached = cache.get(actual);
+    const instanceSchema = cached !== undefined
+      ? cached
+      : readInstanceSchema(value);
+    if (cached === undefined) {
+      cache.set(actual, instanceSchema);
     }
-    return descriptor.value;
-  }
-  return (target as Record<string, unknown>)[key];
-}
-
-function classFields(value: object, ctor: Function): FieldSchemaMap | null {
-  const instanceSchema = readInstanceSchema(value);
-  if (instanceSchema !== null) {
-    return instanceSchema;
+    if (instanceSchema !== null) {
+      return instanceSchema;
+    }
   }
   const own = readClassSchema(ctor);
   return own === null ? null : own.fields;
@@ -472,7 +490,7 @@ function validateFields(
   owner: object,
   fields: FieldSchemaMap,
   ctx: RunContext,
-  depth: number,
+  childDepth: number,
 ): ValidationError[] {
   const errors: ValidationError[] = [];
   if (fields === undefined || fields === null) {
@@ -485,10 +503,10 @@ function validateFields(
     const path = `${ctx.path}.${key}`;
     errors.push(
       ...validateSchema(
-        readProp(owner, key),
+        readFieldValue(owner, key),
         fieldSchema,
         childContext(ctx, path, key, undefined),
-        depth + 1,
+        childDepth,
       ),
     );
   }
@@ -647,7 +665,7 @@ function validateTuple(
 }
 
 function errorKey(error: ValidationError): string {
-  return `${error.rule}\u0000${error.path}\u0000${String(error.index ?? "")}\u0000${error.message}`;
+  return `${error.rule}\u0000${error.path}\u0000${String(error.index ?? "")}\u0000${String(error.params["type"] ?? "")}\u0000${error.message}`;
 }
 
 function dedupeErrors(errors: readonly ValidationError[]): ValidationError[] {
@@ -667,6 +685,93 @@ function dedupeErrors(errors: readonly ValidationError[]): ValidationError[] {
   return unique;
 }
 
+function resolveLazy(
+  runtime: TypeRuntime,
+  schema: readonly ["lazy", () => TypeSchema],
+): LazyResolution {
+  const cache = runtime.lazyResolutions ??= new WeakMap<object, LazyResolution>();
+  const cached = cache.get(schema);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const getSchema = schema[1];
+  let resolution: LazyResolution;
+  try {
+    const produced: unknown = getSchema();
+    if (isThenable(produced)) {
+      suppressThenable(produced);
+      resolution = { schema: null, name: "unknown" };
+    } else if (typeof produced === "string" || Array.isArray(produced)) {
+      resolution = { schema: produced as TypeSchema, name: "" };
+    } else {
+      resolution = { schema: null, name: "unknown" };
+    }
+  } catch {
+    resolution = { schema: null, name: "object" };
+  }
+  cache.set(schema, resolution);
+  return resolution;
+}
+
+function resolveClass(
+  runtime: TypeRuntime,
+  schema: readonly ["class", () => Function],
+): Function | null {
+  const cache = runtime.resolvedClasses ??= new WeakMap<object, Function | null>();
+  const cached = cache.get(schema);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const getCtor = schema[1];
+  let ctor: Function | null;
+  try {
+    const produced: unknown = getCtor();
+    if (isThenable(produced)) {
+      suppressThenable(produced);
+      ctor = null;
+    } else {
+      ctor = typeof produced === "function" ? produced : null;
+    }
+  } catch {
+    ctor = null;
+  }
+  cache.set(schema, ctor);
+  return ctor;
+}
+
+function validateClass(
+  value: unknown,
+  schema: readonly ["class", () => Function],
+  ctx: RunContext,
+  depth: number,
+): ValidationError[] {
+  const ctor = resolveClass(ctx.runtime, schema);
+  if (ctor === null) {
+    return [createError(value, schema, ctx, "object")];
+  }
+  const name = ctor.name.length > 0 ? ctor.name : "object";
+  if (!isInstanceOfCtor(value, ctor)) {
+    return [createError(value, schema, ctx, name)];
+  }
+  const target = value as object;
+  if (ctx.nested !== undefined) {
+    ctx.nested.push({ instance: target, path: ctx.path });
+    return [];
+  }
+  const fields = classFields(target, ctor, ctx.runtime);
+  if (fields === null) {
+    return [];
+  }
+  if (!enter(target, ctx)) {
+    return [];
+  }
+  try {
+    return validateFields(target, fields, ctx, depth + 1);
+  } finally {
+    leave(target, ctx);
+  }
+}
+
 function validateSchema(
   value: unknown,
   schema: TypeSchema,
@@ -681,9 +786,9 @@ function validateSchema(
   }
   switch (schema[0]) {
     case "optional":
-      return value === undefined ? [] : validateSchema(value, schema[1], ctx, depth + 1);
+      return value === undefined ? [] : validateSchema(value, schema[1], ctx, depth);
     case "nullable":
-      return value === null ? [] : validateSchema(value, schema[1], ctx, depth + 1);
+      return value === null ? [] : validateSchema(value, schema[1], ctx, depth);
     case "array": {
       const itemSchema = schema[1];
       if (!Array.isArray(value)) {
@@ -699,32 +804,22 @@ function validateSchema(
       return validateTuple(value as readonly unknown[], items, schema[2], schema, ctx, depth);
     }
     case "lazy": {
-      const getSchema = schema[1];
-      const active = ctx.lazyActive.get(schema);
+      const resolution = resolveLazy(ctx.runtime, schema);
+      const resolved = resolution.schema;
+      if (resolved === null) {
+        return [createError(value, schema, ctx, resolution.name)];
+      }
+      const lazyActive = ctx.runtime.lazyActive ??= new Map<TypeSchema, Set<unknown>>();
+      const active = lazyActive.get(schema);
       if (active !== undefined && active.has(value)) {
         return [];
       }
-      let resolved: TypeSchema;
-      try {
-        const produced: unknown = getSchema();
-        if (isThenable(produced)) {
-          suppress(produced);
-          return [createError(value, schema, ctx)];
-        }
-        if (typeof produced !== "string" && !Array.isArray(produced)) {
-          return [createError(value, schema, ctx)];
-        }
-        resolved = produced as TypeSchema;
-      } catch {
-        return [createError(value, schema, ctx)];
-      }
       if (active === undefined) {
-        const created = new Set<unknown>([value]);
-        ctx.lazyActive.set(schema, created);
+        lazyActive.set(schema, new Set<unknown>([value]));
         try {
           return validateSchema(value, resolved, ctx, depth + 1);
         } finally {
-          ctx.lazyActive.delete(schema);
+          lazyActive.delete(schema);
         }
       }
       active.add(value);
@@ -738,7 +833,7 @@ function validateSchema(
       const branches = schema[1];
       for (const branch of branches) {
         const mark = ctx.nested?.length ?? 0;
-        if (validateSchema(value, branch, ctx, depth + 1).length === 0) {
+        if (validateSchema(value, branch, ctx, depth).length === 0) {
           return [];
         }
         if (ctx.nested !== undefined && ctx.nested.length > mark) {
@@ -750,7 +845,7 @@ function validateSchema(
     case "intersection": {
       const errors: ValidationError[] = [];
       for (const branch of schema[1]) {
-        errors.push(...validateSchema(value, branch, ctx, depth + 1));
+        errors.push(...validateSchema(value, branch, ctx, depth));
       }
       return dedupeErrors(errors);
     }
@@ -760,48 +855,8 @@ function validateSchema(
       const allowed: readonly unknown[] = schema[1];
       return allowed.includes(value) ? [] : [createError(value, schema, ctx)];
     }
-    case "class": {
-      const getCtor = schema[1];
-      let ctor = ctx.resolvedClasses.get(schema);
-      if (ctor === undefined) {
-        try {
-          const produced: unknown = getCtor();
-          if (isThenable(produced)) {
-            suppress(produced);
-            ctor = null;
-          } else {
-            ctor = typeof produced === "function" ? produced : null;
-          }
-        } catch {
-          ctor = null;
-        }
-        ctx.resolvedClasses.set(schema, ctor);
-      }
-      if (ctor === null) {
-        return [createError(value, schema, ctx, "object")];
-      }
-      const name = ctor.name.length > 0 ? ctor.name : "object";
-      if (!isInstanceOfCtor(value, ctor)) {
-        return [createError(value, schema, ctx, name)];
-      }
-      const target = value as object;
-      if (ctx.nested !== undefined) {
-        ctx.nested.push({ instance: target, path: ctx.path });
-        return [];
-      }
-      const fields = classFields(target, ctor);
-      if (fields === null) {
-        return [];
-      }
-      if (!enter(target, ctx)) {
-        return [];
-      }
-      try {
-        return validateFields(target, fields, ctx, depth + 1);
-      } finally {
-        leave(target, ctx);
-      }
-    }
+    case "class":
+      return validateClass(value, schema, ctx, depth);
     case "object": {
       const fields = schema[1];
       if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -871,10 +926,10 @@ export function validateType(
     config: context.config,
     labels: context.labels,
     locale: context.config.locale ?? DEFAULT_LOCALE,
-    visiting: context.visiting ?? new WeakSet<object>(),
+    runtime: context.runtime ?? {
+      visiting: context.visiting ?? new WeakSet<object>(),
+    },
     nested: context.nested,
-    lazyActive: new Map<TypeSchema, Set<unknown>>(),
-    resolvedClasses: new WeakMap<object, Function | null>(),
     index: undefined,
   };
   const errors = validateSchema(value, schema, ctx, 0);

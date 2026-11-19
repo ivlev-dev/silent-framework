@@ -251,8 +251,8 @@ const ITEM_MARKER = `<!--${ITEM}-->`;
 const LIST_END_MARKER = `<!--${LIST_END}-->`;
 
 function renderForServer<T>(props: ForProps<T>): Node {
-  const fallback = props.fallback;
-  const hasFallback = fallback !== undefined;
+  const hasFallback = "fallback" in props;
+  const fallback = (): unknown => props.fallback;
   const items: readonly T[] = normalizeItems<T>(
     typeof props.each === "function" ? props.each() : props.each,
   );
@@ -260,7 +260,7 @@ function renderForServer<T>(props: ForProps<T>): Node {
   if (backend?.createRaw !== undefined) {
     if (items.length === 0) {
       const out = hasFallback
-        ? serializeServerValue(resolve(fallback)) + LIST_END_MARKER
+        ? serializeServerValue(resolve(fallback())) + LIST_END_MARKER
         : LIST_END_MARKER;
       return backend.createRaw(out) as Node;
     }
@@ -287,7 +287,7 @@ function renderForServer<T>(props: ForProps<T>): Node {
     let parts: string[];
     if (total === 0) {
       if (hasFallback) {
-        values.push(resolve(fallback));
+        values.push(resolve(fallback()));
         parts = ["", LIST_END_MARKER];
       } else {
         parts = [LIST_END_MARKER];
@@ -326,7 +326,7 @@ function renderForServer<T>(props: ForProps<T>): Node {
     }
   }
   if (items.length === 0 && hasFallback) {
-    const nodes = extractMetadata(collectNodes(resolve(fallback) as Children));
+    const nodes = extractMetadata(collectNodes(resolve(fallback()) as Children));
     for (const node of nodes) {
       sink.insertBefore(node, endAnchor);
     }
@@ -351,8 +351,8 @@ export function For<T>(props: ForProps<T>): Node {
   }
   let container: Node | null = null;
   const parentOwner = getOwner();
-  const fallback = props.fallback;
-  const hasFallback = fallback !== undefined;
+  const hasFallback = "fallback" in props;
+  const fallback = (): unknown => props.fallback;
   const keyOf = props.keyOf;
   const usesIndex = props.index !== false;
   const staticRows = props.staticRows === true;
@@ -758,7 +758,7 @@ export function For<T>(props: ForProps<T>): Node {
             parent.insertBefore(batch, endAnchor);
           }
         }
-        fallbackMount.render(nextLength === 0 && hasFallback ? resolve(fallback) : null);
+        fallbackMount.render(nextLength === 0 && hasFallback ? resolve(fallback()) : null);
         return;
       }
       const removedTrailing = previous.slice(nextLength, previousLength);
@@ -767,7 +767,7 @@ export function For<T>(props: ForProps<T>): Node {
         removeState(state);
       }
       previous.length = nextLength;
-      fallbackMount.render(nextLength === 0 && hasFallback ? resolve(fallback) : null);
+      fallbackMount.render(nextLength === 0 && hasFallback ? resolve(fallback()) : null);
       return;
     }
 
@@ -930,7 +930,7 @@ export function For<T>(props: ForProps<T>): Node {
     previous.length = 0;
     created.length = 0;
 
-    fallbackMount.render(nextLength === 0 && hasFallback ? resolve(fallback) : null);
+    fallbackMount.render(nextLength === 0 && hasFallback ? resolve(fallback()) : null);
   };
 
   createRenderEffect(() => {
@@ -987,8 +987,7 @@ export function Show(props: ShowProps): Node {
         const window = beginRegion(outer, anchor);
         const value = withWindow(
           window,
-          resolve,
-          current ? props.children : props.fallback,
+          () => resolve(current ? props.children : props.fallback),
         );
         settleNodes(anchor, value);
         if (!regionMatches(window, anchor, value)) {

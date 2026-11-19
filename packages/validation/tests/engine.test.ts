@@ -6,6 +6,7 @@ import {
   validateOrThrowAsync,
 } from "../src/engine";
 import { ruleDecorator } from "../src/rule";
+import { SCHEMA_SYMBOL } from "../src/schema";
 import {
   configureValidation,
   resetValidationConfig,
@@ -30,6 +31,12 @@ const alwaysInvalid: RuleDefinition = {
   name: "alwaysInvalid",
   params: {},
   check: () => false,
+};
+
+const stringRule: RuleDefinition = {
+  name: "isString",
+  params: {},
+  check: (value) => typeof value === "string",
 };
 
 const minText: RuleDefinition = {
@@ -556,6 +563,65 @@ describe("validate", () => {
   it("бросает TypeError для массива", () => {
     expect(() => validate([] as unknown as object)).toThrow(TypeError);
     expect(() => validate([{}] as unknown as object)).toThrow(/объектом/);
+  });
+
+  it("принимает подклассы Array", () => {
+    class List extends Array<number> {}
+    expect(() => validate(new List())).not.toThrow();
+    expect(validate(new List())).toEqual({ valid: true, errors: [] });
+  });
+
+  it("не читает отсутствующие поля из Object.prototype", () => {
+    class Model {
+      @ruleDecorator(required)
+      public accessor name = "ok";
+    }
+    const model = new Model();
+    const schema = {
+      fields: {
+        name: "string",
+        toString: "string",
+        constructor: "string",
+        valueOf: "string",
+      },
+    };
+    Object.defineProperty(Model, SCHEMA_SYMBOL, {
+      value: schema,
+      configurable: true,
+    });
+
+    const result = validate(model);
+
+    expect(result.errors.map((error) => error.path)).toEqual([
+      "toString",
+      "constructor",
+      "valueOf",
+    ]);
+    expect(result.errors.every((error) => error.value === undefined)).toBe(true);
+  });
+
+  it("читает auto-accessor с именем __proto__", () => {
+    class Model {
+      @ruleDecorator(stringRule)
+      public accessor __proto__ = "ok";
+    }
+
+    expect(validate(new Model()).valid).toBe(true);
+  });
+
+  it("не падает при собственном constructor не-функции", () => {
+    class Model {
+      @ruleDecorator(required)
+      public accessor name = "ok";
+    }
+    const model = new Model();
+    Object.defineProperty(model, "constructor", {
+      value: "broken",
+      configurable: true,
+    });
+
+    expect(() => validate(model)).not.toThrow();
+    expect(validate(model).valid).toBe(true);
   });
 
   it("принимает Date и пустые объекты без полей", () => {

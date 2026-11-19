@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { hydrate } from "../src/hydrate";
 import { createSignal, flushSync } from "@ivlev-dev/silent-reactivity";
 import { Portal } from "../src/portal";
+import { insert, templateHoles, type TemplatePlan } from "../src/dom";
 import { Transition } from "../src/transition";
 import type { AnyComponent } from "../src/types";
 
@@ -72,5 +73,54 @@ describe("hydration", () => {
     vi.advanceTimersByTime(100);
     flushSync();
     expect(target.querySelector("span")).toBeNull();
+  });
+});
+
+describe("Portal с JSX children", () => {
+  it("рендерит детей вне окна гидрации и не забирает соседей", async () => {
+    const EMPTY_PLAN: TemplatePlan = { roots: 1, holes: [], attrs: [], strips: [] };
+    const OUTER_HTML = '<div><!--silent-hole-0--><i>after</i></div>';
+    const OUTER_PLAN: TemplatePlan = {
+      roots: 1,
+      holes: [{ path: [0, 0], counts: [1, 1], key: "silent-hole-0" }],
+      attrs: [],
+      strips: [],
+    };
+    const portalTarget = host("");
+    let reads = 0;
+    function View(): Node {
+      const clone = templateHoles(OUTER_HTML, OUTER_PLAN)();
+      const hole = clone.holes[0];
+      if (hole === undefined || !(hole instanceof Comment)) {
+        throw new Error("не найдена дыра шаблона");
+      }
+      insert(
+        hole.parentNode ?? clone.node,
+        () =>
+          Portal({
+            target: portalTarget,
+            get children() {
+              reads += 1;
+              return templateHoles("<span>portal</span>", EMPTY_PLAN)().node;
+            },
+          }),
+        hole,
+      );
+      return clone.node;
+    }
+    const target = host(
+      '<div><!--silent-insert--><!--silent-portal--><!--silent-insert-end--><!--silent-hole-0--><i>after</i></div>',
+    );
+    const serverAfter = target.querySelector("i");
+    const mismatches: unknown[] = [];
+    const handle = await hydrate(target, View as unknown as AnyComponent, {
+      onMismatch: (error) => mismatches.push(error),
+    });
+    expect(mismatches).toEqual([]);
+    expect(reads).toBeGreaterThanOrEqual(1);
+    expect(portalTarget.textContent).toBe("portal");
+    expect(target.querySelector("i")).toBe(serverAfter);
+    expect(target.querySelector("span")).toBeNull();
+    handle.dispose();
   });
 });

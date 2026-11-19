@@ -579,6 +579,89 @@ describe("validation()", () => {
     expect(() => strictTransform(source, file)).toThrow(/Wallet\.money/);
   });
 
+  it("резолвит глобальные типы из .ts без declaration-файла", () => {
+    const directory = createProject();
+    writeFileSync(
+      path.join(directory, "globals.ts"),
+      [
+        "interface Money {",
+        "  amount: number;",
+        "}",
+        "",
+        "declare namespace Domain {",
+        "  interface Point {",
+        "    x: number;",
+        "    y: number;",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const file = path.join(directory, "global-wallet.ts");
+    writeFileSync(
+      file,
+      [
+        'import { ValidationModel } from "@ivlev-dev/silent-validation";',
+        "",
+        "export class GlobalWallet extends ValidationModel {",
+        "  accessor money: Money = { amount: 0 };",
+        "  accessor point: Domain.Point = { x: 0, y: 0 };",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const result = getTransform(validation())(readFileSync(file, "utf8"), file);
+    expect(result).not.toBeNull();
+    const code = (result as TransformOutput).code;
+    expect(code).toMatch(/["']money["']\s*:\s*\["object",\{"amount":"number"\}\]/);
+    expect(code).toMatch(/["']point["']\s*:\s*\["object",\{"x":"number","y":"number"\}\]/);
+  });
+
+  it("вырезает поле из declare global внутри модуля без global-ссылки", () => {
+    const directory = createProject();
+    writeFileSync(
+      path.join(directory, "globals-module.ts"),
+      [
+        "export {};",
+        "",
+        "declare global {",
+        "  class GlobalMoney {",
+        "    amount: number;",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const file = path.join(directory, "global-holder.ts");
+    writeFileSync(
+      file,
+      [
+        'import { ValidationModel } from "@ivlev-dev/silent-validation";',
+        "",
+        "export class GlobalHolder extends ValidationModel {",
+        "  accessor money: GlobalMoney = new GlobalMoney();",
+        '  accessor name: string = "";',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const source = readFileSync(file, "utf8");
+    const warnings: string[] = [];
+    const result = getTransform(validation()).call(
+      { warn: (message: string) => warnings.push(message) },
+      source,
+      file,
+    );
+    expect(result).not.toBeNull();
+    const code = (result as TransformOutput).code;
+    expect(code).toMatch(/["']name["']\s*:/);
+    expect(code).not.toMatch(/["']money["']\s*:/);
+    expect(code).not.toMatch(/global\.GlobalMoney/);
+    expect(code).not.toMatch(/import \* as __silent_validation_\d+ from ["']\.\/globals-module["']/);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("GlobalHolder.money");
+  });
+
   it("добавляет импорт для ambient-модуля с рантаймом", () => {
     const directory = createProject();
     const runtimeDirectory = path.join(directory, "node_modules", "runtime-lib");
@@ -657,6 +740,84 @@ describe("validation()", () => {
     expect(code).toMatch(
       /import \* as __silent_validation_\d+ from ["']node:events["'];/,
     );
+  });
+
+  it("не считает bare-имена только-префиксных builtin внешними модулями", () => {
+    const directory = createProject();
+    writeFileSync(
+      path.join(directory, "types.d.ts"),
+      [
+        'declare module "test" {',
+        "  export class TestConfig {",
+        "    value: string;",
+        "  }",
+        "}",
+        "",
+        'declare module "sea" {',
+        "  export class SeaConfig {",
+        "    value: string;",
+        "  }",
+        "}",
+        "",
+        'declare module "sqlite" {',
+        "  export class SqliteConfig {",
+        "    value: string;",
+        "  }",
+        "}",
+        "",
+        'declare module "ffi" {',
+        "  export class FfiConfig {",
+        "    value: string;",
+        "  }",
+        "}",
+        "",
+        'declare module "node:test" {',
+        "  export class NodeTestConfig {",
+        "    value: string;",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const file = path.join(directory, "bare-builtins.ts");
+    writeFileSync(
+      file,
+      [
+        'import type { TestConfig } from "test";',
+        'import type { SeaConfig } from "sea";',
+        'import type { SqliteConfig } from "sqlite";',
+        'import type { FfiConfig } from "ffi";',
+        'import type { NodeTestConfig } from "node:test";',
+        'import { ValidationModel } from "@ivlev-dev/silent-validation";',
+        "",
+        "export class BareBuiltins extends ValidationModel {",
+        "  accessor test: TestConfig = null as unknown as TestConfig;",
+        "  accessor sea: SeaConfig = null as unknown as SeaConfig;",
+        "  accessor sqlite: SqliteConfig = null as unknown as SqliteConfig;",
+        "  accessor ffi: FfiConfig = null as unknown as FfiConfig;",
+        "  accessor nodeTest: NodeTestConfig = new NodeTestConfig();",
+        '  accessor name: string = "";',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const source = readFileSync(file, "utf8");
+    const warnings: string[] = [];
+    const result = getTransform(validation()).call(
+      { warn: (message: string) => warnings.push(message) },
+      source,
+      file,
+    );
+    expect(result).not.toBeNull();
+    const code = (result as TransformOutput).code;
+    expect(code).toMatch(/["']name["']\s*:/);
+    for (const field of ["test", "sea", "sqlite", "ffi"]) {
+      expect(code).not.toMatch(new RegExp(`["']${field}["']\\s*:`));
+    }
+    expect(code).not.toMatch(/import \* as __silent_validation_\d+ from ["'](?:test|sea|sqlite|ffi)["']/);
+    expect(code).toMatch(/["']nodeTest["']\s*:\s*\["class",\(\)=>__silent_validation_\d+\.NodeTestConfig\]/);
+    expect(code).toMatch(/import \* as __silent_validation_\d+ from ["']node:test["']/);
+    expect(warnings).toHaveLength(4);
   });
 
   it("пропускает поле из types-only модуля и предупреждает", async () => {
@@ -910,6 +1071,82 @@ describe("validation()", () => {
     expect((second as TransformOutput).code).toMatch(/["']years["']\s*:/);
   });
 
+  it("регистрирует type-only зависимости вне графа и инвалидирует их изменения", () => {
+    const directory = createProject();
+    writeFileSync(
+      path.join(directory, "tsconfig.json"),
+      JSON.stringify(
+        {
+          compilerOptions: {
+            target: "ES2022",
+            module: "ESNext",
+            moduleResolution: "Bundler",
+            strict: true,
+            experimentalDecorators: false,
+            useDefineForClassFields: true,
+            noEmit: true,
+          },
+          include: ["app", "types"],
+        },
+        null,
+        2,
+      ),
+    );
+    mkdirSync(path.join(directory, "app"), { recursive: true });
+    mkdirSync(path.join(directory, "types"), { recursive: true });
+    const shared = path.join(directory, "types", "shared.ts");
+    writeFileSync(shared, ['export class Shared {', '  value: string = "";', "}", ""].join("\n"));
+    const file = path.join(directory, "app", "model.ts");
+    writeFileSync(
+      file,
+      [
+        'import type { Shared } from "../types/shared";',
+        'import { ValidationModel } from "@ivlev-dev/silent-validation";',
+        "",
+        "export class Model extends ValidationModel {",
+        "  accessor shared: Shared = new Shared();",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const plugin = validation();
+    const transform = getTransform(plugin);
+    const watchChange = getWatchChange(plugin);
+    const source = readFileSync(file, "utf8");
+    const watched: string[] = [];
+    const first = transform.call(
+      { warn: () => {}, addWatchFile: (id: string) => watched.push(id) },
+      source,
+      file,
+    );
+    expect(first).not.toBeNull();
+    expect(watched).toContain(path.resolve(shared));
+    expect(watched).toContain(path.resolve(path.join(directory, "tsconfig.json")));
+    expect((first as TransformOutput).code).toMatch(
+      /\["class",\(\)=>__silent_validation_\d+\.Shared\]/,
+    );
+    const repeated: string[] = [];
+    expect(
+      transform.call(
+        { warn: () => {}, addWatchFile: (id: string) => repeated.push(id) },
+        source,
+        file,
+      ),
+    ).not.toBeNull();
+    expect(repeated).toHaveLength(0);
+    writeFileSync(shared, ["export interface Shared {", "  value: string;", "}", ""].join("\n"));
+    watchChange(shared);
+    const updated = transform.call(
+      { warn: () => {}, addWatchFile: () => {} },
+      source,
+      file,
+    );
+    expect(updated).not.toBeNull();
+    const code = (updated as TransformOutput).code;
+    expect(code).toMatch(/["']shared["']\s*:\s*\["object",\{"value":"string"\}\]/);
+    expect(code).not.toMatch(/__silent_validation_\d+\.Shared/);
+  });
+
   it("генерирует схему для class expression", () => {
     const directory = createProject();
     const file = path.join(directory, "expression.ts");
@@ -1053,6 +1290,67 @@ describe("validation()", () => {
     const code = (result as TransformOutput).code;
     expect(code).toMatch(/\["class",\(\)=>__silent_validation_\d+\.Remote\]/);
     expect(code).toMatch(/import \* as __silent_validation_\d+ from ["']typed-pkg["'];/);
+  });
+
+  it("не считает declaration-файлы пакета рантаймом", () => {
+    const directory = createProject();
+    const packageDirectory = path.join(directory, "node_modules", "declaration-only");
+    mkdirSync(path.join(packageDirectory, "types"), { recursive: true });
+    writeFileSync(
+      path.join(packageDirectory, "package.json"),
+      JSON.stringify(
+        {
+          name: "declaration-only",
+          version: "0.0.0",
+          type: "module",
+          main: "./index.d.ts",
+          exports: {
+            ".": {
+              types: "./types/index.d.ts",
+              default: "./index.d.ts",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    writeFileSync(
+      path.join(packageDirectory, "types", "index.d.ts"),
+      "export declare class Remote {\n  value: string;\n}\n",
+    );
+    writeFileSync(
+      path.join(packageDirectory, "index.d.ts"),
+      'export { Remote } from "./types/index.js";\n',
+    );
+    const file = path.join(directory, "declaration-holder.ts");
+    writeFileSync(
+      file,
+      [
+        'import type { Remote } from "declaration-only";',
+        'import { ValidationModel } from "@ivlev-dev/silent-validation";',
+        "",
+        "export class DeclarationHolder extends ValidationModel {",
+        "  accessor remote: Remote = null as unknown as Remote;",
+        '  accessor name: string = "";',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const source = readFileSync(file, "utf8");
+    const warnings: string[] = [];
+    const result = getTransform(validation()).call(
+      { warn: (message: string) => warnings.push(message) },
+      source,
+      file,
+    );
+    expect(result).not.toBeNull();
+    const code = (result as TransformOutput).code;
+    expect(code).toMatch(/["']name["']\s*:/);
+    expect(code).not.toMatch(/["']remote["']\s*:/);
+    expect(code).not.toMatch(/import \* as __silent_validation_\d+ from ["']declaration-only["']/);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("DeclarationHolder.remote");
   });
 
   it("генерирует схемы для остальных классов файла с ручной схемой", () => {
@@ -1298,6 +1596,117 @@ describe("validation()", () => {
         readonly bad: { readonly valid: boolean; readonly errors: readonly unknown[] };
       };
     }).__silentResult;
+    expect(loaded).toBeDefined();
+    const result = loaded as NonNullable<typeof loaded>;
+    expect(result.good.valid).toBe(true);
+    expect(result.good.errors).toHaveLength(0);
+    expect(result.bad.valid).toBe(false);
+    expect(result.bad.errors.length).toBeGreaterThan(0);
+  });
+
+  it("исполняет схемы default-экспорта, ambient-модуля и ArrayLike", async () => {
+    const directory = createProject();
+    rmSync(
+      path.join(directory, "node_modules", "@ivlev-dev", "silent-validation"),
+      { recursive: true, force: true },
+    );
+    linkValidationPackage(directory);
+    const runtimeDirectory = path.join(directory, "node_modules", "runtime-lib");
+    mkdirSync(runtimeDirectory, { recursive: true });
+    writeFileSync(
+      path.join(runtimeDirectory, "package.json"),
+      JSON.stringify({ name: "runtime-lib", type: "module", main: "index.js" }, null, 2),
+    );
+    writeFileSync(
+      path.join(runtimeDirectory, "index.js"),
+      "export class Money {\n  constructor(amount) {\n    this.amount = amount;\n  }\n}\n",
+    );
+    writeFileSync(
+      path.join(directory, "types.d.ts"),
+      [
+        'declare module "runtime-lib" {',
+        "  export class Money {",
+        "    constructor(amount: number);",
+        "    amount: number;",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      path.join(directory, "default-model.ts"),
+      [
+        'import { ValidationModel } from "@ivlev-dev/silent-validation";',
+        "",
+        "export default class DefaultModel extends ValidationModel {",
+        '  accessor label: string = "";',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      path.join(directory, "executable-shapes.ts"),
+      [
+        'import DefaultModel from "./default-model";',
+        'import type { Money } from "runtime-lib";',
+        'import { ValidationModel } from "@ivlev-dev/silent-validation";',
+        "",
+        "export class Shapes extends ValidationModel {",
+        "  accessor child: DefaultModel = new DefaultModel();",
+        "  accessor money: Money = null as unknown as Money;",
+        "  accessor list: ArrayLike<string> = [];",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      path.join(directory, "executable-shapes-main.ts"),
+      [
+        'import { validate } from "@ivlev-dev/silent-validation";',
+        'import { Money } from "runtime-lib";',
+        'import { Shapes } from "./executable-shapes";',
+        "",
+        "const model = new Shapes();",
+        'model.child.label = "child";',
+        "model.money = new Money(5);",
+        "const schema = (Shapes as unknown as Record<symbol, { fields?: Record<string, unknown> }>)[",
+        '  Symbol.for("silent.validation.schema")',
+        "];",
+        'const listSchema = schema?.fields?.["list"];',
+        "const isArraySchema = (node: unknown): boolean => {",
+        "  if (!Array.isArray(node)) return false;",
+        '  if (node[0] === "array") return true;',
+        '  if (node[0] === "union" && Array.isArray(node[1])) return node[1].some(isArraySchema);',
+        "  return false;",
+        "};",
+        "const arrayLike = isArraySchema(listSchema);",
+        'model.list = (arrayLike ? ["a"] : { 0: "a", length: 1 }) as ArrayLike<string>;',
+        "const good = validate(model);",
+        'model.list = (arrayLike ? [1] : { 0: 1, length: 1 }) as unknown as ArrayLike<string>;',
+        "const bad = validate(model);",
+        "(globalThis as unknown as { __silentShapes?: unknown }).__silentShapes = { good, bad };",
+        "",
+      ].join("\n"),
+    );
+    const code = await buildProject(directory, [validation()], "executable-shapes-main.ts");
+    expect(code).toMatch(/["']child["']\s*:\s*\["class",\s*\(\)\s*=>\s*DefaultModel\]/);
+    expect(code).toMatch(/["']money["']\s*:\s*\["class",\s*\(\)\s*=>\s*(?:__silent_validation_\d+\.)?Money\]/);
+    expect(code).toMatch(/["']list["']\s*:/);
+    const lowered = ts.transpileModule(code, {
+      compilerOptions: {
+        target: ts.ScriptTarget.ES2022,
+        module: ts.ModuleKind.ESNext,
+      },
+    }).outputText;
+    const bundleFile = path.join(directory, "executable-shapes-bundle.mjs");
+    writeFileSync(bundleFile, lowered);
+    await import(`${pathToFileURL(bundleFile).href}?v=${Date.now()}`);
+    const loaded = (globalThis as {
+      __silentShapes?: {
+        readonly good: { readonly valid: boolean; readonly errors: readonly unknown[] };
+        readonly bad: { readonly valid: boolean; readonly errors: readonly unknown[] };
+      };
+    }).__silentShapes;
     expect(loaded).toBeDefined();
     const result = loaded as NonNullable<typeof loaded>;
     expect(result.good.valid).toBe(true);

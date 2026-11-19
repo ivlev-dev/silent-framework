@@ -1,10 +1,11 @@
 import { DEFAULT_LOCALE, getValidationConfig, resolveMessage, resolveMessageAsync } from "./messages.js";
+import { constructorOf, readFieldValue } from "./property.js";
 import { classStateRevision, validationStateFor } from "./registry.js";
 import { readInstanceSchema } from "./schema.js";
 import { isThenable, suppress } from "./thenable.js";
 import { validateFastPrimitive, validateType } from "./type-validation.js";
 import { AsyncRuleError, ValidationException } from "./types.js";
-import type { NestedInstance } from "./type-validation.js";
+import type { NestedInstance, TypeRuntime } from "./type-validation.js";
 import type { FieldSchemaMap, TypeSchema } from "./schema.js";
 import type {
   FieldKey,
@@ -30,7 +31,8 @@ interface RuntimeState {
   readonly cascade: boolean;
   readonly types: boolean;
   readonly visiting: WeakSet<object>;
-  readonly nestedSeen: WeakMap<object, Set<string>>;
+  nestedSeen: WeakMap<object, Set<string>> | undefined;
+  runtime: TypeRuntime | undefined;
   stopped: boolean;
 }
 
@@ -69,17 +71,23 @@ interface RuleCall {
 }
 
 function assertInstance(instance: unknown): asserts instance is object {
-  if (typeof instance !== "object" || instance === null || Array.isArray(instance)) {
+  if (typeof instance !== "object" || instance === null) {
+    throw new TypeError("Валидируемое значение должно быть объектом");
+  }
+  if (Array.isArray(instance) && constructorOf(instance) === Array) {
     throw new TypeError("Валидируемое значение должно быть объектом");
   }
 }
 
 function createConfig(options: ValidationOptions | undefined): ValidationConfig {
   const base = getValidationConfig();
-  const locale = options?.locale ?? base.locale;
-  const resolve = options?.resolve ?? base.resolve;
-  const messages = options?.messages ?? base.messages;
-  const cascade = options?.cascade ?? base.cascade;
+  if (options === undefined) {
+    return base;
+  }
+  const locale = options.locale ?? base.locale;
+  const resolve = options.resolve ?? base.resolve;
+  const messages = options.messages ?? base.messages;
+  const cascade = options.cascade ?? base.cascade;
   return {
     ...(locale === undefined ? {} : { locale }),
     ...(resolve === undefined ? {} : { resolve }),
@@ -100,20 +108,10 @@ function createState(options: ValidationOptions | undefined): RuntimeState {
     cascade: options?.cascade ?? config.cascade ?? true,
     types: options?.types !== false,
     visiting: new WeakSet<object>(),
-    nestedSeen: new WeakMap<object, Set<string>>(),
+    nestedSeen: undefined,
+    runtime: undefined,
     stopped: false,
   };
-}
-
-function readField(target: object, field: FieldKey): unknown {
-  if (field === "__proto__") {
-    const descriptor = Object.getOwnPropertyDescriptor(target, field);
-    if (descriptor === undefined || !("value" in descriptor)) {
-      return undefined;
-    }
-    return descriptor.value;
-  }
-  return (target as Record<FieldKey, unknown>)[field];
 }
 
 function toItems(value: unknown): readonly unknown[] | undefined {
@@ -353,8 +351,8 @@ function callFor(
 }
 
 function fieldPlan(target: object, withSchema: boolean): readonly FieldRun[] {
-  const ctor: unknown = target.constructor;
-  if (typeof ctor !== "function") {
+  const ctor = constructorOf(target);
+  if (ctor === null) {
     return buildFieldPlan(target, withSchema);
   }
   const revision = classStateRevision(ctor);
@@ -477,7 +475,7 @@ function prepareField(
   state: RuntimeState,
   asyncTypes = false,
 ): PreparedField | null {
-  const value = readField(target, run.key);
+  const value = readFieldValue(target, run.key);
   const slot = run.slot;
   if (slot !== undefined && slot.optional && (value === null || value === undefined)) {
     return null;
@@ -518,6 +516,7 @@ function prepareField(
       }
     } else {
       const collected: NestedInstance[] = [];
+      const runtime = state.runtime ??= { visiting: state.visiting };
       const result = validateType(value, run.schema, {
         instance: target,
         field: run.fieldName,
@@ -525,7 +524,7 @@ function prepareField(
         path,
         config: typeConfig,
         labels: state.labels,
-        visiting: state.visiting,
+        runtime,
         nested: collected,
       });
       if (result !== null) {
@@ -558,12 +557,13 @@ function shouldVisitNested(
   path: string,
   state: RuntimeState,
 ): boolean {
-  const seen = state.nestedSeen.get(instance);
+  const nestedSeen = state.nestedSeen ??= new WeakMap<object, Set<string>>();
+  const seen = nestedSeen.get(instance);
   if (seen?.has(path) === true) {
     return false;
   }
   if (seen === undefined) {
-    state.nestedSeen.set(instance, new Set<string>([path]));
+    nestedSeen.set(instance, new Set<string>([path]));
   } else {
     seen.add(path);
   }

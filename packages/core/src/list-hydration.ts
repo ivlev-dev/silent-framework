@@ -31,7 +31,7 @@ function resolveFallback(value: unknown): unknown {
 
 function preseed<T, S extends ListItemHandle>(
   props: ForProps<T>,
-  fallback: unknown,
+  fallback: () => unknown,
   hasFallback: boolean,
   outer: ListWindow | null,
   parentOwner: Owner | null,
@@ -57,7 +57,7 @@ function preseed<T, S extends ListItemHandle>(
   let fallbackSeed: Node[] = [];
   if (items.length === 0 && hasFallback) {
     const window = beginRegion(outer, endAnchor);
-    const value = withWindow(window, resolveFallback, fallback);
+    const value = withWindow(window, () => untrack(() => resolveFallback(fallback())));
     if (!regionMatches(window, endAnchor, value)) {
       return mismatch("содержимое fallback списка не совпало");
     }
@@ -130,7 +130,7 @@ function effect<T>(
   item: T,
 ): () => void {
   if (staticRows && anchor !== null && itemEnd !== null && staticRowAllowed(item)) {
-    withStaticHydration(run);
+    untrack(() => withStaticHydration(run));
     return noopCleanup;
   }
   return hydratedEffect(run) ?? noopCleanup;

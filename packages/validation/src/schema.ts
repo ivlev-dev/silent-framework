@@ -1,3 +1,5 @@
+import { constructorOf } from "./property.js";
+
 export const SCHEMA_SYMBOL: symbol = Symbol.for(
   "silent.validation.schema",
 );
@@ -82,6 +84,8 @@ const MISSING: unique symbol = Symbol("silent.validation.schema.missing");
 
 interface ClassCacheEntry {
   readonly raw: unknown;
+  readonly rawFields: unknown;
+  readonly rawVersion: unknown;
   readonly schema: ClassSchema | null;
 }
 
@@ -96,7 +100,7 @@ interface InstanceCacheEntry {
 const instanceCache = new WeakMap<Function, InstanceCacheEntry>();
 
 function resolveVersion(ctor: Function, version: unknown): number | undefined {
-  if (version === undefined) {
+  if (typeof version !== "number") {
     return undefined;
   }
   if (version !== SCHEMA_VERSION) {
@@ -130,7 +134,7 @@ function parseClassSchema(ctor: Function, own: unknown): ClassSchema | null {
       ? { fields: candidate.fields }
       : { version, fields: candidate.fields };
   }
-  if (Object.hasOwn(own, "version")) {
+  if (Object.hasOwn(own, "version") && typeof candidate.version === "number") {
     resolveVersion(ctor, candidate.version);
     throw new Error(
       `Неверный формат схемы для класса ${className(ctor)}: отсутствует карта fields`,
@@ -139,31 +143,66 @@ function parseClassSchema(ctor: Function, own: unknown): ClassSchema | null {
   return { fields: own as FieldSchemaMap };
 }
 
+function classCacheValid(cached: ClassCacheEntry, raw: unknown): boolean {
+  if (cached.raw !== raw) {
+    return false;
+  }
+  if (typeof raw !== "object" || raw === null) {
+    return true;
+  }
+  const candidate = raw as { readonly fields?: unknown; readonly version?: unknown };
+  return cached.rawFields === candidate.fields
+    && cached.rawVersion === candidate.version;
+}
+
 export function readClassSchema(ctor: Function): ClassSchema | null {
   const raw = rawSchema(ctor);
   const cached = classCache.get(ctor);
-  if (cached !== undefined && cached.raw === raw) {
+  if (cached !== undefined && classCacheValid(cached, raw)) {
     return cached.schema;
   }
   const schema = raw === MISSING ? null : parseClassSchema(ctor, raw);
-  classCache.set(ctor, { raw, schema });
+  const candidate = typeof raw === "object" && raw !== null
+    ? raw as { readonly fields?: unknown; readonly version?: unknown }
+    : undefined;
+  classCache.set(ctor, {
+    raw,
+    rawFields: candidate?.fields,
+    rawVersion: candidate?.version,
+    schema,
+  });
   return schema;
 }
 
 export function readInstanceSchema(instance: object): FieldSchemaMap | null {
-  const ctor: unknown = instance.constructor;
-  if (typeof ctor !== "function") {
+  const ctor = constructorOf(instance);
+  if (ctor === null) {
     return null;
   }
   const cached = instanceCache.get(ctor);
   if (cached !== undefined) {
     let unchanged = true;
-    for (let index = 0; index < cached.nodes.length; index += 1) {
-      const node = cached.nodes[index];
-      if (node === undefined || readClassSchema(node) !== cached.chain[index]) {
+    let current: unknown = ctor;
+    let index = cached.nodes.length - 1;
+    while (typeof current === "function") {
+      if (index < 0 || cached.nodes[index] !== current) {
         unchanged = false;
         break;
       }
+      index -= 1;
+      current = Object.getPrototypeOf(current);
+    }
+    if (unchanged && index === -1) {
+      for (let nodeIndex = 0; nodeIndex < cached.nodes.length; nodeIndex += 1) {
+        const node = cached.nodes[nodeIndex];
+        if (node === undefined
+          || readClassSchema(node) !== cached.chain[nodeIndex]) {
+          unchanged = false;
+          break;
+        }
+      }
+    } else {
+      unchanged = false;
     }
     if (unchanged) {
       return cached.fields;
@@ -180,9 +219,6 @@ export function readInstanceSchema(instance: object): FieldSchemaMap | null {
   const schemas: (ClassSchema | null)[] = [];
   for (const node of nodes) {
     schemas.push(readClassSchema(node));
-  }
-  if (cached !== undefined && sameChain(cached.chain, schemas)) {
-    return cached.fields;
   }
   let merged: Record<string, TypeSchema> | null = null;
   for (const schema of schemas) {
@@ -207,17 +243,3 @@ export function readInstanceSchema(instance: object): FieldSchemaMap | null {
   return merged;
 }
 
-function sameChain(
-  left: readonly (ClassSchema | null)[],
-  right: readonly (ClassSchema | null)[],
-): boolean {
-  if (left.length !== right.length) {
-    return false;
-  }
-  for (let index = 0; index < left.length; index += 1) {
-    if (left[index] !== right[index]) {
-      return false;
-    }
-  }
-  return true;
-}

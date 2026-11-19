@@ -112,7 +112,7 @@ interface ParsedEvent {
   readonly key: string;
 }
 
-const parseCache = new Map<string, TemplateParse>();
+const parseCache = new WeakMap<Document, Map<string, TemplateParse>>();
 const METADATA_PATTERN = /<(?:title|meta|link)[\s/>]/i;
 const listenerRegistry = new WeakMap<Element, ListenerHolder | Map<string, ListenerHolder>>();
 const delegatedInstalled = new Set<string>();
@@ -581,7 +581,12 @@ export function createMountPoint(
 function readTemplate(html: string, namespace?: TemplateNamespace): TemplateParse {
   const svg = namespace === "svg" || SVG_TEMPLATE.test(html);
   const key = svg ? "s:" + html : html;
-  const cached = parseCache.get(key);
+  let cache = parseCache.get(document);
+  if (cache === undefined) {
+    cache = new Map<string, TemplateParse>();
+    parseCache.set(document, cache);
+  }
+  const cached = cache.get(key);
   if (cached !== undefined) {
     return cached;
   }
@@ -609,7 +614,7 @@ function readTemplate(html: string, namespace?: TemplateNamespace): TemplatePars
     metadata,
     simple: !metadata && !html.includes("silent-insert"),
   };
-  parseCache.set(key, parsed);
+  cache.set(key, parsed);
   return parsed;
 }
 
@@ -800,7 +805,10 @@ function adoptMountParts(
   const holes = new Array<Comment>(plan.holes.length);
   const attrs = new Array<Element>(plan.attrs.length);
   for (let index = 0; index < plan.holes.length; index += 1) {
-    const entry = plan.holes[index]!;
+    const entry = plan.holes[index];
+    if (entry === undefined) {
+      return null;
+    }
     const node = resolvePath(root, entry, true);
     if (node === null || node.nodeType !== Node.COMMENT_NODE) {
       return null;
@@ -816,7 +824,10 @@ function adoptMountParts(
     holes[index] = node as Comment;
   }
   for (let index = 0; index < plan.attrs.length; index += 1) {
-    const entry = plan.attrs[index]!;
+    const entry = plan.attrs[index];
+    if (entry === undefined) {
+      return null;
+    }
     const node = resolvePath(root, entry, true);
     if (node === null || node.nodeType !== Node.ELEMENT_NODE) {
       return null;
@@ -827,8 +838,12 @@ function adoptMountParts(
     }
     attrs[index] = element;
   }
-  for (let index = 0; index < plan.strips.length; index += 1) {
-    const entry = plan.strips[index]!;
+  const strips = plan.strips ?? [];
+  for (let index = 0; index < strips.length; index += 1) {
+    const entry = strips[index];
+    if (entry === undefined) {
+      return null;
+    }
     const node = resolvePath(root, entry, true);
     if (node === null || node.nodeType !== Node.ELEMENT_NODE) {
       return null;
@@ -837,7 +852,7 @@ function adoptMountParts(
   for (let index = 0; index < attrs.length; index += 1) {
     attrs[index]?.removeAttribute(plan.attrs[index]?.key ?? (ATTR_MARKER + index));
   }
-  for (const entry of plan.strips) {
+  for (const entry of strips) {
     const element = resolvePath(root, entry, true) as Element;
     for (const name of entry.names) {
       element.removeAttribute(name);

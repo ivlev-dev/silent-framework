@@ -8,7 +8,7 @@ import {
   resolveValue,
 } from "./dom.js";
 import { extractMetadata } from "./metadata.js";
-import { currentWindow, isHydrating, mismatch } from "./hydration-proxy.js";
+import { currentWindow, isHydrating, mismatch, withoutHydration } from "./hydration-proxy.js";
 
 
 declare const __SILENT_HYDRATE__: boolean | undefined;
@@ -266,7 +266,7 @@ export function Portal(props: PortalProps): Node {
       if (disposed || host === null) {
         return;
       }
-      host.render(resolveValue(props.children));
+      host.render(withoutHydration(() => resolveValue(props.children)));
     });
 
     return null;

@@ -1,3 +1,4 @@
+import { constructorOf } from "./property.js";
 import type {
   ClassValidationState,
   FieldCondition,
@@ -127,8 +128,8 @@ export function installCondition(
 }
 
 export function validationStateFor(instance: object): ClassValidationState {
-  const ctor: unknown = instance.constructor;
-  if (typeof ctor !== "function") {
+  const ctor = constructorOf(instance);
+  if (ctor === null) {
     throw new TypeError("Валидируемое значение должно быть экземпляром класса");
   }
   return classStateFor(ctor);

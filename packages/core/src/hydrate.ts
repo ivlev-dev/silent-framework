@@ -138,15 +138,23 @@ async function hydrateWith(
     if (hasServerMarkup) {
       const context: HydrationContext = beginHydration(onMismatch);
       try {
+        const window = {
+          start: boundaryStart,
+          end: boundaryEnd,
+          cursor: boundaryStart.nextSibling,
+        };
         adopted = withWindow(
-          { start: boundaryStart, end: boundaryEnd, cursor: boundaryStart.nextSibling },
+          window,
           () => createRootResult(app, options, runtimeOptions, create),
         );
         const pending = complete(adopted.result.settled);
         if (pending !== null) {
           await pending;
         }
-        if (lightRoot && countClientNodes() > 0) {
+        if (
+          lightRoot
+          && (countClientNodes() > 0 || window.cursor !== boundaryEnd)
+        ) {
           disposeAdopted(adopted);
           adopted = null;
         }
