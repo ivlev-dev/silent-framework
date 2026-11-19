@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -50,9 +51,9 @@ function storeDirectory() {
   }
 }
 
-function install(tarballs, viteVersion) {
+function install(tarballs) {
   const store = storeDirectory();
-  const args = ["add", ...tarballs, `vite@${viteVersion}`];
+  const args = ["add", ...tarballs, "--config.auto-install-peers=false"];
   if (store !== null && store.length > 0) {
     args.push("--store-dir", store, "--package-import-method=copy");
   }
@@ -68,7 +69,13 @@ function install(tarballs, viteVersion) {
   execFileSync(pnpm, args, { cwd: project, stdio: "inherit" });
 }
 
-function writeProject(viteVersion) {
+function linkVite() {
+  const target = join(root, "node_modules", "vite");
+  assert.ok(existsSync(target), "в workspace нет node_modules/vite — выполните pnpm install");
+  symlinkSync(target, join(project, "node_modules", "vite"), "dir");
+}
+
+function writeProject() {
   mkdirSync(join(project, "src"), { recursive: true });
   writeFileSync(
     join(project, "package.json"),
@@ -78,7 +85,6 @@ function writeProject(viteVersion) {
         private: true,
         version: "0.0.0",
         type: "module",
-        devDependencies: { vite: viteVersion },
       },
       null,
       2,
@@ -107,17 +113,16 @@ function writeProject(viteVersion) {
   writeFileSync(
     join(project, "vite.config.ts"),
     [
-      'import { defineConfig } from "vite";',
       'import { silent } from "@ivlev-dev/silent-vite";',
       'import { validation } from "@ivlev-dev/silent-validation-vite";',
       "",
-      "export default defineConfig({",
+      "export default {",
       "  plugins: [silent(), validation()],",
       "  build: {",
       "    minify: false,",
       '    lib: { entry: "src/main.ts", formats: ["es"], fileName: "index" },',
       "  },",
-      "});",
+      "};",
       "",
     ].join("\n"),
   );
@@ -168,12 +173,10 @@ try {
   mkdirSync(project, { recursive: true });
 
   const tarballs = packedNames.map(packTarball);
-  const viteVersion = JSON.parse(
-    readFileSync(join(root, "node_modules", "vite", "package.json"), "utf8"),
-  ).version;
 
-  writeProject(viteVersion);
-  install(tarballs, viteVersion);
+  writeProject();
+  install(tarballs);
+  linkVite();
 
   for (const name of packedNames) {
     assert.ok(
@@ -184,7 +187,7 @@ try {
     );
   }
 
-  execFileSync(pnpm, ["exec", "vite", "build"], {
+  execFileSync(process.execPath, [join(root, "node_modules", "vite", "bin", "vite.js"), "build"], {
     cwd: project,
     stdio: "inherit",
   });
