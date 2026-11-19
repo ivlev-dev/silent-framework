@@ -565,7 +565,7 @@ describe("фаззинг гидратации списков", () => {
         setList(current);
         flushSync();
         const mutationContext = `${context}: мутация ${String(step)} ${mutation.operation}`;
-        if (iteration === 39) {
+        if (iteration === 39 && process.env["SILENT_DEBUG"] === "1") {
           console.log(
             "DEBUG39",
             mutation.operation,

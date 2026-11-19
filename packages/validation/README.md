@@ -106,7 +106,7 @@ export default defineConfig({
 
 | Опция | Тип | По умолчанию | Назначение |
 | --- | --- | --- | --- |
-| `include` | `RegExp` | `/\.(ts\|tsx)$/` | Файлы, которые обрабатывает плагин |
+| `include` | `RegExp` | `/\.(?:[cm]?ts\|tsx)$/` | Файлы, которые обрабатывает плагин; заменяет набор по умолчанию |
 | `exclude` | `RegExp` | `/node_modules/` | Файлы, которые плагин пропускает |
 | `tsconfig` | `string` | ближайший `tsconfig.json` | Путь к конфигу относительно корня проекта |
 | `base` | `string` | `"ValidationModel"` | Имя базового класса, потомки которого получают схему |
@@ -215,7 +215,7 @@ validate(instance, { types: false });
 | Объединения и пересечения | `string \| number`, `A & B`, `T \| null`, `T \| undefined` |
 | Массивы и кортежи | `T[]`, `ReadonlyArray<T>`, `[string, number]`, `[string, number?]`, `[string, ...number[]]` |
 | Объекты | `Record<K, V>`, `{ [key: string]: T }`, классы и интерфейсы, type alias’ы (структурно, включая рекурсивные) |
-| Коллекции | `Map`, `WeakMap`, `Set`, `WeakSet` |
+| Коллекции | `Map`, `Set`; `WeakMap`/`WeakSet` — только `instanceof`, без проверки ключей и значений |
 | Встроенные | `Promise`, `Date`, `RegExp`, `Error` и подклассы, `ArrayBuffer`, `SharedArrayBuffer`, `DataView`, typed arrays, `URL`, `URLSearchParams` |
 | Итераторы | `Iterable`, `Iterator`, `AsyncIterable`, `AsyncIterator` |
 | Enum | значения `enum` — как у `@IsEnum` |
@@ -232,7 +232,7 @@ validate(instance, { types: false });
 - Метаданные получают только классы с `accessor`-полями и аннотациями; файл должен попадать под `include` и не попадать под `exclude`.
 - Схема генерируется только для классов-потомков `ValidationModel`; класс без базового класса не валидируется по типу.
 - Optional-поле описывается как `public accessor age: number | undefined = undefined;`. Синтаксис `accessor age?: number` в TypeScript запрещён.
-- Условные, mapped, template и indexed-типы, а также generic-параметры не поддерживаются и пропускаются.
+- Mapped-утилиты (`Partial`, `Pick`, `Omit`, `Readonly`, `Required`) поддерживаются структурно. Условные, template и indexed-типы, а также generic-параметры без конкретизации пропускаются с диагностикой.
 - Если класс импортирован только как тип (`import type { Item }`), плагин добавляет namespace-импорт, чтобы проверять экземпляры в рантайме.
 - Плагин вставляет статический блок в бандл: без него `validate` увидит только правила декораторов.
 

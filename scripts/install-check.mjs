@@ -40,7 +40,7 @@ try {
     const tarball = readdirSync(packs).find((file) =>
       name === "silent"
         ? file === `ivlev-dev-silent-${manifest.version}.tgz`
-        : file.startsWith(`ivlev-dev-silent-${name}-${manifest.version}.tgz`),
+        : file === `ivlev-dev-silent-${name}-${manifest.version}.tgz`,
     );
     assert.ok(tarball, `не найден tarball для @ivlev-dev/silent-${name}`);
     tarballs.set(name, tarball);

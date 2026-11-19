@@ -318,6 +318,24 @@ describe("локализация и метки", () => {
     expect(result.errors[0]?.message).toBe("Поле Почта должно быть типа string");
     expect(result.errors[0]?.label).toBe("Почта");
   });
+
+  it("учитывает labels вложенных структур по полному пути", () => {
+    const profile = new Profile();
+    profile.address = new Address();
+    profile.address.city = 5 as unknown as string;
+    profile.tags = ["ok", 1 as unknown as string];
+
+    const result = validate(profile, {
+      labels: {
+        "address.city": "Город",
+        "tags[1]": "Тег",
+      },
+    });
+
+    expect(result.errors.map((error) => error.path)).toEqual(["tags[1]", "address.city"]);
+    expect(result.errors.map((error) => error.label)).toEqual(["Тег", "Город"]);
+    expect(result.errors.every((error) => error.message.includes(error.label))).toBe(true);
+  });
 });
 
 describe("асинхронный движок", () => {

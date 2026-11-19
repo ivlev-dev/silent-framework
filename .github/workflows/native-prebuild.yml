@@ -30,7 +30,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: native-${{ matrix.triple }}
-          path: packages/swc/native/*.node
+          path: |
+            packages/swc/native/*.node
+            packages/swc/native/.build-hash-*
+          include-hidden-files: true
           if-no-files-found: error
 
   pack:

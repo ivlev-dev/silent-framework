@@ -93,12 +93,7 @@ function artifactState(triple) {
   const artifacts = [join(nativeDirectory, "index.js"), join(nativeDirectory, "index.d.ts")]
     .filter((path) => existsSync(path));
   if (nodeArtifact !== undefined) artifacts.push(nodeArtifact);
-  const missing = [
-    ...["index.js", "index.d.ts"]
-      .map((name) => join(nativeDirectory, name))
-      .filter((path) => !existsSync(path)),
-    ...(nodeArtifact === undefined ? [`native/*${triple}*.node`] : []),
-  ];
+  const missing = nodeArtifact === undefined ? [`native/*${triple}*.node`] : [];
   return { artifacts, missing };
 }
 

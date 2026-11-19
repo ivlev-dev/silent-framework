@@ -475,11 +475,11 @@ describe("validate", () => {
     };
     const proc = (globalThis as unknown as {
       process: {
-        on(event: "unhandledRejection", listener: (reason: unknown) => void): void;
+        once(event: "unhandledRejection", listener: (reason: unknown) => void): void;
         off(event: "unhandledRejection", listener: (reason: unknown) => void): void;
       };
     }).process;
-    proc.on("unhandledRejection", onRejection);
+    proc.once("unhandledRejection", onRejection);
     try {
       expect(() => validate(new Box())).toThrow(AsyncRuleError);
       await new Promise<void>((resolve) => {
@@ -551,6 +551,16 @@ describe("validate", () => {
     expect(() => validate(null as unknown as object)).toThrow(TypeError);
     expect(() => validate(null as unknown as object)).toThrow(/объектом/);
     expect(() => validate("text" as unknown as object)).toThrow(TypeError);
+  });
+
+  it("бросает TypeError для массива", () => {
+    expect(() => validate([] as unknown as object)).toThrow(TypeError);
+    expect(() => validate([{}] as unknown as object)).toThrow(/объектом/);
+  });
+
+  it("принимает Date и пустые объекты без полей", () => {
+    expect(validate(new Date())).toEqual({ valid: true, errors: [] });
+    expect(validate({})).toEqual({ valid: true, errors: [] });
   });
 
   it("бросает AsyncRuleError при синхронной проверке", () => {

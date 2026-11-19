@@ -14,6 +14,7 @@
 | `@ivlev-dev/silent-reactivity` | [reactivity.md](./reactivity.md) | сигналы, мемо, эффекты, глубокие прокси, store |
 | `@ivlev-dev/silent-di` | [di.md](./di.md) | асинхронный контейнер зависимостей |
 | `@ivlev-dev/silent-core` | [core.md](./core.md) | декораторы, ViewModel, компоненты, JSX runtime, HMR, Suspense, hydration |
+| `@ivlev-dev/silent-router` | [router.md](./router.md) | router: route-классы, `Link`, `RouterView`, guards/loaders, SSR |
 | `@ivlev-dev/silent-server` | [core.md](./core.md#ssr) | `renderToString` и серверный мини-DOM |
 | `@ivlev-dev/silent-swc` | [swc.md](./swc.md) | нативный Node-API addon |
 | `@ivlev-dev/silent-vite` | [vite.md](./vite.md) | Vite-плагин и его опции |

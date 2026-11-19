@@ -40,7 +40,9 @@ afterEach(() => {
 describe("гидрация light-компонента в слоте view", () => {
   it("не дублирует серверную разметку слота", async () => {
     const { html } = await renderToString(AppView as unknown as AnyComponent);
-    console.log("SERVER", html);
+    if (process.env["SILENT_DEBUG"] === "1") {
+      console.log("SERVER", html);
+    }
     const root = document.createElement("div");
     root.innerHTML = html;
     document.body.appendChild(root);
@@ -53,7 +55,9 @@ describe("гидрация light-компонента в слоте view", () =>
     });
     await handle.ready;
 
-    console.log("AFTER", root.innerHTML);
+    if (process.env["SILENT_DEBUG"] === "1") {
+      console.log("AFTER", root.innerHTML);
+    }
     expect(root.querySelectorAll("span").length).toBe(1);
     expect(root.textContent).toBe("client");
     expect(mismatches).toEqual([]);

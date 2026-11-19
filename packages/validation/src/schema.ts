@@ -78,12 +78,21 @@ function isFieldSchemaMap(value: unknown): value is FieldSchemaMap {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-const classCache = new WeakMap<Function, ClassSchema | null>();
+const MISSING: unique symbol = Symbol("silent.validation.schema.missing");
+
+interface ClassCacheEntry {
+  readonly raw: unknown;
+  readonly schema: ClassSchema | null;
+}
+
+const classCache = new WeakMap<Function, ClassCacheEntry>();
+
 interface InstanceCacheEntry {
   readonly nodes: readonly Function[];
   readonly chain: readonly (ClassSchema | null)[];
-  readonly fields: FieldSchemaMap;
+  readonly fields: FieldSchemaMap | null;
 }
+
 const instanceCache = new WeakMap<Function, InstanceCacheEntry>();
 
 function resolveVersion(ctor: Function, version: unknown): number | undefined {
@@ -99,30 +108,45 @@ function resolveVersion(ctor: Function, version: unknown): number | undefined {
   return SCHEMA_VERSION;
 }
 
-export function readClassSchema(ctor: Function): ClassSchema | null {
-  const cached = classCache.get(ctor);
-  if (cached !== undefined) {
-    return cached;
-  }
+function className(ctor: Function): string {
+  return ctor.name.length > 0 ? ctor.name : "anonymous";
+}
+
+function rawSchema(ctor: Function): unknown {
   if (!Object.hasOwn(ctor, SCHEMA_SYMBOL)) {
+    return MISSING;
+  }
+  return holder(ctor)[SCHEMA_SYMBOL];
+}
+
+function parseClassSchema(ctor: Function, own: unknown): ClassSchema | null {
+  if (typeof own !== "object" || own === null) {
     return null;
   }
-  const own: unknown = holder(ctor)[SCHEMA_SYMBOL];
-  let schema: ClassSchema | null = null;
-  if (typeof own === "object" && own !== null) {
-    const candidate = own as { readonly fields?: unknown; readonly version?: unknown };
-    if (isFieldSchemaMap(candidate.fields)) {
-      const version = resolveVersion(ctor, candidate.version);
-      schema = version === undefined
-        ? { fields: candidate.fields }
-        : { version, fields: candidate.fields };
-    } else {
-      schema = { fields: own as FieldSchemaMap };
-    }
+  const candidate = own as { readonly fields?: unknown; readonly version?: unknown };
+  if (isFieldSchemaMap(candidate.fields)) {
+    const version = resolveVersion(ctor, candidate.version);
+    return version === undefined
+      ? { fields: candidate.fields }
+      : { version, fields: candidate.fields };
   }
-  if (schema !== null) {
-    classCache.set(ctor, schema);
+  if (Object.hasOwn(own, "version")) {
+    resolveVersion(ctor, candidate.version);
+    throw new Error(
+      `Неверный формат схемы для класса ${className(ctor)}: отсутствует карта fields`,
+    );
   }
+  return { fields: own as FieldSchemaMap };
+}
+
+export function readClassSchema(ctor: Function): ClassSchema | null {
+  const raw = rawSchema(ctor);
+  const cached = classCache.get(ctor);
+  if (cached !== undefined && cached.raw === raw) {
+    return cached.schema;
+  }
+  const schema = raw === MISSING ? null : parseClassSchema(ctor, raw);
+  classCache.set(ctor, { raw, schema });
   return schema;
 }
 
@@ -165,11 +189,19 @@ export function readInstanceSchema(instance: object): FieldSchemaMap | null {
     if (schema === null) {
       continue;
     }
-    merged ??= {};
-    Object.assign(merged, schema.fields);
-  }
-  if (merged === null) {
-    return null;
+    merged ??= Object.create(null) as Record<string, TypeSchema>;
+    for (const key of Object.keys(schema.fields)) {
+      const descriptor = Object.getOwnPropertyDescriptor(schema.fields, key);
+      if (descriptor === undefined || !("value" in descriptor)) {
+        continue;
+      }
+      Object.defineProperty(merged, key, {
+        value: descriptor.value,
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+    }
   }
   instanceCache.set(ctor, { nodes, chain: schemas, fields: merged });
   return merged;

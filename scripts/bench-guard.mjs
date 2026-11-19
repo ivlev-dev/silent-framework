@@ -219,6 +219,12 @@ if (!existsSync(baselinePath)) {
 }
 
 const baseline = JSON.parse(readFileSync(baselinePath, "utf8"));
+const missingBaseline = [...only].filter(
+  (section) => current[section] !== undefined && baseline[section] === undefined,
+);
+for (const section of missingBaseline) {
+  console.log(`warn  ${section}: в baseline нет метрик — проверка не выполняется`);
+}
 let checks = buildChecks(current, baseline);
 let ratioCheck = checks.find((check) => check.name === "browser.ratio");
 for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -271,4 +277,12 @@ if (failed > 0) {
   process.exit(1);
 }
 
+if (missingBaseline.length > 0) {
+  const message = `bench-guard: нет baseline для ${missingBaseline.join(", ")}`;
+  if (strict) {
+    console.error(message);
+    process.exit(1);
+  }
+  console.log(`${message} (добавьте через --update)`);
+}
 console.log("bench-guard: ok");

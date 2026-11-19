@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import ts from "typescript";
 import { validate } from "@ivlev-dev/silent-validation";
-import { generateValidationBlocks } from "../src/typegen.js";
+import { generateValidationBlocks, schemaHasClassRef } from "../src/typegen.js";
 import type { ValidationBlock } from "../src/typegen.js";
 
 const directory = mkdtempSync(join(tmpdir(), "silent-validation-typegen-"));
@@ -19,6 +19,7 @@ const COMPILER_OPTIONS: ts.CompilerOptions = {
   module: ts.ModuleKind.ESNext,
   moduleResolution: ts.ModuleResolutionKind.Bundler,
   lib: ["lib.es2022.d.ts", "lib.dom.d.ts"],
+  types: ["node"],
   skipLibCheck: true,
   noEmit: true,
 };
@@ -110,6 +111,86 @@ function applyBlocks(text: string, blocks: readonly ValidationBlock[]): string {
     result = `${result.slice(0, block.position)}${block.code}${result.slice(block.position)}`;
   }
   return result;
+}
+
+function execute(applied: string, names: readonly string[]): Readonly<Record<string, unknown>> {
+  const js = ts.transpileModule(applied, {
+    compilerOptions: {
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.CommonJS,
+      useDefineForClassFields: true,
+    },
+  }).outputText;
+  const exports: Record<string, unknown> = {};
+  const module = { exports };
+  const assignments = names
+    .map((name) => `${JSON.stringify(name)}: typeof ${name} === "undefined" ? undefined : ${name}`)
+    .join(", ");
+  const factory = new Function(
+    "exports",
+    "module",
+    `${js}\nmodule.exports = Object.assign({}, module.exports, { ${assignments} });\n`,
+  );
+  factory(exports, module);
+  const result: Record<string, unknown> = {};
+  for (const name of names) {
+    const value = module.exports[name];
+    if (value === undefined) {
+      throw new Error(`не удалось получить ${name} из выполненного модуля`);
+    }
+    result[name] = value;
+  }
+  return result;
+}
+
+function executeSource(source: string, names: readonly string[]): Readonly<Record<string, unknown>> {
+  return execute(applyBlocks(source, blocksFor(source)), names);
+}
+
+function qualifiedName(symbol: ts.Symbol): string {
+  const parts: string[] = [];
+  let node: ts.Node | undefined = symbol.valueDeclaration ?? symbol.declarations?.[0];
+  while (node !== undefined && !ts.isSourceFile(node)) {
+    if (ts.isModuleDeclaration(node) && ts.isIdentifier(node.name)) {
+      parts.unshift(node.name.text);
+    } else if (
+      (ts.isClassDeclaration(node) || ts.isClassExpression(node))
+      && node.name !== undefined
+    ) {
+      parts.unshift(node.name.text);
+    }
+    node = node.parent;
+  }
+  return parts.length > 0 ? parts.join(".") : symbol.getName();
+}
+
+function blocksWithRuntimeRef(
+  source: string,
+  runtimeRef: (symbol: ts.Symbol) => string,
+): readonly ValidationBlock[] {
+  const { sourceFile, checker } = programFor(source);
+  return generateValidationBlocks({ sourceFile, checker, runtimeRef });
+}
+
+function executeWithQualifiedRefs(
+  source: string,
+  names: readonly string[],
+): Readonly<Record<string, unknown>> {
+  const blocks = blocksWithRuntimeRef(source, qualifiedName);
+  return execute(applyBlocks(source, blocks), names);
+}
+
+interface Constructed {
+  new (): object;
+}
+
+function entity(
+  ctor: unknown,
+  values: Readonly<Record<string, unknown>>,
+): object {
+  const instance = new (ctor as Constructed)();
+  Object.assign(instance, values);
+  return instance;
 }
 
 describe("generateValidationBlocks", () => {
@@ -204,7 +285,7 @@ class Collections {
 `);
     expect(fields).toBe(
       '"tags": ["array","string"], "readonlyTags": ["array","number"], '
-      + '"tuple": ["tuple",["string",null]], "record": ["record","boolean"], '
+      + '"tuple": ["tuple",["string",["optional","number"]]], "record": ["record","boolean"], '
       + '"dictionary": ["record","date"], "map": ["mapof","string","number"], '
       + '"set": ["setof","string"], "readonlyMap": ["mapof","string","number"], '
       + '"readonlySet": ["setof","string"], "weakMap": "weakmap", '
@@ -559,7 +640,7 @@ class Tuples {
 `);
     expect(fields).toBe(
       '"rest": ["tuple",["string","number"],"boolean"], '
-      + '"optionalRest": ["tuple",["string",null],"boolean"], '
+      + '"optionalRest": ["tuple",["string",["optional","number"]],"boolean"], '
       + '"readonlyRest": ["tuple",["string"],"number"]',
     );
   });
@@ -572,7 +653,7 @@ class Plain {
 }
 `);
     expect(fields).toBe(
-      '"tuple": ["tuple",["string",null]], "readonlyTuple": ["tuple",["string","number"]]',
+      '"tuple": ["tuple",["string",["optional","number"]]], "readonlyTuple": ["tuple",["string","number"]]',
     );
   });
 
@@ -846,6 +927,297 @@ class Indexed {
     const code = blocksFor(lines.join("\n"))[0]!.code;
     expect(code).toContain('"value":"string"');
     expect(code).not.toMatch(/const lazy(\d+) = \["lazy",\(\)=>lazy\1\]/);
+  });
+
+  it("не читает встроенные имена из прототипа", () => {
+    const fields = fieldsFor(`
+class Proto {
+  accessor value: Object["valueOf"] = Object.prototype.valueOf;
+  accessor text: Object["toString"] = Object.prototype.toString;
+  accessor ctor: Object["constructor"] = Object;
+}
+`);
+    expect(fields).not.toContain("undefined");
+    expect(fields).toContain('"value": "function"');
+    expect(fields).toContain('"text": "function"');
+  });
+
+  it("сериализует Buffer как uint8array без структурного разворота", () => {
+    const fields = fieldsFor(`
+class BufferHolder {
+  accessor data: Buffer = Buffer.from("");
+}
+`);
+    expect(fields).toBe('"data": "uint8array"');
+  });
+
+  it("сериализует класс с базой Uint8Array как uint8array", () => {
+    const fields = fieldsFor(`
+class Bytes extends Uint8Array {}
+class BytesHolder {
+  accessor data: Bytes = new Bytes();
+}
+`, 0);
+    expect(fields).toBe('"data": "uint8array"');
+  });
+
+  it("сериализует Partial структурно с optional-полями", () => {
+    const fields = fieldsFor(`
+class PartialHolder {
+  accessor data: Partial<{ a: string; b: number }> = {};
+}
+`);
+    expect(fields).toBe('"data": ["object",{"a":["optional","string"],"b":["optional","number"]}]');
+  });
+
+  it("сериализует lib-утилиты структурно, а не как object", () => {
+    const fields = fieldsFor(`
+class Utilities {
+  accessor picked: Pick<{ a: string; b: number }, "a"> = { a: "" };
+  accessor omitted: Omit<{ a: string; b: number }, "a"> = { b: 0 };
+  accessor required: Required<{ a?: string }> = { a: "" };
+  accessor readonly: Readonly<{ a: string }> = { a: "" };
+  accessor list: ArrayLike<string> = [];
+  accessor thenable: PromiseLike<string> = Promise.resolve("");
+  accessor generator: Generator<number> = (function* () {})();
+  accessor iterator: IterableIterator<number> = [][Symbol.iterator]();
+}
+`);
+    expect(fields).toContain('"picked": ["object",{"a":"string"}]');
+    expect(fields).toContain('"omitted": ["object",{"b":"number"}]');
+    expect(fields).toContain('"required": ["object",{"a":"string"}]');
+    expect(fields).toContain('"readonly": ["object",{"a":"string"}]');
+    expect(fields).toContain('"list": ["intersection",[["object",{"length":"number"}],["record","string"]]]');
+    expect(fields).not.toContain('"thenable": "object"');
+    expect(fields).not.toContain('"generator": "object"');
+    expect(fields).not.toContain('"iterator": "object"');
+  });
+
+  it("не помечает Promise, Iterable и Weak-коллекции с недоступным классом", () => {
+    const blocks = blocksWithRuntimeRef(`
+class Money {
+  accessor amount: number = 0;
+}
+
+class Wallet {
+  accessor direct: Money = new Money();
+  accessor promised: Promise<Money> = Promise.resolve(new Money());
+  accessor iterable: Iterable<Money> = [];
+  accessor weak: WeakMap<Money, string> = new WeakMap();
+  accessor weakSet: WeakSet<Money> = new WeakSet();
+  accessor mapped: Map<string, Money> = new Map();
+}
+`, (symbol) => (symbol.getName() === "Money" ? "undefined" : symbol.getName()));
+    const wallet = blocks.find((block) => block.fields?.has("direct") === true);
+    expect(wallet).toBeDefined();
+    const unavailable = new Set(wallet!.unavailableFields ?? []);
+    expect(unavailable.has("direct")).toBe(true);
+    expect(unavailable.has("mapped")).toBe(true);
+    expect(unavailable.has("promised")).toBe(false);
+    expect(unavailable.has("iterable")).toBe(false);
+    expect(unavailable.has("weak")).toBe(false);
+    expect(unavailable.has("weakSet")).toBe(false);
+    expect(schemaHasClassRef(wallet!.fields!.get("direct")!)).toBe(true);
+    expect(schemaHasClassRef(wallet!.fields!.get("promised")!)).toBe(false);
+  });
+
+  it("не создаёт дублирующиеся record-ветки intersection", () => {
+    const fields = fieldsFor(`
+interface A {
+  [key: string]: string;
+}
+
+interface B {
+  [key: string]: string;
+}
+
+class Records {
+  accessor value: A & B = {};
+}
+`);
+    expect(fields).toBe('"value": ["record","string"]');
+  });
+
+  it("диагностирует symbol-свойства и не-Identifier accessor'ы", () => {
+    const messages: string[] = [];
+    const { sourceFile, checker } = programFor(`
+const key = Symbol("key");
+
+interface Tagged {
+  [key]: string;
+  label: string;
+}
+
+class Hidden {
+  accessor [key]: string = "";
+  accessor "a-b": number = 0;
+  accessor ok: string = "";
+  accessor tagged: Tagged = { label: "" };
+}
+`);
+    const blocks = generateValidationBlocks({
+      sourceFile,
+      checker,
+      runtimeRef: (symbol) => symbol.getName(),
+      diagnostics: (message) => messages.push(message),
+    });
+    expect(blocks[0]!.code).toContain('"ok": "string"');
+    expect(messages.some((message) => message.includes("Hidden.[key]") && message.includes("пропущено"))).toBe(true);
+    expect(messages.some((message) => message.includes("Hidden.a-b") && message.includes("пропущено"))).toBe(true);
+    expect(messages.some((message) => message.includes("символьное свойство"))).toBe(true);
+  });
+
+  it("бросает ошибку на не-Identifier accessor в strict-режиме", () => {
+    const { sourceFile, checker } = programFor(`
+const key = Symbol("key");
+class StrictHidden {
+  accessor [key]: string = "";
+}
+`);
+    expect(() => generateValidationBlocks({
+      sourceFile,
+      checker,
+      runtimeRef: (symbol) => symbol.getName(),
+      strict: true,
+    })).toThrow(/StrictHidden\.\[key\].*пропущено/);
+  });
+
+  it("деградирует контейнеры с unknown, не теряя поле", () => {
+    const fields = fieldsFor(`
+class Unknowns {
+  accessor mapped: Map<string, unknown> = new Map();
+  accessor set: Set<unknown> = new Set();
+  accessor list: Array<unknown> = [];
+  accessor record: Record<string, unknown> = {};
+}
+`);
+    expect(fields).toBe(
+      '"mapped": "map", "set": "set", '
+      + '"list": ["array",["union",["string","number","boolean","bigint","symbol","object","function","undefined","null"]]], '
+      + '"record": "object"',
+    );
+  });
+
+  it("превращает числовой index signature в record", () => {
+    const fields = fieldsFor(`
+interface NumericIndex {
+  [index: number]: string;
+}
+
+class NumericIndexHolder {
+  accessor value: NumericIndex = {};
+}
+`);
+    expect(fields).toBe('"value": ["record","string"]');
+  });
+
+  it("исполняет сгенерированную схему для lazy-рекурсии", () => {
+    const { Tree } = executeSource(`
+interface LinkedNode {
+  value: string;
+  next: LinkedNode | null;
+}
+
+class Tree {
+  accessor head: LinkedNode | null = null;
+}
+`, ["Tree"]);
+    const valid = entity(Tree, {
+      head: { value: "a", next: { value: "b", next: null } },
+    });
+    expect(validate(valid).valid).toBe(true);
+    const invalid = entity(Tree, {
+      head: { value: "a", next: { value: 1, next: null } },
+    });
+    expect(validate(invalid).valid).toBe(false);
+  });
+
+  it("исполняет сгенерированную схему для union", () => {
+    const { Flags } = executeSource(`
+class Flags {
+  accessor id: string | number = "";
+}
+`, ["Flags"]);
+    expect(validate(entity(Flags, { id: "x" })).valid).toBe(true);
+    expect(validate(entity(Flags, { id: 1 })).valid).toBe(true);
+    expect(validate(entity(Flags, { id: true })).valid).toBe(false);
+  });
+
+  it("исполняет сгенерированную схему для optional-кортежа", () => {
+    const source = `
+class Box {
+  accessor pair: [string, number?] = ["a"];
+  accessor rest: [string, number?, ...boolean[]] = ["a"];
+}
+`;
+    const blocks = blocksWithRuntimeRef(source, (symbol) => symbol.getName());
+    const pair = blocks[0]!.fields?.get("pair");
+    const rest = blocks[0]!.fields?.get("rest");
+    expect(pair?.kind).toBe("tuple");
+    expect(rest?.kind).toBe("tuple");
+    if (pair?.kind === "tuple") {
+      expect(pair.elements[1]).toEqual({ kind: "optional", inner: { kind: "primitive", name: "number" } });
+    }
+    if (rest?.kind === "tuple") {
+      expect(rest.elements[1]).toEqual({ kind: "optional", inner: { kind: "primitive", name: "number" } });
+      expect(rest.rest).toEqual({ kind: "primitive", name: "boolean" });
+    }
+    const { Box } = executeSource(source, ["Box"]);
+    expect(validate(entity(Box, { pair: ["a", 1], rest: ["a", 1, true] })).valid).toBe(true);
+    expect(validate(entity(Box, { pair: ["a", "bad"] })).valid).toBe(false);
+  });
+
+  it("исполняет сгенерированную схему для Partial", () => {
+    const { PartialProfile } = executeSource(`
+class PartialProfile {
+  accessor data: Partial<{ a: string; b: number }> = {};
+}
+`, ["PartialProfile"]);
+    expect(validate(entity(PartialProfile, { data: { a: "x" } })).valid).toBe(true);
+    expect(validate(entity(PartialProfile, { data: { b: 1 } })).valid).toBe(true);
+    expect(validate(entity(PartialProfile, { data: { a: 1 } })).valid).toBe(false);
+  });
+
+  it("исполняет сгенерированную схему для class expression", () => {
+    const { Inline } = executeSource(
+      "const Inline = class {\n  accessor n: number = 0;\n};\n",
+      ["Inline"],
+    );
+    expect(validate(entity(Inline, { n: 1 })).valid).toBe(true);
+    expect(validate(entity(Inline, { n: "x" })).valid).toBe(false);
+  });
+
+  it("исполняет сгенерированную схему с namespace-ссылкой", () => {
+    const { Wallet, Models } = executeWithQualifiedRefs(`
+namespace Models {
+  export class Money {
+    accessor amount: number = 0;
+  }
+}
+
+class Wallet {
+  accessor money: Models.Money = new Models.Money();
+}
+`, ["Wallet", "Models"]);
+    const { Money } = Models as { readonly Money: unknown };
+    const valid = entity(Wallet, { money: entity(Money, { amount: 1 }) });
+    expect(validate(valid).valid).toBe(true);
+    const invalid = entity(Wallet, { money: {} });
+    expect(validate(invalid).valid).toBe(false);
+  });
+
+  it("сохраняет CRLF и не оставляет мёртвые lazy-определения", () => {
+    const source = "interface CrlfNode {\r\n  value: string;\r\n  next: CrlfNode | null;\r\n}\r\n\r\nclass CrlfLazy {\r\n  accessor root: CrlfNode | null = null;\r\n}\r\n";
+    const blocks = blocksFor(source);
+    expect(blocks).toHaveLength(1);
+    const applied = applyBlocks(source, blocks);
+    expect(applied).toContain("\r\n    const lazy0 = ");
+    expect(applied.replace(/\r\n/g, "")).not.toContain("\n");
+    expect(applied.match(/const lazy0/g)).toHaveLength(1);
+    const names = new Set([...applied.matchAll(/\blazy\d+\b/g)].map((match) => match[0]));
+    for (const name of names) {
+      expect(applied.split(name).length - 1).toBeGreaterThan(1);
+    }
   });
 
   it("сохраняет CRLF в вставляемом блоке", () => {

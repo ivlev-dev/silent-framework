@@ -706,6 +706,52 @@ describe("createI18nextResolver", () => {
     expect(options[0]?.lng).toBe("en");
   });
 
+  it("передаёт count из params", () => {
+    const options: Array<Readonly<Record<string, unknown>> | undefined> = [];
+    const i18n = {
+      t(_key: string, received?: Readonly<Record<string, unknown>>): string {
+        options.push(received);
+        return "translated";
+      },
+    };
+
+    resolveMessage(
+      contextOf({
+        rule: "arrayMinSize",
+        key: "validation.arrayMinSize",
+        label: "Теги",
+        params: { min: 3 },
+        value: null,
+      }),
+      { locale: "ru", resolve: createI18nextResolver(i18n) },
+    );
+
+    expect(options[0]?.count).toBe(3);
+  });
+
+  it("передаёт count из длины значения", () => {
+    const options: Array<Readonly<Record<string, unknown>> | undefined> = [];
+    const i18n = {
+      t(_key: string, received?: Readonly<Record<string, unknown>>): string {
+        options.push(received);
+        return "translated";
+      },
+    };
+
+    resolveMessage(
+      contextOf({
+        rule: "minLength",
+        key: "validation.minLength",
+        label: "Имя",
+        params: {},
+        value: "abc",
+      }),
+      { locale: "ru", resolve: createI18nextResolver(i18n) },
+    );
+
+    expect(options[0]?.count).toBe(3);
+  });
+
   it("возвращает undefined, если t вернул не строку", () => {
     const i18n = {
       t: (() => null) as unknown as (

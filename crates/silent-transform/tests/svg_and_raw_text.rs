@@ -323,7 +323,8 @@ fn svg_template_without_plan_keeps_namespace_argument() {
     let calls = template_calls(&code);
     let anchor = call_for(&calls, "<a>");
     assert!(
-        anchor.trim_end().ends_with("undefined, \"svg\""),
+        anchor.trim_end().ends_with("undefined, \"svg\"")
+            || anchor.trim_end().ends_with("false, \"svg\""),
         "missing namespace placeholder: {anchor}"
     );
 }

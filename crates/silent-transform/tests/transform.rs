@@ -738,7 +738,10 @@ fn emits_static_marker_for_static_template_without_hydration() {
         Index::default(),
     );
     assert!(code.contains("_$templateHoles('<section"), "{code}");
-    assert!(code.contains(", false),") || code.contains(", false);"), "{code}");
+    assert!(
+        code.contains(", false),") || code.contains(", false);"),
+        "{code}"
+    );
     assert!(!code.contains("holes:"), "{code}");
 }
 
@@ -764,6 +767,35 @@ fn keeps_marker_scan_for_dynamic_template_without_hydration() {
     );
     assert!(code.contains("_$templateHoles('<div"), "{code}");
     assert!(!code.contains("false"), "{code}");
+    assert!(!code.contains("holes:"), "{code}");
+}
+
+#[test]
+fn emits_static_marker_for_refused_static_template_with_hydration() {
+    for source in [
+        "const el = <p>hello</p>;",
+        "const el = <a href=\"/x\">link</a>;",
+        "const el = <div><title>t</title></div>;",
+        "const el = <div><meta name=\"description\" content=\"x\" /></div>;",
+        "const el = <table><tbody><tr><td>x</td></tr></tbody></table>;",
+    ] {
+        let code = run(source, "/proj/src/view.tsx", Index::default());
+        assert!(code.contains("_$templateHoles("), "{source}: {code}");
+        assert!(code.contains(", false)"), "{source}: {code}");
+        assert!(!code.contains("holes:"), "{source}: {code}");
+    }
+}
+
+#[test]
+fn keeps_no_plan_for_dynamic_refused_template_with_hydration() {
+    let code = run(
+        "const el = <p>{x}</p>;",
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(code.contains("_$templateHoles("), "{code}");
+    assert!(code.contains("<!--silent-hole-0-->"), "{code}");
+    assert!(!code.contains(", false"), "{code}");
     assert!(!code.contains("holes:"), "{code}");
 }
 

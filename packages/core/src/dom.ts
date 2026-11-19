@@ -43,6 +43,7 @@ import {
   regionMatches,
   settleWindow,
 } from "./hydration-cursor.js";
+import { resolvePath } from "./plan-paths.js";
 
 
 declare const __SILENT_HYDRATE__: boolean | undefined;
@@ -95,7 +96,7 @@ export interface TemplatePlan {
 
 export type TemplateNamespace = "svg";
 
-export { resolvePath } from "./plan-paths.js";
+export { resolvePath };
 
 export interface TemplateParse {
   readonly content: DocumentFragment;
@@ -789,6 +790,62 @@ export function collectPartsMany(nodes: readonly Node[]): { holes: Comment[]; at
   return { holes: denseParts(holesByIndex), attrs: denseParts(attrsByIndex) };
 }
 
+function adoptMountParts(
+  root: Node,
+  plan: TemplatePlan,
+): { holes: Comment[]; attrs: Element[] } | null {
+  if (isServerMode()) {
+    return null;
+  }
+  const holes = new Array<Comment>(plan.holes.length);
+  const attrs = new Array<Element>(plan.attrs.length);
+  for (let index = 0; index < plan.holes.length; index += 1) {
+    const entry = plan.holes[index]!;
+    const node = resolvePath(root, entry, true);
+    if (node === null || node.nodeType !== Node.COMMENT_NODE) {
+      return null;
+    }
+    const data = (node as Comment).data;
+    if (
+      entry.key !== undefined
+        ? data !== entry.key
+        : markerIndex(data, HOLE_MARKER) !== index
+    ) {
+      return null;
+    }
+    holes[index] = node as Comment;
+  }
+  for (let index = 0; index < plan.attrs.length; index += 1) {
+    const entry = plan.attrs[index]!;
+    const node = resolvePath(root, entry, true);
+    if (node === null || node.nodeType !== Node.ELEMENT_NODE) {
+      return null;
+    }
+    const element = node as Element;
+    if (!element.hasAttribute(entry.key ?? (ATTR_MARKER + index))) {
+      return null;
+    }
+    attrs[index] = element;
+  }
+  for (let index = 0; index < plan.strips.length; index += 1) {
+    const entry = plan.strips[index]!;
+    const node = resolvePath(root, entry, true);
+    if (node === null || node.nodeType !== Node.ELEMENT_NODE) {
+      return null;
+    }
+  }
+  for (let index = 0; index < attrs.length; index += 1) {
+    attrs[index]?.removeAttribute(plan.attrs[index]?.key ?? (ATTR_MARKER + index));
+  }
+  for (const entry of plan.strips) {
+    const element = resolvePath(root, entry, true) as Element;
+    for (const name of entry.names) {
+      element.removeAttribute(name);
+    }
+  }
+  return { holes, attrs };
+}
+
 export function templateHoles(
   html: string,
   plan?: TemplatePlan | false,
@@ -840,12 +897,25 @@ function createClientTemplateHoles(
   };
   const cloneNode = (): Node => {
     const clone = parse().content.cloneNode(true) as DocumentFragment;
-    return clone.childNodes.length === 1 ? clone.firstChild ?? clone : clone;
+    const single = clone.firstChild;
+    if (clone.childNodes.length !== 1 || single === null) {
+      return clone;
+    }
+    return single.nodeType === Node.COMMENT_NODE
+      && markerIndex((single as Comment).data, HOLE_MARKER) !== null
+      ? clone
+      : single;
   };
   const create = (): TemplateClone => {
     const node = mark(cloneNode());
     if (staticParts) {
       return { node, holes: EMPTY_HOLES, attrs: EMPTY_ATTRS };
+    }
+    if (providedPlan !== undefined) {
+      const adopted = adoptMountParts(node, providedPlan);
+      if (adopted !== null) {
+        return { node, ...adopted };
+      }
     }
     return { node, ...collectPartsMany([node]) };
   };

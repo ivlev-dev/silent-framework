@@ -34,6 +34,11 @@ import type { MountHandle, MountOptions } from "./mount.js";
 import { getViewMeta } from "./component-lite.js";
 import type { AnyComponent } from "./types.js";
 
+declare const __SILENT_HYDRATE__: boolean | undefined;
+
+const HYDRATE =
+  typeof __SILENT_HYDRATE__ === "undefined" || __SILENT_HYDRATE__;
+
 let runtimes: Promise<void> | null = null;
 let runtimesReady = false;
 let hydrationQueue: Promise<void> = /*#__PURE__*/ Promise.resolve();
@@ -199,6 +204,9 @@ async function hydrateRoot(
   app: AnyComponent,
   options: MountOptions,
 ): Promise<MountHandle> {
+  if (!HYDRATE) {
+    throw new Error("Сборка собрана с hydrate:false — гидрация недоступна");
+  }
   const element = resolveTarget(target);
   if (!runtimesReady) {
     await ensureRuntimes();

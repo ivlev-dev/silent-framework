@@ -121,7 +121,8 @@ export interface FieldSlot {
 
 export interface ClassValidationState {
   readonly fields: Map<FieldKey, FieldSlot>;
-  readonly tokens: Set<symbol>;
+  readonly tokens: Map<symbol, Set<FieldKey>>;
+  revision: number;
 }
 
 export type RuleDecorator = <C extends object, V>(

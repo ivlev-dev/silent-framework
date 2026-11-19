@@ -46,13 +46,13 @@ describe("клиентский mount шаблона: части ищутся п�
     expect(clone.attrs).toHaveLength(0);
   });
 
-  it("обходит дерево, когда план содержит дыры", () => {
+  it("находит части по путям плана без обхода дерева", () => {
     const template = templateHoles(
       "<div><span><!--silent-hole-0--></span></div>",
       holePlan([0, 0, 0]),
     );
 
-    expect(countAttributeReads(() => template())).toBeGreaterThan(0);
+    expect(countAttributeReads(() => template())).toBe(0);
     expect(template().holes[0]?.data).toBe("silent-hole-0");
   });
 

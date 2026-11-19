@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { validate } from "../src/engine";
+import { validate, validateAsync } from "../src/engine";
 import { ruleDecorator } from "../src/rule";
 import { Groups, Label, Optional, ValidateIf } from "../src/modifiers";
-import type { RuleDefinition, ValidationResult } from "../src/types";
+import { AsyncRuleError } from "../src/types";
+import type {
+  InstancePredicate,
+  RuleDefinition,
+  ValidationResult,
+} from "../src/types";
 
 const required: RuleDefinition = {
   name: "required",
@@ -84,6 +89,101 @@ describe("ValidateIf", () => {
     const result = validate(new Mixed());
 
     expect(result.errors.map((error) => error.field)).toEqual(["always"]);
+  });
+
+  it("сообщает об асинхронном предикате и гасит отклонённый промис", async () => {
+    const predicate = (() => Promise.reject(new Error("boom"))) as unknown as InstancePredicate;
+
+    class Conditional {
+      @ValidateIf(predicate)
+      @ruleDecorator(required)
+      public accessor name = "";
+    }
+
+    const rejections: unknown[] = [];
+    const onRejection = (reason: unknown): void => {
+      rejections.push(reason);
+    };
+    const proc = (globalThis as unknown as {
+      process: {
+        once(event: "unhandledRejection", listener: (reason: unknown) => void): void;
+        off(event: "unhandledRejection", listener: (reason: unknown) => void): void;
+      };
+    }).process;
+
+    proc.once("unhandledRejection", onRejection);
+    try {
+      let thrown: unknown;
+      try {
+        validate(new Conditional());
+      } catch (error: unknown) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(AsyncRuleError);
+      expect((thrown as AsyncRuleError).field).toBe("name");
+      expect((thrown as AsyncRuleError).rule).toBe("validateIf");
+
+      await expect(validateAsync(new Conditional())).rejects.toBeInstanceOf(AsyncRuleError);
+
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 0);
+      });
+    } finally {
+      proc.off("unhandledRejection", onRejection);
+    }
+
+    expect(rejections).toEqual([]);
+  });
+});
+
+describe("повторное использование декоратора", () => {
+  it("применяет один экземпляр правила к нескольким полям", () => {
+    const decorator = ruleDecorator(required);
+
+    class Model {
+      @decorator
+      public accessor first = "";
+
+      @decorator
+      public accessor second = "";
+    }
+
+    expect(validate(new Model()).errors.map((error) => error.field))
+      .toEqual(["first", "second"]);
+  });
+
+  it("применяет один экземпляр Label к нескольким полям", () => {
+    const label = Label("Общее");
+
+    class Model {
+      @label
+      @ruleDecorator(required)
+      public accessor first = "";
+
+      @label
+      @ruleDecorator(required)
+      public accessor second = "";
+    }
+
+    expect(validate(new Model()).errors.map((error) => error.label))
+      .toEqual(["Общее", "Общее"]);
+  });
+
+  it("применяет один экземпляр Optional к нескольким полям", () => {
+    const optional = Optional();
+
+    class Model {
+      @optional
+      @ruleDecorator(required)
+      public accessor first: string | undefined = undefined;
+
+      @optional
+      @ruleDecorator(required)
+      public accessor second: string | undefined = undefined;
+    }
+
+    expect(validate(new Model()).valid).toBe(true);
   });
 });
 

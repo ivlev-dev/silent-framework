@@ -75,6 +75,32 @@ fn ssr_falls_back_for_metadata() {
 }
 
 #[test]
+fn ssr_fallback_keeps_lists_inside_holes() {
+    let code = run(
+        r#"import { For, Index } from "@ivlev-dev/silent-core";
+const el = <div class={active}>{label}<For each={items}>{(item) => <li>{item}</li>}</For><Index each={items}>{(item) => <b>{item()}</b>}</Index></div>;"#,
+        json!({ "ssr": true }),
+    );
+    assert!(!code.contains("parent:"), "{code}");
+    assert!(!code.contains("marker:"), "{code}");
+    assert!(code.contains("_$component(For"), "{code}");
+    assert!(code.contains("_$component(Index"), "{code}");
+    assert_eq!(code.matches("_$insert(").count(), 3, "{code}");
+}
+
+#[test]
+fn ssr_fallback_keeps_for_inside_metadata_template() {
+    let code = run(
+        r#"import { For } from "@ivlev-dev/silent-core";
+const el = <div><title>Список</title><For each={items}>{(item) => <li>{item}</li>}</For></div>;"#,
+        json!({ "ssr": true }),
+    );
+    assert!(!code.contains("parent:"), "{code}");
+    assert!(!code.contains("marker:"), "{code}");
+    assert!(code.contains("_$insert("), "{code}");
+}
+
+#[test]
 fn ssr_is_off_by_default() {
     let code = run(r#"const el = <div>{name}</div>;"#, json!({}));
     assert!(code.contains("_$templateHoles("), "{code}");

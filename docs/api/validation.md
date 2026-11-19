@@ -44,7 +44,7 @@ export default defineConfig({
 
 | Опция | Тип | По умолчанию | Назначение |
 | --- | --- | --- | --- |
-| `include` | `RegExp` | `/\.(ts\|tsx)$/` | Файлы, которые обрабатывает плагин |
+| `include` | `RegExp` | `/\.(?:[cm]?ts\|tsx)$/` | Файлы, которые обрабатывает плагин; заменяет набор по умолчанию |
 | `exclude` | `RegExp` | `/node_modules/` | Файлы, которые пропускаются |
 | `tsconfig` | `string` | ближайший `tsconfig.json` | Путь к конфигу относительно корня проекта |
 | `base` | `string` | `"ValidationModel"` | Имя базового класса, потомки которого получают схему |
@@ -87,11 +87,11 @@ const result = validate(order);
 
 **Отключение.** `validate(instance, { types: false })` оставляет только правила декораторов. По умолчанию `types: true`. Каскад управляется `cascade` (по умолчанию `true`) глобально через `configureValidation` или на вызов.
 
-**Поддерживаемые типы.** Примитивы (`string`, `number`, `boolean`, `bigint`, `symbol`, `object`, `function`, `undefined`, `null`, `void`, `never`), литералы, union и intersection (включая `| null` и `| undefined`), массивы и `ReadonlyArray`, кортежи с optional-элементами и rest-хвостом (`[string, ...number[]]`), `Record` и строковые index-signature, `Map`/`WeakMap`/`Set`/`WeakSet`, `Promise`, `Date`, `RegExp`, `Error` и подклассы, `ArrayBuffer`/`SharedArrayBuffer`/`DataView`, typed arrays, `URL`/`URLSearchParams`, `Iterable`/`Iterator`/`AsyncIterable`/`AsyncIterator`, значения `enum`, пользовательские классы (вложенная проверка экземпляра) и структурные интерфейсы/type alias’ы (включая рекурсивные — через ленивые ссылки).
+**Поддерживаемые типы.** Примитивы (`string`, `number`, `boolean`, `bigint`, `symbol`, `object`, `function`, `undefined`, `null`, `void`, `never`), литералы, union и intersection (включая `| null` и `| undefined`), массивы и `ReadonlyArray`, кортежи с optional-элементами и rest-хвостом (`[string, ...number[]]`), `Record` и строковые index-signature, `Map`/`Set` (и `WeakMap`/`WeakSet` — только `instanceof`, без проверки ключей и значений), `Promise`, `Date`, `RegExp`, `Error` и подклассы, `ArrayBuffer`/`SharedArrayBuffer`/`DataView`, typed arrays, `URL`/`URLSearchParams`, `Iterable`/`Iterator`/`AsyncIterable`/`AsyncIterator`, значения `enum`, пользовательские классы (вложенная проверка экземпляра) и структурные интерфейсы/type alias’ы (включая рекурсивные — через ленивые ссылки).
 
 **Стоимость.** Рантайм — около 3 µs на `validate` для 6 полей с вложенным классом и массивом; `types: false` — около 0.15 µs. TypeScript Program создаётся один раз на проект (~0.3–0.4 s холодная сборка для 120 файлов), повторные сборки/HMR используют кеш плагина.
 
-**Ограничения.** Проверяются только `accessor`-поля с явной аннотацией; обычные поля и поля без аннотации пропускаются. Схема генерируется только для классов-потомков `ValidationModel` (наследование может быть многоуровневым); класс без базового класса не валидируется по типу. Optional-поле описывается как `public accessor age: number | undefined = undefined;` — `?` для `accessor` в TypeScript запрещён. Условные, mapped, template и indexed-типы, а также generic-параметры не поддерживаются и пропускаются. Если класс импортирован только как тип, плагин добавляет namespace-импорт для рантайм-проверки. Метаданные попадают в бандл статическим блоком; без плагина типы не проверяются.
+**Ограничения.** Проверяются только `accessor`-поля с явной аннотацией; обычные поля и поля без аннотации пропускаются. Схема генерируется только для классов-потомков `ValidationModel` (наследование может быть многоуровневым); класс без базового класса не валидируется по типу. Optional-поле описывается как `public accessor age: number | undefined = undefined;` — `?` для `accessor` в TypeScript запрещён. Mapped-утилиты (`Partial`, `Pick`, `Omit`, `Readonly`, `Required`) поддерживаются структурно. Условные, template и indexed-типы, а также generic-параметры без конкретизации пропускаются с диагностикой (в `strict` — ошибка). Если класс импортирован только как тип, плагин добавляет namespace-импорт для рантайм-проверки. Метаданные попадают в бандл статическим блоком; без плагина типы не проверяются.
 
 ## Функции
 

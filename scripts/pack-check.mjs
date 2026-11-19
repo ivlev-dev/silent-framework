@@ -104,85 +104,87 @@ function runNegativeSelfCheck() {
 runNegativeSelfCheck();
 
 try {
-for (const [name, required] of Object.entries(expectations)) {
-  const directory = join(root, "packages", name);
-  const sourceManifest = JSON.parse(
-    readFileSync(join(directory, "package.json"), "utf8"),
-  );
-  const sourceFiles = Array.isArray(sourceManifest.files) ? sourceManifest.files : [];
-  const filesViolations = forbiddenManifestFiles(sourceFiles);
-  assert.deepEqual(
-    filesViolations,
-    [],
-    `@ivlev-dev/silent-${name}: поле files ссылается на запрещённые пути: ${filesViolations.join(", ")}`,
-  );
-
-  execFileSync(pnpm, ["pack", "--pack-destination", output], {
-    cwd: directory,
-    encoding: "utf8",
-  });
-  const expectedTarball =
-    name === "silent"
-      ? `ivlev-dev-silent-${sourceManifest.version}.tgz`
-      : `ivlev-dev-silent-${name}-${sourceManifest.version}.tgz`;
-  const tarball = readdirSync(output).find((file) => file === expectedTarball);
-  assert.ok(tarball, `не найден tarball для @ivlev-dev/silent-${name}`);
-  const file = join(output, tarball);
-  const entries = execFileSync("tar", ["-tzf", file], { encoding: "utf8" })
-    .split("\n")
-    .filter(Boolean);
-  for (const entry of required) {
-    assert.ok(entries.includes(entry), `@ivlev-dev/silent-${name}: нет ${entry}`);
-  }
-  assert.deepEqual(
-    forbiddenEntries(entries),
-    [],
-    `@ivlev-dev/silent-${name}: в tarball попали bench/crates/tests/node_modules/фикстуры`,
-  );
-  assert.ok(
-    !entries.some((entry) => entry.startsWith("package/node_modules/")),
-    `@ivlev-dev/silent-${name}: в tarball попал node_modules`,
-  );
-  if (name === "swc") {
-    assert.ok(
-      entries.some((entry) => entry.endsWith(".node")),
-      "@ivlev-dev/silent-swc: в tarball нет нативного addon",
+  for (const [name, required] of Object.entries(expectations)) {
+    const directory = join(root, "packages", name);
+    const sourceManifest = JSON.parse(
+      readFileSync(join(directory, "package.json"), "utf8"),
     );
-  }
-  const manifest = JSON.parse(
-    execFileSync("tar", ["-xOzf", file, "package/package.json"], {
+    const sourceFiles = Array.isArray(sourceManifest.files) ? sourceManifest.files : [];
+    const filesViolations = forbiddenManifestFiles(sourceFiles);
+    assert.deepEqual(
+      filesViolations,
+      [],
+      `@ivlev-dev/silent-${name}: поле files ссылается на запрещённые пути: ${filesViolations.join(", ")}`,
+    );
+
+    execFileSync(pnpm, ["pack", "--pack-destination", output], {
+      cwd: directory,
       encoding: "utf8",
-    }),
-  );
-  const publishedFiles = Array.isArray(manifest.files) ? manifest.files : [];
-  assert.deepEqual(
-    forbiddenManifestFiles(publishedFiles),
-    [],
-    `@ivlev-dev/silent-${name}: опубликованный files ссылается на запрещённые пути`,
-  );
-  const devDependencies = Object.keys(manifest.devDependencies ?? {});
-  const topLevel = new Set(
-    entries.map((entry) => entry.split("/")[1]).filter(Boolean),
-  );
-  for (const dependency of devDependencies) {
+    });
+    const expectedTarball =
+      name === "silent"
+        ? `ivlev-dev-silent-${sourceManifest.version}.tgz`
+        : `ivlev-dev-silent-${name}-${sourceManifest.version}.tgz`;
+    const tarball = readdirSync(output).find((file) => file === expectedTarball);
+    assert.ok(tarball, `не найден tarball для @ivlev-dev/silent-${name}`);
+    const file = join(output, tarball);
+    const entries = execFileSync("tar", ["-tzf", file], { encoding: "utf8" })
+      .split("\n")
+      .filter(Boolean);
+    for (const entry of required) {
+      assert.ok(entries.includes(entry), `@ivlev-dev/silent-${name}: нет ${entry}`);
+    }
+    assert.deepEqual(
+      forbiddenEntries(entries),
+      [],
+      `@ivlev-dev/silent-${name}: в tarball попали bench/crates/tests/node_modules/фикстуры`,
+    );
     assert.ok(
-      !topLevel.has(dependency),
-      `@ivlev-dev/silent-${name}: dev-зависимость ${dependency} попала в tarball`,
+      !entries.some((entry) => entry.startsWith("package/node_modules/")),
+      `@ivlev-dev/silent-${name}: в tarball попал node_modules`,
+    );
+    if (name === "swc") {
+      assert.ok(
+        entries.some((entry) => entry.endsWith(".node")),
+        "@ivlev-dev/silent-swc: в tarball нет нативного addon",
+      );
+    }
+    const manifest = JSON.parse(
+      execFileSync("tar", ["-xOzf", file, "package/package.json"], {
+        encoding: "utf8",
+      }),
+    );
+    const publishedFiles = Array.isArray(manifest.files) ? manifest.files : [];
+    assert.deepEqual(
+      forbiddenManifestFiles(publishedFiles),
+      [],
+      `@ivlev-dev/silent-${name}: опубликованный files ссылается на запрещённые пути`,
+    );
+    const devDependencies = Object.keys(manifest.devDependencies ?? {});
+    const topLevel = new Set(
+      entries.map((entry) => entry.split("/")[1]).filter(Boolean),
+    );
+    for (const dependency of devDependencies) {
+      assert.ok(
+        !topLevel.has(dependency),
+        `@ivlev-dev/silent-${name}: dev-зависимость ${dependency} попала в tarball`,
+      );
+    }
+    const dependencies = {
+      ...(manifest.dependencies ?? {}),
+      ...(manifest.peerDependencies ?? {}),
+      ...(manifest.optionalDependencies ?? {}),
+    };
+    assert.ok(
+      !Object.values(dependencies).some((value) => String(value).startsWith("workspace:")),
+      `@ivlev-dev/silent-${name}: workspace-зависимость не заменена версией (dependencies/peerDependencies/optionalDependencies)`,
+    );
+    console.log(
+      `pack: ${name === "silent" ? "@ivlev-dev/silent" : `@ivlev-dev/silent-${name}`} ${tarball}`,
     );
   }
-  const dependencies = {
-    ...(manifest.dependencies ?? {}),
-    ...(manifest.peerDependencies ?? {}),
-    ...(manifest.optionalDependencies ?? {}),
-  };
-  assert.ok(
-    !Object.values(dependencies).some((value) => String(value).startsWith("workspace:")),
-    `@ivlev-dev/silent-${name}: workspace-зависимость не заменена версией (dependencies/peerDependencies/optionalDependencies)`,
-  );
-  console.log(`pack: @ivlev-dev/silent-${name} ${tarball}`);
-}
 
-console.log("pack: ok");
+  console.log("pack: ok");
 } finally {
   rmSync(output, { recursive: true, force: true });
 }

@@ -4,22 +4,30 @@ import type {
   RuleDecorator,
   ValidationOptions,
 } from "./types.js";
-import { validateProperty } from "./engine.js";
-import { decorateField, fieldNameOf } from "./rule.js";
+import { validateFieldKey } from "./engine.js";
+import { decorateField } from "./rule.js";
 import {
   installCondition,
   installGroups,
   installLabel,
   installOptional,
 } from "./registry.js";
-import { ValidationException } from "./types.js";
+import { AsyncRuleError, ValidationException } from "./types.js";
+import { isThenable, suppress } from "./thenable.js";
 
 export function ValidateIf(
   predicate: InstancePredicate,
 ): RuleDecorator {
   const token = Symbol("silent.validation.if");
   return decorateField(token, (ctor, entryToken, field, fieldName) => {
-    const condition: FieldCondition = (instance) => predicate(instance);
+    const condition: FieldCondition = (instance) => {
+      const result: unknown = predicate(instance);
+      if (isThenable(result)) {
+        suppress(result);
+        throw new AsyncRuleError(fieldName, "validateIf");
+      }
+      return result === true;
+    };
     installCondition(ctor, entryToken, field, fieldName, condition);
   });
 }
@@ -61,10 +69,10 @@ export function ValidateOnSet(options?: ValidationOptions): RuleDecorator {
     if (context.static === true) {
       throw new TypeError("Статические поля не поддерживаются валидацией");
     }
-    const fieldName = fieldNameOf(context.name);
+    const key = context.name;
     const set = function (this: C, value: V): void {
       target.set.call(this, value);
-      const result = validateProperty(this, fieldName, options);
+      const result = validateFieldKey(this, key, options);
       if (!result.valid) {
         throw new ValidationException(result);
       }

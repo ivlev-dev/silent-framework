@@ -19,6 +19,7 @@ export interface TypeValidationContext {
   readonly label: string;
   readonly path: string;
   readonly config: ValidationConfig;
+  readonly labels?: Readonly<Record<string, string>> | undefined;
   readonly visiting?: WeakSet<object>;
   readonly nested?: NestedInstance[] | undefined;
 }
@@ -29,6 +30,7 @@ interface ErrorContext {
   readonly label: string;
   readonly path: string;
   readonly config: ValidationConfig;
+  readonly labels: Readonly<Record<string, string>> | undefined;
   readonly locale: string;
   readonly index: number | undefined;
 }
@@ -37,6 +39,7 @@ interface RunContext extends ErrorContext {
   readonly visiting: WeakSet<object>;
   readonly nested: NestedInstance[] | undefined;
   readonly lazyActive: Map<TypeSchema, Set<unknown>>;
+  readonly resolvedClasses: WeakMap<object, Function | null>;
 }
 
 type InstanceCtor = new (...args: never[]) => unknown;
@@ -267,6 +270,7 @@ export function validateFastPrimitive(
     label: context.label,
     path: context.path,
     config: context.config,
+    labels: context.labels,
     locale: context.config.locale ?? DEFAULT_LOCALE,
     index: undefined,
   });
@@ -278,8 +282,14 @@ function formatLiteral(value: string | number | boolean): string {
 
 function ctorName(getCtor: () => Function): string {
   try {
-    const ctor = getCtor();
-    return typeof ctor === "function" && ctor.name.length > 0 ? ctor.name : "object";
+    const produced: unknown = getCtor();
+    if (isThenable(produced)) {
+      suppress(produced);
+      return "object";
+    }
+    return typeof produced === "function" && produced.name.length > 0
+      ? produced.name
+      : "object";
   } catch {
     return "object";
   }
@@ -323,6 +333,10 @@ function typeNameAt(schema: TypeSchema, depth: number): string {
       }
       try {
         const produced: unknown = schema[1]();
+        if (isThenable(produced)) {
+          suppress(produced);
+          return "unknown";
+        }
         if (typeof produced !== "string" && !Array.isArray(produced)) {
           return "unknown";
         }
@@ -351,22 +365,43 @@ export function typeName(schema: TypeSchema): string {
   return typeNameAt(schema, 0);
 }
 
-function messageContext(
+function labelFor(ctx: ErrorContext): string {
+  const labels = ctx.labels;
+  if (labels !== undefined && Object.hasOwn(labels, ctx.path)) {
+    const exact = labels[ctx.path];
+    if (typeof exact === "string") {
+      return exact;
+    }
+  }
+  return ctx.label;
+}
+
+function buildError(
   value: unknown,
-  schema: TypeSchema,
+  params: Readonly<Record<string, unknown>>,
   ctx: ErrorContext,
-): MessageContext {
-  const params: Readonly<Record<string, unknown>> = { type: typeName(schema) };
-  return {
+): ValidationError {
+  const label = labelFor(ctx);
+  const context: MessageContext = {
     rule: "type",
     key: "validation.type",
     field: ctx.field,
-    label: ctx.label,
+    label,
     value,
     params,
     locale: ctx.locale,
     instance: ctx.instance,
     path: ctx.path,
+    ...(ctx.index === undefined ? {} : { index: ctx.index }),
+  };
+  return {
+    field: ctx.field,
+    rule: "type",
+    message: resolveMessage(context, ctx.config),
+    params,
+    value,
+    path: ctx.path,
+    label,
     ...(ctx.index === undefined ? {} : { index: ctx.index }),
   };
 }
@@ -375,18 +410,16 @@ function createError(
   value: unknown,
   schema: TypeSchema,
   ctx: ErrorContext,
+  name?: string,
 ): ValidationError {
-  const context = messageContext(value, schema, ctx);
-  return {
-    field: ctx.field,
-    rule: "type",
-    message: resolveMessage(context, ctx.config),
-    params: context.params,
-    value,
-    path: ctx.path,
-    label: ctx.label,
-    ...(ctx.index === undefined ? {} : { index: ctx.index }),
+  const params: Readonly<Record<string, unknown>> = {
+    type: name ?? typeName(schema),
   };
+  return buildError(value, params, ctx);
+}
+
+function depthError(value: unknown, ctx: ErrorContext): ValidationError {
+  return buildError(value, { type: "depth" }, ctx);
 }
 
 function childContext(
@@ -416,6 +449,13 @@ function leave(value: object, ctx: RunContext): void {
 }
 
 function readProp(target: object, key: string): unknown {
+  if (key === "__proto__") {
+    const descriptor = Object.getOwnPropertyDescriptor(target, key);
+    if (descriptor === undefined || !("value" in descriptor)) {
+      return undefined;
+    }
+    return descriptor.value;
+  }
   return (target as Record<string, unknown>)[key];
 }
 
@@ -435,7 +475,13 @@ function validateFields(
   depth: number,
 ): ValidationError[] {
   const errors: ValidationError[] = [];
+  if (fields === undefined || fields === null) {
+    return errors;
+  }
   for (const [key, fieldSchema] of Object.entries(fields)) {
+    if (fieldSchema === undefined) {
+      continue;
+    }
     const path = `${ctx.path}.${key}`;
     errors.push(
       ...validateSchema(
@@ -544,6 +590,10 @@ function validateSet(
   return errors;
 }
 
+function isOptionalSchema(schema: TypeSchema | null | undefined): boolean {
+  return Array.isArray(schema) && schema[0] === "optional";
+}
+
 function validateTuple(
   value: readonly unknown[],
   items: readonly (TypeSchema | null)[],
@@ -552,7 +602,13 @@ function validateTuple(
   ctx: RunContext,
   depth: number,
 ): ValidationError[] {
-  const required = items.filter((item) => item !== null).length;
+  let required = 0;
+  for (const item of items) {
+    if (item === null || item === undefined || isOptionalSchema(item)) {
+      continue;
+    }
+    required += 1;
+  }
   if (rest === undefined) {
     if (value.length < required || value.length > items.length) {
       return [createError(value, schema, ctx)];
@@ -590,6 +646,27 @@ function validateTuple(
   return errors;
 }
 
+function errorKey(error: ValidationError): string {
+  return `${error.rule}\u0000${error.path}\u0000${String(error.index ?? "")}\u0000${error.message}`;
+}
+
+function dedupeErrors(errors: readonly ValidationError[]): ValidationError[] {
+  if (errors.length <= 1) {
+    return [...errors];
+  }
+  const seen = new Set<string>();
+  const unique: ValidationError[] = [];
+  for (const error of errors) {
+    const key = errorKey(error);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(error);
+  }
+  return unique;
+}
+
 function validateSchema(
   value: unknown,
   schema: TypeSchema,
@@ -597,7 +674,7 @@ function validateSchema(
   depth: number,
 ): ValidationError[] {
   if (depth > MAX_DEPTH) {
-    return [];
+    return [depthError(value, ctx)];
   }
   if (typeof schema === "string") {
     return matchesPrimitive(value, schema) ? [] : [createError(value, schema, ctx)];
@@ -675,7 +752,7 @@ function validateSchema(
       for (const branch of schema[1]) {
         errors.push(...validateSchema(value, branch, ctx, depth + 1));
       }
-      return errors;
+      return dedupeErrors(errors);
     }
     case "literal":
       return Object.is(value, schema[1]) ? [] : [createError(value, schema, ctx)];
@@ -685,15 +762,27 @@ function validateSchema(
     }
     case "class": {
       const getCtor = schema[1];
-      let ctor: Function | undefined;
-      try {
-        const produced: unknown = getCtor();
-        ctor = typeof produced === "function" ? produced : undefined;
-      } catch {
-        ctor = undefined;
+      let ctor = ctx.resolvedClasses.get(schema);
+      if (ctor === undefined) {
+        try {
+          const produced: unknown = getCtor();
+          if (isThenable(produced)) {
+            suppress(produced);
+            ctor = null;
+          } else {
+            ctor = typeof produced === "function" ? produced : null;
+          }
+        } catch {
+          ctor = null;
+        }
+        ctx.resolvedClasses.set(schema, ctor);
       }
-      if (ctor === undefined || !isInstanceOfCtor(value, ctor)) {
-        return [createError(value, schema, ctx)];
+      if (ctor === null) {
+        return [createError(value, schema, ctx, "object")];
+      }
+      const name = ctor.name.length > 0 ? ctor.name : "object";
+      if (!isInstanceOfCtor(value, ctor)) {
+        return [createError(value, schema, ctx, name)];
       }
       const target = value as object;
       if (ctx.nested !== undefined) {
@@ -701,7 +790,7 @@ function validateSchema(
         return [];
       }
       const fields = classFields(target, ctor);
-      if (fields === null || depth + 1 > MAX_DEPTH) {
+      if (fields === null) {
         return [];
       }
       if (!enter(target, ctx)) {
@@ -780,10 +869,12 @@ export function validateType(
     label: context.label,
     path: context.path,
     config: context.config,
+    labels: context.labels,
     locale: context.config.locale ?? DEFAULT_LOCALE,
     visiting: context.visiting ?? new WeakSet<object>(),
     nested: context.nested,
     lazyActive: new Map<TypeSchema, Set<unknown>>(),
+    resolvedClasses: new WeakMap<object, Function | null>(),
     index: undefined,
   };
   const errors = validateSchema(value, schema, ctx, 0);

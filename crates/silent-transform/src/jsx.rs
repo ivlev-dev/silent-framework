@@ -493,7 +493,7 @@ impl SilentPass {
             svg,
         } = parts;
         let runtime = Expr::Ident(self.helper("templateHoles"));
-        let mount_static = !self.hydrate && !self.ssr && plan.is_static();
+        let mount_static = !self.ssr && plan.is_static();
         let planned = if self.hydrate || self.ssr {
             plan.finish()
         } else {
@@ -614,7 +614,7 @@ impl SilentPass {
                 left: Box::new(parent),
                 right: Box::new(node),
             });
-            if self.attach_direct_list(&mut expr, &parent, &hole) {
+            if !self.ssr && self.attach_direct_list(&mut expr, &parent, &hole) {
                 statements.push(Stmt::Expr(swc_core::ecma::ast::ExprStmt {
                     span: DUMMY_SP,
                     expr: Box::new(expr),

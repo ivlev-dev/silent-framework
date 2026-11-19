@@ -2,13 +2,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import { getValidationConfig, resetValidationConfig } from "../src/messages";
 import { SCHEMA_SYMBOL, readClassSchema, readInstanceSchema } from "../src/schema";
 import type { ClassSchema, FieldSchemaMap, TypeSchema } from "../src/schema";
-import { validateType } from "../src/type-validation";
+import { validateType, typeName } from "../src/type-validation";
 import type { ValidationConfig, ValidationError } from "../src/types";
 
 function run(
   value: unknown,
   schema: TypeSchema,
   config: ValidationConfig = getValidationConfig(),
+  labels?: Readonly<Record<string, string>>,
 ): ValidationError[] {
   const result = validateType(value, schema, {
     instance: {},
@@ -16,6 +17,7 @@ function run(
     label: "Value",
     path: "value",
     config,
+    ...(labels === undefined ? {} : { labels }),
   });
   if (result === null) {
     return [];
@@ -183,6 +185,24 @@ describe("validateType: составные схемы", () => {
     expect(errors[0]?.path).toBe("value[1]");
   });
 
+  it("поддерживает optional-элементы кортежа", () => {
+    const schema: TypeSchema = ["tuple", ["string", ["optional", "number"]]];
+    expect(valid(["a"], schema)).toBe(true);
+    expect(valid(["a", 1], schema)).toBe(true);
+    expect(valid(["a", undefined], schema)).toBe(true);
+    expect(valid([], schema)).toBe(false);
+    expect(valid(["a", "b"], schema)).toBe(false);
+    expect(valid(["a", 1, 2], schema)).toBe(false);
+  });
+
+  it("сочетает optional-элементы с null-маркером и rest", () => {
+    const schema: TypeSchema = ["tuple", ["string", null, ["optional", "number"]], "boolean"];
+    expect(valid(["a"], schema)).toBe(true);
+    expect(valid(["a", true, 1], schema)).toBe(true);
+    expect(valid(["a", true], schema)).toBe(true);
+    expect(valid([], schema)).toBe(false);
+  });
+
   it("валидирует union и intersection", () => {
     expect(valid("a", ["union", ["string", "number"]])).toBe(true);
     expect(valid(1, ["union", ["string", "number"]])).toBe(true);
@@ -197,6 +217,24 @@ describe("validateType: составные схемы", () => {
     ]);
     expect(intersection).toHaveLength(1);
     expect(valid("a", ["intersection", ["string", ["literal", "a"]]])).toBe(true);
+  });
+
+  it("не дублирует одинаковые ошибки intersection", () => {
+    const schema: TypeSchema = [
+      "intersection",
+      [["object", { a: "string" }], ["record", "string"]],
+    ];
+    const errors = run({ a: 1 }, schema);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.path).toBe("value.a");
+  });
+
+  it("сохраняет разные ошибки веток intersection", () => {
+    const schema: TypeSchema = [
+      "intersection",
+      [["object", { a: "string" }], ["object", { a: "number" }]],
+    ];
+    expect(run({ a: true }, schema)).toHaveLength(2);
   });
 
   it("валидирует literal и enum по SameValueZero", () => {
@@ -289,6 +327,31 @@ describe("validateType: составные схемы", () => {
     const errors = run(1, ["optional", "string"]);
     expect(errors[0]?.params).toEqual({ type: "string" });
   });
+
+  it("возвращает ошибку типа при превышении максимальной глубины", () => {
+    let value: unknown = 1;
+    let schema: TypeSchema = "number";
+    for (let index = 0; index < 400; index += 1) {
+      value = [value];
+      schema = ["array", schema];
+    }
+    const errors = run(value, schema);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.params).toEqual({ type: "depth" });
+    expect(errors[0]?.rule).toBe("type");
+  });
+
+  it("не читает прототип для схемного поля __proto__", () => {
+    const fields = JSON.parse('{"__proto__":"string"}') as unknown as Readonly<
+      Record<string, TypeSchema>
+    >;
+    const schema: TypeSchema = ["object", fields];
+    const broken = JSON.parse('{"__proto__":5}') as unknown;
+    const errors = run(broken, schema);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.path).toBe("value.__proto__");
+    expect(valid(JSON.parse('{"__proto__":"ok"}'), schema)).toBe(true);
+  });
 });
 
 describe("validateType: классы", () => {
@@ -343,7 +406,19 @@ describe("validateType: классы", () => {
     expect(run(node, ["class", () => Node])).toHaveLength(0);
   });
 
-  it("безопасно ограничивает глубину вложенности", () => {
+  it("вызывает class-thunk один раз при ошибке", () => {
+    let calls = 0;
+    const schema: TypeSchema = ["class", () => {
+      calls += 1;
+      return Point;
+    }];
+    const errors = run("x", schema);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.params).toEqual({ type: "Point" });
+    expect(calls).toBe(1);
+  });
+
+  it("сообщает ошибку типа при превышении глубины", () => {
     class Link {
       public accessor next: unknown = null;
     }
@@ -358,7 +433,10 @@ describe("validateType: классы", () => {
       current = next;
     }
     expect(() => run(head, ["class", () => Link])).not.toThrow();
-    expect(run(head, ["class", () => Link])).toHaveLength(0);
+    const errors = run(head, ["class", () => Link]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.rule).toBe("type");
+    expect(errors[0]?.params).toEqual({ type: "depth" });
   });
 });
 
@@ -463,13 +541,45 @@ describe("validateType: ленивые схемы", () => {
     expect(run(node, nodeSchema)).toHaveLength(0);
   });
 
-  it("не падает на большой глубине рекурсивных данных", () => {
+  it("гасит rejecting промис из lazy- и class-thunk", async () => {
+    const rejections: unknown[] = [];
+    const onRejection = (reason: unknown): void => {
+      rejections.push(reason);
+    };
+    const proc = (globalThis as unknown as {
+      process: {
+        once(event: "unhandledRejection", listener: (reason: unknown) => void): void;
+        off(event: "unhandledRejection", listener: (reason: unknown) => void): void;
+      };
+    }).process;
+    proc.once("unhandledRejection", onRejection);
+    try {
+      const lazySchema = ["lazy", () => Promise.reject(new Error("lazy"))] as unknown as TypeSchema;
+      const classSchema = ["class", () => Promise.reject(new Error("class"))] as unknown as TypeSchema;
+
+      expect(run("x", lazySchema)).toHaveLength(1);
+      expect(run({}, classSchema)).toHaveLength(1);
+      expect(typeName(lazySchema)).toBe("unknown");
+      expect(typeName(classSchema)).toBe("object");
+
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 0);
+      });
+    } finally {
+      proc.off("unhandledRejection", onRejection);
+    }
+    expect(rejections).toEqual([]);
+  });
+
+  it("сообщает ошибку глубины на большой глубине рекурсивных данных", () => {
     let node: NodeValue = { value: "end", next: null };
     for (let index = 0; index < 500; index += 1) {
       node = { value: String(index), next: node };
     }
     expect(() => run(node, nodeSchema)).not.toThrow();
-    expect(run(node, nodeSchema)).toHaveLength(0);
+    const errors = run(node, nodeSchema);
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors.every((error) => error.params["type"] === "depth")).toBe(true);
   });
 });
 
@@ -540,6 +650,101 @@ describe("чтение схем", () => {
 
     expect(readClassSchema(Late)).not.toBeNull();
     expect(readInstanceSchema(new Late())).toEqual({ value: "number" });
+  });
+
+  it("пересобирает кеш при замене схемы", () => {
+    class Replaced {}
+    defineSchema(Replaced, { fields: { first: "string" } });
+    expect(readInstanceSchema(new Replaced())).toEqual({ first: "string" });
+
+    defineSchema(Replaced, { fields: { second: "number" } });
+
+    expect(readClassSchema(Replaced)).toEqual({ fields: { second: "number" } });
+    expect(readInstanceSchema(new Replaced())).toEqual({ second: "number" });
+  });
+
+  it("пересобирает кеш при удалении схемы", () => {
+    class Removed {}
+    defineSchema(Removed, { fields: { value: "string" } });
+    expect(readInstanceSchema(new Removed())).toEqual({ value: "string" });
+
+    expect(Reflect.deleteProperty(Removed, SCHEMA_SYMBOL)).toBe(true);
+
+    expect(readClassSchema(Removed)).toBeNull();
+    expect(readInstanceSchema(new Removed())).toBeNull();
+  });
+
+  it("сохраняет собственное поле __proto__ при слиянии схем", () => {
+    class Parent {}
+    class Child extends Parent {}
+    const parentFields = JSON.parse('{"__proto__":"string"}') as unknown as FieldSchemaMap;
+    const childFields = JSON.parse('{"age":"number"}') as unknown as FieldSchemaMap;
+    defineSchema(Parent, { fields: parentFields });
+    defineSchema(Child, { fields: childFields });
+
+    const merged = readInstanceSchema(new Child());
+
+    expect(merged).not.toBeNull();
+    expect(Object.getOwnPropertyDescriptor(merged ?? {}, "__proto__")?.value)
+      .toBe("string");
+    expect(merged?.["age"]).toBe("number");
+  });
+
+  it("бросает ошибку для версии без fields", () => {
+    class BrokenVersion {}
+    defineSchema(BrokenVersion, { version: 2 } as unknown as ClassSchema);
+    expect(() => readClassSchema(BrokenVersion)).toThrow(/версия/);
+  });
+
+  it("бросает ошибку формата для версии 1 без fields", () => {
+    class BrokenFormat {}
+    defineSchema(BrokenFormat, { version: 1 } as unknown as ClassSchema);
+    expect(() => readClassSchema(BrokenFormat)).toThrow(/fields/);
+  });
+});
+
+describe("validateType: labels структурных схем", () => {
+  it("применяет label по полному пути для object", () => {
+    const errors = run(
+      { email: 5 },
+      ["object", { email: "string" }],
+      getValidationConfig(),
+      { "value.email": "Почта" },
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.label).toBe("Почта");
+    expect(errors[0]?.message).toContain("Почта");
+  });
+
+  it("применяет labels для record, mapof, setof, array и tuple", () => {
+    const config = getValidationConfig();
+
+    expect(run({ a: "x" }, ["record", "number"], config, { "value.a": "Ключ" })[0]?.label)
+      .toBe("Ключ");
+    expect(
+      run(new Map([["a", "x"]]), ["mapof", "string", "number"], config, { "value[a]": "Значение" })[0]?.label,
+    ).toBe("Значение");
+    expect(run(new Set(["x"]), ["setof", "number"], config, { "value[0]": "Элемент" })[0]?.label)
+      .toBe("Элемент");
+    expect(run(["x", 1], ["array", "string"], config, { "value[1]": "Второй" })[0]?.label)
+      .toBe("Второй");
+    expect(run([1], ["tuple", ["string"]], config, { "value[0]": "Первый" })[0]?.label)
+      .toBe("Первый");
+  });
+
+  it("не падает на undefined-схеме поля", () => {
+    const fields = { a: undefined } as unknown as FieldSchemaMap;
+    const schema: TypeSchema = ["object", fields];
+
+    expect(() => run({ a: 1 }, schema)).not.toThrow();
+    expect(run({ a: 1 }, schema)).toHaveLength(0);
+
+    const withoutFields = ["object", undefined] as unknown as TypeSchema;
+    expect(run({}, withoutFields)).toHaveLength(0);
+  });
+
+  it("сохраняет ключ как label без карты labels", () => {
+    expect(run({ email: 5 }, ["object", { email: "string" }])[0]?.label).toBe("email");
   });
 });
 

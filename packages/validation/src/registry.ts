@@ -11,15 +11,14 @@ const states = new WeakMap<Function, ClassValidationState>();
 export function classStateFor(ctor: Function): ClassValidationState {
   let state = states.get(ctor);
   if (state === undefined) {
-    state = { fields: new Map<FieldKey, FieldSlot>(), tokens: new Set<symbol>() };
+    state = { fields: new Map<FieldKey, FieldSlot>(), tokens: new Map<symbol, Set<FieldKey>>(), revision: 0 };
     states.set(ctor, state);
   }
   return state;
 }
 
 export function classStateRevision(ctor: Function): number {
-  const state = classStateFor(ctor);
-  return state.tokens.size + state.fields.size;
+  return classStateFor(ctor).revision;
 }
 
 export function fieldSlot(
@@ -37,6 +36,7 @@ export function fieldSlot(
       conditions: [],
     };
     state.fields.set(field, slot);
+    state.revision += 1;
   }
   return slot;
 }
@@ -44,11 +44,18 @@ export function fieldSlot(
 function beginToken(
   state: ClassValidationState,
   token: symbol,
+  field: FieldKey,
 ): boolean {
-  if (state.tokens.has(token)) {
+  let fields = state.tokens.get(token);
+  if (fields === undefined) {
+    fields = new Set<FieldKey>();
+    state.tokens.set(token, fields);
+  }
+  if (fields.has(field)) {
     return false;
   }
-  state.tokens.add(token);
+  fields.add(field);
+  state.revision += 1;
   return true;
 }
 
@@ -58,7 +65,7 @@ export function installRule(
   entry: FieldRuleEntry,
 ): void {
   const state = classStateFor(ctor);
-  if (!beginToken(state, token)) {
+  if (!beginToken(state, token, entry.field)) {
     return;
   }
   fieldSlot(state, entry.field, entry.fieldName).rules.push(entry);
@@ -72,7 +79,7 @@ export function installLabel(
   label: string,
 ): void {
   const state = classStateFor(ctor);
-  if (!beginToken(state, token)) {
+  if (!beginToken(state, token, field)) {
     return;
   }
   fieldSlot(state, field, fieldName).label = label;
@@ -86,7 +93,7 @@ export function installGroups(
   groups: readonly string[],
 ): void {
   const state = classStateFor(ctor);
-  if (!beginToken(state, token)) {
+  if (!beginToken(state, token, field)) {
     return;
   }
   fieldSlot(state, field, fieldName).groups = groups;
@@ -99,7 +106,7 @@ export function installOptional(
   fieldName: string,
 ): void {
   const state = classStateFor(ctor);
-  if (!beginToken(state, token)) {
+  if (!beginToken(state, token, field)) {
     return;
   }
   fieldSlot(state, field, fieldName).optional = true;
@@ -113,7 +120,7 @@ export function installCondition(
   condition: FieldCondition,
 ): void {
   const state = classStateFor(ctor);
-  if (!beginToken(state, token)) {
+  if (!beginToken(state, token, field)) {
     return;
   }
   fieldSlot(state, field, fieldName).conditions.push(condition);

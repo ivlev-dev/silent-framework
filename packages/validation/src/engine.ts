@@ -69,7 +69,7 @@ interface RuleCall {
 }
 
 function assertInstance(instance: unknown): asserts instance is object {
-  if (typeof instance !== "object" || instance === null) {
+  if (typeof instance !== "object" || instance === null || Array.isArray(instance)) {
     throw new TypeError("Валидируемое значение должно быть объектом");
   }
 }
@@ -106,6 +106,13 @@ function createState(options: ValidationOptions | undefined): RuntimeState {
 }
 
 function readField(target: object, field: FieldKey): unknown {
+  if (field === "__proto__") {
+    const descriptor = Object.getOwnPropertyDescriptor(target, field);
+    if (descriptor === undefined || !("value" in descriptor)) {
+      return undefined;
+    }
+    return descriptor.value;
+  }
   return (target as Record<FieldKey, unknown>)[field];
 }
 
@@ -502,6 +509,7 @@ function prepareField(
       label,
       path,
       config: typeConfig,
+      labels: state.labels,
     });
     if (fast !== undefined) {
       if (fast !== null) {
@@ -516,6 +524,7 @@ function prepareField(
         label,
         path,
         config: typeConfig,
+        labels: state.labels,
         visiting: state.visiting,
         nested: collected,
       });
@@ -923,6 +932,25 @@ export async function validatePropertyAsync(
   options?: ValidationOptions,
 ): Promise<ValidationResult> {
   return runFieldsAsync(instance, new Set([field]), options);
+}
+
+export function validateFieldKey(
+  instance: object,
+  key: FieldKey,
+  options: ValidationOptions | undefined,
+): ValidationResult {
+  assertInstance(instance);
+  const state = createState(options);
+  for (const run of fieldPlan(instance, state.types)) {
+    if (state.stopped) {
+      break;
+    }
+    if (run.key !== key) {
+      continue;
+    }
+    runFieldSync(instance, run, "", state);
+  }
+  return makeResult(state);
 }
 
 export function validatePartial(

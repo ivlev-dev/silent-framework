@@ -262,7 +262,33 @@ describe("ValidateOnSet: комбинации", () => {
     expect(exception.errors.map((error) => error.rule)).toEqual(["isEmail"]);
     expect(exception.errors[0]?.path).toBe("address.email");
   });
+});
 
+describe("ValidateOnSet: символьные поля", () => {
+  const secret = Symbol("name");
+
+  class Model {
+    @Required()
+    public accessor name = "";
+
+    @ValidateOnSet()
+    @Required()
+    public accessor [secret] = "ok";
+  }
+
+  it("валидирует по фактическому ключу, а не по описанию символа", () => {
+    const model = new Model();
+
+    expect(() => {
+      model[secret] = "ok";
+    }).not.toThrow();
+    expect(() => {
+      model[secret] = "";
+    }).toThrow(ValidationException);
+  });
+});
+
+describe("ValidateOnSet: пробрасывает AsyncRuleError", () => {
   it("пробрасывает AsyncRuleError для асинхронного правила", () => {
     class AsyncBox {
       @ValidateOnSet()

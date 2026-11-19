@@ -521,22 +521,21 @@ function attrValueMatches(el: Element, name: string, value: unknown, svg: boolea
 }
 
 export function staticRowAllowed(value: unknown): boolean {
-  if (typeof value !== "object" || value === null) {
+  if (value === null || (typeof value !== "object" && typeof value !== "function")) {
     return true;
   }
   if (isReactive(value)) {
     return false;
   }
-  const prototype = Object.getPrototypeOf(value) as object | null;
-  if (prototype !== Object.prototype && prototype !== null) {
-    return false;
+  if (typeof value === "object") {
+    const prototype = Object.getPrototypeOf(value) as object | null;
+    if (prototype !== Object.prototype && prototype !== null) {
+      return false;
+    }
   }
-  for (const key of Object.keys(value)) {
+  for (const key of Reflect.ownKeys(value)) {
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (
-      descriptor !== undefined &&
-      (descriptor.get !== undefined || descriptor.set !== undefined)
-    ) {
+    if (descriptor?.get !== undefined || descriptor?.set !== undefined) {
       return false;
     }
   }
@@ -558,6 +557,7 @@ export function staticAttrMatches(
 
 const NO_HOLES: Comment[] = [];
 const NO_ATTRIBUTES: Element[] = [];
+const claimedNodes = new WeakSet<Node>();
 
 export function adoptPartsPlan(
   root: Node,
@@ -741,11 +741,17 @@ export function settleNodes(end: Node | null, value: unknown): void {
     if (first === null) {
       return;
     }
-    markClientNodes();
+    let clients = 0;
     let child: Node | null = first;
     while (child !== null) {
-      clientNodes.add(child);
+      if (!claimedNodes.has(child)) {
+        clientNodes.add(child);
+        clients += 1;
+      }
       child = child.nextSibling;
+    }
+    if (clients > 0) {
+      markClientNodes(clients);
     }
     parent.insertBefore(value, end);
     return;
@@ -885,6 +891,7 @@ function claimTemplateRoots(plan: TemplatePlan): Node {
       return mismatch("шаблон не совпал с серверной разметкой");
     }
     markMetadataFree(next);
+    claimedNodes.add(next);
     claimed.push(next);
   }
   const container = document.createDocumentFragment();
@@ -942,6 +949,7 @@ export function hydrateTemplate(source: TemplateHydrationSource): TemplateClone 
         return mismatch("шаблон не совпал с серверной разметкой");
       }
       markMetadataFree(node);
+      claimedNodes.add(node);
       claimed.push(node);
       cursor = next;
     }
@@ -977,6 +985,7 @@ export function hydrateTemplate(source: TemplateHydrationSource): TemplateClone 
       return mismatch("шаблон не совпал с серверной разметкой");
     }
     mergeTopLevelMetadata(root, node);
+    claimedNodes.add(node);
     claimed.push(node);
   }
   const collected = collectPartsMany(claimed);

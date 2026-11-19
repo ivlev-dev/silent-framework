@@ -407,11 +407,13 @@ export function createI18nextResolver(
     const key = `${keyPrefix}${context.key}`;
     const defaultValue = builtinTemplate(context.locale, context.key, context)
       ?? key;
+    const count = pluralCount(context);
     const translated: unknown = i18n.t(key, {
       ...context.params,
       label: context.label,
       lng: context.locale,
       defaultValue,
+      ...(count === undefined ? {} : { count }),
     });
     if (typeof translated !== "string") {
       return undefined;

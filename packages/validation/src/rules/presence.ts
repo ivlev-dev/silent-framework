@@ -23,7 +23,7 @@ function hasContent(value: unknown): boolean {
     if (prototype !== Object.prototype && prototype !== null) {
       return true;
     }
-    return Object.keys(value).length > 0;
+    return Reflect.ownKeys(value).length > 0;
   }
   return true;
 }
