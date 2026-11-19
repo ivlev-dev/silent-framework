@@ -13,6 +13,7 @@
 - `@ivlev-dev/silent-router` — опциональный router: `IRouter`, route-классы `Route`, `Link`, `RouterView`, browser/memory history, guards/loaders, DI-доставка и SSR.
 - `@ivlev-dev/silent-validation` — опциональная валидация: stage-3 accessor-декораторы, правила, i18n и рантайм-проверка схем.
 - `@ivlev-dev/silent-validation-vite` — Vite-плагин `validation()`: генерирует схемы из TS-типов для потомков `ValidationModel`.
+- `@ivlev-dev/silent` — метапакет: ставит `core`, `di`, `reactivity`, `router`, `swc` и `vite` одной зависимостью (`server`, `validation` и `validation-vite` — отдельно).
 
 Все пакеты публикуются как ESM; относительные импорты в собранном коде содержат явное расширение `.js`, чтобы пакеты грузились в чистом Node без бандлера.
 
@@ -233,9 +234,9 @@ const child = component(View, {}, { container: appScope });
 Приоритет:
 
 ```text
-this.preloader из метаданных
-  → CounterVM.preloader (static)
+meta.preloader (this.preloader из метаданных)
   → Component.preloader, заданный setPreloader
+  → CounterVM.preloader (static)
   → глобальный defaultPreloader
   → пустой якорь
 ```
@@ -248,10 +249,10 @@ this.preloader из метаданных
 export function template(html: string): () => Node;
 export function templateHoles(
   html: string,
-  plan?: TemplatePlan,
+  plan?: TemplatePlan | false,
   namespace?: "svg",
-): () => { node: Node; holes: Comment[]; attrs: Element[] };
-export function insert(parent: Node, accessor: () => unknown, marker?: Node): void;
+): () => { node: Node; holes: readonly (Comment | ServerHole)[]; attrs: readonly Element[] };
+export function insert(parent: Node, accessor: () => unknown, marker?: Node | ServerHole): void;
 export function text(node: Text, accessor: () => unknown): void;
 export function attr(el: Element, name: string, accessor: () => unknown): void;
 export function prop(el: Element, name: string, accessor: () => unknown): void;
@@ -303,7 +304,7 @@ export function App() {
 - Если порядок не изменился, проход перемещений пропускается и DOM не трогается.
 - При перестановке двигаются только элементы вне LIS.
 
-- `template` кеширует клонирование по HTML-строке.
+- `template` кеширует разобранный шаблон по паре `(Document, html)`: `WeakMap<Document, Map<string, TemplateParse>>`. Ключ по документу делает кеш realm-safe — SSR-документ мини-DOM и клиентский `document` в одном процессе не переиспользуют `DocumentFragment` друг друга.
 - `insert` принимает Node, строку, число, массив, произвольный `Iterable` (`Set`, генератор, `NodeList`), функцию, `null`/`undefined`/boolean.
 - `text` обновляет `Text.data` только при изменении значения.
 - `attr`/`prop`/`style` сравнивают с предыдущим значением; нативные `value`/`checked`/`selected`/`disabled` повторно не записываются.
@@ -326,7 +327,7 @@ export function App() {
 
 ```ts
 transform(source: string, filename: string, optionsJson: string, indexJson: string): string;
-scan(root: string): string;
+scan(root: string, optionsJson: string): string;
 version(): string;
 ```
 
@@ -384,4 +385,4 @@ Vite не должен встраивать копию `@ivlev-dev/silent-core` 
 - Версии всех публичных пакетов синхронны и совпадают с тегом `v<version>`.
 - `pnpm pack:check` проверяет состав tarball'ов и отсутствие `workspace:` в зависимостях.
 - `pnpm install:check` распаковывает tarball'ы в чистый `node_modules`, проверяет импорты, рантайм-экспорты и версию нативного addon.
-- Workflow `Release` собирает пребилды addon под три платформы, прогоняет тесты и публикует пакеты; нужен `NPM_TOKEN`.
+- Workflow `Release` собирает пребилды addon только для Linux x64 (`x86_64-unknown-linux-gnu`) и Windows x64 (`x86_64-pc-windows-msvc`); для остальных платформ бинарник собирается локально. Workflow прогоняет тесты и публикует пакеты; нужен `NPM_TOKEN`.

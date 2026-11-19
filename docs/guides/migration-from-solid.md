@@ -24,7 +24,7 @@ Silent Framework и SolidJS разделяют одну идею: грануля
 | `createComputed` (Solid) | `@computed` / `createMemo` | `@computed` привязан к экземпляру ViewModel и лениво мемоизируется. |
 | `on` (Solid) | `on` | Запускает функцию на изменение конкретных зависимостей; есть опция `defer`. |
 | `createStore` (solid-js/store) | `deepReactive` / `@reactive accessor` | Глубокий прокси с сигналом на каждое свойство; мутирующие методы массивов (`push`, `splice` и др.) уведомляют только затронутые индексы. |
-| Solid Router / solid-start | Нет прямого аналога | Маршрутизация и SSR-фреймворк не входят в ядро; используются `mount`/`hydrate` и `@ivlev-dev/silent-server`. |
+| Solid Router / solid-start | `@ivlev-dev/silent-router` | Маршрутизация вынесена в отдельный пакет: route-классы, `Link`, `RouterView`, browser/memory history, guards/loaders и SSR. SSR-фреймворка и файловой маршрутизации нет — используются `mount`/`hydrate` и `@ivlev-dev/silent-server`. |
 
 ## Компоненты
 
@@ -219,21 +219,21 @@ export default defineConfig({
 }
 ```
 
-Плагин работает с `enforce: "pre"` и компилирует TS/TSX через нативный addon. Параметры (`include`, `exclude`, `root`, `swc`, `requirePreloader`, `hmr`, `index`) — см. `docs/api/vite.md`.
+Плагин работает с `enforce: "pre"` и компилирует TS/TSX через нативный addon. Параметры (`include`, `exclude`, `root`, `swc`, `requirePreloader`, `hmr`, `index`, `view`, `hydrate`, `di`) — см. `docs/api/vite.md`.
 
 ## Чего нет
 
-Честный список ограничений и отличий на 0.2.x, чтобы при миграции не ожидать лишнего:
+Честный список ограничений и отличий на 0.12.x, чтобы при миграции не ожидать лишнего:
 
 - Нет `createStore` из `solid-js/store` с обновлениями по путям. Ближайшие инструменты — `deepReactive` и `@reactive accessor` с глубокими прокси и мутирующими методами массивов.
-- Нет аналога solid-start: файловой маршрутизации, server functions, actions/resources и SSR-фреймворка. Серверный рендер — `renderToString`/`renderToStream` из `@ivlev-dev/silent-server`, клиент — `hydrate`.
-- Нет примитива ресурса (`createResource`), связанного с `Suspense`: `Suspense` в Silent ждёт готовности вложенных view и их ViewModel, а не произвольных промисов. Асинхронность решается через ViewModel и `lazy`.
+- Нет аналога solid-start: файловой маршрутизации, server functions, actions и SSR-фреймворка. Маршрутизация — отдельный пакет `@ivlev-dev/silent-router`; серверный рендер — `renderToString`/`renderToStream` из `@ivlev-dev/silent-server`, клиент — `hydrate`.
+- `createResource` есть (в `@ivlev-dev/silent-core`), но это не Solid-ресурс: чтение не приостанавливает рендер и не бросает промис, а сам ресурс отдаёт сигналы `data`/`error`/`pending`/`status`. Промис ресурса может регистрироваться в текущей границе `Suspense` (`options.boundary`), но Suspense в Silent в первую очередь ждёт готовности вложенных view и их ViewModel; основная асинхронность решается через ViewModel и `lazy`.
 - Строгая модель компонентов: view-компоненты обязаны получать `ViewModel` через `this` и компилируются с метаданными `silent.view`; произвольные функциональные компоненты допустимы только как синхронные прелоадеры/простые UI-листья.
 - `renderToString` не стримит: для чанков используйте `renderToStream`. Мини-DOM сервера не реализует события.
 - Ключевые списки (`For`) заметно медленнее Solid в бенчмарках из-за отдельного реактивного владельца и якоря на элемент.
 - HMR самих view сохраняет состояние; изменения сигнатур, затрагивающих VM, приводят к полной перезагрузке модуля. HMR рантайма фреймворка — полная перезагрузка.
 - DI требует ровно одной реализации интерфейса в индексе, иначе нужен явный `bind`; сложные re-export и generic в DI могут потребовать ручной привязки.
-- Публичный API до 1.0 может меняться (0.2.x → 0.3.0).
+- Публичный API до 1.0 может меняться (0.12.x → 0.13.0).
 - ESM-only, требуется Node.js 22+; TSX не работает без компилятора `@ivlev-dev/silent-vite`.
 
 ## Чек-лист миграции

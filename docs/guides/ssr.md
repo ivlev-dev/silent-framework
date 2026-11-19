@@ -1,6 +1,6 @@
 # SSR и деплой
 
-Silent Framework рендерит приложение в HTML на Node без jsdom и linkedom: `@ivlev-dev/silent-server` содержит собственный мини-DOM, дожидается асинхронных ViewModel, `Suspense` и `lazy`, а клиент затем адоптирует готовую разметку через `hydrate`. Гайд описывает серверный рендер, сборку клиента и сервера, передачу props, продакшен-сервер и диагностику расхождений. Материал актуален для версии 0.2.0 и готовящейся 0.3.0.
+Silent Framework рендерит приложение в HTML на Node без jsdom и linkedom: `@ivlev-dev/silent-server` содержит собственный мини-DOM, дожидается асинхронных ViewModel, `Suspense` и `lazy`, а клиент затем адоптирует готовую разметку через `hydrate`. Гайд описывает серверный рендер, сборку клиента и сервера, передачу props, продакшен-сервер и диагностику расхождений. Материал актуален для версии 0.12.0.
 
 Пакет поставляется как ESM и требует Node.js 22 или новее:
 
@@ -41,7 +41,7 @@ function renderToString(
 ): Promise<RenderResult>;
 ```
 
-`RenderResult` содержит два поля: `html` — разметку приложения без метаданных, `head` — сериализованные `title`, `meta` и `link`. `RenderOptions` принимает `props`, `container`, `preloader` и `onError`. Если `onError` не задан, первая ошибка резолва или загрузки отклоняет промис `renderToString`.
+`RenderResult` содержит два поля: `html` — разметку приложения без метаданных, `head` — сериализованные `title`, `meta` и `link`. `RenderOptions` принимает `props`, `container`, `preloader`, `onError` и `markers`. Если `onError` не задан, первая ошибка резолва или загрузки отклоняет промис `renderToString`. `markers: false` удаляет из `html` и `head` служебные комментарии `silent-*` и атрибуты `data-silent-*`: разметка уменьшается, но не подходит для `hydrate`; на `renderToStream` опция не действует.
 
 На каждый рендер `renderToString` создаёт дочерний request scope от `options.container` (по умолчанию — глобальный `container`) и освобождает его в конце, даже при ошибке. `singleton`-привязки базового контейнера — process-wide состояние, общее для всех запросов; `scoped`-привязки изолированы request scope. Singleton-фабрика, разрешающая `scoped`-сервис из request scope, отклоняется `InvalidScopeError` — не храните данные пользователя или tenant в общих синглтонах.
 

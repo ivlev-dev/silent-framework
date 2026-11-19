@@ -40,7 +40,7 @@ npm install @ivlev-dev/silent-router
 yarn add @ivlev-dev/silent-router
 ```
 
-`@ivlev-dev/silent-core`, `@ivlev-dev/silent-di` и `@ivlev-dev/silent-reactivity` объявлены как peer-зависимости с диапазоном `>=0.11.0 <0.12.0`: их устанавливает ваш менеджер пакетов, npm 7+ и pnpm делают это автоматически. Пакет поставляется только как ESM. Требуется Node.js 22 или новее.
+`@ivlev-dev/silent-core`, `@ivlev-dev/silent-di` и `@ivlev-dev/silent-reactivity` объявлены как peer-зависимости с диапазоном `>=0.12.0 <0.13.0`: их устанавливает ваш менеджер пакетов, npm 7+ и pnpm делают это автоматически. Пакет поставляется только как ESM. Требуется Node.js 22 или новее.
 
 ## Быстрый старт
 

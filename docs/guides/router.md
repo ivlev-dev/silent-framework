@@ -260,7 +260,7 @@ expect(router.query).toEqual({ tab: "posts" });
 pnpm add @ivlev-dev/silent-router
 ```
 
-`@ivlev-dev/silent-core`, `@ivlev-dev/silent-di` и `@ivlev-dev/silent-reactivity` — peer-зависимости с диапазоном `>=0.11.0 <0.12.0`. Пакет ESM-only, Node.js 22+.
+`@ivlev-dev/silent-core`, `@ivlev-dev/silent-di` и `@ivlev-dev/silent-reactivity` — peer-зависимости с диапазоном `>=0.12.0 <0.13.0`. Пакет ESM-only, Node.js 22+.
 
 ## Рецепт: Router + DI + layout + lazy pages + login guard
 

@@ -2,7 +2,7 @@
 
 Основной пакет рантайма Silent Framework: Stage-3 декораторы реактивности, ViewModel, view-компоненты с асинхронным DI, монтирование, JSX-рантайм, управляющие конструкции `For` / `Show` / `Suspense`, `lazy`, прелоадеры и обработка ошибок.
 
-Серверные API в этот пакет не входят.
+SSR-рендер и мини-DOM в этот пакет не входят — они живут в `@ivlev-dev/silent-server`. Серверные хуки (`setServerMode`, `setServerBackend`, `setMetadataCollector`, потоковые коллекторы) экспортируются, но помечены `internal` и предназначены для серверного рантайма.
 
 ## Импорты
 
@@ -379,10 +379,13 @@ function hasPendingWork(): boolean;
 *Стабильность: internal.*
 
 ```ts
-function trackAsyncWork<T>(promise: Promise<T>): Promise<T>;
+function trackAsyncWork<T>(
+  promise: Promise<T>,
+  signal?: AbortSignal | null,
+): Promise<T>;
 ```
 
-Регистрирует произвольный промис в наборе отслеживаемых (`whenIdle` будет ждать его завершения) и возвращает тот же промис. Рантайм применяет это ко всем разрешениям ViewModel; интеграции (серверный рендер) используют функцию, чтобы увеличить окно ожидания на сторонние промисы.
+Регистрирует произвольный промис в наборе отслеживаемых (`whenIdle` будет ждать его завершения) и возвращает тот же промис. Необязательный `signal` снимает промис с отслеживания при отмене (например, при dispose view или abort ресурса). Рантайм применяет это ко всем разрешениям ViewModel; интеграции (серверный рендер) используют функцию, чтобы увеличить окно ожидания на сторонние промисы.
 
 ### `AnyComponent`
 
@@ -677,6 +680,7 @@ interface MountOptions {
   readonly onError?: ((error: unknown, component: AnyComponent) => void) | undefined;
   readonly props?: Record<string, unknown> | undefined;
   readonly clear?: boolean | undefined;
+  readonly onMismatch?: ((error: HydrationMismatchError) => void) | undefined;
 }
 ```
 
@@ -770,7 +774,7 @@ const handle = await hydrate("#root", App, {
 });
 ```
 
-Сборка, собранная Vite-плагином с `hydrate: false`, не содержит гидрационного рантайма: вызов `hydrate()` в такой сборке бросает `Error` («Сборка собрана с hydrate:false — гидрация недоступна»).
+Сборка, собранная Vite-плагином с `hydrate: false`: компилятор не генерирует adoption-план и `staticRows`, тяжёлый гидрационный рантайм (`hydration`, `dom-hydration`, probe-эффекты) не попадает в стартовый чанк (он грузится динамическим `import()` из `hydrate()`), а вызов `hydrate()` в такой сборке бросает `Error` («Сборка собрана с hydrate:false — гидрация недоступна»).
 
 Ограничения адоптации:
 
@@ -1214,6 +1218,7 @@ Keyed-список. Props задаётся объектом; `children` — фу
 ```ts
 interface ForProps<T> {
   each: ListSource<T> | (() => ListSource<T>);
+  keyOf?: KeySelector<T>;
   children: (item: T, index: () => number) => Node;
   fallback?: unknown;
   parent?: Node;
@@ -1225,11 +1230,11 @@ interface ForProps<T> {
 type ListSource<T> = readonly T[] | Iterable<T> | null | undefined;
 ```
 
-- `each` — массив, `Iterable` (`Set`, генератор, `NodeList`), `null`/`undefined` или реактивный толкатель. Ключом выступает сам элемент (пул держится на `Map`, сравнение — SameValueZero), поэтому для повторных элементов подходят примитивы и стабильные ссылки. `undefined`-элементы отбрасываются одинаково на сервере и клиенте.
+- `each` — массив, `Iterable` (`Set`, генератор, `NodeList`), `null`/`undefined` или реактивный толкатель. Без `keyOf` ключом выступает сам элемент (пул держится на `Map`, сравнение — SameValueZero), поэтому для повторных элементов подходят примитивы и стабильные ссылки. `keyOf(item, index)` задаёт собственный ключ: строки матчатся по нему, и новые объекты с тем же id сохраняют DOM и фокус. `undefined`-элементы отбрасываются одинаково на сервере и клиенте.
 - `children` — функция, отрисовывающая один элемент; `index()` ленивый: сигнал номера создаётся только если он читается.
 - Реконсиляция: существующие узлы сохраняются, перестановки двигают только элементы вне наибольшей возрастающей подпоследовательности; при неизменном порядке DOM не трогается; повторяющиеся элементы получают отдельные независимые состояния и якоря.
 - `fallback` — значение или функция; показывается, когда список пуст; поддерживает реактивное обновление.
-- `parent` и `marker` — низкоуровневый режим: строки вставляются прямо в `parent` перед `marker` (или в конец), без промежуточного fragment. Компонент возвращает пустой fragment, его не нужно добавлять в DOM вручную. Это быстрее обычного `For` + `appendChild` (create 1000: ~205 против ~152 ops/s в бенчмарке) и удобно для интеграции со скомпилированными списками.
+- `parent` и `marker` — низкоуровневый режим: строки вставляются прямо в `parent` перед `marker` (или в конец), без промежуточного fragment. Компонент возвращает пустой fragment, его не нужно добавлять в DOM вручную. Это быстрее обычного `For` + `appendChild` (по данным `pnpm bench`: keyed create 1000 — ~216 против ~152 ops/s) и удобно для интеграции со скомпилированными списками. Оптимизация только клиентская: в SSR используется `renderForServer`, а `parent`/`marker` игнорируются.
 - `index: false` отключает создание per-row accessor’а индекса. Компилятор ставит его автоматически, если `children` не объявляет второй параметр.
 - `staticRows` — внутренний флаг компилятора: строка зависит только от item, поэтому при гидрации не создаются пробы и эффекты, а текст и атрибуты сверяются с серверной разметкой (расхождение даёт обычный mismatch). Для реактивных элементов (`deepReactive`, классы, объекты с accessor-свойствами), строк с `on*` и `Index` режим не включается. Вручную задавать не нужно.
 - Dispose: удаление элемента снимает его узлы и запускает зарегистрированные в них `onCleanup`.
@@ -1265,6 +1270,7 @@ interface IndexProps<T> {
   fallback?: unknown;
   parent?: Node;
   marker?: Node | null;
+  index?: boolean;
 }
 ```
 
@@ -1272,7 +1278,7 @@ interface IndexProps<T> {
 - Позиции не переставляются: при смене порядка значений обновляются значения на местах.
 - Добавление и удаление затрагивает только хвост списка.
 - `fallback` — значение или функция; показывается при пустом массиве.
-- `parent` и `marker` — low-level режим прямой вставки строк без wrapper-fragment; `Index` возвращает пустой fragment, добавлять его в DOM не нужно.
+- `parent` и `marker` — low-level режим прямой вставки строк без wrapper-fragment; `Index` возвращает пустой fragment, добавлять его в DOM не нужно. Как и у `For`, это только клиентская оптимизация: в SSR `parent`/`marker` не используются.
 - `index: false` не создаёт per-row accessor индекса; компилятор включает это автоматически, если `children` не использует второй аргумент.
 
 ```tsx
@@ -1285,7 +1291,7 @@ interface IndexProps<T> {
 
 ### `IndexProps`
 
-См. сигнатуру выше: `each`, `children` (accessor элемента и accessor индекса), необязательные `fallback`, `parent`/`marker`.
+См. сигнатуру выше: `each`, `children` (accessor элемента и accessor индекса), необязательные `fallback`, `parent`/`marker`, `index`.
 
 ### `Switch`
 
@@ -1444,10 +1450,10 @@ class Context<T> {
 function createContext<T>(options?: ContextOptions<T>): Context<T>;
 function Provider<T>(props: ProviderProps<T>): Node;
 function captureContextValues(): Map<object, unknown> | null;
-function adoptContextValues(owner: Owner, values: Map<object, unknown>): void;
+function adoptContextValues(owner: Owner | null, values: Map<object, unknown> | null): void;
 ```
 
-`ContextOptions` содержит `defaultValue` и `name`; при отсутствии провайдера и default `get()` бросает `ContextMissingError`. `Provider` — обычный компонент без VM; для вычисляемых детей используйте `children`-функцию. `BoundContext` — снимок значения для кода после `await`. `ProviderProps`/`ProviderChildren` описывают props/детей провайдера.
+`ContextOptions` содержит `defaultValue` и `name`; при отсутствии провайдера и default `get()` бросает `ContextMissingError`. `Provider` — обычный компонент без VM; для вычисляемых детей используйте `children`-функцию. `BoundContext` — снимок значения для кода после `await`. `adoptContextValues` — no-op при `owner === null` или `values === null`. `ProviderProps`/`ProviderChildren` описывают props/детей провайдера.
 
 ### Идентификаторы
 
@@ -1502,7 +1508,7 @@ const sharedResourceCache: ResourceCache;
 type ResourceStatus = "idle" | "pending" | "success" | "error";
 ```
 
-`Resource` даёт accessors `data`, `error`, `pending`, `status`, `key`, промис `ready`, методы `read`, `refetch`, `set`, `mutate`, `abort`, `dispose`. `ResourceFetchContext` содержит `signal` и `key`. `ResourceFetcher` возвращает значение или Promise. `ResourceOptions` включает key/cache/cacheTime/dedupe/immediate/throwOnError/onError/boundary/signal/disposeOnCleanup.
+`Resource` даёт accessors `data`, `error`, `pending`, `status`, `key`, промис `ready`, методы `read`, `refetch`, `set`, `mutate`, `abort`, `dispose`. `ResourceFetchContext` содержит `signal` и `key`. `ResourceFetcher` возвращает значение или Promise. `ResourceOptions` включает key/cache/cacheTime/dedupe/immediate/throwOnError/onError/boundary/signal/disposeOnCleanup. Активный промис ресурса регистрируется в текущей границе `Suspense` (или в явном `options.boundary`) и учитывается `whenIdle`; при этом чтение ресурса не бросает промис и не приостанавливает рендер.
 
 ### Head
 
@@ -1584,7 +1590,7 @@ function updateProps(node: Node, props: Record<string, unknown>): boolean;
 function template(html: string): () => Node;
 ```
 
-Строит `HTMLTemplateElement` из HTML-строки, кеширует его по строке и возвращает функцию клонирования: один корень — клон элемента; несколько — фрагмент из клонов; пустой шаблон — пустой фрагмент. Клоны изолированы: изменения в одном экземпляре не затрагивают другие.
+Строит `HTMLTemplateElement` из HTML-строки и возвращает функцию клонирования: один корень — клон элемента; несколько — фрагмент из клонов; пустой шаблон — пустой фрагмент. Разобранный шаблон кешируется по паре `(Document, html)` в `WeakMap<Document, Map<string, TemplateParse>>`: кеш realm-safe, поэтому SSR-документ мини-DOM и клиентский `document` в одном процессе не переиспользуют фрагменты друг друга. Клоны изолированы: изменения в одном экземпляре не затрагивают другие.
 
 ### `templateHoles`
 
@@ -1600,7 +1606,7 @@ function templateHoles(
 
 Как `template`, но дополнительно находит точки вставки «холов»: комментарии вида `silent-hole-<N>` (порядковый индекс до первого пропуска) и элементы с атрибутами `data-silent-a-<N>` (атрибуты после чтения удаляются — в серверном режиме, включённом `setServerMode`, они сохраняются).
 
-`plan` — план адоптации компилятора; `false` означает, что у шаблона гарантированно нет дыр и атрибутов-маркеров (компилятор эмитит его для статического шаблона, в том числе при `hydrate: false`), поэтому дерево не обходится. `namespace: "svg"` парсит HTML внутри `<svg>`, чтобы корневые `path`/`circle`/`g` получили SVG-пространство имён. Без явного значения SVG определяется по первому корневому тегу; это покрывает динамических детей `For`, `.map()` и компонентов.
+`plan` — план адоптации компилятора; `false` означает, что у шаблона гарантированно нет дыр и атрибутов-маркеров, поэтому дерево не обходится. Компилятор эмитит `false` для полностью статических шаблонов при `hydrate: false`, а также при `hydrate: true` для статических шаблонов с запрещённым планом (`title`/`meta`/`link` и теги с неявной перестройкой парсером: `table`, `select`, `p`, `a`, `form` и т.п.). `namespace: "svg"` парсит HTML внутри `<svg>`, чтобы корневые `path`/`circle`/`g` получили SVG-пространство имён. Без явного значения SVG определяется по первому корневому тегу; это покрывает динамических детей `For`, `.map()` и компонентов.
 
 ### `setServerMode`
 
@@ -1629,22 +1635,22 @@ function isServerMode(): boolean;
 ```ts
 interface TemplateClone {
   readonly node: Node;
-  readonly holes: readonly Comment[];
+  readonly holes: readonly (Comment | ServerHole)[];
   readonly attrs: readonly Element[];
 }
 ```
 
-`node` — корень (единственный узел или фрагмент контента; для шаблона, единственный корень которого — дыра, это фрагмент с серверным содержимым дыры и её маркером), `holes` — комментарии-заполнители для динамического контента, `attrs` — элементы с динамическими атрибутами.
+`node` — корень (единственный узел или фрагмент контента; для шаблона, единственный корень которого — дыра, это фрагмент с серверным содержимым дыры и её маркером), `holes` — комментарии-заполнители для динамического контента (в серверном бэкенде — `ServerHole`), `attrs` — элементы с динамическими атрибутами.
 
 ### `insert`
 
 *Стабильность: internal.*
 
 ```ts
-function insert(parent: Node, accessor: () => unknown, marker?: Node): void;
+function insert(parent: Node, accessor: () => unknown, marker?: Node | ServerHole): void;
 ```
 
-Создаёт mount-point внутри `parent` (перед `marker`, если задан) и рендерит в него результат `accessor`. Значения: `Node`, строка, число, `bigint`, массив, вложенные функции, `null`/`undefined`/`boolean`. Строковые и численные значения переиспользуют один текстовый узел (обновляется только `data`); узлы, массивы и функции меняются заменой набора, старые узлы освобождаются.
+Создаёт mount-point внутри `parent` (перед `marker`, если задан) и рендерит в него результат `accessor`. Если `marker` — `ServerHole` (серверный бэкенд), значение записывается в слот строкового шаблона вместо создания mount-point. Значения: `Node`, строка, число, `bigint`, массив, вложенные функции, `null`/`undefined`/`boolean`. Строковые и численные значения переиспользуют один текстовый узел (обновляется только `data`); узлы, массивы и функции меняются заменой набора, старые узлы освобождаются.
 
 ### `text`
 

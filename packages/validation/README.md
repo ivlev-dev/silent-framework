@@ -13,7 +13,7 @@
 - Имена декораторов в PascalCase: `@Required`, `@IsEmail`, `@Min`, `@Nested`.
 - Синхронный `validate` и асинхронный `validateAsync` с одинаковым набором правил.
 - Вложенная валидация объектов (`@Nested`) и элементов коллекций (`@Each`).
-- Модификаторы: `@ValidateIf`, `@Optional`, `@Label`, `@Groups`.
+- Модификаторы: `@ValidateIf`, `@Optional`, `@Label`, `@Groups`, `@ValidateOnSet`.
 - Сообщения: переопределение через `message`/`messageKey`, ярлыки полей, встроенные каталоги `ru`/`en`, глобальная настройка `configureValidation` и собственный резолвер (например, i18next).
 - Пути ошибок вида `address.city` и `items[2].name`.
 - Ошибки с машинно-читаемыми полями: `field`, `rule`, `params`, `value`, `path`, `label`, `index`.
@@ -68,7 +68,7 @@ if (!result.valid) {
 }
 ```
 
-Валидация явная: декораторы только регистрируют правила, проверка запускается вызовом `validate`/`validateAsync` (или `validateOrThrow`/`validateOrThrowAsync`).
+Валидация явная: декораторы только регистрируют правила, проверка запускается вызовом `validate`, `validateAsync`, `validateOrThrow`, `validateOrThrowAsync`, `validateProperty`/`validatePropertyAsync`, `validatePartial`/`validatePartialAsync` или `safeParse`/`safeParseAsync`. Исключение — opt-in `@ValidateOnSet`: он проверяет поле при каждом присваивании.
 
 ## Валидация из типов
 
@@ -110,6 +110,7 @@ export default defineConfig({
 | `exclude` | `RegExp` | `/node_modules/` | Файлы, которые плагин пропускает |
 | `tsconfig` | `string` | ближайший `tsconfig.json` | Путь к конфигу относительно корня проекта |
 | `base` | `string` | `"ValidationModel"` | Имя базового класса, потомки которого получают схему |
+| `strict` | `boolean` | `false` | Бросать ошибку вместо предупреждения при неподдерживаемом типе |
 
 TypeScript используется только на сборке: `typescript` — зависимость пакета `@ivlev-dev/silent-validation-vite`, рантайм от него не зависит. Плагин самостоятельный: `silent()` нужен только для JSX/VM-компиляции, в обычном Vite-конфиге достаточно `validation()`.
 
@@ -148,9 +149,11 @@ const result = validate(order);
 
 ```js
 static {
-  this[Symbol.for("silent.validation.schema")] = { fields: { email: "string", age: ["optional", "number"] } };
+  this[Symbol.for("silent.validation.schema")] = { version: 1, fields: { email: "string", age: ["optional", "number"] } };
 }
 ```
+
+Схема без `version` (`{ fields: ... }`) поддерживается как legacy-формат; текущий плагин всегда генерирует `version: 1`.
 
 Ошибка типа получает `rule: "type"`, `params.type` с именем ожидаемого типа, сообщение по ключу `validation.type` и обычный `path`:
 
@@ -176,7 +179,7 @@ class Order extends ValidationModel {
 }
 ```
 
-Ошибки приходят как `address.city`, `items[0].quantity`; для элементов массива заполняется `index`. Ключи объектов и `Record` идут через точку (`counts.apples`), ключи `Map` — в скобках (`map[userId]`).
+Ошибки приходят как `address.city`, `items[0].quantity`; для прямых ошибок элемента массива заполняется `index`, а у ошибок внутри вложенного класса индекс есть только в `path`. Ключи объектов и `Record` идут через точку (`counts.apples`), ключи `Map` — в скобках (`map[userId]`).
 
 ### Смешивание с декораторами
 
@@ -193,6 +196,10 @@ class User extends ValidationModel {
   public accessor age: number = 0;
 }
 
+const user = new User();
+user.email = "user@example.com";
+user.age = 30;
+
 validate(user);
 ```
 
@@ -204,7 +211,7 @@ validate(user);
 validate(instance, { types: false });
 ```
 
-Флаг `types` в `ValidationOptions` по умолчанию `true`. С `types: false` остаются только правила декораторов — удобно, когда схема приходит извне или типы описывают данные шире, чем допустимо в конкретном вызове. Флаг `cascade` (по умолчанию `true`) управляет каскадом: `false` останавливает декораторы поля после ошибки типа. Оба флага можно задать глобально через `configureValidation` и переопределить на вызов.
+Флаг `types` в `ValidationOptions` по умолчанию `true`; глобально он не настраивается. С `types: false` остаются только правила декораторов — удобно, когда схема приходит извне или типы описывают данные шире, чем допустимо в конкретном вызове. Флаг `cascade` (по умолчанию `true`) управляет каскадом: `false` останавливает декораторы поля после ошибки типа. `cascade` можно задать глобально через `configureValidation` и переопределить на вызов; `types` задаётся только в `ValidationOptions`.
 
 ### Поддерживаемые типы
 
@@ -213,10 +220,10 @@ validate(instance, { types: false });
 | Примитивы | `string`, `number`, `boolean`, `bigint`, `symbol`, `object`, `function`, `undefined`, `null`, `void`, `never` |
 | Литералы | `"admin"`, `42`, `true` — значение сверяется с литералом |
 | Объединения и пересечения | `string \| number`, `A & B`, `T \| null`, `T \| undefined` |
-| Массивы и кортежи | `T[]`, `ReadonlyArray<T>`, `[string, number]`, `[string, number?]`, `[string, ...number[]]` |
-| Объекты | `Record<K, V>`, `{ [key: string]: T }`, классы и интерфейсы, type alias’ы (структурно, включая рекурсивные) |
-| Коллекции | `Map`, `Set`; `WeakMap`/`WeakSet` — только `instanceof`, без проверки ключей и значений |
-| Встроенные | `Promise`, `Date`, `RegExp`, `Error` и подклассы, `ArrayBuffer`, `SharedArrayBuffer`, `DataView`, typed arrays, `URL`, `URLSearchParams` |
+| Массивы и кортежи | `T[]`, `ReadonlyArray<T>`, `ArrayLike<T>` (массивы и array-like объекты), `[string, number]`, `[string, number?]`, `[string, ...number[]]` |
+| Объекты | `Record<K, V>`, `{ [key: string]: T }`, классы и интерфейсы, type alias’ы (структурно, включая рекурсивные), mapped-утилиты `Partial`/`Pick`/`Omit`/`Readonly`/`Required` |
+| Коллекции | `Map`, `Set`, `ReadonlyMap`, `ReadonlySet`; `WeakMap`/`WeakSet` — только `instanceof`, без проверки ключей и значений |
+| Встроенные | `Promise`, `Date`, `RegExp`, `Error` и подклассы, `ArrayBuffer`, `SharedArrayBuffer`, `DataView`, typed arrays, `Buffer` (как `Uint8Array`), `URL`, `URLSearchParams` |
 | Итераторы | `Iterable`, `Iterator`, `AsyncIterable`, `AsyncIterator` |
 | Enum | значения `enum` — как у `@IsEnum` |
 
@@ -229,11 +236,12 @@ validate(instance, { types: false });
 
 ### Ограничения
 
-- Метаданные получают только классы с `accessor`-полями и аннотациями; файл должен попадать под `include` и не попадать под `exclude`.
+- Метаданные получают только классы с `accessor`-полями и аннотациями; файл должен попадать под `include` и не попадать под `exclude`. Проверяются только `accessor`-поля с явной аннотацией и identifier-именем; вычисляемые и символьные имена пропускаются.
 - Схема генерируется только для классов-потомков `ValidationModel`; класс без базового класса не валидируется по типу.
 - Optional-поле описывается как `public accessor age: number | undefined = undefined;`. Синтаксис `accessor age?: number` в TypeScript запрещён.
-- Mapped-утилиты (`Partial`, `Pick`, `Omit`, `Readonly`, `Required`) поддерживаются структурно. Глубина данных ограничена 256 уровнями (глубже — ошибка `validation.depth`). Условные, template и indexed-типы, а также generic-параметры без конкретизации пропускаются с диагностикой.
-- Если класс импортирован только как тип (`import type { Item }`), плагин добавляет namespace-импорт, чтобы проверять экземпляры в рантайме.
+- Mapped-утилиты (`Partial`, `Pick`, `Omit`, `Readonly`, `Required`) поддерживаются структурно. Глубина данных ограничена 256 уровнями (глубже — ошибка `validation.depth`). Числовая index-signature учитывается только у типов без именованных свойств. Условные, template и indexed-типы, а также generic-параметры без конкретизации пропускаются с диагностикой (в `strict` — ошибка).
+- Символьные свойства структурных типов пропускаются с диагностикой (в `strict` — ошибка); ambient-классы (`declare class`) без рантайм-модуля пропускаются.
+- Если класс импортирован только как тип (`import type { Item }`), плагин добавляет namespace-импорт при наличии рантайм-файла. Если рантайма нет, поле пропускается с диагностикой (в `strict` — ошибка).
 - Плагин вставляет статический блок в бандл: без него `validate` увидит только правила декораторов.
 
 ## API
@@ -246,14 +254,14 @@ validate(instance, { types: false });
 | `validatePropertyAsync(instance, field, options?)` | Асинхронная проверка одного поля |
 | `validatePartial(instance, fields, options?)` | Проверка выбранных полей |
 | `validatePartialAsync(instance, fields, options?)` | Асинхронная проверка выбранных полей |
-| `safeParse(instance, options?)` | Проверка без исключения: `{ success, data, errors }` |
+| `safeParse(instance, options?)` | Не бросает `ValidationException`; ошибки валидации в `{ success, data, errors }` |
 | `safeParseAsync(instance, options?)` | Асинхронный вариант `safeParse` |
 | `validateOrThrow(instance, options?)` | Синхронная проверка, при ошибках бросает `ValidationException` |
 | `validateOrThrowAsync(instance, options?)` | Асинхронная проверка, при ошибках бросает `ValidationException` |
 | `ValidationResult` | `{ valid: boolean; errors: readonly ValidationError[] }` |
 | `ValidationError` | Ошибка правила: `field`, `rule`, `message`, `params`, `value`, `path`, `label`, `index?` |
 | `ValidationException` | Исключение с полями `errors` и `result` |
-| `AsyncRuleError` | Бросается синхронным `validate`, если правило вернуло промис |
+| `AsyncRuleError` | Бросается `validate`, `validateProperty`, `validatePartial`, `safeParse`, `validateOrThrow`, если правило вернуло промис |
 | `ValidationModel` | Базовый класс-маркер: схема из TS-типов генерируется только для его потомков |
 | `ValidationOptions` | `groups`, `stopAtFirst`, `labels`, `types`, `cascade`, `locale`, `resolve`, `messages` |
 
@@ -270,11 +278,11 @@ import {
 
 - `groups` — проверять только поля с указанными группами; поле без групп участвует всегда.
 - `stopAtFirst` — остановиться на первой ошибке.
-- `labels` — карта `имя поля → человекочитаемый ярлык`, переопределяет `@Label`.
+- `labels` — карта `имя поля или путь → человекочитаемый ярлык`; приоритет: `RuleOptions.label` → `@Label` → `labels[path]` → `labels[field]` → имя поля.
 - `types` — проверка типов из TS-аннотаций (по умолчанию `true`, см. «Валидация из типов»).
 - `locale`, `resolve`, `messages` — переопределяют глобальный конфиг сообщений для конкретного вызова.
 
-`validate` бросает `AsyncRuleError`, если встретилось асинхронное правило (`Custom` с `async`-функцией). Для таких моделей используйте `validateAsync`.
+Синхронные `validate`, `validateProperty`, `validatePartial`, `safeParse` и `validateOrThrow` бросают `AsyncRuleError`, если встретилось асинхронное правило (`Custom` с `async`-функцией). Они же бросают `TypeError`, если аргумент — не объект или обычный массив (подклассы `Array` валидируются), и `Error` при асинхронном резолвере сообщений. Для моделей с асинхронными правилами используйте `validateAsync`, `validatePropertyAsync`, `validatePartialAsync`, `safeParseAsync` или `validateOrThrowAsync`.
 
 ## Правила
 
@@ -385,7 +393,7 @@ class Order {
 }
 ```
 
-`Custom` принимает функцию `(value, context) => boolean | Promise<boolean>`. Асинхронная функция требует `validateAsync`, иначе синхронный `validate` бросит `AsyncRuleError`.
+`Custom` принимает функцию `(value, context) => boolean | Promise<boolean>`. Асинхронная функция требует одной из async-функций: `validateAsync`, `validatePropertyAsync`, `validatePartialAsync`, `safeParseAsync`, `validateOrThrowAsync`. Синхронные `validate`, `validateProperty`, `validatePartial`, `safeParse` и `validateOrThrow` бросят `AsyncRuleError`.
 
 ## Модификаторы
 
@@ -414,6 +422,11 @@ class Profile {
   public accessor role: string | undefined = undefined;
 }
 
+const profile = new Profile();
+profile.age = 30;
+profile.consent = true;
+profile.role = "admin";
+
 validate(profile, { groups: ["admin"] });
 ```
 
@@ -422,6 +435,8 @@ validate(profile, { groups: ["admin"] });
 ## Сообщения
 
 Каждое правило формирует ключ `validation.<rule>`, например `validation.min` или `validation.isEmail`. Встроенные каталоги — `ru` (по умолчанию, `DEFAULT_LOCALE`) и `en`.
+
+Служебные ключи: `validation.type` — значение не совпало с типом из схемы, `validation.depth` — вложенность глубже 256 уровней, `validation.each` — элемент `@Each` не является объектом, `validation.eachValue` — значение `@Each` не является коллекцией (`each`/`eachValue` различают ошибку элемента и ошибку самой коллекции).
 
 ```ts
 import { validate, Required, Min, IsEmail } from "@ivlev-dev/silent-validation";
@@ -438,7 +453,7 @@ class User {
 
 - `message` — строка с плейсхолдерами `{label}`, `{value}`, `{field}`, `{index}` и параметрами правила, либо функция `(context) => string`. Имеет приоритет над резолвером и каталогом.
 - `messageKey` — другой ключ каталога, например `validation.required`.
-- `label` — ярлык поля в сообщении; приоритет: `options.label` → `@Label` → `options.labels[field]` → имя поля.
+- `label` — ярлык поля в сообщении; приоритет: `options.label` → `@Label` → `options.labels[path]` → `options.labels[field]` → имя поля.
 
 ### Глобальный конфиг
 
@@ -462,7 +477,7 @@ const config = getValidationConfig();
 resetValidationConfig();
 ```
 
-`configureValidation` мержит переданные поля с текущими настройками: `locale`, `resolve`, `messages`. Значения `messages` переопределяют встроенные каталоги. Если ключа нет в выбранной локали, используется `ru`, затем встроенный `en`.
+`configureValidation` мержит переданные поля с текущими настройками: `cascade`, `locale`, `resolve`, `messages`. Значения `messages` переопределяют встроенные каталоги. Если ключа нет в выбранной локали, используется `ru`, затем встроенный `en`.
 
 ### Резолвер (i18next)
 
@@ -478,9 +493,20 @@ configureValidation({
 
 Резолвер `MessageResolver` получает `key`, `params`, `locale`, `label`, `field`, `value`, `path` и возвращает строку или `undefined`. При `undefined` используется каталог. Возвращённая строка интерполируется так же, как шаблон каталога.
 
-Резолвер может быть асинхронным: `resolve` вправе вернуть `Promise<string | undefined>`, но такой режим работает только в `validateAsync` (и других async-функциях); синхронный `validate` бросит `Error`. Для i18next есть готовый адаптер `createI18nextResolver`.
+Резолвер может быть асинхронным: `resolve` вправе вернуть `Promise<string | undefined>`, но такой режим работает только в async-функциях (`validateAsync`, `validatePropertyAsync`, `validatePartialAsync`, `safeParseAsync`, `validateOrThrowAsync`); синхронные `validate`, `validateProperty`, `validatePartial`, `safeParse` и `validateOrThrow` бросят `Error`.
 
-Для правил размера и длины (`arrayMinSize`, `arrayMaxSize`, `minLength`, `maxLength`) встроенные каталоги содержат плюральные формы (`_one`/`_few`/`_many` в `ru`, `_one`/`_other` в `en`). Форма выбирается по числу из `params.count`/`min`/`max`/`length` или по значению.
+Для i18next есть готовый адаптер `createI18nextResolver`:
+
+```ts
+import { configureValidation, createI18nextResolver } from "@ivlev-dev/silent-validation";
+import i18next from "i18next";
+
+configureValidation({ resolve: createI18nextResolver(i18next) });
+```
+
+`createI18nextResolver(i18n, { keyPrefix })` вызывает `i18n.t(prefix + key, { ...params, label, lng: locale, defaultValue, count })`. `lng` — текущая локаль, `label` — ярлык поля, `defaultValue` — встроенный шаблон (или сам ключ, если шаблона нет). `count` передаётся только для `arrayMinSize`, `arrayMaxSize`, `arrayNotEmpty`, `arrayUnique`, `length`, `minLength`, `maxLength`, `each`, `eachValue` и берётся из `params.count`/`min`/`max`/`length`, иначе из длины массива/строки или `Set.size`. Если `i18n.t` вернул не строку, пустую строку или сам ключ, используется встроенный каталог.
+
+Для правил размера и длины (`arrayMinSize`, `arrayMaxSize`, `minLength`, `maxLength`) встроенные каталоги содержат плюральные формы: `_one`/`_few`/`_many`/`_other` в `ru`, `_one`/`_other` в `en`. Форма выбирается по числу из `params.count`/`min`/`max`/`length`, затем по числу значения, длине массива/строки или `Set.size`. Например, для `ru`: `1 символ`, `2 символа`, `5 символов`.
 
 ## Вложенность
 
@@ -508,12 +534,19 @@ class Order {
   public accessor items!: Item[];
 }
 
+const order = new Order();
+order.address = new Address();
+order.address.city = "Москва";
+order.items = [new Item()];
+order.items[0]!.name = "Чай";
+order.items[0]!.quantity = 2;
+
 const result = validate(order);
 ```
 
-Пути ошибок: `address.city`, `items[0].name`, `items[2].quantity`. Для ошибок элементов коллекций заполняется `ValidationError.index` и доступен плейсхолдер `{index}`; путь всегда содержит индекс элемента.
+Пути ошибок: `address.city`, `items[0].name`, `items[2].quantity`. `ValidationError.index` и плейсхолдер `{index}` заполняются у прямых ошибок элемента коллекции (неверный тип элемента или правило с `each: true`); у ошибок внутри вложенного класса индекс есть только в пути.
 
-`@Nested()` проверяет вложенный объект правилами его класса. `@Each()` делает то же для каждого элемента массива или `Set` и сообщает ошибку, если коллекция или элемент имеют неверный тип. Для примитивных элементов используйте `@Min(0, { each: true })`.
+`@Nested()` проверяет вложенный объект правилами его класса. `@Each()` делает то же для каждого элемента массива или `Set`: неверная коллекция даёт `validation.eachValue`, неверный элемент — `validation.each`. Для примитивных элементов используйте `@Min(0, { each: true })`.
 
 Элементы `@Each()` должны быть созданы конструктором класса с декораторами — правила регистрируются при инициализации экземпляра. Plain-объекты без декораторов считаются валидными (у них нет правил).
 
@@ -521,11 +554,11 @@ const result = validate(order);
 
 - Поддерживаются только stage-3 `accessor`-поля (`public accessor email!: string`). Обычные поля, приватные (`#field`) и статические поля не поддерживаются — декоратор бросает `TypeError` (и типы не дадут применить его к обычному полю).
 - Optional-поле описывается через `| undefined`: `public accessor age: number | undefined = undefined;`. Синтаксис `accessor age?: number` в TypeScript запрещён.
-- Типы проверяются только из аннотаций `accessor`-полей и только при подключённом плагине `validation()` из `@ivlev-dev/silent-validation-vite`. Обычные поля и поля без аннотации остаются без проверки типов; условные/mapped/template/indexed-типы и generic-параметры пропускаются.
-- Валидация явная: ни декораторы, ни типы из аннотаций не запускают проверку без вызова `validate`/`validateAsync`.
+- Типы проверяются только из аннотаций `accessor`-полей и только при подключённом плагине `validation()` из `@ivlev-dev/silent-validation-vite`. Обычные поля и поля без аннотации остаются без проверки типов; условные/template/indexed-типы и generic-параметры без конкретизации пропускаются. Mapped-утилиты (`Partial`, `Pick`, `Omit`, `Readonly`, `Required`) поддерживаются структурно.
+- Валидация явная: ни декораторы, ни типы из аннотаций не запускают проверку без вызова `validate`, `validateAsync`, `validateOrThrow`, `validateOrThrowAsync`, `validateProperty`/`validatePropertyAsync`, `validatePartial`/`validatePartialAsync` или `safeParse`/`safeParseAsync`. Исключение — opt-in `@ValidateOnSet`: он проверяет поле при каждом присваивании.
 - Нужны stage 3 декораторы: `experimentalDecorators: false`. Legacy-декораторы (`experimentalDecorators: true`) не поддерживаются.
 - ESM-only, Node.js >= 22.
-- `validate` не поддерживает асинхронные правила — используйте `validateAsync`.
+- Синхронные функции (`validate`, `validateProperty`, `validatePartial`, `safeParse`, `validateOrThrow`) не поддерживают асинхронные правила — используйте `validateAsync`, `validatePropertyAsync`, `validatePartialAsync`, `safeParseAsync` или `validateOrThrowAsync`.
 - Вложенный объект должен быть создан конструктором класса с декораторами: правила регистрируются при инициализации экземпляра. Plain-объекты без декораторов считаются валидными (у них нет правил). Кольцевые ссылки не приводят к бесконечной рекурсии.
 - Пути и сообщения не зависят от фреймворка: пакет не требует `@ivlev-dev/silent-core`.
 

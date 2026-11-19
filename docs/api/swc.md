@@ -2,7 +2,7 @@
 
 Нативный Node-API addon на `swc_core`: компиляция TS/TSX, JSX-преобразование Silent Framework и сканирование DI-индекса.
 
-Addon синхронно экспортирует три функции — `transform`, `scan`, `version`. Загрузка бинарника выполняется модулем-обёрткой `packages/swc/index.js`: сначала ищется платформенный пакет `@ivlev-dev/silent-swc-<triple>`, затем локальный `*.node` в каталоге `native`.
+Addon синхронно экспортирует три функции — `transform`, `scan`, `version`. Загрузка бинарника выполняется модулем-обёрткой `packages/swc/index.js`: сначала выполняется попытка загрузить пакет `@ivlev-dev/silent-swc-<triple>` (сейчас такие платформенные пакеты не публикуются), затем — локальный `*.node` из каталога `native`.
 
 #### `NativeTransformResult`
 
@@ -50,6 +50,7 @@ interface SwcAddonOptions {
   hmr?: boolean;
   ssr?: boolean;
   hydrate?: boolean;
+  aliases?: { find: string; replacement: string }[];
 }
 ```
 
@@ -58,7 +59,8 @@ interface SwcAddonOptions {
 - `runtime` — путь/модуль runtime-импортов Silent (по умолчанию задаётся компилятором).
 - `hmr` — включить генерацию HMR-кода.
 - `ssr` — SSR-кодогенерация: JSX превращается в строковую конкатенацию без `templateHoles`/`insert`, статические фрагменты выносятся в массив; клиентские планы адоптации при этом сохраняются.
-- `hydrate` — генерировать клиентские дескрипторы адоптации для гидрации (по умолчанию `true`). При `false` (mount-only сборка) планы `templateHoles` не эмитятся, а полностью статические шаблоны получают третий вариант второго аргумента — `templateHoles(html, false)` — и рантайм не обходит дерево при клонировании.
+- `hydrate` — генерировать клиентские дескрипторы адоптации для гидрации (по умолчанию `true`). При `false` (mount-only сборка) не генерируются adoption-план и `staticRows`, планы `templateHoles` не эмитятся, а полностью статические шаблоны получают третий вариант второго аргумента — `templateHoles(html, false)` — и рантайм не обходит дерево при клонировании.
+- `aliases` — правила алиасов для разрешения импортов (`{ find, replacement }`, `*` в `find` подставляет совпавшую часть). Vite-плагин передаёт сюда объединённые алиасы Vite и `tsconfig`; для `scan` те же правила передаются отдельным `optionsJson`.
 
 При отсутствии значений применяются умолчания: синтаксис TypeScript с `decorators: true`, цель `es2024` (если не задана ни цель, ни `env`), версия декораторов `2023-11`, source maps включены, если `sourceMaps` не указан. Если `options.swc` равно `null` или отсутствует, берётся `Options` по умолчанию.
 
@@ -146,9 +148,9 @@ napi build --release --platform --manifest-path ../../crates/silent-node/Cargo.t
 - release-профиль workspace задаёт `lto = "thin"`, `codegen-units = 1`, `strip = "symbols"`.
 - В зависимостях `swc_core` включён feature `ecma_helpers_inline`: хелперы ECMAScript встраиваются в генерируемый код, а не импортируются из внешнего runtime.
 - `transform` вызывает `swc_core::common::GLOBALS.set(...)` вокруг обработки, чтобы инициализировать thread-local состояние SWC для текущего вызова из Node.
-- Артефакты: `packages/swc/native/*.node` и платформенные пакеты `@ivlev-dev/silent-swc-<triple>`; `packages/swc/index.js` выбирает подходящий бинарник по `process.platform`/`process.arch`.
+- Артефакты: `packages/swc/native/*.node`; платформенные пакеты `@ivlev-dev/silent-swc-<triple>` не публикуются, `packages/swc/index.js` выбирает подходящий бинарник из `native` по `process.platform`/`process.arch` (при наличии пакета с таким именем он будет загружен первым).
 
-Поддерживаемые платформы по умолчанию: `linux-x64` (`linux-x64-gnu`), `linux-arm64`, `darwin-x64`, `darwin-arm64`, `win32-x64` (`win32-x64-msvc`), `win32-arm64`.
+Release-workflow собирает пребилды только для `linux-x64-gnu` (`x86_64-unknown-linux-gnu`) и `win32-x64-msvc` (`x86_64-pc-windows-msvc`). Для остальных платформ (`linux-arm64`, `darwin-x64`, `darwin-arm64`, `win32-arm64` и др.) бинарник нужно собрать локально командой `pnpm --filter @ivlev-dev/silent-swc build`.
 
 ## Ошибки
 
@@ -160,9 +162,9 @@ napi build --release --platform --manifest-path ../../crates/silent-node/Cargo.t
 
 ## Версии
 
-- Версия addon: `0.0.1` ( workspace и Cargo-пакет `silent-node`), `version()` возвращает ту же строку.
+- Версия addon: `0.12.0` (workspace и Cargo-пакет `silent-node`), `version()` возвращает ту же строку.
 - `swc_core`: `84.0.2` с набором features из корневого `Cargo.toml`.
-- `@ivlev-dev/silent-vite`: `0.0.1`, зависит от `@ivlev-dev/silent-swc` через `workspace:*` и вызывает `transform`/`scan` через `loadSwc`.
+- `@ivlev-dev/silent-vite`: `0.12.0`, зависит от `@ivlev-dev/silent-swc` через `workspace:*` и вызывает `transform`/`scan` через `loadSwc`.
 - Требования: Node.js `>=22`.
 
 ## Ограничения

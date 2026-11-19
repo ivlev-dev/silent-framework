@@ -43,7 +43,7 @@ pnpm add -D @ivlev-dev/silent-vite vite@^8 typescript@^7
 
 Поля `dependencies` и `devDependencies` уже добавлены командами `pnpm add`.
 
-Версии всех `@ivlev-dev/silent-*` синхронизированы: актуальная — 0.3.0.
+Версии всех `@ivlev-dev/silent-*` синхронизированы: актуальная — 0.12.0.
 
 ## Настройка
 
@@ -339,7 +339,7 @@ silent-app/
 ## Дальше
 
 - Гайды: [`docs/guides/ssr.md`](./guides/ssr.md), [`docs/guides/hydration.md`](./guides/hydration.md), [`docs/guides/di.md`](./guides/di.md), [`docs/guides/router.md`](./guides/router.md), [`docs/guides/migration-from-solid.md`](./guides/migration-from-solid.md); каталог — [`docs/guides/`](./guides/).
-- Справочник API: [`docs/api/core.md`](./api/core.md), [`docs/api/vite.md`](./api/vite.md), [`docs/api/di.md`](./api/di.md), [`docs/api/reactivity.md`](./api/reactivity.md), [`docs/api/swc.md`](./api/swc.md), [`docs/api/validation.md`](./api/validation.md), [`docs/api/validation-vite.md`](./api/validation-vite.md), [`docs/api/index.md`](./api/index.md).
+- Справочник API: [`docs/api/core.md`](./api/core.md), [`docs/api/vite.md`](./api/vite.md), [`docs/api/router.md`](./api/router.md), [`docs/api/di.md`](./api/di.md), [`docs/api/reactivity.md`](./api/reactivity.md), [`docs/api/swc.md`](./api/swc.md), [`docs/api/validation.md`](./api/validation.md), [`docs/api/validation-vite.md`](./api/validation-vite.md), [`docs/api/index.md`](./api/index.md).
 - Полный пример: [`examples/counter`](../examples/counter).
 - SSR с реальным HTTP-сервером: [`examples/ssr-counter`](../examples/ssr-counter).
 - Архитектура рантайма: [`docs/architecture.md`](./architecture.md).

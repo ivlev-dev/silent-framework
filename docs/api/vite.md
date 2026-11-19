@@ -7,7 +7,7 @@ Vite-плагин компиляции Silent Framework: преобразует 
 Сигнатура:
 
 ```ts
-import type { Plugin } from "vite";
+import type { ConfigEnv, Plugin, ResolvedConfig, UserConfig } from "vite";
 import type { SilentOptions } from "@ivlev-dev/silent-vite";
 
 declare function silent(options?: SilentOptions): Plugin;
@@ -30,8 +30,10 @@ export default defineConfig({
 {
   name: "silent",
   enforce: "pre",
+  config(config: UserConfig, env?: ConfigEnv): UserConfig | undefined;
+  configResolved(config: ResolvedConfig): void;
   buildStart(): Promise<void>;
-  transform(code: string, id: string): Promise<{
+  transform(code: string, id: string, options?: { ssr?: boolean }): Promise<{
     code: string;
     map: string | null;
     warnings: string[];
@@ -58,10 +60,10 @@ export default defineConfig({
 | `hmr` | `boolean` | `true` | Включить внедрение HMR в компилируемый код. |
 | `index` | `boolean` | `true` | Строить индекс DI по файлам проекта. При `false` передаётся пустой индекс `{ interfaces: {}, values: {} }`. |
 | `view` | `boolean` | `true` | Включить view/VM-рантайм. При `false` вырезает `component-view` и генерирует lazy-чанк только при наличии VM. |
-| `hydrate` | `boolean` | `true` | Включить клиентскую гидрацию. При `false` вырезает hydration-ветки и прокси из стартового чанка; используйте только для mount-only приложений. |
+| `hydrate` | `boolean` | `true` | Включить клиентскую гидрацию. При `false` отключаются adoption-план и `staticRows` в компиляторе, из стартового чанка вырезаются hydration-ветки и прокси, а `config` ставит `define.__SILENT_HYDRATE__ = "false"`; вызов `hydrate()` в такой сборке бросает `Error`. Используйте только для mount-only приложений. |
 | `di` | `"allow" \| "warn" \| "error"` | `"warn"` | Политика DI-диагностик компилятора: `allow` — игнорировать, `warn` — выводить через `this.warn`, `error` — бросать ошибку в `transform`. |
 
-Типы `ResolvedOptions` и функция `resolveOptions` описаны в `packages/vite/dist/options.d.ts`, но в основной точке входа пакета не реэкспортируются. Их можно использовать только через внутренние пути; `DEFAULT_INCLUDE`, `DEFAULT_EXCLUDE`, `DEFAULT_RUNTIME`, `matchesPattern`, `cleanModuleId`, `isVirtualModule`, `isInsideRoot`, `isSourceModule` ведут себя так же, как определено в `options.ts`.
+`ResolvedOptions` и `resolveOptions` — внутренние детали пакета: в `package.json` экспортируется только `"."`, поэтому через публичные пути они недоступны. `DEFAULT_INCLUDE`, `DEFAULT_EXCLUDE`, `DEFAULT_RUNTIME`, `matchesPattern`, `cleanModuleId`, `isVirtualModule`, `isInsideRoot`, `isSourceModule` определены в `options.ts` и используются плагином.
 
 Нормализация опций (`resolveOptions`)
 
@@ -111,17 +113,19 @@ interface ResolvedOptions {
 
 ### Порядок хуков плагина
 
-1. `buildStart` — вызывается один раз (или лениво при первом `transform`): при `index: true` нативный addon сканирует `root` и строит индекс DI.
-2. `transform(code, id)` — для каждого модуля:
+1. `config(config, env)` — возвращает `define`-константы: `__SILENT_VIEW__ = "false"` при `view: false`, `__SILENT_HYDRATE__ = "false"` при `hydrate: false`, `__SILENT_SERVER__ = "false"` для клиентской production-сборки (`build` без `build.ssr`). При `view: false` также отключает полифилл `build.modulePreload`, если пользователь не задал его сам.
+2. `configResolved(config)` — запоминает каталог кэша (`config.cacheDir/silent-transform`), объединяет алиасы Vite и `tsconfig.json` (`paths`) и сбрасывает индекс, чтобы scan учитывал актуальные правила.
+3. `buildStart` — вызывается один раз (или лениво при первом `transform`): при `index: true` нативный addon сканирует `root` и строит индекс DI; персистентный кэш трансформаций очищается от старых записей.
+4. `transform(code, id, options)` — для каждого модуля:
    - очищает `id` от query и hash;
    - пропускает виртуальные модули (`\0…`, `virtual:…`);
    - проверяет `include`, `exclude` и попадание в `root`;
    - загружает addon через `loadSwc()`;
    - получает индекс через `ensureIndex()`;
-   - вызывает `nativeTransform(swc, code, moduleId, optionsJson, indexJson)`;
+   - вызывает `nativeTransform(swc, code, moduleId, optionsJson, indexJson)`, добавляя в `optionsJson` флаг `ssr` из `options?.ssr`;
    - применяет политику `di` к `diagnostics` и возвращает `{ code, map, warnings }` (`warnings` всегда пуст: `warn`-режим выводит сообщения через `this.warn`, `error`-режим бросает ошибку).
-3. `watchChange(id)` — при изменении исходного модуля (но не виртуального) сбрасывает кеш индекса.
-4. `handleHotUpdate({ file })` — то же для HMR-обновлений.
+5. `watchChange(id)` — при изменении исходного модуля (но не виртуального) сбрасывает кеш индекса; изменение `tsconfig.json` пересобирает правила алиасов.
+6. `handleHotUpdate({ file })` — то же для HMR-обновлений исходных модулей.
 
 Индекс кешируется в памяти плагина: несколько `transform` не вызывают повторный scan.
 
@@ -131,7 +135,7 @@ interface ResolvedOptions {
 
 - `loadSwc()` динамически импортирует `@ivlev-dev/silent-swc` и кеширует модуль.
 - `nativeTransform()` вызывает `swc.transform(source, filename, optionsJson, indexJson)` и проверяет, что ответ — валидный JSON структуры `{ code, map, diagnostics }`.
-- `nativeScan()` вызывает `swc.scan(root)` и проверяет структуру индекса `{ interfaces, values }`.
+- `nativeScan()` вызывает `swc.scan(root, optionsJson)` с JSON правил алиасов и проверяет структуру индекса `{ interfaces, values }`.
 
 Ошибки addon оборачиваются в `Error` с указанием имени файла или корня.
 

@@ -54,7 +54,7 @@ console.log(result.code);
 | Функция | Аргументы | Результат |
 | --- | --- | --- |
 | `transform` | `source: string`, `filename: string`, `optionsJson: string`, `indexJson: string` | `string` — JSON `NativeTransformResult` (`{ code, map, diagnostics }`) |
-| `scan` | `root: string` | `string` — JSON `SilentIndex` (`{ interfaces, values }`) |
+| `scan` | `root: string`, `optionsJson: string` | `string` — JSON `SilentIndex` (`{ interfaces, values }`) |
 | `version` | нет | `string` — версия нативного аддона |
 
 ## Платформы
@@ -62,7 +62,7 @@ console.log(result.code);
 - `linux-x64-gnu`
 - `win32-x64-msvc`
 
-В версии 0.1.x нативного бинаря для macOS нет.
+Release-workflow собирает пребилды только для этих двух платформ; для остальных (включая macOS и arm64) бинарник собирается локально. В версии 0.12.x платформенные npm-пакеты `@ivlev-dev/silent-swc-<triple>` не публикуются — `index.js` загружает `native/*.node` из самого пакета.
 
 ## Сборка из исходников
 
