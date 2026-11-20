@@ -200,6 +200,60 @@ fn binds_props<T: VisitWith<BindingFinder>>(node: &T) -> bool {
     finder.found
 }
 
+struct IdentCollector {
+    names: HashSet<String>,
+}
+
+impl Visit for IdentCollector {
+    fn visit_ident(&mut self, ident: &Ident) {
+        self.names.insert(ident.sym.to_string());
+    }
+}
+
+fn free_props_reference<T: VisitWith<IdentCollector>>(node: &T) -> bool {
+    let mut collector = IdentCollector {
+        names: HashSet::new(),
+    };
+    node.visit_with(&mut collector);
+    collector.names.contains("props")
+}
+
+fn used_identifiers<T: VisitWith<IdentCollector>>(node: &T) -> HashSet<String> {
+    let mut collector = IdentCollector {
+        names: HashSet::new(),
+    };
+    node.visit_with(&mut collector);
+    collector.names
+}
+
+// Имя параметра для деструктуризации. Если в теле есть свободная ссылка на внешний
+// `props`, параметр нельзя называть `props` — он перехватит эту ссылку.
+fn destructured_props_name<T, B>(node: &T, body: &B, destructured: bool) -> String
+where
+    T: VisitWith<IdentCollector>,
+    B: VisitWith<IdentCollector>,
+{
+    if destructured && free_props_reference(body) {
+        return unique_props_name(&used_identifiers(node));
+    }
+    "props".to_string()
+}
+
+fn unique_props_name(taken: &HashSet<String>) -> String {
+    const BASE: &str = "_props$";
+    if !taken.contains(BASE) {
+        return BASE.to_string();
+    }
+    let mut index = 1usize;
+    loop {
+        let candidate = format!("{BASE}{index}");
+        if !taken.contains(&candidate) {
+            return candidate;
+        }
+        index += 1;
+    }
+}
+
 pub(crate) fn rewrite_function_props(function: &mut Function) {
     let Some(body) = &function.body else {
         return;
@@ -228,8 +282,11 @@ pub(crate) fn rewrite_function_props(function: &mut Function) {
     };
     body.visit_with(&mut jsx_names);
 
+    let props_name =
+        destructured_props_name(&*function, body, matches!(mode, ParamMode::Destructured));
+
     let mut rewriter = PropsDestructure {
-        props_name: "props",
+        props_name: &props_name,
         written: &written.names,
         blocked: &blocked,
         jsx_names: &jsx_names.names,
@@ -251,7 +308,7 @@ pub(crate) fn rewrite_function_props(function: &mut Function) {
         let Some(type_ann) = prepare_destructured_param(&mut param.pat, &mut rewriter) else {
             return;
         };
-        replace_pat_with_props(&mut param.pat, type_ann);
+        replace_pat_with_props(&mut param.pat, type_ann, &props_name);
     }
 
     if let Some(body) = &mut function.body {
@@ -288,8 +345,14 @@ pub(crate) fn rewrite_arrow_props(arrow: &mut ArrowExpr) {
     };
     arrow.body.visit_with(&mut jsx_names);
 
+    let props_name = destructured_props_name(
+        &*arrow,
+        &*arrow.body,
+        matches!(mode, ParamMode::Destructured),
+    );
+
     let mut rewriter = PropsDestructure {
-        props_name: "props",
+        props_name: &props_name,
         written: &written.names,
         blocked: &blocked,
         jsx_names: &jsx_names.names,
@@ -311,7 +374,7 @@ pub(crate) fn rewrite_arrow_props(arrow: &mut ArrowExpr) {
         let Some(type_ann) = prepare_destructured_param(param, &mut rewriter) else {
             return;
         };
-        replace_pat_with_props(param, type_ann);
+        replace_pat_with_props(param, type_ann, &props_name);
     }
 
     match &mut *arrow.body {
@@ -354,8 +417,12 @@ fn prepare_destructured_param(
     Some(type_ann)
 }
 
-fn replace_pat_with_props(pat: &mut Pat, type_ann: Option<Box<swc_core::ecma::ast::TsTypeAnn>>) {
-    let ident = Ident::new("props".into(), DUMMY_SP, SyntaxContext::empty());
+fn replace_pat_with_props(
+    pat: &mut Pat,
+    type_ann: Option<Box<swc_core::ecma::ast::TsTypeAnn>>,
+    props_name: &str,
+) {
+    let ident = Ident::new(props_name.into(), DUMMY_SP, SyntaxContext::empty());
     let replacement = BindingIdent {
         id: ident,
         type_ann,

@@ -103,9 +103,13 @@ impl SilentPass {
         parts.html.push('<');
         parts.html.push_str(&tag);
 
+        // Корневой `<svg>` тоже находится в SVG-контексте для собственных атрибутов.
+        let attrs_svg = svg || is_svg_name(&element.opening.name);
         for attr in &element.opening.attrs {
             match attr {
-                JSXAttrOrSpread::JSXAttr(attr) => self.build_html_attr(attr, &tag, parts),
+                JSXAttrOrSpread::JSXAttr(attr) => {
+                    self.build_html_attr(attr, &tag, attrs_svg, parts)
+                }
                 JSXAttrOrSpread::SpreadElement(spread) => {
                     let expr = self.compile_expr(&spread.expr);
                     self.push_dynamic_attr("", *expr, DynamicAttrKind::Spread, parts);
@@ -289,12 +293,17 @@ impl SilentPass {
         })
     }
 
-    fn build_html_attr(&mut self, attr: &JSXAttr, tag: &str, parts: &mut TemplateParts) {
+    fn build_html_attr(&mut self, attr: &JSXAttr, tag: &str, svg: bool, parts: &mut TemplateParts) {
         let name = attr_name_string(&attr.name);
         if name == "key" {
             return;
         }
         let name = normalize_attr_name(&name);
+        let static_name = if svg {
+            svg_attr_name(&name)
+        } else {
+            name.as_str()
+        };
         if name == "bindValue" || name == "bindChecked" {
             if let Some(JSXAttrValue::JSXExprContainer(container)) = &attr.value {
                 if let JSXExpr::Expr(expr) = &container.expr {
@@ -306,7 +315,7 @@ impl SilentPass {
         let static_value_only = name == "value" && tag.eq_ignore_ascii_case("select");
         let Some(value) = &attr.value else {
             if !static_value_only {
-                write_static_attr(parts, &name, StaticValue::Bool(true));
+                write_static_attr(parts, static_name, StaticValue::Bool(true));
             }
             return;
         };
@@ -315,7 +324,7 @@ impl SilentPass {
                 if !static_value_only {
                     write_static_attr(
                         parts,
-                        &name,
+                        static_name,
                         StaticValue::Str(value.value.to_string_lossy().into_owned()),
                     );
                 }
@@ -325,7 +334,7 @@ impl SilentPass {
                 JSXExpr::Expr(expr) => {
                     if let Some(value) = static_value(expr) {
                         if !static_value_only {
-                            write_static_attr(parts, &name, value);
+                            write_static_attr(parts, static_name, value);
                         }
                     } else {
                         let compiled = self.compile_expr(expr);
@@ -1611,6 +1620,42 @@ fn normalize_attr_name(name: &str) -> String {
         "htmlFor" => "for".to_string(),
         other => other.to_string(),
     }
+}
+
+// Презентационные SVG-атрибуты, которые браузер не приводит к нижнему регистру
+// в foreign content. Список синхронизирован с SVG_ATTRIBUTE_NAMES из
+// packages/core/src/dom.ts — статические атрибуты сразу пишем в kebab-case.
+const SVG_ATTRIBUTE_NAMES: [(&str, &str); 23] = [
+    ("strokeWidth", "stroke-width"),
+    ("strokeLinecap", "stroke-linecap"),
+    ("strokeLinejoin", "stroke-linejoin"),
+    ("strokeDasharray", "stroke-dasharray"),
+    ("strokeDashoffset", "stroke-dashoffset"),
+    ("strokeMiterlimit", "stroke-miterlimit"),
+    ("strokeOpacity", "stroke-opacity"),
+    ("fillOpacity", "fill-opacity"),
+    ("fillRule", "fill-rule"),
+    ("clipPath", "clip-path"),
+    ("clipRule", "clip-rule"),
+    ("stopColor", "stop-color"),
+    ("stopOpacity", "stop-opacity"),
+    ("fontFamily", "font-family"),
+    ("fontSize", "font-size"),
+    ("fontWeight", "font-weight"),
+    ("textAnchor", "text-anchor"),
+    ("dominantBaseline", "dominant-baseline"),
+    ("shapeRendering", "shape-rendering"),
+    ("colorInterpolation", "color-interpolation"),
+    ("markerStart", "marker-start"),
+    ("markerMid", "marker-mid"),
+    ("markerEnd", "marker-end"),
+];
+
+fn svg_attr_name(name: &str) -> &str {
+    SVG_ATTRIBUTE_NAMES
+        .iter()
+        .find_map(|(camel, kebab)| (*camel == name).then_some(*kebab))
+        .unwrap_or(name)
 }
 
 fn attr_name_string(name: &JSXAttrName) -> String {

@@ -402,8 +402,16 @@ impl SilentPass {
 
     fn resolve_import_type(&mut self, import: &TsImportType) -> Option<Expr> {
         let source = import.arg.value.to_string_lossy().into_owned();
-        let module = crate::paths::resolve_module(&self.filename, &source, &self.aliases)
-            .unwrap_or_else(|| source.clone());
+        // Для относительного импорта исходный спекулятор уже корректен и сохраняет
+        // расширение пользователя; алиасы и пакеты приводим к относительному пути.
+        let specifier = if source.starts_with('.') {
+            source.clone()
+        } else {
+            match crate::paths::resolve_module(&self.filename, &source, &self.aliases) {
+                Some(module) => relative_specifier(&self.filename, &module),
+                None => source.clone(),
+            }
+        };
         let export = import
             .qualifier
             .as_ref()
@@ -411,7 +419,7 @@ impl SilentPass {
             .unwrap_or_else(|| "default".to_string());
         let local = self
             .imports
-            .add_value_import(&self.filename, &module, &export);
+            .add_value_import(&self.filename, &specifier, &export);
         Some(Expr::Ident(local))
     }
 
@@ -798,6 +806,13 @@ impl VisitMut for SilentPass {
     }
 
     fn visit_mut_call_expr(&mut self, call: &mut CallExpr) {
+        // Вызовы с аргументами не переписываем: `Promise.resolve<T>(x)` и
+        // `di.resolve<T>(override)` должны сохранить аргумент. Type-аргументы
+        // снимет следующий TS-трансформ SWC.
+        if !call.args.is_empty() {
+            call.visit_mut_children_with(self);
+            return;
+        }
         let mut resolve_type_args: Option<Box<TsTypeParamInstantiation>> = None;
         let mut is_resolve = false;
         if let Callee::Expr(callee) = &mut call.callee {
@@ -828,21 +843,38 @@ impl VisitMut for SilentPass {
                 _ => {}
             }
         }
-        if is_resolve {
-            if let Some(type_args) = resolve_type_args {
-                if type_args.params.len() == 1 {
-                    if let Some(ty) = type_args.params.first() {
-                        if let Some(value) = self.resolve_type_value(ty) {
-                            call.args = vec![ExprOrSpread {
-                                spread: None,
-                                expr: Box::new(value),
-                            }];
-                        }
-                    }
-                }
-            }
-            call.type_args = None;
+        if !is_resolve {
+            call.visit_mut_children_with(self);
+            return;
         }
+        let Some(type_args) = resolve_type_args else {
+            call.visit_mut_children_with(self);
+            return;
+        };
+        let resolved = if type_args.params.len() == 1 {
+            type_args
+                .params
+                .first()
+                .and_then(|ty| self.resolve_type_value(ty))
+        } else {
+            None
+        };
+        let Some(value) = resolved else {
+            let message = match type_args.params.first().and_then(|ty| type_value_name(ty)) {
+                Some(name) => format!(
+                    "не удалось разрешить тип {name} в вызове resolve<{name}>(): укажите конкретный класс или интерфейс"
+                ),
+                None => "не удалось разрешить тип в вызове resolve<T>(): укажите конкретный класс или интерфейс"
+                    .to_string(),
+            };
+            self.error(message);
+            return;
+        };
+        call.args = vec![ExprOrSpread {
+            spread: None,
+            expr: Box::new(value),
+        }];
+        call.type_args = None;
         call.visit_mut_children_with(self);
     }
 }

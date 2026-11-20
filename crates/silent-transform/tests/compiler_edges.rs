@@ -420,3 +420,125 @@ fn title_static_text_stays_in_markup() {
     assert!(code.contains("<title>My Blog</title>"), "code: {code}");
     assert!(!code.contains("data-silent-text"), "code: {code}");
 }
+
+#[test]
+fn implementation_import_keeps_user_extension() {
+    let source = r#"
+import type { Store } from "./store.js";
+export class Service {
+  constructor(private readonly store: Store) {}
+}
+"#;
+    let index = index_with(&[(
+        "/proj/src/store#Store",
+        vec!["/proj/src/memory-store#MemoryStore"],
+    )]);
+    let code = compile(source, "/proj/src/service.ts", "{}", index).unwrap();
+    assert!(
+        code.contains("from \"./memory-store.js\""),
+        "unexpected specifier: {code}"
+    );
+}
+
+#[test]
+fn implementation_import_without_extension_gets_js() {
+    let source = r#"
+import type { Store } from "./store";
+export class Service {
+  constructor(private readonly store: Store) {}
+}
+"#;
+    let index = index_with(&[(
+        "/proj/src/store#Store",
+        vec!["/proj/src/memory-store#MemoryStore"],
+    )]);
+    let code = compile(source, "/proj/src/service.ts", "{}", index).unwrap();
+    assert!(
+        code.contains("from \"./memory-store.js\""),
+        "unexpected specifier: {code}"
+    );
+}
+
+#[test]
+fn typeof_import_uses_relative_specifier() {
+    let source = r#"
+export async function main(di: any) {
+  return di.resolve<typeof import("./m").Money>();
+}
+"#;
+    let code = run(source, "/proj/src/main.ts");
+    assert!(
+        code.contains("from \"./m.js\""),
+        "unexpected specifier: {code}"
+    );
+    assert!(
+        !code.contains("/proj/src/m\""),
+        "absolute path leaked into import: {code}"
+    );
+}
+
+#[test]
+fn aliased_implementation_import_stays_relative() {
+    let source = r#"
+import type { Store } from "@/store";
+export class Service {
+  constructor(private readonly store: Store) {}
+}
+"#;
+    let index = index_with(&[(
+        "/proj/src/store#Store",
+        vec!["/proj/src/memory-store#MemoryStore"],
+    )]);
+    let options = r#"{"aliases":[{"find":"@/*","replacement":"/proj/src/*"}]}"#;
+    let code = compile(source, "/proj/src/service.ts", options, index).unwrap();
+    assert!(
+        code.contains("from \"./memory-store.js\""),
+        "unexpected specifier: {code}"
+    );
+    assert!(
+        !code.contains("/proj/src/memory-store\""),
+        "absolute path leaked into import: {code}"
+    );
+}
+
+#[test]
+fn promise_resolve_argument_is_preserved() {
+    let source = r#"
+class Foo {}
+export function main() {
+  const value = 1;
+  return Promise.resolve<Foo>(value);
+}
+"#;
+    let code = run(source, "/proj/src/main.ts");
+    assert!(code.contains("Promise.resolve(value)"), "{code}");
+    assert!(!code.contains("Promise.resolve(Foo)"), "{code}");
+}
+
+#[test]
+fn resolve_with_argument_keeps_argument() {
+    let source = r#"
+import type { Store } from "./types";
+export async function main(di: any, override: any) {
+  return di.resolve<Store>(override);
+}
+"#;
+    let code = run(source, "/proj/src/main.ts");
+    assert!(code.contains("di.resolve(override)"), "{code}");
+    assert!(!code.contains("di.resolve(Store"), "{code}");
+}
+
+#[test]
+fn unresolved_resolve_type_reports_error() {
+    let source = r#"
+export async function main(di: any) {
+  return di.resolve<A | B>();
+}
+"#;
+    let error = compile(source, "/proj/src/main.ts", "{}", Index::default()).unwrap_err();
+    assert!(
+        error.contains("не удалось разрешить тип"),
+        "unexpected error: {error}"
+    );
+    assert!(error.contains("resolve"), "unexpected error: {error}");
+}

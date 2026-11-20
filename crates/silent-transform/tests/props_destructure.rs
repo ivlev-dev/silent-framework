@@ -269,3 +269,78 @@ fn keeps_catch_binding_shadowing_destructured_name() {
     assert!(code.contains("console.log(value)"), "{code}");
     assert!(code.contains("props.value"), "{code}");
 }
+
+#[test]
+fn keeps_outer_props_when_inner_arrow_destructures() {
+    let code = run(
+        r#"function Card(props: { rows: { id: number }[]; title: string }) {
+  return <ul><For each={props.rows}>{({ id }) => <li>{id}: {props.title}</li>}</For></ul>;
+}"#,
+    );
+    assert!(code.contains("function Card(props)"), "{code}");
+    assert!(code.contains("props.rows"), "{code}");
+    assert!(code.contains("props.title"), "{code}");
+    assert!(code.contains("(_props$)=>"), "{code}");
+    assert!(code.contains("_props$.id"), "{code}");
+    assert!(
+        !code.contains("_props$.title"),
+        "outer props must not be captured: {code}"
+    );
+}
+
+#[test]
+fn keeps_free_props_when_destructured_parameter_is_rewritten() {
+    let code = run(r#"function View({ items }: { items: number[] }) {
+  return <ul>{items.map((item) => <li>{item}: {props.title}</li>)}</ul>;
+}"#);
+    assert!(code.contains("function View(_props$)"), "{code}");
+    assert!(code.contains("_props$.items"), "{code}");
+    assert!(code.contains("props.title"), "{code}");
+    assert!(
+        !code.contains("_props$.title"),
+        "outer props must not be captured: {code}"
+    );
+}
+
+#[test]
+fn keeps_free_props_in_nested_function_declaration() {
+    let code = run(r#"function View({ items }: { items: number[] }) {
+  function row({ id }: { id: number }) {
+    return <li>{id}: {props.title}</li>;
+  }
+  return <ul>{row(items[0])}</ul>;
+}"#);
+    assert!(code.contains("props.title"), "{code}");
+    assert!(code.contains("row(_props$.items[0])"), "{code}");
+}
+
+#[test]
+fn destructured_component_without_free_props_keeps_props_name() {
+    let code = run(r#"function C({ a }: { a: string }) {
+  return <div>{a}</div>;
+}"#);
+    assert!(code.contains("function C(props)"), "{code}");
+    assert!(code.contains("props.a"), "{code}");
+    assert!(!code.contains("_props$"), "{code}");
+}
+
+#[test]
+fn props_parameter_without_free_reference_is_unchanged() {
+    let code = run(r#"function C(props: { a: string }) {
+  return <div>{props.a}</div>;
+}"#);
+    assert!(code.contains("function C(props)"), "{code}");
+    assert!(code.contains("props.a"), "{code}");
+    assert!(!code.contains("_props$"), "{code}");
+}
+
+#[test]
+fn keeps_local_props_binding_untouched() {
+    let code = run(r#"function View({ items }: { items: number[] }) {
+  const props = { title: "x" };
+  return <ul>{items.map((item) => <li>{item}: {props.title}</li>)}</ul>;
+}"#);
+    assert!(code.contains("function View({ items })"), "{code}");
+    assert!(code.contains("const props ="), "{code}");
+    assert!(code.contains("props.title"), "{code}");
+}

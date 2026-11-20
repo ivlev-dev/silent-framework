@@ -501,3 +501,72 @@ fn dynamic_select_value_still_binds_on_client() {
         "select must not render static value attribute: {code}"
     );
 }
+
+#[test]
+fn static_svg_presentation_attributes_use_kebab_case() {
+    let code = run(r#"export function view() {
+  return <svg><path strokeWidth="2" fillOpacity="0.5" /></svg>;
+}
+"#);
+    assert!(code.contains("stroke-width=\"2\""), "{code}");
+    assert!(code.contains("fill-opacity=\"0.5\""), "{code}");
+    assert!(!code.contains("strokeWidth"), "{code}");
+    assert!(!code.contains("fillOpacity"), "{code}");
+}
+
+#[test]
+fn static_svg_attribute_on_root_svg_is_mapped() {
+    let code = run(r#"export function view() {
+  return <svg strokeWidth="2"><path /></svg>;
+}
+"#);
+    assert!(code.contains("<svg stroke-width=\"2\">"), "{code}");
+}
+
+#[test]
+fn dynamic_svg_presentation_attribute_keeps_camel_case() {
+    let code = run(r#"export function view(props: { width: number }) {
+  return <svg><path strokeWidth={props.width} fillOpacity="0.5" /></svg>;
+}
+"#);
+    assert!(code.contains("\"strokeWidth\""), "{code}");
+    assert!(code.contains("fill-opacity=\"0.5\""), "{code}");
+}
+
+#[test]
+fn svg_attribute_table_covers_runtime_names() {
+    let runtime = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../packages/core/src/dom.ts"
+    ));
+    let start = runtime
+        .find("const SVG_ATTRIBUTE_NAMES")
+        .expect("SVG_ATTRIBUTE_NAMES not found in runtime");
+    let end = runtime[start..]
+        .find("]);")
+        .map(|offset| start + offset)
+        .expect("end of SVG_ATTRIBUTE_NAMES not found in runtime");
+    let table = &runtime[start..end];
+    let pairs: Vec<(&str, &str)> = table
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("[\""))
+        .map(|line| {
+            let parts: Vec<&str> = line.split('"').skip(1).step_by(2).collect();
+            match parts.as_slice() {
+                [camel, kebab] => (*camel, *kebab),
+                _ => panic!("unexpected SVG_ATTRIBUTE_NAMES entry: {line}"),
+            }
+        })
+        .collect();
+    assert!(pairs.len() >= 20, "runtime table was not parsed: {pairs:?}");
+    for (camel, kebab) in pairs {
+        let source =
+            format!("export function view() {{ return <svg><path {camel}=\"x\" /></svg>; }}");
+        let code = run(&source);
+        assert!(
+            code.contains(&format!("{kebab}=\"x\"")),
+            "{camel} must be written as {kebab}: {code}"
+        );
+    }
+}

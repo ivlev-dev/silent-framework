@@ -1,4 +1,4 @@
-use crate::paths::relative_specifier;
+use crate::paths::{relative_specifier, with_script_extension};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use swc_core::common::{SyntaxContext, DUMMY_SP};
@@ -119,7 +119,8 @@ impl ImportManager {
         let module_source = if source.starts_with('.') {
             let target = crate::paths::resolve_import_path(from_file, source)
                 .unwrap_or_else(|| source.to_string());
-            relative_specifier(from_file, &target)
+            let relative = relative_specifier(from_file, &target);
+            with_script_extension(&relative, source)
         } else {
             source.to_string()
         };

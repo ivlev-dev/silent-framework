@@ -87,6 +87,29 @@ pub fn relative_specifier(from_file: &Path, target_module: &str) -> String {
     }
 }
 
+/// Добавляет расширение к относительному спекулятору сгенерированного импорта.
+/// Если у исходного импорта пользователя было расширение — сохраняем его,
+/// иначе используем `.js`, потому что итоговый код исполняется как JavaScript.
+pub fn with_script_extension(specifier: &str, source: &str) -> String {
+    let file_name = specifier.rsplit('/').next().unwrap_or(specifier);
+    if file_name.contains('.') {
+        return specifier.to_string();
+    }
+    match source_extension(source) {
+        Some(extension) => format!("{specifier}.{extension}"),
+        None => format!("{specifier}.js"),
+    }
+}
+
+fn source_extension(source: &str) -> Option<&str> {
+    let file_name = source.rsplit('/').next().unwrap_or(source);
+    let (_, extension) = file_name.rsplit_once('.')?;
+    if extension.is_empty() {
+        return None;
+    }
+    TS_EXTENSIONS.contains(&extension).then_some(extension)
+}
+
 fn pathdiff(from: &Path, to: &Path) -> PathBuf {
     let from_components: Vec<Component<'_>> = from.components().collect();
     let to_components: Vec<Component<'_>> = to.components().collect();
