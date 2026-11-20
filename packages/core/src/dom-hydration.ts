@@ -35,6 +35,7 @@ import {
   mismatch,
   registerInsertStart,
   shapeMatches,
+  stripHydrationMarkers,
   withWindow,
   type HydrationWindow,
 } from "./hydration.js";
@@ -604,6 +605,7 @@ export function adoptPartsPlan(
     }
   }
   if (tryAdoptPartsPlan(root, plan, holes, attrs, stripText)) {
+    stripHydrationMarkers(root);
     out.holes = holes;
     out.attrs = attrs;
     return;

@@ -5,6 +5,7 @@ import {
   HYDRATE_START,
   beginHydration,
   countClientNodes,
+  drainHydrationTasks,
   endHydration,
   withWindow,
   withoutHydration,
@@ -42,7 +43,6 @@ const HYDRATE =
 let runtimes: Promise<void> | null = null;
 let runtimesReady = false;
 let hydrationQueue: Promise<void> = /*#__PURE__*/ Promise.resolve();
-let hydrationRunning = false;
 
 async function settle(): Promise<void> {
   flushSync();
@@ -87,6 +87,12 @@ function ensureRuntimes(): Promise<void> {
   return runtimes;
 }
 
+/**
+ * Ставит задачу в общую FIFO-очередь гидрации. Хвост очереди захватывается
+ * синхронно при входе, поэтому даже третий вызов, пришедший во время
+ * выполнения второго, встаёт за ним, а не запускает `hydrateRoot` параллельно
+ * и не перезаписывает контекст гидрации.
+ */
 async function serialized<T>(task: () => Promise<T>): Promise<T> {
   const previous = hydrationQueue;
   let release: () => void = () => {};
@@ -98,6 +104,17 @@ async function serialized<T>(task: () => Promise<T>): Promise<T> {
     return await task();
   } finally {
     release();
+  }
+}
+
+async function drain(hydration: HydrationContext): Promise<void> {
+  await drainHydrationTasks(hydration);
+  if (hasPendingWork()) {
+    const pending = complete(RESOLVED_READY);
+    if (pending !== null) {
+      await pending;
+    }
+    await drainHydrationTasks(hydration);
   }
 }
 
@@ -151,6 +168,7 @@ async function hydrateWith(
         if (pending !== null) {
           await pending;
         }
+        await drain(context);
         if (
           lightRoot
           && (countClientNodes() > 0 || window.cursor !== boundaryEnd)
@@ -269,25 +287,104 @@ async function hydrateRoot(
   }
 }
 
+interface HydratedRoot {
+  readonly handle: MountHandle;
+  refs: number;
+  disposed: boolean;
+}
+
+const hydratedRoots = new WeakMap<Element, HydratedRoot>();
+const pendingHydrations = new WeakMap<Element, Promise<MountHandle>>();
+
+/**
+ * Отдаёт вызывающему собственный handle над общим корнем. Счётчик ссылок
+ * не даёт dispose одного handle погасить корень, пока им пользуется другой
+ * вызов; фактическое освобождение происходит на последнем dispose.
+ */
+function borrowHandle(element: Element, root: HydratedRoot): MountHandle {
+  root.refs += 1;
+  let released = false;
+  return {
+    ready: root.handle.ready,
+    settled: root.handle.settled,
+    updateProps: (props: Record<string, unknown>) => {
+      if (!root.disposed) {
+        root.handle.updateProps(props);
+      }
+    },
+    dispose: () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      root.refs -= 1;
+      if (root.refs > 0 || root.disposed) {
+        return;
+      }
+      root.disposed = true;
+      if (hydratedRoots.get(element) === root) {
+        hydratedRoots.delete(element);
+      }
+      root.handle.dispose();
+    },
+  };
+}
+
+async function hydrateOnce(
+  element: Element,
+  app: AnyComponent,
+  options: MountOptions,
+): Promise<MountHandle> {
+  const inFlight = pendingHydrations.get(element);
+  if (inFlight !== undefined) {
+    await inFlight;
+    const shared = hydratedRoots.get(element);
+    if (shared !== undefined && !shared.disposed) {
+      return borrowHandle(element, shared);
+    }
+  }
+
+  const existing = hydratedRoots.get(element);
+  if (existing !== undefined && !existing.disposed) {
+    return borrowHandle(element, existing);
+  }
+
+  let settle: (handle: MountHandle) => void = () => {};
+  let fail: (error: unknown) => void = () => {};
+  const sharedPromise = new Promise<MountHandle>((resolve, reject) => {
+    settle = resolve;
+    fail = reject;
+  });
+  // Первый вызов не ждёт sharedPromise: гасим возможный unhandled rejection,
+  // ошибку он получит из собственного await.
+  void sharedPromise.catch(() => undefined);
+  pendingHydrations.set(element, sharedPromise);
+
+  let handle: MountHandle;
+  try {
+    handle = await serialized(() => hydrateRoot(element, app, options));
+  } catch (error) {
+    if (pendingHydrations.get(element) === sharedPromise) {
+      pendingHydrations.delete(element);
+    }
+    fail(error);
+    throw error;
+  }
+  if (pendingHydrations.get(element) === sharedPromise) {
+    pendingHydrations.delete(element);
+  }
+  const root: HydratedRoot = { handle, refs: 0, disposed: false };
+  hydratedRoots.set(element, root);
+  settle(handle);
+  return borrowHandle(element, root);
+}
+
 export async function hydrate(
   target: Element | string,
   app: AnyComponent,
   options: MountOptions = {},
 ): Promise<MountHandle> {
-  if (hydrationRunning) {
-    return serialized(() => hydrateRoot(target, app, options));
-  }
-  hydrationRunning = true;
-  let release: () => void = () => {};
-  hydrationQueue = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  try {
-    return await hydrateRoot(target, app, options);
-  } finally {
-    hydrationRunning = false;
-    release();
-  }
+  return hydrateOnce(resolveTarget(target), app, options);
 }
 
 export interface IslandMount {

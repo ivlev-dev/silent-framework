@@ -11,7 +11,7 @@ import {
   withRuntimeOptions,
 } from "./component.js";
 import { collectNodes, createMountPoint, disposeNode, isServerMode } from "./dom.js";
-import { settleNodes } from "./dom-hydration-state.js";
+import { settleNodes, writeRegion } from "./dom-hydration-state.js";
 import { openServerStreamRegion } from "./server-stream.js";
 import { beginRegion, regionMatches, settleWindow } from "./hydration-cursor.js";
 import { getCurrentBoundary, runWithBoundary, type AsyncBoundary } from "./boundary.js";
@@ -26,6 +26,20 @@ import {
   reportMismatch,
   withWindow,
 } from "./hydration-proxy.js";
+import {
+  ERROR_BOUNDARY,
+  FRAGMENT,
+  HYDRATE_START,
+  INSERT_START,
+  SHOW,
+  SWITCH,
+  VIEW_START,
+  captureHydrationContext,
+  reportMismatchTo,
+  trackHydrationTask,
+  withoutHydration,
+  type HydrationWindow,
+} from "./hydration-state.js";
 import { getOwner, onCleanup, runWithOwner } from "@ivlev-dev/silent-reactivity";
 
 
@@ -212,6 +226,51 @@ function hydrateSuspense(props: SuspenseProps): Node {
   return document.createDocumentFragment();
 }
 
+const REGION_START_MARKERS = new Set<string>([
+  VIEW_START,
+  INSERT_START,
+  FRAGMENT,
+  SHOW,
+  SWITCH,
+  ERROR_BOUNDARY,
+  SUSPENSE,
+  HYDRATE_START,
+]);
+
+/**
+ * Заменяет содержимое региона гидрации свежими узлами. Если стартовый маркер
+ * региона уже снят (гидрация успела завершиться до резолва lazy), чистим
+ * накопленный хвост перед `end` до ближайшей границы региона.
+ */
+function replaceHydrationRegion(window: HydrationWindow, value: unknown): void {
+  const start = window.start;
+  const end = window.end;
+  if (start.parentNode !== null) {
+    writeRegion(start, end, value);
+    return;
+  }
+  const parent = end.parentNode;
+  if (parent === null) {
+    return;
+  }
+  let node = end.previousSibling;
+  while (node !== null) {
+    const previous = node.previousSibling;
+    if (
+      node.nodeType === Node.COMMENT_NODE
+      && REGION_START_MARKERS.has((node as Comment).data)
+    ) {
+      break;
+    }
+    disposeNode(node);
+    node.parentNode?.removeChild(node);
+    node = previous;
+  }
+  for (const child of collectNodes(value as Children)) {
+    parent.insertBefore(child, end);
+  }
+}
+
 export function lazy<P extends Record<string, unknown>>(
   loader: () => Promise<AnyComponent | { default: AnyComponent }>,
   options: LazyOptions = {},
@@ -243,6 +302,7 @@ export function lazy<P extends Record<string, unknown>>(
     let disposed = false;
 
     if (HYDRATE && isHydrating()) {
+      const hydration = captureHydrationContext();
       const outer = currentWindow();
       if (outer === null) {
         return mismatch("lazy вне окна гидрации");
@@ -258,31 +318,45 @@ export function lazy<P extends Record<string, unknown>>(
       });
       const pending = trackAsyncWork(ensure(), boundary?.signal ?? null);
       boundary?.register(pending);
-      void pending.then(
-        () => {
-          if (disposed || loaded === null) {
-            return;
-          }
-          const target = loaded;
-          runWithOwner(owner, () => {
-            try {
-              withRuntimeOptions(runtimeOptions, () => {
-                const value = withWindow(window, () =>
-                  component(target, propsRecord),
-                );
+
+      const renderLoaded = (target: AnyComponent): void => {
+        if (disposed) {
+          return;
+        }
+        runWithOwner(owner, () => {
+          withRuntimeOptions(runtimeOptions, () => {
+            if (hydration !== null && !hydration.ended && isHydrating()) {
+              try {
+                const value = withWindow(window, () => component(target, propsRecord));
                 settleNodes(window.end, value);
                 if (!regionMatches(window, window.end, value)) {
-                  mismatch("содержимое lazy не совпало");
+                  throw mismatch("содержимое lazy не совпало");
                 }
-              });
-            } catch (error) {
-              if (error instanceof HydrationMismatchError) {
-                reportMismatch(error);
                 return;
+              } catch (error) {
+                if (!(error instanceof HydrationMismatchError)) {
+                  throw error;
+                }
+                if (hydration !== null) {
+                  reportMismatchTo(hydration, error);
+                } else {
+                  reportMismatch(error);
+                }
               }
-              throw error;
             }
+            // Либо гидрация уже завершилась, либо разметка не совпала:
+            // регион перерисовывается свежим (реактивным) поддеревом.
+            const value = withoutHydration(() => component(target, propsRecord));
+            replaceHydrationRegion(window, value);
           });
+        });
+      };
+
+      const work = pending.then(
+        () => {
+          if (loaded !== null) {
+            renderLoaded(loaded);
+          }
         },
         (error: unknown) => {
           if (disposed) {
@@ -293,6 +367,17 @@ export function lazy<P extends Record<string, unknown>>(
           handler(error, Lazy);
         },
       );
+      if (hydration !== null) {
+        trackHydrationTask(hydration, work);
+      }
+      void work.catch((error: unknown) => {
+        if (disposed) {
+          return;
+        }
+        const handler =
+          options.onError ?? runtimeOptions.onError ?? getErrorHandler();
+        handler(error, Lazy);
+      });
       return document.createDocumentFragment();
     }
 

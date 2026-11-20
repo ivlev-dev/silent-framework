@@ -267,6 +267,46 @@ function attributesMatch(left: Element, right: Element, strict = false): boolean
   return true;
 }
 
+const ATTR_MARKER_PREFIX = "data-silent-a-";
+const TEXT_MARKER_NAME = "data-silent-text";
+
+function stripElementMarkers(element: Element): void {
+  const attributes = element.attributes;
+  for (let index = attributes.length - 1; index >= 0; index -= 1) {
+    const attribute = attributes.item(index);
+    if (attribute === null) {
+      continue;
+    }
+    const name = attribute.name;
+    if (name === TEXT_MARKER_NAME || name.startsWith(ATTR_MARKER_PREFIX)) {
+      element.removeAttribute(name);
+    }
+  }
+}
+
+/**
+ * Снимает оставшиеся серверные маркеры (`data-silent-a-*`, `data-silent-text`)
+ * с адоптированного поддерева. Серверная разметка от старого деплоя может
+ * содержать больше маркеров, чем клиентский план; если их не снять, они
+ * навсегда утекут в outerHTML и CSS-селекторы.
+ */
+export function stripHydrationMarkers(root: Node): void {
+  const stack: Node[] = [root];
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      stripElementMarkers(node as Element);
+    }
+    let child = node.firstChild;
+    while (child !== null) {
+      if (child.nodeType === Node.ELEMENT_NODE) {
+        stack.push(child);
+      }
+      child = child.nextSibling;
+    }
+  }
+}
+
 export function staleAttributes(fresh: Element, claimed: Element): string[] {
   const stale: string[] = [];
   const attributes = claimed.attributes;

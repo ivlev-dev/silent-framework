@@ -18,7 +18,14 @@ export interface HydrationWindow {
 export interface HydrationContext {
   readonly windows: HydrationWindow[];
   readonly listener: ((error: HydrationMismatchError) => void) | null;
+  /**
+   * Асинхронная работа, начатая во время гидрации (например, lazy-чанки).
+   * `hydrateWith` дожидается её до закрытия контекста, чтобы ошибки и
+   * разметка не «уезжали» в чужой/уже закрытый контекст.
+   */
+  readonly tasks: Set<Promise<unknown>>;
   clientNodes: number;
+  ended: boolean;
 }
 
 export const INSERT_START = "silent-insert";
@@ -109,7 +116,9 @@ export function beginHydration(
   const context: HydrationContext = {
     windows: [],
     listener: listener ?? null,
+    tasks: new Set<Promise<unknown>>(),
     clientNodes: 0,
+    ended: false,
   };
   contexts.push(context);
   current = context;
@@ -119,7 +128,10 @@ export function beginHydration(
 
 export function endHydration(context?: HydrationContext): void {
   if (context === undefined) {
-    contexts.pop();
+    const popped = contexts.pop();
+    if (popped !== undefined) {
+      popped.ended = true;
+    }
     refreshContext();
     return;
   }
@@ -127,8 +139,65 @@ export function endHydration(context?: HydrationContext): void {
   if (index === -1) {
     return;
   }
+  context.ended = true;
   contexts.splice(index, 1);
   refreshContext();
+}
+
+/**
+ * Возвращает текущий контекст гидрации, не полагаясь на то, что он останется
+ * активным к моменту разрешения асинхронной работы.
+ */
+export function captureHydrationContext(): HydrationContext | null {
+  return current;
+}
+
+/**
+ * Регистрирует асинхронную задачу гидрации. Пока задача не завершена,
+ * контекст остаётся активным и `hydrateWith` ждёт её (см. `drainHydrationTasks`).
+ */
+export function trackHydrationTask<T>(
+  context: HydrationContext,
+  task: Promise<T>,
+): Promise<T> {
+  const tracked: Promise<unknown> = task;
+  context.tasks.add(tracked);
+  const done = (): void => {
+    context.tasks.delete(tracked);
+  };
+  void task.then(done, done);
+  return task;
+}
+
+/**
+ * Дренирует все зарегистрированные задачи контекста, включая те, что
+ * появились во время ожидания.
+ */
+export async function drainHydrationTasks(
+  context: HydrationContext,
+): Promise<void> {
+  while (!context.ended && context.tasks.size > 0) {
+    await Promise.allSettled([...context.tasks]);
+  }
+}
+
+/**
+ * Сообщает о mismatch в конкретный (возможно, уже закрытый) контекст.
+ * Закрытый контекст всё ещё должен получить уведомление: его вызов
+ * `hydrateWith` уже ждёт задачу и должен увидеть ошибку.
+ */
+export function reportMismatchTo(
+  context: HydrationContext,
+  error: HydrationMismatchError,
+): void {
+  mismatches += 1;
+  emitDevtoolsError({
+    name: null,
+    moduleId: null,
+    phase: "hydration",
+    message: error.message,
+  });
+  context.listener?.(error);
 }
 
 export function markClientNodes(count = 1): void {
