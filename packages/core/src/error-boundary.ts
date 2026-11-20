@@ -1,10 +1,15 @@
 import {
   createRenderEffect,
+  createRoot,
   getOwner,
   onCleanup,
+  runWithOwner,
+  type Owner,
 } from "@ivlev-dev/silent-reactivity";
 import * as reactivity from "@ivlev-dev/silent-reactivity";
-import { getRuntimeOptions, withRuntimeOptions } from "./component.js";
+import { getErrorHandler, getRuntimeOptions, withRuntimeOptions } from "./component.js";
+import { findOwnerErrorHandler } from "./runtime-context.js";
+import type { AnyComponent } from "./types.js";
 import type { Children } from "./jsx.js";
 import { collectNodes, createMountPoint, isServerMode } from "./dom.js";
 import { extractMetadata } from "./metadata.js";
@@ -35,11 +40,14 @@ interface BoundaryReporter {
   report(error: unknown): boolean;
 }
 
-type EffectErrorHandler = (error: unknown) => void;
+type EffectErrorHandler = (error: unknown, owner: Owner | null) => void;
 
 const activeBoundaries: BoundaryReporter[] = [];
 let dispatcherInstalled = false;
-let fallbackEffectHandler: EffectErrorHandler | null = null;
+
+// Источник ошибки на уровне эффекта неизвестен, но глобальный обработчик
+// ожидает компонент вторым аргументом.
+const UNKNOWN_COMPONENT: AnyComponent = () => null;
 
 function ensureEffectDispatcher(): void {
   if (dispatcherInstalled) {
@@ -56,14 +64,19 @@ function ensureEffectDispatcher(): void {
     return;
   }
   dispatcherInstalled = true;
-  fallbackEffectHandler = candidate((error: unknown) => {
+  candidate((error: unknown, owner: Owner | null) => {
+    const scoped = findOwnerErrorHandler(owner);
+    if (scoped !== null) {
+      scoped(error);
+      return;
+    }
     for (let index = activeBoundaries.length - 1; index >= 0; index -= 1) {
       const reporter = activeBoundaries[index];
       if (reporter !== undefined && reporter.isActive() && reporter.report(error)) {
         return;
       }
     }
-    fallbackEffectHandler?.(error);
+    getErrorHandler()(error, UNKNOWN_COMPONENT);
   });
 }
 
@@ -109,6 +122,15 @@ export function ErrorBoundary(props: ErrorBoundaryProps): Node {
   let disposed = false;
   let failed = false;
 
+  // Отдельный owner для содержимого границы: ошибки эффектов внутри неё
+  // должны попадать именно в эту границу, а не в соседнюю, привязанную к
+  // тому же родительскому owner.
+  let childrenRootDispose: (() => void) | null = null;
+  const childrenOwner = createRoot((disposeChildren) => {
+    childrenRootDispose = disposeChildren;
+    return getOwner();
+  });
+
   const guardedOptions = { ...options, onError: (error: unknown) => showFallback(error) };
 
   function showFallback(error: unknown): void {
@@ -116,9 +138,11 @@ export function ErrorBoundary(props: ErrorBoundaryProps): Node {
       return;
     }
     failed = true;
-    mount.render(
-      withRuntimeOptions(options, () => resolve(props.fallback(error, reset))),
-    );
+    runWithOwner(childrenOwner, () => {
+      mount.render(
+        withRuntimeOptions(options, () => resolve(props.fallback(error, reset))),
+      );
+    });
   }
 
   function reset(): void {
@@ -134,7 +158,9 @@ export function ErrorBoundary(props: ErrorBoundaryProps): Node {
       return;
     }
     try {
-      const value = withRuntimeOptions(guardedOptions, () => resolve(props.children));
+      const value = runWithOwner(childrenOwner, () =>
+        withRuntimeOptions(guardedOptions, () => resolve(props.children)),
+      );
       if (failed) {
         return;
       }
@@ -158,7 +184,13 @@ export function ErrorBoundary(props: ErrorBoundaryProps): Node {
   createRenderEffect(render);
   onCleanup(() => {
     disposed = true;
-    mount.clear();
+    try {
+      mount.clear();
+    } finally {
+      const disposeChildren = childrenRootDispose;
+      childrenRootDispose = null;
+      disposeChildren?.();
+    }
   });
   return container;
 }
@@ -232,20 +264,28 @@ function hydrateErrorBoundary(props: ErrorBoundaryProps): Node {
   let failed = false;
   let disposed = false;
 
+  let childrenRootDispose: (() => void) | null = null;
+  const childrenOwner = createRoot((disposeChildren) => {
+    childrenRootDispose = disposeChildren;
+    return getOwner();
+  });
+
   const showFallback = (error: unknown): void => {
     if (disposed) {
       return;
     }
     failed = true;
     if (settled) {
-      const fallback = withRuntimeOptions(options, () =>
-        resolve(props.fallback(error, reset)),
+      const fallback = runWithOwner(childrenOwner, () =>
+        withRuntimeOptions(options, () => resolve(props.fallback(error, reset))),
       );
       mount.render(fallback);
       return;
     }
-    const fallback = withRuntimeOptions(options, () =>
-      withWindow(window, () => resolve(props.fallback(error, reset))),
+    const fallback = runWithOwner(childrenOwner, () =>
+      withRuntimeOptions(options, () =>
+        withWindow(window, () => resolve(props.fallback(error, reset))),
+      ),
     );
     if (!regionMatches(window, anchor, fallback)) {
       return mismatch("содержимое ErrorBoundary не совпало");
@@ -263,8 +303,10 @@ function hydrateErrorBoundary(props: ErrorBoundaryProps): Node {
     }
     try {
       if (!settled) {
-        const value = withRuntimeOptions(guardedOptions, () =>
-          withWindow(window, () => resolve(props.children)),
+        const value = runWithOwner(childrenOwner, () =>
+          withRuntimeOptions(guardedOptions, () =>
+            withWindow(window, () => resolve(props.children)),
+          ),
         );
         if (failed) {
           return;
@@ -277,7 +319,9 @@ function hydrateErrorBoundary(props: ErrorBoundaryProps): Node {
         settled = true;
         return;
       }
-      const value = withRuntimeOptions(guardedOptions, () => resolve(props.children));
+      const value = runWithOwner(childrenOwner, () =>
+        withRuntimeOptions(guardedOptions, () => resolve(props.children)),
+      );
       if (failed) {
         return;
       }
@@ -309,7 +353,13 @@ function hydrateErrorBoundary(props: ErrorBoundaryProps): Node {
   createRenderEffect(render);
   onCleanup(() => {
     disposed = true;
-    mount.clear();
+    try {
+      mount.clear();
+    } finally {
+      const disposeChildren = childrenRootDispose;
+      childrenRootDispose = null;
+      disposeChildren?.();
+    }
   });
   return document.createDocumentFragment();
 }

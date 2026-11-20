@@ -6,5 +6,8 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
+    // Фаззинг гидратации списков при параллельном прогоне не укладывается
+    // в дефолтные 5 с (наблюдались ложные падения по таймауту).
+    testTimeout: 30_000,
   },
 });

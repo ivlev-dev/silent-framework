@@ -58,3 +58,32 @@ export function findOwnerRuntimeOptions(
 export function currentOwnerRuntimeOptions(): RuntimeOptions | undefined {
   return findOwnerRuntimeOptions(getOwner());
 }
+
+/**
+ * Ищет ближайший к owner обработчик onError по цепочке owner-узлов.
+ * Возвращает null, если обработчик не найден.
+ *
+ * Обработчик вызывается только с ошибкой: компонент-источник на этом уровне
+ * неизвестен, а привязанные через withRuntimeOptions обработчики (например,
+ * fallback ErrorBoundary) второй аргумент не используют.
+ */
+export function findOwnerErrorHandler(
+  owner: Owner | null,
+): ((error: unknown) => void) | null {
+  if (!hasBoundOptions || owner === null) {
+    return null;
+  }
+  const direct = ownerOptions.get(owner)?.onError;
+  if (direct !== undefined) {
+    return direct as (error: unknown) => void;
+  }
+  let node = nodeOf(owner);
+  while (node !== null) {
+    const found = ownerOptions.get(node)?.onError;
+    if (found !== undefined) {
+      return found as (error: unknown) => void;
+    }
+    node = node.parent;
+  }
+  return null;
+}

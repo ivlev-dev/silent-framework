@@ -338,31 +338,77 @@ export function createViewResult(
     generation += 1;
     resolveDisposed?.();
     resolveDisposed = null;
-    controller?.abort();
-    if (vmInstance !== null) {
-      callHook(vmInstance, "beforeUnmount");
+    const errors: unknown[] = [];
+    const phase = (fn: () => void): void => {
+      try {
+        fn();
+      } catch (error) {
+        errors.push(error);
+      }
+    };
+    phase(() => controller?.abort());
+    const beforeUnmountVm = vmInstance;
+    if (beforeUnmountVm !== null) {
+      phase(() => callHook(beforeUnmountVm, "beforeUnmount"));
     }
-    clearView();
-    fallbackRootDispose?.();
-    fallbackRootDispose = null;
-    unregister?.();
-    unregister = null;
-    if (vmInstance !== null) {
-      callHook(vmInstance, "unmounted");
-      disposeVm(vmInstance);
+    phase(() => {
+      const disposeView = viewRootDispose;
+      viewRootDispose = null;
+      disposeView?.();
+    });
+    phase(() => {
+      const disposeFallback = fallbackRootDispose;
+      fallbackRootDispose = null;
+      disposeFallback?.();
+    });
+    phase(() => {
+      const nodes = currentNodes;
+      currentNodes = [];
+      for (const node of nodes) {
+        if (node.parentNode === null) {
+          disposeNode(node);
+        }
+      }
+    });
+    let current = start.nextSibling;
+    while (current !== null && current !== end) {
+      const next = current.nextSibling;
+      const node = current;
+      phase(() => disposeNode(node));
+      phase(() => node.parentNode?.removeChild(node));
+      current = next;
+    }
+    phase(() => {
+      unregister?.();
+      unregister = null;
+    });
+    const vm = vmInstance;
+    if (vm !== null) {
+      phase(() => callHook(vm, "unmounted"));
+      phase(() => disposeVm(vm));
       vmInstance = null;
     }
-    componentRootDispose?.();
-    componentRootDispose = null;
-    scope.dispose();
-    start.remove();
-    end.remove();
-    emitDevtoolsUnmount({
-      viewId,
-      name: getComponentName(componentRef),
-      moduleId: metaRef.moduleId ?? null,
-      lifetimeMs: mountedAt === null ? 0 : Math.max(0, Date.now() - mountedAt),
+    phase(() => {
+      componentRootDispose?.();
+      componentRootDispose = null;
     });
+    phase(() => scope.dispose());
+    phase(() => start.remove());
+    phase(() => end.remove());
+    phase(() =>
+      emitDevtoolsUnmount({
+        viewId,
+        name: getComponentName(componentRef),
+        moduleId: metaRef.moduleId ?? null,
+        lifetimeMs: mountedAt === null ? 0 : Math.max(0, Date.now() - mountedAt),
+      }),
+    );
+    if (errors.length === 1) {
+      throw errors[0];
+    }
+    if (errors.length > 1) {
+      throw new AggregateError(errors, "Ошибки при освобождении view-компонента");
+    }
   };
 
   attachDisposer(start, disposeInstance);

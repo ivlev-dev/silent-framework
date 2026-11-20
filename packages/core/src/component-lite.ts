@@ -305,6 +305,24 @@ function disposeLightEntry(entry: LightNodeEntry): void {
   disposeNode(entry.node);
 }
 
+/**
+ * Снимает с заменяемого узла маркер владельца, чтобы внешний контейнер
+ * (например, mount point вставки) не освободил живой экземпляр компонента,
+ * обнаружив старый узел в своём списке.
+ */
+function detachLightDisposer(
+  instance: LightInstance,
+  entry: LightNodeEntry,
+): void {
+  if (!entry.owned) {
+    return;
+  }
+  const host = entry.node as unknown as Record<PropertyKey, unknown>;
+  if (host[NODE_DISPOSER] === instance.disposeMarker) {
+    delete host[NODE_DISPOSER];
+  }
+}
+
 function buildLightOutput(
   instance: LightInstance,
   output: unknown,
@@ -412,6 +430,7 @@ function refreshLightInstance(instance: LightInstance, initial: boolean): void {
     const nextNodes = new Set(built.nodes);
     for (const entry of previousEntries) {
       if (!nextNodes.has(entry.node)) {
+        detachLightDisposer(instance, entry);
         disposeLightEntry(entry);
       }
     }
@@ -588,9 +607,12 @@ function lightFromCache(
   }
   const existing = slot.instance;
   if (existing !== null && !existing.disposed && existing.single) {
-    existing.props.update(props);
+    const observed = existing.props.update(props);
     bindOwnerRuntimeOptions(existing.owner, options);
     adoptContextValues(existing.owner, captureContextValues());
+    if (!observed) {
+      refreshLightInstance(existing, false);
+    }
     return lightResult(existing);
   }
   const instance = buildLightInstance(fn, props, options);
