@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  safeParse,
   validate,
   validateAsync,
   validateOrThrow,
@@ -628,6 +629,13 @@ describe("validate", () => {
   it("принимает Date и пустые объекты без полей", () => {
     expect(validate(new Date())).toEqual({ valid: true, errors: [] });
     expect(validate({})).toEqual({ valid: true, errors: [] });
+  });
+
+  it("валидирует объект без прототипа как обычный объект без правил", () => {
+    const value = Object.create(null) as object;
+
+    expect(validate(value)).toEqual({ valid: true, errors: [] });
+    expect(safeParse(value)).toEqual({ success: true, data: value, errors: [] });
   });
 
   it("бросает AsyncRuleError при синхронной проверке", () => {

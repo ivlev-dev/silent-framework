@@ -52,6 +52,13 @@ interface PlanCache {
 
 const planCache = new WeakMap<Function, PlanCache>();
 
+let planBuildCount = 0;
+
+/** @internal Диагностический счётчик построений плана полей (для тестов). */
+export function validationPlanBuilds(): number {
+  return planBuildCount;
+}
+
 const EMPTY_NESTED: readonly NestedInstance[] = [];
 
 interface PreparedField {
@@ -141,6 +148,18 @@ function groupsMatch(
   return ruleGroups.some((group) => callGroups.includes(group));
 }
 
+function rootPathSegment(path: string): string {
+  let index = 0;
+  while (index < path.length) {
+    const char = path[index];
+    if (char === "." || char === "[") {
+      break;
+    }
+    index += 1;
+  }
+  return path.slice(0, index);
+}
+
 function labelAtPath(
   labels: Readonly<Record<string, string>> | undefined,
   fieldName: string,
@@ -155,7 +174,7 @@ function labelAtPath(
       return exact;
     }
   }
-  if (path !== fieldName && !path.startsWith(`${fieldName}[`)) {
+  if (path !== fieldName && rootPathSegment(path) !== fieldName) {
     return undefined;
   }
   if (!Object.hasOwn(labels, fieldName)) {
@@ -372,7 +391,7 @@ function fieldPlan(target: object, withSchema: boolean): readonly FieldRun[] {
   const built = buildFieldPlan(target, withSchema, schema);
   cached = {
     revision,
-    schema,
+    schema: withSchema ? schema : cached.schema,
     withSchema: withSchema ? built : cached.withSchema,
     plain: withSchema ? cached.plain : built,
   };
@@ -385,11 +404,16 @@ function buildFieldPlan(
   withSchema: boolean,
   schema: FieldSchemaMap | null | undefined = undefined,
 ): readonly FieldRun[] {
-  const validation = validationStateFor(target);
+  planBuildCount += 1;
+  const fields = constructorOf(target) === null
+    ? undefined
+    : validationStateFor(target).fields;
   const byName = new Map<string, FieldSlot>();
-  for (const slot of validation.fields.values()) {
-    if (typeof slot.field === "string" && !byName.has(slot.fieldName)) {
-      byName.set(slot.fieldName, slot);
+  if (fields !== undefined) {
+    for (const slot of fields.values()) {
+      if (typeof slot.field === "string" && !byName.has(slot.fieldName)) {
+        byName.set(slot.fieldName, slot);
+      }
     }
   }
   const plan: FieldRun[] = [];
@@ -399,8 +423,8 @@ function buildFieldPlan(
     if (resolved !== null) {
       for (const [name, typeSchema] of Object.entries(resolved)) {
         const slot = byName.get(name);
-        if (slot !== undefined) {
-          for (const candidate of validation.fields.values()) {
+        if (slot !== undefined && fields !== undefined) {
+          for (const candidate of fields.values()) {
             if (typeof candidate.field === "string" && candidate.fieldName === name) {
               used.add(candidate);
             }
@@ -415,16 +439,18 @@ function buildFieldPlan(
       }
     }
   }
-  for (const slot of validation.fields.values()) {
-    if (used.has(slot)) {
-      continue;
+  if (fields !== undefined) {
+    for (const slot of fields.values()) {
+      if (used.has(slot)) {
+        continue;
+      }
+      plan.push({
+        key: slot.field,
+        fieldName: slot.fieldName,
+        slot,
+        schema: undefined,
+      });
     }
-    plan.push({
-      key: slot.field,
-      fieldName: slot.fieldName,
-      slot,
-      schema: undefined,
-    });
   }
   return plan;
 }
@@ -600,6 +626,7 @@ function prepareField(
         labels: state.labels,
         runtime,
         nested: collected,
+        stopAtFirst: state.stopAtFirst,
       });
       if (result !== null) {
         failed = true;

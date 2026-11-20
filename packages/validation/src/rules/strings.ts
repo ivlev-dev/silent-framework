@@ -24,6 +24,10 @@ function isString(value: unknown): value is string {
   return typeof value === "string";
 }
 
+function stringLength(value: string): number {
+  return Array.from(value).length;
+}
+
 function numericParam(value: unknown): number {
   return typeof value === "number" ? value : Number.NaN;
 }
@@ -87,19 +91,19 @@ export const stringRules = {
     name: "minLength",
     params: { min: 0 },
     check: (value, context) =>
-      isString(value) && value.length >= numericParam(context.params.min),
+      isString(value) && stringLength(value) >= numericParam(context.params.min),
   } satisfies RuleDefinition,
   maxLength: {
     name: "maxLength",
     params: { max: Number.MAX_SAFE_INTEGER },
     check: (value, context) =>
-      isString(value) && value.length <= numericParam(context.params.max),
+      isString(value) && stringLength(value) <= numericParam(context.params.max),
   } satisfies RuleDefinition,
   length: {
     name: "length",
     params: { length: 0 },
     check: (value, context) =>
-      isString(value) && value.length === numericParam(context.params.length),
+      isString(value) && stringLength(value) === numericParam(context.params.length),
   } satisfies RuleDefinition,
   matches: {
     name: "matches",

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { IsEmail, MinLength, stringRules } from "../src/rules/strings.js";
+import { IsEmail, Length, MinLength, stringRules } from "../src/rules/strings.js";
+import { validate } from "../src/engine.js";
 import { validationStateFor } from "../src/registry.js";
 import type { RuleDefinition, RuleRunContext } from "../src/types.js";
 
@@ -21,6 +22,38 @@ function run(
 ): boolean | Promise<boolean> {
   return rule.check(value, contextFor(rule.params));
 }
+
+describe("длина строк в code points", () => {
+  it("@Length(1) проходит для эмодзи из одного code point", () => {
+    class Model {
+      @Length(1)
+      public accessor value = "👍";
+    }
+
+    expect(validate(new Model()).valid).toBe(true);
+  });
+
+  it("@Length(2) не проходит для эмодзи из одного code point", () => {
+    class Model {
+      @Length(2)
+      public accessor value = "👍";
+    }
+
+    const result = validate(new Model());
+
+    expect(result.valid).toBe(false);
+    expect(result.errors[0]?.rule).toBe("length");
+  });
+
+  it("minLength и maxLength считают code points", () => {
+    const min: RuleDefinition = { ...stringRules.minLength, params: { min: 2 } };
+    const max: RuleDefinition = { ...stringRules.maxLength, params: { max: 1 } };
+
+    expect(run(min, "👍")).toBe(false);
+    expect(run(max, "👍")).toBe(true);
+    expect(run(max, "👍👍")).toBe(false);
+  });
+});
 
 describe("MinLength", () => {
   it("проверяет нижнюю границу длины", () => {

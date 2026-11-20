@@ -206,7 +206,10 @@ function paramCount(context: MessageContext): number | undefined {
 }
 
 function valueSize(value: unknown): number | undefined {
-  if (Array.isArray(value) || typeof value === "string") {
+  if (typeof value === "string") {
+    return Array.from(value).length;
+  }
+  if (Array.isArray(value)) {
     return value.length;
   }
   if (value instanceof Set) {

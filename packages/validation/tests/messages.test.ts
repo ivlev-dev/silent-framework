@@ -483,6 +483,27 @@ describe("Плюрализация", () => {
     ).toBe("несколько");
   });
 
+  it("считает длину строки в code points для выбора формы", () => {
+    const config: ValidationConfig = {
+      locale: "ru",
+      messages: {
+        ru: {
+          "validation.customCount": "базовое",
+          "validation.customCount_one": "один символ",
+          "validation.customCount_few": "несколько символов",
+          "validation.customCount_many": "много символов",
+        },
+      },
+    };
+
+    expect(
+      resolveMessage(pluralContext("validation.customCount", {}, { value: "👍" }), config),
+    ).toBe("один символ");
+    expect(
+      resolveMessage(pluralContext("validation.customCount", {}, { value: "👍👍" }), config),
+    ).toBe("несколько символов");
+  });
+
   it("возвращает базовое сообщение, если для ключа нет вариантов", () => {
     const message = resolveMessage(
       pluralContext(

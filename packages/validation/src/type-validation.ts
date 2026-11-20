@@ -45,6 +45,8 @@ export interface TypeValidationContext {
   readonly visiting?: WeakSet<object>;
   readonly runtime?: TypeRuntime | undefined;
   readonly nested?: NestedInstance[] | undefined;
+  /** Остановиться после первой ошибки (используется движком при stopAtFirst). */
+  readonly stopAtFirst?: boolean | undefined;
 }
 
 interface ErrorContext {
@@ -61,6 +63,7 @@ interface ErrorContext {
 interface RunContext extends ErrorContext {
   readonly runtime: TypeRuntime;
   readonly nested: NestedInstance[] | undefined;
+  readonly stopAtFirst: boolean;
 }
 
 type InstanceCtor = new (...args: never[]) => unknown;
@@ -444,6 +447,41 @@ function depthError(value: unknown, ctx: ErrorContext): ValidationError {
   return buildError(value, { type: "depth" }, ctx, "validation.depth");
 }
 
+function appendErrors(
+  target: ValidationError[],
+  source: readonly ValidationError[],
+): void {
+  for (let index = 0; index < source.length; index += 1) {
+    const error = source[index];
+    if (error !== undefined) {
+      target.push(error);
+    }
+  }
+}
+
+const PATH_IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
+
+function childPath(parent: string, key: string): string {
+  return PATH_IDENTIFIER.test(key)
+    ? `${parent}.${key}`
+    : `${parent}[${JSON.stringify(key)}]`;
+}
+
+function mapKeyLabel(key: unknown, index: number): string {
+  switch (typeof key) {
+    case "string":
+      return key;
+    case "number":
+    case "bigint":
+    case "boolean":
+    case "symbol":
+    case "undefined":
+      return String(key);
+    default:
+      return `#${index}`;
+  }
+}
+
 function childContext(
   ctx: RunContext,
   path: string,
@@ -553,15 +591,19 @@ function validateFields(
     if (fieldSchema === undefined) {
       continue;
     }
-    const path = `${ctx.path}.${key}`;
-    errors.push(
-      ...validateSchema(
+    const path = childPath(ctx.path, key);
+    appendErrors(
+      errors,
+      validateSchema(
         readFieldValue(owner, key),
         fieldSchema,
         childContext(ctx, path, key, undefined),
         childDepth,
       ),
     );
+    if (ctx.stopAtFirst && errors.length > 0) {
+      return errors;
+    }
   }
   return errors;
 }
@@ -579,14 +621,18 @@ function validateArray(
   try {
     for (let index = 0; index < value.length; index += 1) {
       const path = `${ctx.path}[${index}]`;
-      errors.push(
-        ...validateSchema(
+      appendErrors(
+        errors,
+        validateSchema(
           value[index],
           itemSchema,
           childContext(ctx, path, undefined, index),
           depth + 1,
         ),
       );
+      if (ctx.stopAtFirst && errors.length > 0) {
+        return errors;
+      }
     }
   } finally {
     leave(value, ctx);
@@ -608,26 +654,31 @@ function validateMap(
   try {
     let index = 0;
     for (const [key, entryValue] of value) {
-      const keyLabel = typeof key === "string" || typeof key === "number" || typeof key === "bigint"
-        ? String(key)
-        : String(index);
-      const path = `${ctx.path}[${keyLabel}]`;
-      errors.push(
-        ...validateSchema(
+      const path = `${ctx.path}[${mapKeyLabel(key, index)}]`;
+      appendErrors(
+        errors,
+        validateSchema(
           entryValue,
           valueSchema,
           childContext(ctx, path, undefined, index),
           depth + 1,
         ),
       );
-      errors.push(
-        ...validateSchema(
+      if (ctx.stopAtFirst && errors.length > 0) {
+        return errors;
+      }
+      appendErrors(
+        errors,
+        validateSchema(
           key,
           keySchema,
           childContext(ctx, `${path}.key`, "key", index),
           depth + 1,
         ),
       );
+      if (ctx.stopAtFirst && errors.length > 0) {
+        return errors;
+      }
       index += 1;
     }
   } finally {
@@ -650,9 +701,13 @@ function validateSet(
     let index = 0;
     for (const item of value) {
       const path = `${ctx.path}[${index}]`;
-      errors.push(
-        ...validateSchema(item, itemSchema, childContext(ctx, path, undefined, index), depth + 1),
+      appendErrors(
+        errors,
+        validateSchema(item, itemSchema, childContext(ctx, path, undefined, index), depth + 1),
       );
+      if (ctx.stopAtFirst && errors.length > 0) {
+        return errors;
+      }
       index += 1;
     }
   } finally {
@@ -699,16 +754,24 @@ function validateTuple(
         continue;
       }
       const path = `${ctx.path}[${index}]`;
-      errors.push(
-        ...validateSchema(value[index], itemSchema, childContext(ctx, path, undefined, index), depth + 1),
+      appendErrors(
+        errors,
+        validateSchema(value[index], itemSchema, childContext(ctx, path, undefined, index), depth + 1),
       );
+      if (ctx.stopAtFirst && errors.length > 0) {
+        return errors;
+      }
     }
     if (rest !== undefined) {
       for (let index = items.length; index < value.length; index += 1) {
         const path = `${ctx.path}[${index}]`;
-        errors.push(
-          ...validateSchema(value[index], rest, childContext(ctx, path, undefined, index), depth + 1),
+        appendErrors(
+          errors,
+          validateSchema(value[index], rest, childContext(ctx, path, undefined, index), depth + 1),
         );
+        if (ctx.stopAtFirst && errors.length > 0) {
+          return errors;
+        }
       }
     }
   } finally {
@@ -928,7 +991,10 @@ function validateSchemaCore(
     case "intersection": {
       const errors: ValidationError[] = [];
       for (const branch of schema[1]) {
-        errors.push(...validateSchema(value, branch, ctx, depth));
+        appendErrors(errors, validateSchema(value, branch, ctx, depth));
+        if (ctx.stopAtFirst && errors.length > 0) {
+          return errors;
+        }
       }
       return dedupeErrors(errors);
     }
@@ -965,14 +1031,18 @@ function validateSchemaCore(
       const errors: ValidationError[] = [];
       try {
         for (const [key, entryValue] of Object.entries(value)) {
-          errors.push(
-            ...validateSchema(
+          appendErrors(
+            errors,
+            validateSchema(
               entryValue,
               fieldSchema,
-              childContext(ctx, `${ctx.path}.${key}`, key, undefined),
+              childContext(ctx, childPath(ctx.path, key), key, undefined),
               depth + 1,
             ),
           );
+          if (ctx.stopAtFirst && errors.length > 0) {
+            return errors;
+          }
         }
       } finally {
         leave(value, ctx);
@@ -1014,6 +1084,7 @@ export function validateType(
     },
     nested: context.nested,
     index: undefined,
+    stopAtFirst: context.stopAtFirst === true,
   };
   const errors = validateSchema(value, schema, ctx, 0);
   if (errors.length === 0) {

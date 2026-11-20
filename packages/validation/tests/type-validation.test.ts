@@ -594,6 +594,61 @@ describe("validateType: разделяемые ссылки (DAG)", () => {
   });
 });
 
+describe("validateType: большие коллекции и экранирование ключей", () => {
+  it("собирает 200 000 ошибок без переполнения стека", () => {
+    const items = new Array<unknown>(200_000).fill("x");
+
+    const errors = run({ items }, ["object", { items: ["array", "number"] }]);
+
+    expect(errors).toHaveLength(200_000);
+    expect(errors[0]?.path).toBe("value.items[0]");
+    expect(errors[errors.length - 1]?.path).toBe("value.items[199999]");
+  }, 30_000);
+
+  it("не смешивает числовые и символьные ключи Map", () => {
+    const value = new Map<unknown, unknown>([
+      [0, "bad"],
+      [Symbol("key"), "bad"],
+    ]);
+
+    const errors = run(value, ["mapof", "number", "number"]);
+
+    expect(errors.map((error) => error.path)).toEqual([
+      "value[0]",
+      "value[Symbol(key)]",
+      "value[Symbol(key)].key",
+    ]);
+  });
+
+  it("экранирует ключи Record и не смешивает их с вложенным путём", () => {
+    const recordErrors = run(
+      { "a.b": { b: "bad" } },
+      ["record", ["object", { b: "number" }]],
+    );
+    expect(recordErrors[0]?.path).toBe('value["a.b"].b');
+
+    const objectErrors = run(
+      { "a.b": "bad", a: { b: "bad" } },
+      ["object", { "a.b": "number", a: ["object", { b: "number" }] }],
+    );
+    expect(objectErrors.map((error) => error.path)).toEqual([
+      'value["a.b"]',
+      "value.a.b",
+    ]);
+  });
+
+  it("применяет labels к экранированному ключу по точному пути", () => {
+    const errors = run(
+      { "a.b": "bad" },
+      ["record", "number"],
+      getValidationConfig(),
+      { 'value["a.b"]': "Ключ" },
+    );
+
+    expect(errors[0]?.label).toBe("Ключ");
+  });
+});
+
 describe("validateType: классы", () => {
   class Address {
     public accessor city = "";

@@ -10,6 +10,7 @@ import {
   validateAsync,
 } from "../src/index.js";
 import { ruleDecorator } from "../src/rule.js";
+import { validationPlanBuilds } from "../src/engine.js";
 import { configureValidation, resetValidationConfig } from "../src/messages.js";
 import { SCHEMA_SYMBOL } from "../src/schema.js";
 import type { ClassSchema, FieldSchemaMap, TypeSchema } from "../src/schema.js";
@@ -416,6 +417,45 @@ describe("структурные интерфейсы с методами", () =
     expect(rules(result)).toEqual(["type"]);
   });
 
+});
+
+describe("stopAtFirst и кеш плана", () => {
+  class Numbers {
+    public accessor items: unknown = [];
+  }
+  defineSchema(Numbers, { fields: { items: ["array", "number"] } });
+
+  it("не строит все ошибки большого массива при stopAtFirst", () => {
+    const model = new Numbers();
+    model.items = new Array<unknown>(100_000).fill("x");
+
+    const start = performance.now();
+    const result = validate(model, { stopAtFirst: true });
+    const elapsed = performance.now() - start;
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.path).toBe("items[0]");
+    expect(elapsed).toBeLessThan(300);
+  });
+
+  it("не перестраивает план при чередовании types: true/false", () => {
+    class PlanModel {
+      public accessor value = 0;
+    }
+    defineSchema(PlanModel, { fields: { value: "number" } });
+
+    const model = new PlanModel();
+    validate(model);
+    validate(model, { types: false });
+
+    const before = validationPlanBuilds();
+    for (let index = 0; index < 5; index += 1) {
+      validate(model);
+      validate(model, { types: false });
+    }
+
+    expect(validationPlanBuilds()).toBe(before);
+  });
 });
 
 describe("наследование схем", () => {
