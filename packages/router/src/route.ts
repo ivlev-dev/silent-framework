@@ -171,6 +171,18 @@ export interface Route<
 export type RouteClass = new () => RouteDefinition;
 export type RouteInput = RouteRecord | RouteDefinition | RouteClass;
 
+const ROUTE_MARKER: symbol = Symbol.for("silent.route");
+const contextLoaders = new WeakSet<RouteRecord>();
+
+// Маркер распознаёт экземпляры Route из другой копии пакета,
+// где `instanceof Route` не работает.
+Object.defineProperty(Route.prototype, ROUTE_MARKER, {
+  value: true,
+  enumerable: false,
+  configurable: false,
+  writable: false,
+});
+
 export function createGuard<Path extends string = string, Query = RouteQuery>(
   handler: (
     context: RouteGuardContext<Path, Query>,
@@ -180,10 +192,15 @@ export function createGuard<Path extends string = string, Query = RouteQuery>(
     handler(context as RouteGuardContext<Path, Query>);
 }
 
-const contextLoaders = new WeakSet<RouteRecord>();
-
 export function hasContextLoader(record: RouteRecord): boolean {
   return contextLoaders.has(record);
+}
+
+function isRouteInstance(input: RouteInput): input is RouteDefinition {
+  return input instanceof Route
+    || (typeof input === "object"
+      && input !== null
+      && (input as unknown as Record<PropertyKey, unknown>)[ROUTE_MARKER] === true);
 }
 
 function isConstructor(input: RouteInput): input is RouteClass {
@@ -254,7 +271,7 @@ function normalizeInput(input: RouteInput): RouteRecord {
   if (isConstructor(input)) {
     return definitionToRecord(new input(), true);
   }
-  if (input instanceof Route) {
+  if (isRouteInstance(input)) {
     return definitionToRecord(input, true);
   }
   return definitionToRecord(input, false);

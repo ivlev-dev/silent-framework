@@ -31,6 +31,7 @@ import {
   type RouteRecord,
   type RouteTarget,
   type ScrollBehavior,
+  type ScrollBehaviorResult,
   type ScrollPosition,
 } from "./match.js";
 import {
@@ -51,6 +52,11 @@ export interface RouterState {
   readonly error: unknown;
 }
 
+export interface RouterTransitionOptions {
+  /** При отмене навигации (abort) отклонить промис RouterAbortError. По умолчанию false. */
+  readonly rejectOnAbort?: boolean;
+}
+
 export interface IRouter {
   readonly base: string;
   readonly state: Accessor<RouterState>;
@@ -66,8 +72,8 @@ export interface IRouter {
   isLoaded(to: RouteTarget): boolean;
   prefetch(to: RouteTarget): Promise<void>;
   navigate(to: RouteTarget, options?: { readonly replace?: boolean }): Promise<boolean>;
-  push(to: RouteTarget): Promise<void>;
-  replace(to: RouteTarget): Promise<void>;
+  push(to: RouteTarget, options?: RouterTransitionOptions): Promise<void>;
+  replace(to: RouteTarget, options?: RouterTransitionOptions): Promise<void>;
   back(): void;
   forward(): void;
   start(): Promise<void>;
@@ -173,7 +179,6 @@ export class Router implements IRouter {
       error: null,
     });
     this.state = this.stateSignal[0];
-    this.activate();
     if (options.container !== undefined) {
       this.provide(options.container);
     }
@@ -273,12 +278,14 @@ export class Router implements IRouter {
     }
   }
 
-  push(to: RouteTarget): Promise<void> {
-    return this.transition(to, false, false).then(() => undefined);
+  push(to: RouteTarget, options?: RouterTransitionOptions): Promise<void> {
+    return this.transition(to, false, false, options?.rejectOnAbort ?? false)
+      .then(() => undefined);
   }
 
-  replace(to: RouteTarget): Promise<void> {
-    return this.transition(to, true, false).then(() => undefined);
+  replace(to: RouteTarget, options?: RouterTransitionOptions): Promise<void> {
+    return this.transition(to, true, false, options?.rejectOnAbort ?? false)
+      .then(() => undefined);
   }
 
   back(): void {
@@ -293,10 +300,10 @@ export class Router implements IRouter {
     if (this.disposed) {
       throw new RouterNavigationError("Router уничтожен", "abort", "");
     }
-    this.activate();
     if (this.started) {
       return;
     }
+    this.activate();
     this.started = true;
     this.unlisten = this.history.listen((location) => {
       void this.navigateFromHistory(location);
@@ -313,6 +320,7 @@ export class Router implements IRouter {
     }
     this.controller?.abort();
     this.controller = null;
+    this.deactivate();
   }
 
   dispose(): void {
@@ -324,18 +332,19 @@ export class Router implements IRouter {
     if (this.ownsHistory) {
       this.history.dispose();
     }
-    const index = routers.indexOf(this);
-    if (index !== -1) {
-      routers.splice(index, 1);
-    }
+    this.deactivate();
   }
 
   private activate(): void {
+    this.deactivate();
+    routers.push(this);
+  }
+
+  private deactivate(): void {
     const index = routers.indexOf(this);
     if (index !== -1) {
       routers.splice(index, 1);
     }
-    routers.push(this);
   }
 
   private isSameLocation(target: RouteTarget): boolean {
@@ -363,10 +372,19 @@ export class Router implements IRouter {
     }
   }
 
+  private restoreHistoryUrl(): void {
+    const current = this.stateSignal[0]().route;
+    if (current === null) {
+      return;
+    }
+    this.history.replace(`${this.base}${current.fullPath}`);
+  }
+
   private async transition(
     target: RouteTarget,
     replace: boolean,
     fromHistory: boolean,
+    rejectOnAbort = false,
   ): Promise<boolean> {
     if (this.disposed) {
       throw new RouterNavigationError("Router уничтожен", "abort", targetString(target));
@@ -418,6 +436,9 @@ export class Router implements IRouter {
         if (guard === false) {
           if (id === this.navigationId) {
             this.stateSignal[1]((previous) => ({ ...previous, pending: false }));
+            if (fromHistory) {
+              this.restoreHistoryUrl();
+            }
           }
           return false;
         }
@@ -442,7 +463,7 @@ export class Router implements IRouter {
         }
         const resolved = this.attachComponents(location);
         this.commit(resolved, from, action);
-        await this.restoreScroll(resolved, from);
+        await this.restoreScroll(resolved, from, id);
         return true;
       }
     } catch (error) {
@@ -453,6 +474,9 @@ export class Router implements IRouter {
       ) {
         if (id === this.navigationId) {
           this.stateSignal[1]((previous) => ({ ...previous, pending: false }));
+        }
+        if (rejectOnAbort) {
+          throw error instanceof RouterAbortError ? error : new RouterAbortError(origin);
         }
         return false;
       }
@@ -469,6 +493,9 @@ export class Router implements IRouter {
         pending: false,
         error,
       }));
+      if (fromHistory && id === this.navigationId) {
+        this.restoreHistoryUrl();
+      }
       if (this.onError !== undefined) {
         this.onError(navigationError, target);
       }
@@ -615,11 +642,15 @@ export class Router implements IRouter {
   private async restoreScroll(
     to: RouteLocation,
     from: RouteLocation | null,
+    id: number,
   ): Promise<void> {
     if (typeof window === "undefined") {
       return;
     }
     await Promise.resolve();
+    if (id !== this.navigationId) {
+      return;
+    }
     const saved = this.savedPositions.get(to.fullPath) ?? null;
     const behavior = this.scrollBehavior;
     if (behavior === undefined) {
@@ -632,11 +663,35 @@ export class Router implements IRouter {
       }
       return;
     }
-    const result = await behavior(to, from, saved);
+    let result: ScrollBehaviorResult;
+    try {
+      result = await behavior(to, from, saved);
+    } catch (error) {
+      if (id === this.navigationId) {
+        this.reportScrollError(error, to);
+      }
+      return;
+    }
+    if (id !== this.navigationId) {
+      return;
+    }
     if (result === false || result === null || result === undefined) {
       return;
     }
     this.applyScroll(result);
+  }
+
+  private reportScrollError(error: unknown, to: RouteLocation): void {
+    if (this.onError === undefined) {
+      return;
+    }
+    const navigationError = new RouterNavigationError(
+      error instanceof Error ? error.message : "Ошибка scrollBehavior",
+      "scroll",
+      to.fullPath,
+      error,
+    );
+    this.onError(navigationError, to.fullPath);
   }
 
   private scrollToHash(hash: string): void {

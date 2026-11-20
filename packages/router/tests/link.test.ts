@@ -6,7 +6,8 @@ import {
   createMemoryHistory,
   type RouteRecord,
 } from "../src/index";
-import { setServerMode, type AnyComponent } from "@ivlev-dev/silent-core";
+import { setServerMode, type AnyComponent, type RuntimeOptions } from "@ivlev-dev/silent-core";
+import { Container } from "@ivlev-dev/silent-di";
 import { renderToString } from "@ivlev-dev/silent-server";
 import { leaf, render, tick, type Rendered } from "./support";
 
@@ -18,8 +19,8 @@ function track(router: Router): Router {
   return router;
 }
 
-function mount(factory: () => Node): Rendered {
-  const result = render(factory);
+function mount(factory: () => Node, options?: RuntimeOptions): Rendered {
+  const result = render(factory, options);
   rendered.push(result);
   return result;
 }
@@ -503,9 +504,112 @@ describe("Link", () => {
     const { router } = setup();
     await router.start();
     const rendered = await renderToString(
-      (() => Link({ to: "/nope", children: "404" })) as AnyComponent,
+      (() => Link({ to: "/nope", router, children: "404" })) as AnyComponent,
     );
     expect(rendered.html).toContain('href="/nope"');
     expect(rendered.html).not.toContain("aria-current");
+  });
+
+  it("не откатывается к Router.current при контейнере без биндинга", async () => {
+    const { router } = setup();
+    await router.start();
+    const container = new Container();
+    try {
+      expect(() => render(
+        () => Link({ to: "/about", children: "О нас" }),
+        { container },
+      )).toThrow(RouterMissingError);
+    } finally {
+      container.dispose();
+    }
+  });
+
+  it("использует router из контейнера, а не Router.current", async () => {
+    const routes: readonly RouteRecord[] = [
+      { path: "/", name: "home", component: leaf("home") },
+      { path: "/about", name: "about", component: leaf("about") },
+    ];
+    const fromContainer = track(new Router({
+      routes,
+      base: "/one",
+      history: createMemoryHistory("/"),
+    }));
+    const current = track(new Router({
+      routes,
+      base: "/two",
+      history: createMemoryHistory("/"),
+    }));
+    await current.start();
+    expect(Router.current()).toBe(current);
+
+    const container = new Container();
+    container.bindValue(Router, fromContainer);
+    try {
+      const { host } = mount(
+        () => Link({ to: "/about", children: "О нас" }),
+        { container },
+      );
+      expect(host.querySelector("a")?.getAttribute("href")).toBe("/one/about");
+    } finally {
+      container.dispose();
+    }
+  });
+
+  it("сравнивает query при выборе exactActive и aria-current", async () => {
+    const router = track(new Router({
+      routes: [
+        { path: "/", name: "home", component: leaf("home") },
+        { path: "/about", name: "about", component: leaf("about") },
+      ],
+      history: createMemoryHistory("/about?tab=info"),
+    }));
+    await router.start();
+    const info = mount(() => Link({
+      to: "/about?tab=info",
+      class: "nav",
+      activeClass: "active",
+      exactActiveClass: "exact",
+      children: "info",
+    }));
+    const files = mount(() => Link({
+      to: "/about?tab=files",
+      class: "nav",
+      activeClass: "active",
+      exactActiveClass: "exact",
+      children: "files",
+    }));
+
+    const infoAnchor = info.host.querySelector("a")!;
+    const filesAnchor = files.host.querySelector("a")!;
+    expect(infoAnchor.getAttribute("aria-current")).toBe("page");
+    expect(infoAnchor.className).toBe("nav active exact");
+    expect(filesAnchor.getAttribute("aria-current")).toBeNull();
+    expect(filesAnchor.className).toBe("nav active");
+  });
+
+  it("сравнивает hash при выборе exactActive и aria-current", async () => {
+    const router = track(new Router({
+      routes: [{ path: "/docs", name: "docs", component: leaf("docs") }],
+      history: createMemoryHistory("/docs#install"),
+    }));
+    await router.start();
+    const install = mount(() => Link({ to: "/docs#install", children: "install" }));
+    const usage = mount(() => Link({ to: "/docs#usage", children: "usage" }));
+    expect(install.host.querySelector("a")?.getAttribute("aria-current")).toBe("page");
+    expect(usage.host.querySelector("a")?.getAttribute("aria-current")).toBeNull();
+  });
+
+  it("позволяет отключить сравнение query через exactQuery", async () => {
+    const router = track(new Router({
+      routes: [{ path: "/about", name: "about", component: leaf("about") }],
+      history: createMemoryHistory("/about?tab=info"),
+    }));
+    await router.start();
+    const { host } = mount(() => Link({
+      to: "/about?tab=files",
+      exactQuery: false,
+      children: "files",
+    }));
+    expect(host.querySelector("a")?.getAttribute("aria-current")).toBe("page");
   });
 });

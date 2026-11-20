@@ -5,6 +5,7 @@ export {
   type RouterComponentLoader,
   type RouterOptions,
   type RouterState,
+  type RouterTransitionOptions,
 } from "./router.js";
 export { createTestRouter, type TestRouterOptions } from "./testing.js";
 export {

@@ -14,6 +14,7 @@ import {
   RouterMissingError,
   isPathActive,
   type RouteLocation,
+  type RouteQuery,
   type RouteTarget,
 } from "./match.js";
 import { Router, type IRouter } from "./router.js";
@@ -27,15 +28,28 @@ export interface LinkProps {
   readonly children?: Children;
   readonly router?: IRouter;
   readonly prefetch?: boolean | "hover" | "visible";
+  /** Сравнивать query при определении точного активного маршрута. По умолчанию true. */
+  readonly exactQuery?: boolean;
 }
 
 function resolveRouter(router: IRouter | undefined): IRouter {
   if (router !== undefined) {
     return router;
   }
-  const injected = getRuntimeOptions().container?.peek<IRouter>(Router);
-  if (injected !== undefined) {
-    return injected;
+  const container = getRuntimeOptions().container;
+  if (container !== undefined) {
+    const injected = container.peek<IRouter>(Router);
+    if (injected !== undefined) {
+      return injected;
+    }
+    if (container.hasExplicit(Router)) {
+      throw new RouterMissingError(
+        "Router зарегистрирован, но ещё не разрешён; используйте bindValue/provide",
+      );
+    }
+    throw new RouterMissingError(
+      "Link не нашёл Router в контейнере: передайте router или зарегистрируйте Router",
+    );
   }
   const resolved = Router.current();
   if (resolved === null) {
@@ -121,13 +135,50 @@ function matchesParams(
   return true;
 }
 
-function isExactActive(router: IRouter, target: RouteTarget): boolean {
-  const current = router.state().route;
-  if (current === null) {
+function matchesQuery(current: RouteQuery, target: RouteQuery): boolean {
+  const currentKeys = Object.keys(current);
+  if (currentKeys.length !== Object.keys(target).length) {
     return false;
   }
-  const location = safeResolve(router, target);
-  if (location === null) {
+  for (const key of currentKeys) {
+    const currentValue = current[key];
+    const targetValue = target[key];
+    if (currentValue === undefined || targetValue === undefined) {
+      if (currentValue !== targetValue) {
+        return false;
+      }
+      continue;
+    }
+    if (Array.isArray(currentValue) || Array.isArray(targetValue)) {
+      if (!Array.isArray(currentValue) || !Array.isArray(targetValue)) {
+        return false;
+      }
+      if (currentValue.length !== targetValue.length) {
+        return false;
+      }
+      for (let index = 0; index < currentValue.length; index += 1) {
+        if (String(currentValue[index]) !== String(targetValue[index])) {
+          return false;
+        }
+      }
+      continue;
+    }
+    if (String(currentValue) !== String(targetValue)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isExactMatch(
+  current: RouteLocation,
+  location: RouteLocation,
+  exactQuery: boolean,
+): boolean {
+  if (current.hash !== location.hash) {
+    return false;
+  }
+  if (exactQuery && !matchesQuery(current.query, location.query)) {
     return false;
   }
   if (location.name !== null && current.name === location.name) {
@@ -136,8 +187,25 @@ function isExactActive(router: IRouter, target: RouteTarget): boolean {
   return current.path === location.path;
 }
 
+function isExactActive(
+  router: IRouter,
+  target: RouteTarget,
+  exactQuery: boolean,
+): boolean {
+  const current = router.state().route;
+  if (current === null) {
+    return false;
+  }
+  const location = safeResolve(router, target);
+  if (location === null) {
+    return false;
+  }
+  return isExactMatch(current, location, exactQuery);
+}
+
 export function Link(props: LinkProps): Node {
   const router = resolveRouter(props.router);
+  const exactQuery = props.exactQuery !== false;
   const element = createElement("a");
   const target = (): RouteTarget => resolveTarget(props.to);
 
@@ -147,7 +215,8 @@ export function Link(props: LinkProps): Node {
   });
   attr(element, "aria-current", () => {
     const value = target();
-    return inspectTarget(value).kind === "internal" && isExactActive(router, value)
+    return inspectTarget(value).kind === "internal"
+      && isExactActive(router, value, exactQuery)
       ? "page"
       : null;
   });
@@ -169,12 +238,11 @@ export function Link(props: LinkProps): Node {
       let exact = false;
       if (current !== null && location !== null) {
         if (location.name !== null && current.name === location.name) {
-          exact = matchesParams(current.params, location.params);
-          active = exact;
+          active = matchesParams(current.params, location.params);
         } else {
-          exact = current.path === location.path;
           active = isPathActive(current.path, location.path, false);
         }
+        exact = active && isExactMatch(current, location, exactQuery);
       }
       const classes: string[] = [];
       if (custom !== "") {

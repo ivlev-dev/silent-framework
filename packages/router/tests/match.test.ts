@@ -125,6 +125,36 @@ describe("сопоставление маршрутов", () => {
     expect(router.resolve("?tab=other").fullPath).toBe("/users/42?tab=other");
   });
 
+  it("наследует query и hash объектной цели", async () => {
+    const router = createRouter(routes);
+    await router.push("/users/42?tab=info#top");
+    expect(router.resolve({ hash: "#reviews" }).fullPath)
+      .toBe("/users/42?tab=info#reviews");
+    expect(router.resolve({ path: "/users/42" }).fullPath)
+      .toBe("/users/42?tab=info#top");
+    expect(router.resolve({
+      path: "/users/42",
+      query: { tab: "other" },
+      hash: "#x",
+    }).fullPath).toBe("/users/42?tab=other#x");
+  });
+
+  it("разбирает query и hash внутри path объектной цели", () => {
+    const router = createRouter(routes);
+    const location = router.resolve({ path: "/users/42?tab=info#top" });
+    expect(location.path).toBe("/users/42");
+    expect(location.query).toEqual({ tab: "info" });
+    expect(location.hash).toBe("#top");
+    expect(location.fullPath).toBe("/users/42?tab=info#top");
+
+    const overridden = router.resolve({
+      path: "/users/42?tab=a#one",
+      query: { tab: "b" },
+      hash: "#two",
+    });
+    expect(overridden.fullPath).toBe("/users/42?tab=b#two");
+  });
+
   it("выбрасывает RouterNavigationError для неизвестного имени и отсутствующего параметра", () => {
     const router = createRouter(routes);
     expect(() => router.resolve({ name: "missing" })).toThrow(RouterNavigationError);

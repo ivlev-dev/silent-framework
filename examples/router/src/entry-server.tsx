@@ -17,7 +17,7 @@ export async function render(
       props: { title },
     });
   } finally {
-    router.stop();
+    router.dispose();
     container.dispose();
   }
 }

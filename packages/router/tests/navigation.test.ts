@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   Router,
+  RouterAbortError,
   RouterNavigationError,
   createBrowserHistory,
   createMemoryHistory,
@@ -232,6 +233,65 @@ describe("навигация", () => {
     expect(router.route?.path).toBe("/about");
   });
 
+  it("отклоняет отменённую навигацию при rejectOnAbort", async () => {
+    let started = false;
+    const history = createMemoryHistory("/");
+    const routes: readonly RouteRecord[] = [
+      { path: "/", component: leaf("home") },
+      { path: "/about", component: leaf("about") },
+      {
+        path: "/slow",
+        load: async (_to, signal) => {
+          started = true;
+          await new Promise((resolve) => {
+            setTimeout(resolve, 25);
+          });
+          if (signal.aborted) {
+            throw new Error("aborted");
+          }
+          return leaf("slow");
+        },
+      },
+    ];
+    const router = track(new Router({ routes, history }));
+    await router.start();
+    const first = router.push("/slow", { rejectOnAbort: true });
+    const rejected = expect(first).rejects.toBeInstanceOf(RouterAbortError);
+    await tick();
+    expect(started).toBe(true);
+    await router.push("/about");
+    await rejected;
+    expect(router.route?.path).toBe("/about");
+  });
+
+  it("по умолчанию не отклоняет отменённую навигацию", async () => {
+    let started = false;
+    const history = createMemoryHistory("/");
+    const routes: readonly RouteRecord[] = [
+      { path: "/", component: leaf("home") },
+      { path: "/about", component: leaf("about") },
+      {
+        path: "/slow",
+        load: async () => {
+          started = true;
+          await new Promise((resolve) => {
+            setTimeout(resolve, 25);
+          });
+          return leaf("slow");
+        },
+      },
+    ];
+    const router = track(new Router({ routes, history }));
+    await router.start();
+    const first = router.push("/slow");
+    await tick();
+    expect(started).toBe(true);
+    const second = router.push("/about");
+    await expect(first).resolves.toBeUndefined();
+    await second;
+    expect(router.route?.path).toBe("/about");
+  });
+
   it("отклоняет навигацию на неизвестный путь", async () => {
     const history = createMemoryHistory("/");
     const router = track(new Router({ routes: baseRoutes, history }));
@@ -300,6 +360,85 @@ describe("навигация", () => {
     }
   });
 
+  it("не применяет устаревшую позицию скролла после новой навигации", async () => {
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    let releaseSlow: (() => void) | null = null;
+    const slow = new Promise<ScrollPosition>((resolve) => {
+      releaseSlow = () => {
+        resolve({ left: 111, top: 222 });
+      };
+    });
+    const history = createMemoryHistory("/");
+    const router = track(new Router({
+      routes: [
+        { path: "/", component: leaf("home") },
+        { path: "/about", component: leaf("about") },
+        { path: "/slow", component: leaf("slow") },
+      ],
+      history,
+      scrollBehavior: (to) => (to.path === "/slow" ? slow : { left: 0, top: 5 }),
+    }));
+    await router.start();
+    scrollTo.mockClear();
+
+    const first = router.push("/slow");
+    await tick();
+    await router.push("/about");
+    expect(scrollTo).toHaveBeenCalledWith(0, 5);
+
+    scrollTo.mockClear();
+    releaseSlow?.();
+    await first;
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it("не помечает навигацию ошибкой при исключении scrollBehavior", async () => {
+    const onError = vi.fn();
+    const history = createMemoryHistory("/");
+    const router = track(new Router({
+      routes: [
+        { path: "/", component: leaf("home") },
+        { path: "/about", component: leaf("about") },
+      ],
+      history,
+      scrollBehavior: () => {
+        throw new Error("scroll boom");
+      },
+      onError,
+    }));
+    await router.start();
+    expect(router.route?.path).toBe("/");
+    expect(router.state().error).toBeNull();
+    onError.mockClear();
+
+    await expect(router.push("/about")).resolves.toBeUndefined();
+    expect(router.route?.path).toBe("/about");
+    expect(router.state().error).toBeNull();
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "scroll" }),
+      "/about",
+    );
+  });
+
+  it("восстанавливает URL при отмене popstate-навигации", async () => {
+    window.history.replaceState(null, "", "/");
+    const history = createBrowserHistory(window);
+    const router = track(new Router({ routes: baseRoutes, history }));
+    await router.start();
+    await router.push("/about");
+    expect(window.location.pathname).toBe("/about");
+
+    window.history.pushState(null, "", "/blocked");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await tick();
+    await tick();
+
+    expect(router.route?.name).toBe("about");
+    expect(window.location.pathname).toBe("/about");
+    history.dispose();
+  });
+
   it("снимает слушатели истории при dispose", async () => {
     const history = createMemoryHistory("/");
     const router = new Router({ routes: baseRoutes, history });
@@ -321,10 +460,30 @@ describe("навигация", () => {
       routes: baseRoutes,
       history: createMemoryHistory("/"),
     });
+    expect(Router.current()).toBeNull();
+    await first.start();
+    expect(Router.current()).toBe(first);
+    await second.start();
     expect(Router.current()).toBe(second);
     second.dispose();
     expect(Router.current()).toBe(first);
     first.dispose();
+    expect(Router.current()).toBeNull();
+  });
+
+  it("не накапливает роутеры в реестре после stop и dispose", async () => {
+    for (let index = 0; index < 100; index += 1) {
+      const router = new Router({
+        routes: [{ path: "/", name: "home", component: leaf("home") }],
+        history: createMemoryHistory("/"),
+      });
+      expect(Router.current()).toBeNull();
+      await router.start();
+      expect(Router.current()).toBe(router);
+      router.stop();
+      expect(Router.current()).toBeNull();
+      router.dispose();
+    }
     expect(Router.current()).toBeNull();
   });
 

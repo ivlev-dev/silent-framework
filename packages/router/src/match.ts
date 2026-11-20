@@ -31,7 +31,8 @@ export type RouterErrorCode =
   | "load"
   | "no-match"
   | "redirect"
-  | "resolve";
+  | "resolve"
+  | "scroll";
 
 export class RouterMissingError extends Error {
   constructor(message = "Router не найден: передайте router или создайте экземпляр Router") {
@@ -901,6 +902,8 @@ export function resolveLocation(
   }
   const params = target.params ?? {};
   let targetPath: string;
+  let inlineSearch: string | null = null;
+  let inlineHash: string | null = null;
   if (target.name !== undefined) {
     const route = findByName(compiled, target.name);
     if (route === null) {
@@ -912,15 +915,31 @@ export function resolveLocation(
     }
     targetPath = interpolatePath(route.path, params);
   } else if (target.path !== undefined && target.path !== "") {
-    targetPath = target.path.includes(":") || target.path.includes("{")
-      ? interpolatePath(target.path, params)
-      : normalizePath(target.path);
+    const split = splitTarget(target.path);
+    targetPath = split.path.includes(":") || split.path.includes("{")
+      ? interpolatePath(split.path, params)
+      : normalizePath(split.path);
+    if (split.search !== "") {
+      inlineSearch = split.search;
+    }
+    if (split.hash !== "") {
+      inlineHash = split.hash;
+    }
   } else {
     targetPath = current?.path ?? "/";
   }
-  const query = target.query === undefined ? {} : normalizeQuery(target.query);
-  const hash = target.hash === undefined ? "" : target.hash;
-  return createLocation(compiled, targetPath, buildQuery(query), hash, components);
+  // Объектная цель без query/hash наследует их у текущего маршрута;
+  // query/hash из target.path уступают явным полям объекта.
+  const query = target.query === undefined
+    ? current?.query ?? {}
+    : normalizeQuery(target.query);
+  const search = target.query !== undefined
+    ? buildQuery(query)
+    : inlineSearch ?? buildQuery(query);
+  const hash = target.hash !== undefined
+    ? target.hash
+    : inlineHash ?? current?.hash ?? "";
+  return createLocation(compiled, targetPath, search, hash, components);
 }
 
 export function isPathActive(

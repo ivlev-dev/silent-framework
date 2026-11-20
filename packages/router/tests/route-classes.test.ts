@@ -11,6 +11,7 @@ import {
   type RouteLoadContext,
   type RouteLoaderResult,
   type RouteViewProps,
+  type RouterComponentLoadContext,
   type RouterViewComponentProps,
 } from "../src/index";
 import { leaf, render, type Rendered } from "./support";
@@ -170,6 +171,25 @@ describe("Route-классы", () => {
     const router = createRouter([instance]);
     await router.start();
     expect(router.route?.name).toBe("home");
+  });
+
+  it("распознаёт экземпляр Route из другой копии пакета по маркеру", async () => {
+    let seenRecordPath = "";
+    const foreign = {
+      path: "/foreign",
+      name: "foreign",
+      [Symbol.for("silent.route")]: true,
+      load(context: RouterComponentLoadContext): RouteLoaderResult {
+        seenRecordPath = context.record.path;
+        return leaf("foreign");
+      },
+    };
+    const router = createRouter([HomeRoute, foreign as unknown as RouteInput]);
+    await router.start();
+    await router.push("/foreign");
+    expect(seenRecordPath).toBe("/foreign");
+    expect(router.route?.name).toBe("foreign");
+    expect(router.state().matched.at(-1)?.component).toBeTypeOf("function");
   });
 
   it("выполняет beforeEnter и redirect из route-класса", async () => {
