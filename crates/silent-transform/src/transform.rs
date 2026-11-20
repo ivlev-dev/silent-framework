@@ -17,7 +17,7 @@ use swc_core::ecma::ast::{
     ImportDecl, ImportNamedSpecifier, ImportSpecifier, KeyValueProp, Lit, MemberExpr, MemberProp,
     MethodKind, Module, ModuleDecl, ModuleExportName, ModuleItem, NewExpr, ObjectLit, Param,
     ParamOrTsParamProp, Pass, Pat, Program, Prop, PropName, PropOrSpread, ReturnStmt,
-    SimpleAssignTarget, Stmt, Str, TsEntityName, TsImportType, TsParamPropParam,
+    SimpleAssignTarget, StaticBlock, Stmt, Str, TsEntityName, TsImportType, TsParamPropParam,
     TsPropertySignature, TsType, TsTypeElement, TsTypeParamInstantiation, TsTypeQueryExpr,
     TsUnionOrIntersectionType, VarDecl, VarDeclKind, VarDeclarator,
 };
@@ -84,6 +84,7 @@ pub(crate) struct SilentPass {
     pub(crate) imports: ImportManager,
     pub(crate) locals: HashMap<String, LocalKind>,
     pub(crate) errors: Rc<RefCell<Vec<String>>>,
+    pub(crate) warnings: Vec<String>,
     pub(crate) used_helpers: HashSet<String>,
     pub(crate) metadata: Vec<ModuleItem>,
     pub(crate) view_stack: Vec<bool>,
@@ -118,6 +119,7 @@ impl SilentPass {
             imports,
             locals: HashMap::new(),
             errors,
+            warnings: Vec::new(),
             used_helpers: HashSet::new(),
             metadata: Vec::new(),
             view_stack: Vec::new(),
@@ -135,6 +137,14 @@ impl SilentPass {
 
     fn error(&self, message: impl Into<String>) {
         self.errors.borrow_mut().push(format!(
+            "{}: {}",
+            self.filename.to_string_lossy(),
+            message.into()
+        ));
+    }
+
+    pub(crate) fn warning(&mut self, message: impl Into<String>) {
+        self.warnings.push(format!(
             "{}: {}",
             self.filename.to_string_lossy(),
             message.into()
@@ -332,7 +342,12 @@ impl SilentPass {
             return None;
         }
         let implementation = implementations.first()?.clone();
-        let (module, class_name) = split_token(&implementation)?;
+        let Some((module, class_name)) = split_token(&implementation) else {
+            self.error(format!(
+                "некорректный токен реализации {implementation}: ожидается путь#Класс"
+            ));
+            return None;
+        };
         if module == self.current_module() {
             return Some(Expr::Ident(Ident::new(
                 class_name.into(),
@@ -423,7 +438,7 @@ impl SilentPass {
         Some(Expr::Ident(local))
     }
 
-    fn transform_class(&mut self, class: &mut swc_core::ecma::ast::Class) {
+    fn transform_class(&mut self, class_name: &str, class: &mut swc_core::ecma::ast::Class) {
         if class.is_abstract {
             return;
         }
@@ -439,7 +454,7 @@ impl SilentPass {
         ) {
             return;
         }
-        let dependencies = self.constructor_dependencies(constructor);
+        let dependencies = self.constructor_dependencies(class_name, constructor);
         let Some(dependencies) = dependencies else {
             return;
         };
@@ -453,31 +468,69 @@ impl SilentPass {
         class.body.push(ClassMember::Method(method));
     }
 
-    fn constructor_dependencies(&mut self, constructor: &Constructor) -> Option<Vec<Expr>> {
+    fn constructor_dependencies(
+        &mut self,
+        class_name: &str,
+        constructor: &Constructor,
+    ) -> Option<Vec<Expr>> {
         let mut dependencies = Vec::new();
-        for param in &constructor.params {
+        for (index, param) in constructor.params.iter().enumerate() {
             let (ident, type_ann) = match param {
                 ParamOrTsParamProp::Param(param) => match &param.pat {
                     Pat::Ident(binding) => (&binding.id, binding.type_ann.as_ref()),
                     Pat::Assign(assign) => match &*assign.left {
                         Pat::Ident(binding) => (&binding.id, binding.type_ann.as_ref()),
-                        _ => return None,
+                        _ => {
+                            self.error(format!(
+                                "класс {class_name}: параметр конструктора #{} должен быть identifier",
+                                index + 1
+                            ));
+                            return None;
+                        }
                     },
-                    _ => return None,
+                    _ => {
+                        self.error(format!(
+                            "класс {class_name}: параметр конструктора #{} должен быть identifier",
+                            index + 1
+                        ));
+                        return None;
+                    }
                 },
                 ParamOrTsParamProp::TsParamProp(prop) => match &prop.param {
                     TsParamPropParam::Ident(binding) => (&binding.id, binding.type_ann.as_ref()),
                     TsParamPropParam::Assign(assign) => match &*assign.left {
                         Pat::Ident(binding) => (&binding.id, binding.type_ann.as_ref()),
-                        _ => return None,
+                        _ => {
+                            self.error(format!(
+                                "класс {class_name}: параметр конструктора #{} должен быть identifier",
+                                index + 1
+                            ));
+                            return None;
+                        }
                     },
                 },
             };
-            let type_ann = type_ann?;
-            let dependency = self.resolve_type_value(&type_ann.type_ann)?;
+            let Some(type_ann) = type_ann else {
+                self.error(format!(
+                    "класс {class_name}: параметр конструктора {} без аннотации типа",
+                    ident.sym
+                ));
+                return None;
+            };
             if ident.sym == "this" {
                 return None;
             }
+            // Примитивы и структурные типы не участвуют в DI: класс остаётся обычным.
+            if !is_injectable_type(&type_ann.type_ann) {
+                return None;
+            }
+            let Some(dependency) = self.resolve_type_value(&type_ann.type_ann) else {
+                self.error(format!(
+                    "класс {class_name}: не удалось разрешить тип параметра конструктора {}",
+                    ident.sym
+                ));
+                return None;
+            };
             dependencies.push(dependency);
         }
         Some(dependencies)
@@ -796,12 +849,18 @@ impl VisitMut for SilentPass {
     }
 
     fn visit_mut_class_decl(&mut self, class: &mut ClassDecl) {
-        self.transform_class(&mut class.class);
+        let class_name = class.ident.sym.to_string();
+        self.transform_class(&class_name, &mut class.class);
         class.visit_mut_children_with(self);
     }
 
     fn visit_mut_class_expr(&mut self, class: &mut ClassExpr) {
-        self.transform_class(&mut class.class);
+        let class_name = class
+            .ident
+            .as_ref()
+            .map(|ident| ident.sym.to_string())
+            .unwrap_or_else(|| "<anonymous>".to_string());
+        self.transform_class(&class_name, &mut class.class);
         class.visit_mut_children_with(self);
     }
 
@@ -944,11 +1003,24 @@ impl VisitMut for ThisRewriter {
             ));
             return;
         }
-        if matches!(expr, Expr::Fn(_)) {
+        if matches!(expr, Expr::Fn(_) | Expr::Class(_)) {
             return;
         }
         expr.visit_mut_children_with(self);
     }
+
+    fn visit_mut_prop(&mut self, prop: &mut Prop) {
+        if matches!(prop, Prop::Method(_) | Prop::Getter(_) | Prop::Setter(_)) {
+            return;
+        }
+        prop.visit_mut_children_with(self);
+    }
+
+    fn visit_mut_class_method(&mut self, _: &mut ClassMethod) {}
+
+    fn visit_mut_constructor(&mut self, _: &mut Constructor) {}
+
+    fn visit_mut_static_block(&mut self, _: &mut StaticBlock) {}
 }
 
 pub(crate) fn rewrite_this(expr: &mut Expr) {
@@ -1161,6 +1233,15 @@ fn property_key(property: &TsPropertySignature) -> Option<String> {
     }
 }
 
+fn is_injectable_type(ty: &TsType) -> bool {
+    match ty {
+        TsType::TsTypeRef(reference) => reference.type_params.is_none(),
+        TsType::TsTypeQuery(_) => true,
+        TsType::TsParenthesizedType(paren) => is_injectable_type(&paren.type_ann),
+        _ => false,
+    }
+}
+
 fn type_value_name(ty: &TsType) -> Option<String> {
     match ty {
         TsType::TsTypeRef(reference) => entity_local_name(&reference.type_name),
@@ -1296,10 +1377,12 @@ fn transform_inner(
         return Err(collected.join("\n"));
     }
 
+    let mut diagnostics = output.diagnostics;
+    diagnostics.extend(pass.warnings.iter().cloned());
     serde_json::to_string(&TransformResult {
         code: output.code,
         map: output.map,
-        diagnostics: output.diagnostics,
+        diagnostics,
     })
     .map_err(|error| error.to_string())
 }

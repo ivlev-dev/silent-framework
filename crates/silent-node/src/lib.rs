@@ -10,7 +10,7 @@ pub fn version() -> String {
     silent_transform::version().to_string()
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn transform(
     source: String,
     filename: String,
@@ -21,7 +21,7 @@ pub fn transform(
         .map_err(to_napi_error)
 }
 
-#[napi]
+#[napi(catch_unwind)]
 pub fn scan(root: String, options_json: String) -> napi::Result<String> {
     let config: silent_transform::alias::AliasConfig = if options_json.trim().is_empty() {
         silent_transform::alias::AliasConfig::default()

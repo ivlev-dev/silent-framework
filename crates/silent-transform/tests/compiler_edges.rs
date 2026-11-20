@@ -49,7 +49,7 @@ fn fragment_with_multiple_roots_and_dynamic_text() {
         "/proj/src/view.tsx",
     );
     assert!(code.contains("_$templateHoles"));
-    assert!(code.contains("<h1>title</h1><p><!--silent-hole-0--></p>"));
+    assert!(code.contains("<h1>title</h1> <p><!--silent-hole-0--></p>"));
     assert!(code.contains("_$insert"));
 }
 
@@ -541,4 +541,149 @@ export async function main(di: any) {
         "unexpected error: {error}"
     );
     assert!(error.contains("resolve"), "unexpected error: {error}");
+}
+
+fn compile_with_diagnostics(source: &str, filename: &str) -> (String, Vec<String>) {
+    let index_json = serde_json::to_string(&Index::default()).unwrap();
+    let result = transform(source, filename, "{}", &index_json).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&result).unwrap();
+    let code = value["code"].as_str().unwrap().to_string();
+    let diagnostics = value["diagnostics"]
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    (code, diagnostics)
+}
+
+#[test]
+fn jsx_children_take_priority_over_children_attribute() {
+    let (code, diagnostics) = compile_with_diagnostics(
+        r#"function view(x: any) { return <Comp children={x}>{x}</Comp>; }"#,
+        "/proj/src/view.tsx",
+    );
+    assert_eq!(code.matches("get children").count(), 1, "{code}");
+    assert!(!code.contains("children:"), "{code}");
+    assert!(
+        diagnostics.iter().any(|item| item.contains("children")),
+        "missing diagnostic: {diagnostics:?}"
+    );
+}
+
+#[test]
+fn bind_value_requires_stable_reference() {
+    let error = compile(
+        r#"function render(f: any) { return <input bindValue={f().field} />; }"#,
+        "/proj/src/view.tsx",
+        "{}",
+        Index::default(),
+    )
+    .unwrap_err();
+    assert!(
+        error.contains("bindValue требует ссылку (identifier/member от стабильного объекта)"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn void_tag_list_matches_server_serializer() {
+    let serializer = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../packages/server/src/dom/serializer.ts"
+    ));
+    let start = serializer
+        .find("const VOID_ELEMENTS")
+        .expect("VOID_ELEMENTS not found in serializer");
+    let end = serializer[start..]
+        .find("]);")
+        .map(|offset| start + offset)
+        .expect("end of VOID_ELEMENTS not found in serializer");
+    let tags: Vec<&str> = serializer[start..end]
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('"'))
+        .map(|line| line.trim_matches(|character| character == '"' || character == ','))
+        .collect();
+    assert!(tags.len() >= 14, "serializer list was not parsed: {tags:?}");
+    for tag in tags {
+        let code = run(
+            &format!("const el = <{tag} name=\"x\" />;"),
+            "/proj/src/view.tsx",
+        );
+        assert!(code.contains(&format!("<{tag} ")), "{tag}: {code}");
+        assert!(
+            !code.contains(&format!("</{tag}>")),
+            "{tag} must not have a closing tag: {code}"
+        );
+    }
+}
+
+#[test]
+fn void_tag_with_children_fails() {
+    let error = compile(
+        r#"function view() { return <img>text</img>; }"#,
+        "/proj/src/view.tsx",
+        "{}",
+        Index::default(),
+    )
+    .unwrap_err();
+    assert!(error.contains("<img>"), "unexpected error: {error}");
+    assert!(
+        error.contains("не может иметь дочерних узлов"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn unresolvable_constructor_dependency_reports_error() {
+    let error = compile(
+        r#"export class Service { constructor(private readonly dep: Missing) {} }"#,
+        "/proj/src/service.ts",
+        "{}",
+        Index::default(),
+    )
+    .unwrap_err();
+    assert!(error.contains("Service"), "unexpected error: {error}");
+    assert!(error.contains("dep"), "unexpected error: {error}");
+    assert!(
+        error.contains("не удалось разрешить тип параметра конструктора"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn constructor_parameter_without_type_reports_error() {
+    let error = compile(
+        r#"export class Service { constructor(private readonly dep) {} }"#,
+        "/proj/src/service.ts",
+        "{}",
+        Index::default(),
+    )
+    .unwrap_err();
+    assert!(error.contains("Service"), "unexpected error: {error}");
+    assert!(error.contains("dep"), "unexpected error: {error}");
+    assert!(
+        error.contains("без аннотации типа"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn malformed_implementation_token_reports_error() {
+    let source = r#"
+import type { Store } from "./types";
+export class Service {
+  constructor(private readonly store: Store) {}
+}
+"#;
+    let index = index_with(&[("/proj/src/types#Store", vec!["broken-token"])]);
+    let error = compile(source, "/proj/src/service.ts", "{}", index).unwrap_err();
+    assert!(
+        error.contains("некорректный токен реализации"),
+        "unexpected error: {error}"
+    );
 }

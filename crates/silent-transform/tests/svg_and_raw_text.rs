@@ -570,3 +570,27 @@ fn svg_attribute_table_covers_runtime_names() {
         );
     }
 }
+
+#[test]
+fn static_select_marks_matching_option_selected() {
+    let code = run(r#"export function view() {
+  return <select value="b"><option value="a">a</option><option value="b">b</option></select>;
+}
+"#);
+    assert!(
+        code.contains(r#"<option value="b" selected="">b</option>"#),
+        "matching option must be selected: {code}"
+    );
+    assert!(!code.contains(r#"<option value="a" selected"#), "{code}");
+    assert!(!code.contains("<select value="), "{code}");
+}
+
+#[test]
+fn dynamic_select_value_does_not_mark_options() {
+    let code = run(r#"export function view(props: { value: string }) {
+  return <select value={props.value}><option value="a">a</option><option value="b">b</option></select>;
+}
+"#);
+    assert!(!code.contains("selected"), "{code}");
+    assert!(code.contains("_$attr("), "{code}");
+}

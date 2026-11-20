@@ -19,6 +19,7 @@ struct TemplateParts {
     attrs: Vec<DynamicAttr>,
     plan: TemplatePlan,
     svg: bool,
+    select_value: Option<String>,
 }
 
 struct DynamicAttr {
@@ -118,15 +119,37 @@ impl SilentPass {
         }
 
         let void = is_void_tag(&tag);
-        if element.opening.self_closing {
-            if void {
-                parts.html.push('>');
-            } else {
-                parts.html.push('>');
-                parts.html.push_str("</");
-                parts.html.push_str(&tag);
-                parts.html.push('>');
+        let select_value = if tag.eq_ignore_ascii_case("select") {
+            static_select_value(element)
+        } else {
+            None
+        };
+        if tag.eq_ignore_ascii_case("option")
+            && parts.select_value.as_deref().is_some_and(|value| {
+                static_literal_attr(element, "value").as_deref() == Some(value)
+            })
+        {
+            parts.html.push_str(" selected=\"\"");
+        }
+        if void {
+            parts.html.push('>');
+            parts.plan.close_element();
+            if element
+                .children
+                .iter()
+                .any(|child| !is_ignorable_void_child(child))
+            {
+                self.report_error(format!(
+                    "void-элемент <{tag}> не может иметь дочерних узлов"
+                ));
             }
+            return;
+        }
+        if element.opening.self_closing {
+            parts.html.push('>');
+            parts.html.push_str("</");
+            parts.html.push_str(&tag);
+            parts.html.push('>');
             parts.plan.close_element();
             return;
         }
@@ -141,6 +164,9 @@ impl SilentPass {
         }
         parts.html.push('>');
         if let Some(piece) = rcdata {
+            if is_preformatted_tag(&tag) && piece.text.starts_with('\n') {
+                parts.html.push('\n');
+            }
             parts.html.push_str(&piece.text);
             parts.html.push_str("</");
             parts.html.push_str(&tag);
@@ -156,9 +182,15 @@ impl SilentPass {
             svg
         };
         let previous = self.svg_context;
+        let previous_select = std::mem::replace(&mut parts.select_value, select_value);
+        let content_start = parts.html.len();
         self.svg_context = children_svg;
         self.build_children_html(&element.children, parts);
         self.svg_context = previous;
+        parts.select_value = previous_select;
+        if is_preformatted_tag(&tag) && parts.html[content_start..].starts_with('\n') {
+            parts.html.insert(content_start, '\n');
+        }
         parts.html.push_str("</");
         parts.html.push_str(&tag);
         parts.html.push('>');
@@ -379,7 +411,7 @@ impl SilentPass {
     }
 
     fn push_bind_attr(&mut self, helper: &str, expr: &Expr, parts: &mut TemplateParts) {
-        let (accessor, setter) = self.bind_parts(expr);
+        let (accessor, setter) = self.bind_parts(helper, expr);
         let index = parts.attrs.len();
         parts.html.push_str(&format!(" data-silent-a-{index}=\"\""));
         parts.plan.mark_attr(&format!("data-silent-a-{index}"));
@@ -390,7 +422,7 @@ impl SilentPass {
         });
     }
 
-    fn bind_parts(&mut self, expr: &Expr) -> (Expr, Option<Expr>) {
+    fn bind_parts(&mut self, helper: &str, expr: &Expr) -> (Expr, Option<Expr>) {
         let target = unwrap_paren(expr);
         if let Expr::Array(array) = target {
             if array.elems.len() == 2
@@ -410,6 +442,12 @@ impl SilentPass {
             }
         }
         if let Expr::Member(member) = target {
+            if !is_stable_reference(target) {
+                self.report_error(format!(
+                    "{helper} требует ссылку (identifier/member от стабильного объекта)"
+                ));
+                return (*self.compile_expr(expr), None);
+            }
             let compiled = self.compile_expr(expr);
             let setter = assign_arrow(member.clone());
             return (*compiled, Some(setter));
@@ -500,6 +538,7 @@ impl SilentPass {
             attrs,
             plan,
             svg,
+            select_value: _,
         } = parts;
         let runtime = Expr::Ident(self.helper("templateHoles"));
         let mount_static = !self.ssr && plan.is_static();
@@ -674,9 +713,14 @@ impl SilentPass {
         let mut rest = html.as_str();
         for index in 0..count {
             let marker = format!("<!--silent-hole-{index}-->");
-            let position = rest
-                .find(&marker)
-                .expect("маркер дыры должен присутствовать в шаблоне");
+            let Some(position) = rest.find(&marker) else {
+                self.report_error(format!(
+                    "внутренняя ошибка: в SSR-шаблоне отсутствует маркер {marker}"
+                ));
+                segments.push(rest.to_string());
+                rest = "";
+                continue;
+            };
             segments.push(rest[..position].to_string());
             rest = &rest[position..];
         }
@@ -804,8 +848,16 @@ impl SilentPass {
             }
         }
 
-        if !has_children {
-            if let Some(children) = self.compile_children_value(&element.children) {
+        if !has_children || has_renderable_children(&element.children) {
+            let jsx_children = self.compile_children_value(&element.children);
+            if let Some(children) = jsx_children {
+                if has_children {
+                    properties.retain(|property| !is_children_property(property));
+                    self.warning(format!(
+                        "компонент <{}>: атрибут children игнорируется, потому что заданы JSX-дети",
+                        element_name_string(&element.opening.name)
+                    ));
+                }
                 properties.push(PropOrSpread::Prop(Box::new(Prop::Getter(
                     self.make_getter(prop_name("children"), children),
                 ))));
@@ -1702,6 +1754,9 @@ fn is_component_name(name: &JSXElementName) -> bool {
 }
 
 fn process_text(text: &str) -> String {
+    if !text.contains('\n') {
+        return text.to_string();
+    }
     let lines: Vec<&str> = text.split('\n').collect();
     let last_non_empty = lines
         .iter()
@@ -1744,10 +1799,29 @@ fn escape_attr(value: &str) -> String {
 }
 
 fn format_number(value: f64) -> String {
-    if value.fract() == 0.0 {
-        format!("{}", value as i64)
-    } else {
-        value.to_string()
+    if value.is_nan() {
+        return "NaN".to_string();
+    }
+    if value.is_infinite() {
+        return if value.is_sign_negative() {
+            "-Infinity".to_string()
+        } else {
+            "Infinity".to_string()
+        };
+    }
+    if value == 0.0 {
+        return "0".to_string();
+    }
+    let magnitude = value.abs();
+    if (1e-6..1e21).contains(&magnitude) {
+        return value.to_string();
+    }
+    let raw = format!("{value:e}");
+    match raw.split_once('e') {
+        Some((mantissa, exponent)) if !exponent.starts_with('-') => {
+            format!("{mantissa}e+{}", exponent.trim_start_matches('+'))
+        }
+        _ => raw,
     }
 }
 
@@ -1805,8 +1879,120 @@ fn is_void_tag(tag: &str) -> bool {
             | "input"
             | "link"
             | "meta"
+            | "param"
             | "source"
             | "track"
             | "wbr"
     )
+}
+
+fn is_preformatted_tag(tag: &str) -> bool {
+    matches!(
+        tag.to_ascii_lowercase().as_str(),
+        "pre" | "textarea" | "listing"
+    )
+}
+
+fn is_ignorable_void_child(child: &JSXElementChild) -> bool {
+    match child {
+        JSXElementChild::JSXText(text) => text.value.to_string_lossy().trim().is_empty(),
+        JSXElementChild::JSXExprContainer(container) => match &container.expr {
+            JSXExpr::JSXEmptyExpr(_) => true,
+            JSXExpr::Expr(expr) => match unwrap_paren(expr) {
+                Expr::Lit(Lit::Null(_)) | Expr::Lit(Lit::Bool(_)) => true,
+                Expr::Lit(Lit::Str(value)) => value.value.to_string_lossy().is_empty(),
+                _ => false,
+            },
+        },
+        _ => false,
+    }
+}
+
+fn static_select_value(element: &JSXElement) -> Option<String> {
+    let value = static_literal_attr(element, "value")?;
+    let mut options = 0usize;
+    for child in &element.children {
+        match child {
+            JSXElementChild::JSXText(text) if text.value.to_string_lossy().trim().is_empty() => {}
+            JSXElementChild::JSXElement(option)
+                if element_name_string(&option.opening.name).eq_ignore_ascii_case("option") =>
+            {
+                static_literal_attr(option, "value")?;
+                options += 1;
+            }
+            _ => return None,
+        }
+    }
+    (options > 0).then_some(value)
+}
+
+fn static_literal_attr(element: &JSXElement, name: &str) -> Option<String> {
+    element.opening.attrs.iter().find_map(|attr| {
+        let JSXAttrOrSpread::JSXAttr(attr) = attr else {
+            return None;
+        };
+        if attr_name_string(&attr.name) != name {
+            return None;
+        }
+        match &attr.value {
+            Some(JSXAttrValue::Str(value)) => Some(value.value.to_string_lossy().into_owned()),
+            Some(JSXAttrValue::JSXExprContainer(container)) => match &container.expr {
+                JSXExpr::Expr(expr) => match static_value(expr) {
+                    Some(StaticValue::Str(value)) => Some(value),
+                    _ => None,
+                },
+                _ => None,
+            },
+            _ => None,
+        }
+    })
+}
+
+fn is_stable_reference(expr: &Expr) -> bool {
+    match unwrap_paren(expr) {
+        Expr::Ident(_) | Expr::This(_) => true,
+        Expr::Member(member) => is_stable_reference(&member.obj),
+        _ => false,
+    }
+}
+
+fn has_renderable_children(children: &[JSXElementChild]) -> bool {
+    children.iter().any(|child| match child {
+        JSXElementChild::JSXText(text) => !process_text(&text.value.to_string_lossy())
+            .trim()
+            .is_empty(),
+        _ => true,
+    })
+}
+
+fn is_children_property(property: &PropOrSpread) -> bool {
+    let PropOrSpread::Prop(prop) = property else {
+        return false;
+    };
+    let key = match &**prop {
+        Prop::KeyValue(pair) => &pair.key,
+        Prop::Getter(getter) => &getter.key,
+        Prop::Setter(setter) => &setter.key,
+        _ => return false,
+    };
+    matches!(key, PropName::Ident(ident) if ident.sym == "children")
+}
+
+#[cfg(test)]
+mod number_format_tests {
+    use super::format_number;
+
+    #[test]
+    fn formats_numbers_like_javascript() {
+        assert_eq!(format_number(1e21), "1e+21");
+        assert_eq!(format_number(1e-7), "1e-7");
+        assert_eq!(format_number(f64::INFINITY), "Infinity");
+        assert_eq!(format_number(f64::NEG_INFINITY), "-Infinity");
+        assert_eq!(format_number(f64::NAN), "NaN");
+        assert_eq!(format_number(1e-6), "0.000001");
+        assert_eq!(format_number(123.456), "123.456");
+        assert_eq!(format_number(-0.0), "0");
+        assert_eq!(format_number(1e20), "100000000000000000000");
+        assert_eq!(format_number(1.5e21), "1.5e+21");
+    }
 }

@@ -809,3 +809,57 @@ fn keeps_static_template_plan_with_hydration() {
     assert!(code.contains("holes: []"), "{code}");
     assert!(!code.contains(", false"), "{code}");
 }
+
+#[test]
+fn keeps_space_only_text_between_elements() {
+    let code = run(
+        "const el = <p><b>a</b> <b>b</b></p>;",
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(code.contains("<p><b>a</b> <b>b</b></p>"), "{code}");
+}
+
+#[test]
+fn formats_numbers_like_javascript() {
+    let code = run(
+        "const el = <div>{1e21}|{1e-7}|{1e400}|{1e-6}|{123.456}</div>;",
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(
+        code.contains("1e+21|1e-7|Infinity|0.000001|123.456"),
+        "{code}"
+    );
+}
+
+#[test]
+fn keeps_this_inside_object_literal_method() {
+    let source = r#"import type { CounterVM } from "./counter.vm";
+function View(this: { vm: CounterVM }) {
+  return <Comp obj={{ m() { return this.x } }} />;
+}"#;
+    let code = run(source, "/proj/src/view.tsx", Index::default());
+    assert!(code.contains("return this.x"), "{code}");
+    assert!(!code.contains("_this$.x"), "{code}");
+}
+
+#[test]
+fn leading_newline_in_pre_is_preserved() {
+    let code = run(
+        r#"const el = <pre>{"\nabc"}</pre>;"#,
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(code.contains(r"<pre>\n\nabc</pre>"), "{code}");
+}
+
+#[test]
+fn leading_newline_in_textarea_is_preserved() {
+    let code = run(
+        r#"const el = <textarea>{"\nabc"}</textarea>;"#,
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(code.contains(r"<textarea>\n\nabc</textarea>"), "{code}");
+}
