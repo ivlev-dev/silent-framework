@@ -478,6 +478,122 @@ describe("validateType: глубина данных", () => {
   });
 });
 
+describe("validateType: разделяемые ссылки (DAG)", () => {
+  interface DagNode {
+    x: number;
+    left?: DagNode;
+    right?: DagNode;
+  }
+
+  let dagSchema: TypeSchema;
+  dagSchema = [
+    "object",
+    {
+      x: "number",
+      left: ["optional", ["lazy", () => dagSchema]],
+      right: ["optional", ["lazy", () => dagSchema]],
+    },
+  ];
+
+  function diamond(levels: number): DagNode {
+    let node: DagNode = { x: 0 };
+    for (let index = 0; index < levels; index += 1) {
+      node = { x: index, left: node, right: node };
+    }
+    return node;
+  }
+
+  it("валидирует ромбовидный граф глубины 20 за приемлемое время", () => {
+    // Прогрев, чтобы измерение не включало первую JIT-компиляцию.
+    expect(valid(diamond(16), dagSchema)).toBe(true);
+
+    const start = performance.now();
+    const isValid = valid(diamond(20), dagSchema);
+    const elapsed = performance.now() - start;
+
+    expect(isValid).toBe(true);
+    expect(elapsed).toBeLessThan(200);
+  });
+
+  it("не вешает процесс на графе 25 уровней", () => {
+    const start = performance.now();
+    const errors = run(diamond(25), dagSchema);
+    const elapsed = performance.now() - start;
+
+    expect(errors).toHaveLength(0);
+    expect(elapsed).toBeLessThan(1000);
+  });
+
+  it("репортит ошибку общего узла на каждом пути", () => {
+    const shared: DagNode = { x: "bad" as unknown as number };
+    const root: DagNode = { x: 1, left: shared, right: shared };
+
+    const errors = run(root, dagSchema);
+
+    expect(errors.map((error) => error.path)).toEqual([
+      "value.left.x",
+      "value.right.x",
+    ]);
+    expect(errors.every((error) => (
+      error.rule === "type" && error.params["type"] === "number"
+    ))).toBe(true);
+  });
+
+  it("не кеширует успех, полученный через защиту от цикла", () => {
+    const node: DagNode = { x: 1 };
+    node.left = node;
+    node.right = node;
+
+    expect(run(node, dagSchema)).toHaveLength(0);
+  });
+
+  it("не обходит MAX_DEPTH при повторном использовании кеша", () => {
+    let nodeSchema: TypeSchema;
+    nodeSchema = [
+      "object",
+      {
+        x: "number",
+        next: ["optional", ["lazy", () => nodeSchema]],
+      },
+    ];
+
+    let chainSchema: TypeSchema;
+    chainSchema = [
+      "object",
+      {
+        next: ["optional", ["lazy", () => chainSchema]],
+        leaf: ["optional", ["lazy", () => nodeSchema]],
+      },
+    ];
+
+    const rootSchema: TypeSchema = [
+      "object",
+      {
+        early: ["lazy", () => nodeSchema],
+        chain: ["lazy", () => chainSchema],
+      },
+    ];
+
+    function nodeChain(levels: number): unknown {
+      let node: unknown = { x: 0 };
+      for (let index = 0; index < levels; index += 1) {
+        node = { x: index, next: node };
+      }
+      return node;
+    }
+
+    const shared = nodeChain(20);
+    let chain: unknown = shared;
+    for (let index = 0; index < 240; index += 1) {
+      chain = { next: chain };
+    }
+
+    const errors = run({ early: shared, chain }, rootSchema);
+
+    expect(errors.some((error) => error.params["type"] === "depth")).toBe(true);
+  });
+});
+
 describe("validateType: классы", () => {
   class Address {
     public accessor city = "";
@@ -730,6 +846,22 @@ describe("validateType: ленивые схемы", () => {
     }
     expect(() => run(node, nodeSchema)).not.toThrow();
     const errors = run(node, nodeSchema);
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors.every((error) => error.params["type"] === "depth")).toBe(true);
+  });
+
+  it("не тратит бюджет глубины на lazy", () => {
+    function recursiveNode(levels: number): NodeValue {
+      let node: NodeValue = { value: "end", next: null };
+      for (let index = 0; index < levels; index += 1) {
+        node = { value: String(index), next: node };
+      }
+      return node;
+    }
+
+    expect(valid(recursiveNode(200), nodeSchema)).toBe(true);
+
+    const errors = run(recursiveNode(400), nodeSchema);
     expect(errors.length).toBeGreaterThan(0);
     expect(errors.every((error) => error.params["type"] === "depth")).toBe(true);
   });

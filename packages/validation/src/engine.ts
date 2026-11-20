@@ -3,7 +3,7 @@ import { constructorOf, readFieldValue } from "./property.js";
 import { classStateRevision, validationStateFor } from "./registry.js";
 import { readInstanceSchema } from "./schema.js";
 import { isThenable, suppress } from "./thenable.js";
-import { validateFastPrimitive, validateType } from "./type-validation.js";
+import { MAX_DEPTH, validateFastPrimitive, validateType } from "./type-validation.js";
 import { AsyncRuleError, ValidationException } from "./types.js";
 import type { NestedInstance, TypeRuntime } from "./type-validation.js";
 import type { FieldSchemaMap, TypeSchema } from "./schema.js";
@@ -447,6 +447,83 @@ function schemaSkips(schema: TypeSchema, value: unknown): boolean {
   return false;
 }
 
+interface DepthLocation {
+  readonly field: string;
+  readonly label: string;
+  readonly path: string;
+}
+
+function depthLocation(prefix: string, state: RuntimeState): DepthLocation {
+  const path = prefix.endsWith(".") ? prefix.slice(0, -1) : prefix;
+  const base = path.replace(/(?:\[[^\]]*\])+$/, "");
+  const dot = base.lastIndexOf(".");
+  const field = dot >= 0 ? base.slice(dot + 1) : base;
+  const label = labelAtPath(state.labels, field, path) ?? field;
+  return { field, label, path };
+}
+
+function depthMessageContext(
+  target: object,
+  location: DepthLocation,
+  state: RuntimeState,
+): MessageContext {
+  return {
+    rule: "type",
+    key: "validation.depth",
+    field: location.field,
+    label: location.label,
+    value: target,
+    params: { type: "depth" },
+    locale: state.locale,
+    instance: target,
+    path: location.path,
+  };
+}
+
+function depthErrorSync(target: object, prefix: string, state: RuntimeState): ValidationError {
+  const location = depthLocation(prefix, state);
+  return {
+    field: location.field,
+    rule: "type",
+    message: resolveMessage(depthMessageContext(target, location, state), state.config),
+    params: { type: "depth" },
+    value: target,
+    path: location.path,
+    label: location.label,
+  };
+}
+
+async function depthErrorAsync(
+  target: object,
+  prefix: string,
+  state: RuntimeState,
+): Promise<ValidationError> {
+  const location = depthLocation(prefix, state);
+  return {
+    field: location.field,
+    rule: "type",
+    message: await resolveMessageAsync(depthMessageContext(target, location, state), state.config),
+    params: { type: "depth" },
+    value: target,
+    path: location.path,
+    label: location.label,
+  };
+}
+
+function pushDepthSync(target: object, prefix: string, state: RuntimeState): void {
+  state.errors.push(depthErrorSync(target, prefix, state));
+  if (state.stopAtFirst) {
+    state.stopped = true;
+  }
+}
+
+async function pushDepthAsync(target: object, prefix: string, state: RuntimeState): Promise<void> {
+  state.errors.push(await depthErrorAsync(target, prefix, state));
+  if (state.stopAtFirst) {
+    state.stopped = true;
+  }
+}
+
 function uniqueNested(entries: readonly NestedInstance[]): readonly NestedInstance[] {
   if (entries.length <= 1) {
     return entries;
@@ -488,10 +565,7 @@ function prepareField(
     }
   }
   const path = `${prefix}${run.fieldName}`;
-  if (state.types && run.schema !== undefined) {
-    if (schemaSkips(run.schema, value)) {
-      return null;
-    }
+  if (state.types && run.schema !== undefined && !schemaSkips(run.schema, value)) {
     const typeConfig =
       asyncTypes && state.config.resolve !== undefined
         ? withoutResolver(state.config)
@@ -573,6 +647,7 @@ function shouldVisitNested(
 function runNestedSync(
   nested: readonly NestedInstance[],
   state: RuntimeState,
+  depth: number,
 ): void {
   for (const entry of nested) {
     if (state.stopped) {
@@ -582,13 +657,14 @@ function runNestedSync(
     if (!shouldVisitNested(entry.instance, path, state)) {
       continue;
     }
-    runInstanceSync(entry.instance, path, state);
+    runInstanceSync(entry.instance, path, state, depth);
   }
 }
 
 async function runNestedAsync(
   nested: readonly NestedInstance[],
   state: RuntimeState,
+  depth: number,
 ): Promise<void> {
   for (const entry of nested) {
     if (state.stopped) {
@@ -598,7 +674,7 @@ async function runNestedAsync(
     if (!shouldVisitNested(entry.instance, path, state)) {
       continue;
     }
-    await runInstanceAsync(entry.instance, path, state);
+    await runInstanceAsync(entry.instance, path, state, depth);
   }
 }
 
@@ -607,13 +683,14 @@ function runFieldSync(
   run: FieldRun,
   prefix: string,
   state: RuntimeState,
+  depth: number,
 ): void {
   const prepared = prepareField(target, run, prefix, state);
   if (prepared === null) {
     return;
   }
   if (prepared.nested.length > 0) {
-    runNestedSync(prepared.nested, state);
+    runNestedSync(prepared.nested, state, depth + 1);
     if (state.stopped) {
       return;
     }
@@ -630,7 +707,7 @@ function runFieldSync(
     if (entry === undefined) {
       continue;
     }
-    runRuleSync(target, slot, entry, prepared.value, prepared.path, state);
+    runRuleSync(target, slot, entry, prepared.value, prepared.path, state, depth);
   }
 }
 
@@ -641,6 +718,7 @@ function runRuleSync(
   value: unknown,
   path: string,
   state: RuntimeState,
+  depth: number,
 ): void {
   if (!isRunnable(entry, slot, target, state)) {
     return;
@@ -671,7 +749,7 @@ function runRuleSync(
     }
     if (isNestedObject(value)) {
       if (shouldVisitNested(value, `${path}.`, state)) {
-        runInstanceSync(value, `${path}.`, state);
+        runInstanceSync(value, `${path}.`, state, depth + 1);
       }
     } else {
       pushError(callFor(target, slot, entry, value, path, undefined, state));
@@ -692,7 +770,7 @@ function runRuleSync(
       const itemPath = `${path}[${index}]`;
       if (isNestedObject(item)) {
         if (shouldVisitNested(item, `${itemPath}.`, state)) {
-          runInstanceSync(item, `${itemPath}.`, state);
+          runInstanceSync(item, `${itemPath}.`, state, depth + 1);
         }
       } else {
         pushError(callFor(target, slot, entry, item, itemPath, index, state));
@@ -706,8 +784,17 @@ function runRuleSync(
   }
 }
 
-function runInstanceSync(target: object, prefix: string, state: RuntimeState): void {
+function runInstanceSync(
+  target: object,
+  prefix: string,
+  state: RuntimeState,
+  depth: number,
+): void {
   if (state.visiting.has(target)) {
+    return;
+  }
+  if (depth > MAX_DEPTH) {
+    pushDepthSync(target, prefix, state);
     return;
   }
   state.visiting.add(target);
@@ -716,7 +803,7 @@ function runInstanceSync(target: object, prefix: string, state: RuntimeState): v
       if (state.stopped) {
         return;
       }
-      runFieldSync(target, run, prefix, state);
+      runFieldSync(target, run, prefix, state, depth);
     }
   } finally {
     state.visiting.delete(target);
@@ -728,6 +815,7 @@ async function runFieldAsync(
   run: FieldRun,
   prefix: string,
   state: RuntimeState,
+  depth: number,
 ): Promise<void> {
   const start = state.errors.length;
   const prepared = prepareField(target, run, prefix, state, true);
@@ -738,7 +826,7 @@ async function runFieldAsync(
     return;
   }
   if (prepared.nested.length > 0) {
-    await runNestedAsync(prepared.nested, state);
+    await runNestedAsync(prepared.nested, state, depth + 1);
     if (state.stopped) {
       return;
     }
@@ -755,7 +843,7 @@ async function runFieldAsync(
     if (entry === undefined) {
       continue;
     }
-    await runRuleAsync(target, slot, entry, prepared.value, prepared.path, state);
+    await runRuleAsync(target, slot, entry, prepared.value, prepared.path, state, depth);
   }
 }
 
@@ -766,6 +854,7 @@ async function runRuleAsync(
   value: unknown,
   path: string,
   state: RuntimeState,
+  depth: number,
 ): Promise<void> {
   if (!isRunnable(entry, slot, target, state)) {
     return;
@@ -797,7 +886,7 @@ async function runRuleAsync(
     }
     if (isNestedObject(value)) {
       if (shouldVisitNested(value, `${path}.`, state)) {
-        await runInstanceAsync(value, `${path}.`, state);
+        await runInstanceAsync(value, `${path}.`, state, depth + 1);
       }
     } else {
       await pushErrorAsync(call);
@@ -818,7 +907,7 @@ async function runRuleAsync(
       const itemPath = `${path}[${index}]`;
       if (isNestedObject(item)) {
         if (shouldVisitNested(item, `${itemPath}.`, state)) {
-          await runInstanceAsync(item, `${itemPath}.`, state);
+          await runInstanceAsync(item, `${itemPath}.`, state, depth + 1);
         }
       } else {
         await pushErrorAsync(callFor(target, slot, entry, item, itemPath, index, state));
@@ -836,8 +925,13 @@ async function runInstanceAsync(
   target: object,
   prefix: string,
   state: RuntimeState,
+  depth: number,
 ): Promise<void> {
   if (state.visiting.has(target)) {
+    return;
+  }
+  if (depth > MAX_DEPTH) {
+    await pushDepthAsync(target, prefix, state);
     return;
   }
   state.visiting.add(target);
@@ -846,7 +940,7 @@ async function runInstanceAsync(
       if (state.stopped) {
         return;
       }
-      await runFieldAsync(target, run, prefix, state);
+      await runFieldAsync(target, run, prefix, state, depth);
     }
   } finally {
     state.visiting.delete(target);
@@ -860,7 +954,7 @@ function makeResult(state: RuntimeState): ValidationResult {
 export function validate(instance: object, options?: ValidationOptions): ValidationResult {
   assertInstance(instance);
   const state = createState(options);
-  runInstanceSync(instance, "", state);
+  runInstanceSync(instance, "", state, 0);
   return makeResult(state);
 }
 
@@ -870,7 +964,7 @@ export async function validateAsync(
 ): Promise<ValidationResult> {
   assertInstance(instance);
   const state = createState(options);
-  await runInstanceAsync(instance, "", state);
+  await runInstanceAsync(instance, "", state, 0);
   return makeResult(state);
 }
 
@@ -891,7 +985,7 @@ function runFieldsSync(
     if (!fields.has(run.fieldName)) {
       continue;
     }
-    runFieldSync(instance, run, "", state);
+    runFieldSync(instance, run, "", state, 0);
   }
   return makeResult(state);
 }
@@ -913,7 +1007,7 @@ async function runFieldsAsync(
     if (!fields.has(run.fieldName)) {
       continue;
     }
-    await runFieldAsync(instance, run, "", state);
+    await runFieldAsync(instance, run, "", state, 0);
   }
   return makeResult(state);
 }
@@ -948,7 +1042,7 @@ export function validateFieldKey(
     if (run.key !== key) {
       continue;
     }
-    runFieldSync(instance, run, "", state);
+    runFieldSync(instance, run, "", state, 0);
   }
   return makeResult(state);
 }

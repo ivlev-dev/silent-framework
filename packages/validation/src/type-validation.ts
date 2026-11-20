@@ -25,6 +25,14 @@ export interface TypeRuntime {
   resolvedClasses?: WeakMap<object, Function | null> | undefined;
   lazyResolutions?: WeakMap<object, LazyResolution> | undefined;
   instanceFields?: WeakMap<Function, FieldSchemaMap | null> | undefined;
+  /**
+   * Успешно проверенные пары (значение-объект, схема) → минимальная глубина,
+   * на которой проверка завершилась без ошибок. Кешируются только пустые
+   * результаты: ошибки зависят от пути и labels.
+   */
+  successCache?: WeakMap<object, Map<TypeSchema, number>> | undefined;
+  /** Счётчик срабатываний защиты от циклов; успехи с циклами не кешируются. */
+  cycleHits?: number | undefined;
 }
 
 export interface TypeValidationContext {
@@ -57,7 +65,7 @@ interface RunContext extends ErrorContext {
 
 type InstanceCtor = new (...args: never[]) => unknown;
 
-const MAX_DEPTH = 256;
+export const MAX_DEPTH = 256;
 
 const PRIMITIVE_NAMES: Readonly<Record<string, string>> = {
   string: "string",
@@ -450,13 +458,58 @@ function childContext(
   };
 }
 
+function cycleHit(runtime: TypeRuntime): void {
+  runtime.cycleHits = (runtime.cycleHits ?? 0) + 1;
+}
+
 function enter(value: object, ctx: RunContext): boolean {
   const visiting = ctx.runtime.visiting;
   if (visiting.has(value)) {
+    cycleHit(ctx.runtime);
     return false;
   }
   visiting.add(value);
   return true;
+}
+
+function isLazyActive(
+  runtime: TypeRuntime,
+  schema: TypeSchema,
+  value: unknown,
+): boolean {
+  if (!Array.isArray(schema) || schema[0] !== "lazy") {
+    return false;
+  }
+  const active = runtime.lazyActive?.get(schema);
+  return active !== undefined && active.has(value);
+}
+
+function lookupSuccess(
+  runtime: TypeRuntime,
+  value: object,
+  schema: TypeSchema,
+  depth: number,
+): boolean {
+  const stored = runtime.successCache?.get(value)?.get(schema);
+  return stored !== undefined && depth <= stored;
+}
+
+function recordSuccess(
+  runtime: TypeRuntime,
+  value: object,
+  schema: TypeSchema,
+  depth: number,
+): void {
+  const cache = runtime.successCache ??= new WeakMap<object, Map<TypeSchema, number>>();
+  let entry = cache.get(value);
+  if (entry === undefined) {
+    entry = new Map<TypeSchema, number>();
+    cache.set(value, entry);
+  }
+  const stored = entry.get(schema);
+  if (stored === undefined || depth < stored) {
+    entry.set(schema, depth);
+  }
 }
 
 function leave(value: object, ctx: RunContext): void {
@@ -781,6 +834,35 @@ function validateSchema(
   if (depth > MAX_DEPTH) {
     return [depthError(value, ctx)];
   }
+  const target = typeof value === "object" && value !== null ? value : undefined;
+  const runtime = ctx.runtime;
+  if (target !== undefined) {
+    // Значение уже в стеке (цикл) или lazy-ветка активна для него —
+    // кеш не используем: результат получен через защиту от циклов.
+    if (!runtime.visiting.has(target) && !isLazyActive(runtime, schema, value)) {
+      if (lookupSuccess(runtime, target, schema, depth)) {
+        return [];
+      }
+    }
+  }
+  const cyclesBefore = runtime.cycleHits ?? 0;
+  const nestedMark = ctx.nested?.length ?? 0;
+  const errors = validateSchemaCore(value, schema, ctx, depth);
+  if (target !== undefined
+    && errors.length === 0
+    && (runtime.cycleHits ?? 0) === cyclesBefore
+    && (ctx.nested === undefined || ctx.nested.length === nestedMark)) {
+    recordSuccess(runtime, target, schema, depth);
+  }
+  return errors;
+}
+
+function validateSchemaCore(
+  value: unknown,
+  schema: TypeSchema,
+  ctx: RunContext,
+  depth: number,
+): ValidationError[] {
   if (typeof schema === "string") {
     return matchesPrimitive(value, schema) ? [] : [createError(value, schema, ctx)];
   }
@@ -812,19 +894,20 @@ function validateSchema(
       const lazyActive = ctx.runtime.lazyActive ??= new Map<TypeSchema, Set<unknown>>();
       const active = lazyActive.get(schema);
       if (active !== undefined && active.has(value)) {
+        cycleHit(ctx.runtime);
         return [];
       }
       if (active === undefined) {
         lazyActive.set(schema, new Set<unknown>([value]));
         try {
-          return validateSchema(value, resolved, ctx, depth + 1);
+          return validateSchema(value, resolved, ctx, depth);
         } finally {
           lazyActive.delete(schema);
         }
       }
       active.add(value);
       try {
-        return validateSchema(value, resolved, ctx, depth + 1);
+        return validateSchema(value, resolved, ctx, depth);
       } finally {
         active.delete(value);
       }

@@ -1,9 +1,18 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { Min, Required, validate, validateAsync } from "../src/index.js";
+import {
+  IsEmail,
+  Min,
+  NotNull,
+  Optional,
+  Required,
+  ValidateIf,
+  validate,
+  validateAsync,
+} from "../src/index.js";
 import { ruleDecorator } from "../src/rule.js";
 import { configureValidation, resetValidationConfig } from "../src/messages.js";
 import { SCHEMA_SYMBOL } from "../src/schema.js";
-import type { ClassSchema, FieldSchemaMap } from "../src/schema.js";
+import type { ClassSchema, FieldSchemaMap, TypeSchema } from "../src/schema.js";
 import type { RuleDefinition, ValidationResult } from "../src/types.js";
 
 function defineSchema(ctor: Function, schema: ClassSchema | FieldSchemaMap): void {
@@ -162,7 +171,7 @@ describe("комбинация типов и декораторов", () => {
     public accessor age = 0;
 
     @Required()
-    public accessor note: string | null = null;
+    public accessor note: string | null = "note";
   }
 
   defineSchema(Account, {
@@ -224,20 +233,30 @@ describe("комбинация типов и декораторов", () => {
     expect(rules(validate(account))).toEqual(["required"]);
   });
 
-  it("пропускает все правила для optional при undefined", () => {
+  it("optional в схеме пропускает только тип, но не правила поля", () => {
     const account = new Account();
     account.name = "ok";
     account.note = "note";
     account.age = undefined as unknown as number;
-    expect(validate(account).valid).toBe(true);
+
+    const result = validate(account);
+
+    expect(rules(result)).toEqual(["min"]);
+    expect(paths(result)).toEqual(["age"]);
+    expect(result.errors.every((error) => error.rule !== "type")).toBe(true);
   });
 
-  it("пропускает все правила для nullable при null", () => {
+  it("nullable в схеме пропускает только тип, но не правила поля", () => {
     const account = new Account();
     account.name = "ok";
     account.age = 20;
     account.note = null;
-    expect(validate(account).valid).toBe(true);
+
+    const result = validate(account);
+
+    expect(rules(result)).toEqual(["required"]);
+    expect(paths(result)).toEqual(["note"]);
+    expect(result.errors.every((error) => error.rule !== "type")).toBe(true);
   });
 
   it("проверяет строковые ограничения после типа", () => {
@@ -247,6 +266,156 @@ describe("комбинация типов и декораторов", () => {
     const result = validate(account);
     expect(rules(result)).toEqual(["required"]);
   });
+});
+
+describe("optional и nullable в схеме не отменяют декораторы", () => {
+  class OptionalEmail {
+    @Required()
+    public accessor email: string | undefined = undefined;
+  }
+  defineSchema(OptionalEmail, { fields: { email: ["optional", "string"] } });
+
+  class NullableToken {
+    @NotNull()
+    public accessor token: string | null = null;
+  }
+  defineSchema(NullableToken, { fields: { token: ["nullable", "string"] } });
+
+  class OptionalDecorated {
+    @Optional()
+    @Required()
+    public accessor nickname: string | undefined = undefined;
+  }
+  defineSchema(OptionalDecorated, { fields: { nickname: ["optional", "string"] } });
+
+  class OptionalEmailValue {
+    @IsEmail()
+    public accessor email: string | undefined = "";
+  }
+  defineSchema(OptionalEmailValue, { fields: { email: ["optional", "string"] } });
+
+  class ConditionalOptional {
+    public enabled = false;
+
+    @ValidateIf((instance) => (instance as ConditionalOptional).enabled)
+    @Required()
+    public accessor email: string | undefined = undefined;
+  }
+  defineSchema(ConditionalOptional, { fields: { email: ["optional", "string"] } });
+
+  it("сообщает required для optional-схемы при undefined", () => {
+    const result = validate(new OptionalEmail());
+
+    expect(rules(result)).toEqual(["required"]);
+    expect(paths(result)).toEqual(["email"]);
+    expect(result.errors.some((error) => error.rule === "type")).toBe(false);
+  });
+
+  it("сообщает notNull для nullable-схемы при null", () => {
+    const result = validate(new NullableToken());
+
+    expect(rules(result)).toEqual(["notNull"]);
+    expect(paths(result)).toEqual(["token"]);
+    expect(result.errors.some((error) => error.rule === "type")).toBe(false);
+  });
+
+  it("полностью пропускает поле только при явном @Optional", () => {
+    expect(validate(new OptionalDecorated()).valid).toBe(true);
+  });
+
+  it("сохраняет прежнее поведение @IsEmail для пустой строки", () => {
+    expect(rules(validate(new OptionalEmailValue()))).toEqual(["isEmail"]);
+
+    const instance = new OptionalEmailValue();
+    instance.email = undefined;
+    expect(rules(validate(instance))).toEqual(["isEmail"]);
+  });
+
+  it("ValidateIf по-прежнему гасит правила поля", () => {
+    expect(validate(new ConditionalOptional()).valid).toBe(true);
+  });
+
+  it("ведёт себя одинаково в асинхронном режиме", async () => {
+    expect(rules(await validateAsync(new OptionalEmail()))).toEqual(["required"]);
+    expect(rules(await validateAsync(new NullableToken()))).toEqual(["notNull"]);
+    expect((await validateAsync(new OptionalDecorated())).valid).toBe(true);
+    expect((await validateAsync(new ConditionalOptional())).valid).toBe(true);
+  });
+});
+
+describe("DAG-схемы в движке", () => {
+  interface DagNode {
+    x: number;
+    left?: DagNode;
+    right?: DagNode;
+  }
+
+  let dagSchema: TypeSchema;
+  dagSchema = [
+    "object",
+    {
+      x: "number",
+      left: ["optional", ["lazy", () => dagSchema]],
+      right: ["optional", ["lazy", () => dagSchema]],
+    },
+  ];
+
+  function diamond(levels: number): DagNode {
+    let node: DagNode = { x: 0 };
+    for (let index = 0; index < levels; index += 1) {
+      node = { x: index, left: node, right: node };
+    }
+    return node;
+  }
+
+  class Holder {
+    public accessor root: unknown = null;
+  }
+  defineSchema(Holder, { fields: { root: dagSchema } });
+
+  it("не обходит общий подграф экспоненциально", () => {
+    const holder = new Holder();
+    holder.root = diamond(20);
+
+    const start = performance.now();
+    const result = validate(holder);
+    const elapsed = performance.now() - start;
+
+    expect(result.valid).toBe(true);
+    expect(elapsed).toBeLessThan(200);
+  });
+});
+
+describe("структурные интерфейсы с методами", () => {
+  interface Counter {
+    count(): number;
+  }
+
+  class CounterImpl implements Counter {
+    public count(): number {
+      return 1;
+    }
+  }
+
+  class Holder {
+    public accessor counter: Counter = new CounterImpl();
+  }
+  defineSchema(Holder, { fields: { counter: ["object", { count: "function" }] } });
+
+  it("читает метод из прототипа экземпляра класса", () => {
+    expect(validate(new Holder()).valid).toBe(true);
+  });
+
+  it("сообщает type, если свойство не является функцией", () => {
+    const holder = new Holder();
+    holder.counter = { count: 1 } as unknown as Counter;
+
+    const result = validate(holder);
+
+    expect(paths(result)).toEqual(["counter.count"]);
+    expect(rules(result)).toEqual(["type"]);
+  });
+
 });
 
 describe("наследование схем", () => {

@@ -20,9 +20,12 @@ function readInheritedAccessor(
     if (typeof prototype === "object") {
       const descriptor = Object.getOwnPropertyDescriptor(prototype, key);
       if (descriptor !== undefined) {
-        return "get" in descriptor || "set" in descriptor
-          ? Reflect.get(target, key)
-          : undefined;
+        if ("get" in descriptor || "set" in descriptor) {
+          return Reflect.get(target, key);
+        }
+        // `constructor` на прототипе класса — служебное свойство: его не читаем,
+        // чтобы не подставлять функцию-конструктор вместо значения поля.
+        return key === "constructor" ? undefined : descriptor.value;
       }
     }
     prototype = Object.getPrototypeOf(prototype as object);

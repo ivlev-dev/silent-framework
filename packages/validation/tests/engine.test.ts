@@ -6,6 +6,7 @@ import {
   validateOrThrowAsync,
 } from "../src/engine";
 import { ruleDecorator } from "../src/rule";
+import { Optional } from "../src/modifiers";
 import { SCHEMA_SYMBOL } from "../src/schema";
 import {
   configureValidation,
@@ -734,5 +735,65 @@ describe("validateAsync", () => {
 
   it("бросает TypeError для не-объекта", async () => {
     await expect(validateAsync(undefined as unknown as object)).rejects.toBeInstanceOf(TypeError);
+  });
+});
+
+describe("глубина вложенных экземпляров", () => {
+  class DeepNode {
+    @ruleDecorator(required)
+    public accessor name = "ok";
+
+    @Optional()
+    @ruleDecorator(nestedObject)
+    public accessor next: DeepNode | null = null;
+  }
+
+  function chain(length: number): DeepNode {
+    const head = new DeepNode();
+    let current = head;
+    for (let index = 1; index < length; index += 1) {
+      const next = new DeepNode();
+      current.next = next;
+      current = next;
+    }
+    current.next = null;
+    return head;
+  }
+
+  function depthErrors(result: ValidationResult): ValidationError[] {
+    return result.errors.filter(
+      (error) => error.rule === "type" && error.params["type"] === "depth",
+    );
+  }
+
+  it("полностью обходит цепочку из 200 уровней", () => {
+    expect(validate(chain(200)).valid).toBe(true);
+  });
+
+  it("на цепочке 300 уровней возвращает depth, а не RangeError", () => {
+    const result = validate(chain(300));
+
+    expect(result.valid).toBe(false);
+    expect(depthErrors(result)).toHaveLength(1);
+  });
+
+  it("на цепочке 50 000 уровней возвращает depth, а не RangeError", () => {
+    const result = validate(chain(50_000));
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.params).toEqual({ type: "depth" });
+    expect(result.errors[0]?.rule).toBe("type");
+    expect(result.errors[0]?.message).toContain("слишком глубоко");
+  });
+
+  it("ведёт себя одинаково в асинхронном режиме", async () => {
+    expect((await validateAsync(chain(200))).valid).toBe(true);
+
+    const deep = await validateAsync(chain(300));
+    expect(depthErrors(deep)).toHaveLength(1);
+
+    const tooDeep = await validateAsync(chain(50_000));
+    expect(tooDeep.errors).toHaveLength(1);
+    expect(tooDeep.errors[0]?.params).toEqual({ type: "depth" });
   });
 });
