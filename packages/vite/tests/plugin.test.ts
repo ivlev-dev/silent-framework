@@ -237,6 +237,118 @@ describe("silent()", () => {
     expect(transformOptions.aliases).toEqual(scanOptions.aliases);
   });
 
+  it("сохраняет Vite-алиасы после правки tsconfig.json", async () => {
+    const project = mkdtempSync(path.join(tmpdir(), "silent-vite-alias-watch-"));
+    const cacheDir = mkdtempSync(path.join(tmpdir(), "silent-vite-cache-"));
+    cacheDirectories.push(project, cacheDir);
+    const tsconfig = path.join(project, "tsconfig.json");
+    writeFileSync(
+      tsconfig,
+      JSON.stringify({
+        compilerOptions: { baseUrl: ".", paths: { "@/*": ["src/*"] } },
+      }),
+    );
+
+    const plugin = createPlugin({ root: project });
+    plugin.configResolved?.({
+      cacheDir,
+      resolve: { alias: [{ find: "~lib", replacement: path.join(project, "lib") }] },
+    } as unknown as ResolvedConfig);
+
+    writeFileSync(
+      tsconfig,
+      JSON.stringify({
+        compilerOptions: { baseUrl: ".", paths: { "#app/*": ["app/*"] } },
+      }),
+    );
+    plugin.watchChange?.(tsconfig, { event: "update" });
+
+    await plugin.transform?.("code", path.join(project, "src", "app.ts"));
+
+    const scanAliases = JSON.parse(scanMock.mock.calls[0]?.[1] ?? "{}").aliases;
+    expect(scanAliases).toEqual(
+      expect.arrayContaining([
+        { find: "~lib", replacement: path.join(project, "lib") },
+        { find: "#app/*", replacement: path.join(project, "app/*") },
+      ]),
+    );
+    expect(scanAliases.map((rule: { find: string }) => rule.find)).not.toContain("@/*");
+
+    const transformAliases = JSON.parse(transformMock.mock.calls[0]?.[2] ?? "{}").aliases;
+    expect(transformAliases).toEqual(scanAliases);
+  });
+
+  it("пересобирает алиасы при изменении tsconfig.app.json", async () => {
+    const project = mkdtempSync(path.join(tmpdir(), "silent-vite-alias-app-"));
+    const cacheDir = mkdtempSync(path.join(tmpdir(), "silent-vite-cache-"));
+    cacheDirectories.push(project, cacheDir);
+    const tsconfigApp = path.join(project, "tsconfig.app.json");
+    writeFileSync(
+      tsconfigApp,
+      JSON.stringify({
+        compilerOptions: { baseUrl: ".", paths: { "@/*": ["src/*"] } },
+      }),
+    );
+
+    const plugin = createPlugin({ root: project });
+    plugin.configResolved?.({
+      cacheDir,
+      resolve: { alias: [{ find: "~lib", replacement: path.join(project, "lib") }] },
+    } as unknown as ResolvedConfig);
+
+    writeFileSync(
+      tsconfigApp,
+      JSON.stringify({
+        compilerOptions: { baseUrl: ".", paths: { "@/*": ["app/*"] } },
+      }),
+    );
+    plugin.watchChange?.(tsconfigApp, { event: "update" });
+
+    await plugin.transform?.("code", path.join(project, "src", "app.ts"));
+
+    const optionsJson = JSON.parse(transformMock.mock.calls[0]?.[2] ?? "{}");
+    expect(optionsJson.aliases).toEqual(
+      expect.arrayContaining([
+        { find: "~lib", replacement: path.join(project, "lib") },
+        { find: "@/*", replacement: path.join(project, "app/*") },
+      ]),
+    );
+  });
+
+  it("не кеширует индекс, завершившийся после инвалидации", async () => {
+    const indexA = {
+      interfaces: { "a.ts#A": ["a-impl.ts#A"] },
+      values: { "a.ts": ["A"] },
+    };
+    const indexB = {
+      interfaces: { "b.ts#B": ["b-impl.ts#B"] },
+      values: { "b.ts": ["B"] },
+    };
+    const plugin = createPlugin();
+    const file = fileFor("src", "race.ts");
+
+    // Первый scan прогревает загрузку swc и заполняет кеш индекса.
+    await plugin.transform?.("warm", file);
+    plugin.handleHotUpdate?.({ file });
+    expect(scanMock).toHaveBeenCalledTimes(1);
+
+    scanMock
+      .mockImplementationOnce(() => JSON.stringify(indexA))
+      .mockImplementationOnce(() => JSON.stringify(indexB));
+
+    const inFlight = plugin.transform?.("one", file);
+    // transform дошёл до ensureIndex, scan ещё не выполнился.
+    await Promise.resolve();
+    plugin.handleHotUpdate?.({ file });
+
+    await inFlight;
+    await plugin.transform?.("two", file);
+
+    expect(scanMock).toHaveBeenCalledTimes(3);
+    const usedIndex = JSON.parse(transformMock.mock.calls.at(-1)?.[3] ?? "{}");
+    expect(usedIndex).toEqual(indexB);
+  });
+
   it("options JSON содержит swc, requirePreloader, runtime, hmr", async () => {
     const plugin = createPlugin({
       swc: { target: "es2015" },

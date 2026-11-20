@@ -72,3 +72,18 @@ export function isInsideRoot(root: string, file: string): boolean {
 export function isSourceModule(id: string): boolean {
   return DEFAULT_INCLUDE.test(cleanModuleId(id));
 }
+
+const TSCONFIG_NAME = /^tsconfig(\..+)?\.json$/;
+
+/** Имя файла — любой `tsconfig*.json` (`tsconfig.json`, `tsconfig.app.json`, …). */
+export function isTsconfigName(name: string): boolean {
+  return TSCONFIG_NAME.test(name);
+}
+
+/** Изменение tsconfig внутри root требует пересборки правил алиасов. */
+export function isTsconfigFile(root: string, id: string): boolean {
+  const file = cleanModuleId(id);
+  if (!isTsconfigName(path.basename(file))) return false;
+  const absolute = path.isAbsolute(file) ? file : path.resolve(root, file);
+  return isInsideRoot(root, absolute);
+}

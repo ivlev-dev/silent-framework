@@ -114,7 +114,7 @@ interface ResolvedOptions {
 ### Порядок хуков плагина
 
 1. `config(config, env)` — возвращает `define`-константы: `__SILENT_VIEW__ = "false"` при `view: false`, `__SILENT_HYDRATE__ = "false"` при `hydrate: false`, `__SILENT_SERVER__ = "false"` для клиентской production-сборки (`build` без `build.ssr`). При `view: false` также отключает полифилл `build.modulePreload`, если пользователь не задал его сам.
-2. `configResolved(config)` — запоминает каталог кэша (`config.cacheDir/silent-transform`), объединяет алиасы Vite и `tsconfig.json` (`paths`) и сбрасывает индекс, чтобы scan учитывал актуальные правила.
+2. `configResolved(config)` — запоминает каталог кэша (`config.cacheDir/silent-transform`), сохраняет снимок строковых алиасов Vite (`resolve.alias`) и объединяет его с `compilerOptions.paths` из tsconfig, а затем сбрасывает индекс, чтобы scan учитывал актуальные правила.
 3. `buildStart` — вызывается один раз (или лениво при первом `transform`): при `index: true` нативный addon сканирует `root` и строит индекс DI; персистентный кэш трансформаций очищается от старых записей.
 4. `transform(code, id, options)` — для каждого модуля:
    - очищает `id` от query и hash;
@@ -124,7 +124,7 @@ interface ResolvedOptions {
    - получает индекс через `ensureIndex()`;
    - вызывает `nativeTransform(swc, code, moduleId, optionsJson, indexJson)`, добавляя в `optionsJson` флаг `ssr` из `options?.ssr`;
    - применяет политику `di` к `diagnostics` и возвращает `{ code, map, warnings }` (`warnings` всегда пуст: `warn`-режим выводит сообщения через `this.warn`, `error`-режим бросает ошибку).
-5. `watchChange(id)` — при изменении исходного модуля (но не виртуального) сбрасывает кеш индекса; изменение `tsconfig.json` пересобирает правила алиасов.
+5. `watchChange(id)` — при изменении исходного модуля (но не виртуального) сбрасывает кеш индекса; изменение любого `tsconfig*.json` в `root` (`tsconfig.json`, `tsconfig.app.json`, `tsconfig.node.json`, …) перечитывает `paths` и пересобирает правила алиасов, сохраняя снимок алиасов Vite. Уже запущенный scan, завершившийся после инвалидации, не попадает в кеш индекса (счётчик поколений).
 6. `handleHotUpdate({ file })` — то же для HMR-обновлений исходных модулей.
 
 Индекс кешируется в памяти плагина: несколько `transform` не вызывают повторный scan.

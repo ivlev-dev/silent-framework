@@ -1,6 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { Alias } from "vite";
+import { isTsconfigName } from "./options.js";
 
 export interface AliasRule {
   readonly find: string;
@@ -80,12 +81,24 @@ function readJsonc(file: string): Record<string, unknown> | null {
   }
 }
 
+const PREFERRED_TSCONFIG_NAMES = [
+  "tsconfig.json",
+  "tsconfig.app.json",
+  "tsconfig.base.json",
+  "tsconfig.node.json",
+];
+
 function tsconfigCandidates(root: string): string[] {
-  return [
-    join(root, "tsconfig.json"),
-    join(root, "tsconfig.app.json"),
-    join(root, "tsconfig.base.json"),
-  ];
+  let entries: string[] = [];
+  try {
+    entries = readdirSync(root);
+  } catch {
+    entries = [];
+  }
+  const extra = entries
+    .filter((name) => isTsconfigName(name) && !PREFERRED_TSCONFIG_NAMES.includes(name))
+    .sort();
+  return [...PREFERRED_TSCONFIG_NAMES, ...extra].map((name) => join(root, name));
 }
 
 export function readTsconfigAliases(root: string): AliasRule[] {
@@ -150,7 +163,19 @@ export function mergeAliases(
   fromVite: readonly Alias[],
   root: string,
 ): AliasRule[] {
-  const rules = [...viteAliases(fromVite, root)];
+  return mergeAliasRules(viteAliases(fromVite, root), root);
+}
+
+/**
+ * Объединяет уже нормализованные правила Vite-алиасов со свежими
+ * `compilerOptions.paths` из tsconfig. Позволяет пересобрать правила после
+ * правки tsconfig, не теряя алиасы из `resolve.alias`.
+ */
+export function mergeAliasRules(
+  viteRules: readonly AliasRule[],
+  root: string,
+): AliasRule[] {
+  const rules = [...viteRules];
   const seen = new Set(rules.map((rule) => rule.find));
   for (const rule of readTsconfigAliases(root)) {
     if (!seen.has(rule.find)) {

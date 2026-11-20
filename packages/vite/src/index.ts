@@ -2,9 +2,17 @@ import type { ConfigEnv, Plugin, ResolvedConfig, UserConfig } from "vite";
 import { join } from "node:path";
 import type { NativeTransformResult } from "@ivlev-dev/silent-swc";
 import { loadSwc, nativeScan, nativeTransform } from "./native.js";
-import { aliasesJson, mergeAliases, type AliasRule } from "./aliases.js";
+import { aliasesJson, mergeAliasRules, viteAliases, type AliasRule } from "./aliases.js";
 import type { SilentIndex } from "./native.js";
-import { cleanModuleId, isInsideRoot, isSourceModule, isVirtualModule, matchesPattern, resolveOptions } from "./options.js";
+import {
+  cleanModuleId,
+  isInsideRoot,
+  isSourceModule,
+  isTsconfigFile,
+  isVirtualModule,
+  matchesPattern,
+  resolveOptions,
+} from "./options.js";
 import type { DiMode, SilentOptions } from "./options.js";
 import {
   hashContent,
@@ -43,6 +51,18 @@ function reportDiagnostics(
 export function silent(options: SilentOptions = {}): Plugin {
   const opts = resolveOptions(options);
 
+  let aliasRules: AliasRule[] = [];
+  let aliasOptionsJson = aliasesJson([]);
+  let viteAliasSnapshot: AliasRule[] = [];
+
+  let cachedIndexJson: string | null = null;
+  let cachedIndexHash: string | null = null;
+  let indexPromise: Promise<string> | null = null;
+  let indexGeneration = 0;
+  let swcPromise: ReturnType<typeof loadSwc> | null = null;
+  let cacheDirectory: string | null = null;
+  let transformVersion: string | null = null;
+
   const buildOptionsJson = (ssr: boolean): string =>
     JSON.stringify({
       swc: opts.swc,
@@ -53,15 +73,12 @@ export function silent(options: SilentOptions = {}): Plugin {
       hydrate: opts.hydrate,
       aliases: aliasRules,
     });
-  let aliasRules: AliasRule[] = [];
-  let aliasOptionsJson = aliasesJson([]);
 
-  let cachedIndexJson: string | null = null;
-  let cachedIndexHash: string | null = null;
-  let indexPromise: Promise<string> | null = null;
-  let swcPromise: ReturnType<typeof loadSwc> | null = null;
-  let cacheDirectory: string | null = null;
-  let transformVersion: string | null = null;
+  // Пересобирает правила из снимка Vite-алиасов и актуальных tsconfig paths.
+  const rebuildAliases = (): void => {
+    aliasRules = mergeAliasRules(viteAliasSnapshot, opts.root);
+    aliasOptionsJson = aliasesJson(aliasRules);
+  };
 
   const getSwc = (): ReturnType<typeof loadSwc> => {
     if (!swcPromise) {
@@ -75,24 +92,27 @@ export function silent(options: SilentOptions = {}): Plugin {
 
   const ensureIndex = (): Promise<string> => {
     if (!opts.index) return Promise.resolve(EMPTY_INDEX_JSON);
-    if (cachedIndexJson) return Promise.resolve(cachedIndexJson);
-    if (!indexPromise) {
-      indexPromise = getSwc()
-        .then((swc) => {
-          const index: SilentIndex = nativeScan(swc, opts.root, aliasOptionsJson);
-          const json = JSON.stringify(index);
-          cachedIndexJson = json;
-          return json;
-        })
-        .catch((error: unknown) => {
-          indexPromise = null;
-          throw error;
-        });
-    }
-    return indexPromise;
+    if (cachedIndexJson !== null) return Promise.resolve(cachedIndexJson);
+    if (indexPromise) return indexPromise;
+    const generation = ++indexGeneration;
+    const pending: Promise<string> = getSwc().then((swc) => {
+      const index: SilentIndex = nativeScan(swc, opts.root, aliasOptionsJson);
+      const json = JSON.stringify(index);
+      if (generation === indexGeneration) {
+        cachedIndexJson = json;
+      }
+      return json;
+    });
+    indexPromise = pending;
+    const forgetPending = (): void => {
+      if (indexPromise === pending) indexPromise = null;
+    };
+    void pending.then(forgetPending, forgetPending);
+    return pending;
   };
 
   const invalidateIndex = (): void => {
+    indexGeneration += 1;
     cachedIndexJson = null;
     cachedIndexHash = null;
     indexPromise = null;
@@ -134,17 +154,17 @@ export function silent(options: SilentOptions = {}): Plugin {
     },
     configResolved(config: ResolvedConfig) {
       cacheDirectory = join(config.cacheDir, "silent-transform");
-      aliasRules = mergeAliases(config.resolve?.alias ?? [], opts.root);
-      aliasOptionsJson = aliasesJson(aliasRules);
+      viteAliasSnapshot = viteAliases(config.resolve?.alias ?? [], opts.root);
+      rebuildAliases();
       invalidateIndex();
     },
     watchChange(id) {
       if (isSourceModule(id) && !isVirtualModule(id)) {
         invalidateIndex();
       }
-      if (id.endsWith("tsconfig.json")) {
-        aliasRules = mergeAliases([], opts.root);
-        aliasOptionsJson = aliasesJson(aliasRules);
+      if (isTsconfigFile(opts.root, id)) {
+        // tsconfig paths перечитываются, Vite-алиасы берутся из снимка.
+        rebuildAliases();
         invalidateIndex();
       }
     },
