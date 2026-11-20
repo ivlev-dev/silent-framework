@@ -205,19 +205,19 @@ function unwrapValue(value: unknown): unknown {
 function arrayPush(record: ReactiveRecord, items: unknown[]): number {
   const array = record.raw as unknown[];
   const start = array.length;
-  const values: unknown[] = [];
-  for (let index = 0; index < items.length; index += 1) {
-    values.push(unwrapValue(items[index]));
-  }
-  const result = array.push(...values);
-  for (let offset = 0; offset < values.length; offset += 1) {
-    writeIndex(record, start + offset, undefined, values[offset]);
+  const count = items.length;
+  // Поиндексная запись без spread: push(...items) на больших наборах
+  // переполняет стек вызовов (RangeError).
+  for (let offset = 0; offset < count; offset += 1) {
+    const value = unwrapValue(items[offset]);
+    array[start + offset] = value;
+    writeIndex(record, start + offset, undefined, value);
   }
   notifyLength(record, array.length);
-  if (values.length > 0) {
+  if (count > 0) {
     bumpKeys(record);
   }
-  return result;
+  return array.length;
 }
 
 function arrayPop(record: ReactiveRecord): unknown {
@@ -257,17 +257,40 @@ function arrayShift(record: ReactiveRecord): unknown {
 function arrayUnshift(record: ReactiveRecord, items: unknown[]): number {
   const array = record.raw as unknown[];
   const previous = array.slice();
-  const values = items.map(unwrapValue);
-  const result = array.unshift(...values);
+  const count = items.length;
+  if (count > 0) {
+    const previousLength = array.length;
+    const previousOwn: boolean[] = new Array<boolean>(previousLength);
+    for (let index = 0; index < previousLength; index += 1) {
+      previousOwn[index] = hasOwn(array, index);
+    }
+    // Сдвиг вправо без spread: unshift(...items) переполняет стек на больших
+    // наборах. Дырки в разреженных массивах сохраняются: переносим только
+    // собственные элементы, а слоты, пришедшие из дырок, освобождаем.
+    for (let index = previousLength - 1; index >= 0; index -= 1) {
+      if (previousOwn[index] === true) {
+        array[index + count] = array[index];
+      }
+    }
+    array.length = previousLength + count;
+    for (let index = count; index < previousLength; index += 1) {
+      if (previousOwn[index - count] !== true && hasOwn(array, index)) {
+        delete array[index];
+      }
+    }
+    for (let offset = 0; offset < count; offset += 1) {
+      array[offset] = unwrapValue(items[offset]);
+    }
+  }
   const length = array.length;
   for (let index = 0; index < length; index += 1) {
     writeIndex(record, index, previous[index], array[index]);
   }
   notifyLength(record, length);
-  if (values.length > 0) {
+  if (count > 0) {
     bumpKeys(record);
   }
-  return result;
+  return length;
 }
 
 function arraySplice(record: ReactiveRecord, args: unknown[]): unknown {
@@ -959,7 +982,19 @@ function createHandler(record: ReactiveRecord): ProxyHandler<object> {
     },
     getOwnPropertyDescriptor(target, key): PropertyDescriptor | undefined {
       record.keysSignal.read();
-      return Reflect.getOwnPropertyDescriptor(target, key);
+      const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
+      if (descriptor === undefined) {
+        return undefined;
+      }
+      if (descriptor.get !== undefined || descriptor.set !== undefined) {
+        return descriptor;
+      }
+      // Инвариант Proxy: для non-configurable + non-writable свойства нельзя
+      // подменять value, поэтому frozen/sealed-слоты отдаём как есть.
+      if (descriptor.configurable === false && descriptor.writable === false) {
+        return descriptor;
+      }
+      return { ...descriptor, value: deepReactive(descriptor.value) };
     },
     deleteProperty(target, key): boolean {
       const own = Reflect.getOwnPropertyDescriptor(target, key);

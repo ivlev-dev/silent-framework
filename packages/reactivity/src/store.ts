@@ -108,8 +108,10 @@ export function writeField<T>(
     return value;
   }
   setRaw(raw);
-  const signal = getFieldSignal(store, key, () => raw);
-  signal.write(raw);
+  const signal = store.fieldSignals.get(key);
+  if (signal !== undefined) {
+    signal.write(raw);
+  }
   return value;
 }
 

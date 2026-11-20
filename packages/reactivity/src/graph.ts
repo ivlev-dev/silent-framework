@@ -46,6 +46,58 @@ const defaultEffectErrorHandler: EffectErrorHandler = (error) => {
   console.error(error);
 };
 
+interface ProcessLike {
+  readonly env: Record<string, string | undefined>;
+}
+
+declare const process: ProcessLike;
+
+function isDevelopment(): boolean {
+  try {
+    // В production-сборках bundler подменяет process.env.NODE_ENV на
+    // "production". Если process недоступен, считаем окружение dev.
+    return process.env.NODE_ENV !== "production";
+  } catch {
+    return true;
+  }
+}
+
+function isThenable(value: unknown): boolean {
+  if (
+    (typeof value !== "object" || value === null) &&
+    typeof value !== "function"
+  ) {
+    return false;
+  }
+  try {
+    return typeof (value as { then?: unknown }).then === "function";
+  } catch {
+    return false;
+  }
+}
+
+function warnAsyncEffect(node: EffectNode): void {
+  if (node.warnedAsync) {
+    return;
+  }
+  node.warnedAsync = true;
+  if (isDevelopment()) {
+    console.warn(
+      "[silent-reactivity] async-эффект: чтения и onCleanup после await не отслеживаются; используйте createResource/runWithOwner",
+    );
+  }
+}
+
+function warnDisposedMemo(node: MemoNode): void {
+  if (node.warnedDisposed) {
+    return;
+  }
+  node.warnedDisposed = true;
+  if (isDevelopment()) {
+    console.warn(`[silent-reactivity] чтение мемо "${node.name}" после dispose`);
+  }
+}
+
 let effectErrorHandler: EffectErrorHandler | null = defaultEffectErrorHandler;
 
 export function setEffectErrorHandler(
@@ -100,6 +152,7 @@ interface MemoNode {
   initialized: boolean;
   running: boolean;
   failed: boolean;
+  warnedDisposed: boolean;
   wakeStamp: number;
   readonly observers: Set<ComputationNode>;
   deps: SourceNode[] | null;
@@ -116,6 +169,7 @@ interface EffectNode {
   initialized: boolean;
   running: boolean;
   failed: boolean;
+  warnedAsync: boolean;
   deps: SourceNode[] | null;
   depVersions: number[] | null;
   nextDepMap: Map<SourceNode, number> | null;
@@ -183,6 +237,7 @@ function trackDependency(node: SourceNode): void {
 function readSource(node: SourceNode): unknown {
   if (node.type === "memo") {
     if (node.disposed) {
+      warnDisposedMemo(node);
       return node.value;
     }
     if (node.running) {
@@ -474,7 +529,10 @@ function runEffect(node: EffectNode): void {
   resetOwner(node.owner);
   node.state = CLEAN;
   node.initialized = true;
-  runWithTracking(node, node.fn);
+  const result = runWithTracking(node, node.fn) as unknown;
+  if (isThenable(result)) {
+    warnAsyncEffect(node);
+  }
   if (node.disposed || node.state !== CLEAN) {
     return;
   }
@@ -748,6 +806,7 @@ function createEffectNode(type: "effect" | "renderEffect", fn: () => void): Effe
     initialized: false,
     running: false,
     failed: false,
+    warnedAsync: false,
     deps: null,
     depVersions: null,
     nextDepMap: null,
@@ -833,6 +892,7 @@ export function createMemo<T>(fn: () => T, options?: MemoOptions<T>): Accessor<T
     initialized: false,
     running: false,
     failed: false,
+    warnedDisposed: false,
     wakeStamp: 0,
     observers: new Set<ComputationNode>(),
     deps: null,
