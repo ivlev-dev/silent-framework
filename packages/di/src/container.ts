@@ -19,6 +19,14 @@ interface CaptiveFrame {
   readonly owner: Container;
 }
 
+interface ResolutionContext {
+  readonly captive: CaptiveFrame | null;
+  readonly chain: ReadonlySet<unknown>;
+}
+
+const EMPTY_CHAIN: ReadonlySet<unknown> = new Set<unknown>();
+const asyncBindings = new WeakSet<Binding<unknown>>();
+
 const SYMBOL_DISPOSE: symbol | undefined = (Symbol as { readonly dispose?: symbol }).dispose;
 
 let resolutionInspector: ContainerResolutionInspector | null = null;
@@ -107,6 +115,21 @@ function isClassSource(fn: FunctionValue): boolean {
   return /^class\b/.test(fn.toString().trim());
 }
 
+function isAsyncFunctionValue(fn: (...args: never[]) => unknown): boolean {
+  return Object.prototype.toString.call(fn) === "[object AsyncFunction]";
+}
+
+function isAsyncFactorySource(factory: unknown): boolean {
+  if (!isFunctionValue(factory)) {
+    return false;
+  }
+  if (!isClassSource(factory)) {
+    return isAsyncFunctionValue(factory);
+  }
+  const create = (factory as unknown as CreateAware)[DI_CREATE];
+  return typeof create === "function" && isAsyncFunctionValue(create);
+}
+
 function toFactory(factory: unknown): Factory<unknown> {
   if (factory === undefined) {
     return async () => undefined;
@@ -167,6 +190,7 @@ export class Container {
   private cache = new Map<unknown, Promise<unknown>>();
   private resolved = new Map<unknown, unknown>();
   private resolving = new Map<unknown, unknown>();
+  private syncContext: ResolutionContext | null = null;
   private disposeHooks: Array<() => void> = [];
   private disposed = false;
   private implicitBindingMode: ImplicitBindingMode;
@@ -190,6 +214,9 @@ export class Container {
       factory: toFactory(factory),
       scope: "singleton",
     };
+    if (isAsyncFactorySource(factory)) {
+      asyncBindings.add(binding);
+    }
     this.bindings.set(token, binding);
     this.implicitTokens.delete(token);
     this.clearCache(token);
@@ -404,12 +431,19 @@ export class Container {
     }
   }
 
-  private resolveInternal<T = unknown>(token: unknown, frame: CaptiveFrame | null): Promise<T> {
+  private resolveInternal<T = unknown>(
+    token: unknown,
+    context: ResolutionContext | null,
+  ): Promise<T> {
     this.assertUsable();
 
     if (token === undefined) {
       throw new Error("Async DI: resolve<T>() must be transformed by silentwire before runtime");
     }
+
+    const effective = context ?? this.syncContext;
+    const chain = effective?.chain ?? EMPTY_CHAIN;
+    const captive = effective?.captive ?? null;
 
     const found = this.findBindingWithOwner(token);
 
@@ -417,20 +451,23 @@ export class Container {
       if (!isFunctionValue(token)) {
         throw new Error(`Async DI: no binding registered for token ${String(token)}`);
       }
-      this.bindImplicit(token, frame === null ? this : frame.owner);
-      return this.resolveInternal<T>(token, frame);
+      this.bindImplicit(token, captive === null ? this : captive.owner);
+      return this.resolveInternal<T>(token, effective);
     }
 
     const { binding, owner } = found;
 
-    if (frame !== null && binding.scope === "scoped" && this !== frame.owner) {
-      throw new InvalidScopeError(frame.token, frame.owner, token);
+    if (captive !== null && binding.scope === "scoped" && this !== captive.owner) {
+      throw new InvalidScopeError(captive.token, captive.owner, token);
     }
 
     const cacheContainer = binding.scope === "singleton" ? owner : this;
 
     const cached = cacheContainer.cache.get(token);
     if (cached !== undefined) {
+      if (chain.has(token) && cacheContainer.resolving.has(token)) {
+        throw new CircularDependencyError([...chain, token]);
+      }
       this.reportResolution(token, owner, binding, true);
       return cached as Promise<T>;
     }
@@ -444,21 +481,38 @@ export class Container {
     const marker: object = {};
     cacheContainer.resolving.set(token, marker);
 
-    let nextFrame: CaptiveFrame | null = frame;
+    let nextCaptive: CaptiveFrame | null = captive;
     if (
       binding.scope === "singleton" &&
-      (nextFrame === null || Container.isAncestor(cacheContainer, nextFrame.owner))
+      (nextCaptive === null || Container.isAncestor(cacheContainer, nextCaptive.owner))
     ) {
-      nextFrame = { token, owner: cacheContainer };
+      nextCaptive = { token, owner: cacheContainer };
     }
+
+    const nextChain = new Set(chain);
+    nextChain.add(token);
+    const needsAsyncFacade = asyncBindings.has(binding);
+    const needsCaptiveFacade = nextCaptive !== null && nextCaptive.owner !== this;
+    const factoryContext: ResolutionContext = {
+      captive: needsCaptiveFacade ? nextCaptive : null,
+      chain: nextChain,
+    };
     const factoryContainer =
-      nextFrame === null || nextFrame.owner === this
-        ? this
-        : Container.guard(this, nextFrame);
+      needsAsyncFacade || needsCaptiveFacade
+        ? Container.guard(this, factoryContext)
+        : this;
 
     const instantiate = async (): Promise<unknown> => {
       try {
-        return await binding.factory(factoryContainer);
+        const previousContext = this.syncContext;
+        let produced: unknown;
+        this.syncContext = factoryContext;
+        try {
+          produced = binding.factory(factoryContainer);
+        } finally {
+          this.syncContext = previousContext;
+        }
+        return await produced;
       } finally {
         if (cacheContainer.resolving.get(token) === marker) {
           cacheContainer.resolving.delete(token);
@@ -515,10 +569,14 @@ export class Container {
         `[silent-di] Неявный биндинг для зависимости "${describeToken(token)}" в контейнере "${owner.name}". Стек:\n${stack}`,
       );
     }
-    owner.bindings.set(token, {
+    const binding: Binding<unknown> = {
       factory: toFallbackFactory(token),
       scope: "singleton",
-    });
+    };
+    if (isAsyncFactorySource(token)) {
+      asyncBindings.add(binding);
+    }
+    owner.bindings.set(token, binding);
     owner.implicitTokens.add(token);
     owner.clearCache(token);
   }
@@ -538,15 +596,15 @@ export class Container {
     return false;
   }
 
-  private static guard(target: Container, frame: CaptiveFrame): Container {
+  private static guard(target: Container, context: ResolutionContext): Container {
     return new Proxy(target, {
       get(object: Container, property: string | symbol): unknown {
         if (property === "resolve") {
           return (token: unknown): Promise<unknown> =>
-            Container.resolveInFrame(object, frame, token);
+            Container.resolveInContext(object, context, token);
         }
         if (property === "createScope") {
-          return (name?: string): Container => Container.guard(object.createScope(name), frame);
+          return (name?: string): Container => Container.guard(object.createScope(name), context);
         }
         const value: unknown = Reflect.get(object, property, object);
         return typeof value === "function" ? value.bind(object) : value;
@@ -554,13 +612,13 @@ export class Container {
     });
   }
 
-  private static resolveInFrame(
+  private static resolveInContext(
     target: Container,
-    frame: CaptiveFrame,
+    context: ResolutionContext,
     token: unknown,
   ): Promise<unknown> {
     try {
-      return target.resolveInternal(token, frame);
+      return target.resolveInternal(token, context);
     } catch (error) {
       return Promise.reject(error);
     }
