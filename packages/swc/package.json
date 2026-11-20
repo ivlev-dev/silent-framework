@@ -8,6 +8,8 @@
   "files": [
     "index.js",
     "index.d.ts",
+    "loader.js",
+    "loader.d.ts",
     "native/*.node"
   ],
   "scripts": {
