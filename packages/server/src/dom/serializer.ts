@@ -1,6 +1,7 @@
 import { HTML_NAMESPACE, NODE_COMMENT, NODE_DOCUMENT_FRAGMENT, NODE_ELEMENT, NODE_TEXT } from "./types.js";
 import type { DomNode } from "./types.js";
 import { ElementImpl, TextImpl } from "./node.js";
+import { splitChunks } from "../chunk.js";
 
 const VOID_ELEMENTS: ReadonlySet<string> = new Set([
   "area",
@@ -18,6 +19,8 @@ const VOID_ELEMENTS: ReadonlySet<string> = new Set([
   "track",
   "wbr",
 ]);
+
+const RAW_TEXT_ELEMENTS: ReadonlySet<string> = new Set(["script", "style"]);
 
 const ESCAPE_TEXT = /[&<>]/;
 const ESCAPE_ATTRIBUTE = /[&<>"]/;
@@ -98,7 +101,11 @@ function pushElement(element: ElementImpl, parts: PartSink): void {
   if (element.namespaceURI === HTML_NAMESPACE && VOID_ELEMENTS.has(tag)) {
     return;
   }
-  pushChildren(element, parts);
+  if (element.namespaceURI === HTML_NAMESPACE && RAW_TEXT_ELEMENTS.has(tag)) {
+    pushRawChildren(element, parts);
+  } else {
+    pushChildren(element, parts);
+  }
   parts.push("</", tag, ">");
 }
 
@@ -153,6 +160,16 @@ function pushChildren(node: DomNode, parts: PartSink): void {
   }
 }
 
+function pushRawChildren(node: DomNode, parts: PartSink): void {
+  for (const child of node.childNodes) {
+    if (child.nodeType === NODE_TEXT && child instanceof TextImpl) {
+      parts.push(child.data);
+      continue;
+    }
+    pushNode(child, parts);
+  }
+}
+
 export function serializeNodeChunks(
   node: DomNode,
   chunkSize: number,
@@ -171,8 +188,8 @@ export function serializeNodeChunks(
       emit(text);
       return;
     }
-    for (let index = 0; index < text.length; index += chunkSize) {
-      emit(text.slice(index, index + chunkSize));
+    for (const chunk of splitChunks(text, chunkSize)) {
+      emit(chunk);
     }
   };
   const sink: PartSink = {

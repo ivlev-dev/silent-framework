@@ -297,4 +297,108 @@ describe("TemplateElementImpl", () => {
 
     expect(template.innerHTML).toBe("");
   });
+
+  it("сохраняет тип и content при клонировании", () => {
+    const template = document.createElement("template");
+    if (!(template instanceof TemplateElementImpl)) {
+      throw new Error("Ожидался TemplateElementImpl");
+    }
+    template.innerHTML = "<b>x</b>";
+
+    const shallow = template.cloneNode(false);
+    expect(shallow).toBeInstanceOf(TemplateElementImpl);
+    if (!(shallow instanceof TemplateElementImpl)) {
+      throw new Error("Ожидался TemplateElementImpl");
+    }
+    expect(shallow.content).not.toBe(template.content);
+    expect(shallow.content.childNodes).toHaveLength(0);
+    expect(shallow.innerHTML).toBe("");
+
+    const deep = template.cloneNode(true);
+    expect(deep).toBeInstanceOf(TemplateElementImpl);
+    if (!(deep instanceof TemplateElementImpl)) {
+      throw new Error("Ожидался TemplateElementImpl");
+    }
+    expect(deep.content).not.toBe(template.content);
+    expect(deep.innerHTML).toBe("<b>x</b>");
+    expect(template.innerHTML).toBe("<b>x</b>");
+  });
+});
+
+describe("parseHtmlFragment: raw-text и RCDATA", () => {
+  const cases: ReadonlyArray<readonly [string, string, string]> = [
+    ["script", "<script>if (a < b) f()</script>", "if (a < b) f()"],
+    ["style", "<style>@media (width < 600px){}</style>", "@media (width < 600px){}"],
+    ["textarea", "<textarea>a < b</textarea>", "a < b"],
+    ["title", "<title>a < b</title>", "a < b"],
+  ];
+
+  for (const [tag, html, text] of cases) {
+    it(`парсит <${tag}> как текст, не разбирая вложенную разметку`, () => {
+      const nodes = parseHtmlFragment(document, html);
+
+      expect(nodes).toHaveLength(1);
+      const element = elementAt(nodes, 0);
+      expect(element.tagName).toBe(tag.toUpperCase());
+      expect(element.childNodes).toHaveLength(1);
+      expect(element.firstChild).toBeInstanceOf(TextImpl);
+      expect(element.textContent).toBe(text);
+    });
+
+    it(`делает round-trip <${tag}> через serializeNode`, () => {
+      const element = elementAt(parseHtmlFragment(document, html), 0);
+      const serialized = serializeNode(element);
+
+      if (tag === "script" || tag === "style") {
+        expect(serialized).toBe(html);
+      }
+      const reparsed = elementAt(parseHtmlFragment(document, serialized), 0);
+      expect(reparsed.tagName).toBe(tag.toUpperCase());
+      expect(reparsed.textContent).toBe(text);
+    });
+  }
+
+  it("учитывает регистр закрывающего тега", () => {
+    const nodes = parseHtmlFragment(document, "<SCRIPT>if (a < b) f()</SCRIPT>");
+    const script = elementAt(nodes, 0);
+
+    expect(script.tagName).toBe("SCRIPT");
+    expect(script.textContent).toBe("if (a < b) f()");
+    expect(serializeNode(script)).toBe("<script>if (a < b) f()</script>");
+  });
+
+  it("не обрывает raw-текст на похожем закрывающем теге", () => {
+    const source = '<script>var s = "</scriptx>";</script>';
+    const nodes = parseHtmlFragment(document, source);
+    const script = elementAt(nodes, 0);
+
+    expect(script.textContent).toBe('var s = "</scriptx>";');
+    expect(serializeNode(script)).toBe(source);
+  });
+
+  it("декодирует сущности в RCDATA", () => {
+    const nodes = parseHtmlFragment(document, "<textarea>a &amp; b</textarea>");
+    const textarea = elementAt(nodes, 0);
+
+    expect(textarea.textContent).toBe("a & b");
+    expect(serializeNode(textarea)).toBe("<textarea>a &amp; b</textarea>");
+  });
+
+  it("не ломает обычный парсинг template с вложенной разметкой", () => {
+    const nodes = parseHtmlFragment(document, "<template><b>x</b></template>");
+    const template = elementAt(nodes, 0);
+
+    expect(template).toBeInstanceOf(TemplateElementImpl);
+    expect(template.childNodes).toHaveLength(1);
+    expect((template.childNodes[0] as ElementImpl).tagName).toBe("B");
+    expect(serializeNode(template)).toBe("<template><b>x</b></template>");
+  });
+
+  it("не включает raw-text режим внутри svg", () => {
+    const nodes = parseHtmlFragment(document, "<svg><text>a &lt; b</text></svg>");
+    const svg = elementAt(nodes, 0);
+
+    expect(svg.namespaceURI).toBe(SVG_NAMESPACE);
+    expect(svg.textContent).toBe("a < b");
+  });
 });

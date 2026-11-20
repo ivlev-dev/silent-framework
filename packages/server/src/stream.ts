@@ -7,6 +7,7 @@ import {
   type ServerStreamRegion,
 } from "@ivlev-dev/silent-core/server-stream";
 import { flushSync } from "@ivlev-dev/silent-reactivity";
+import { splitChunks } from "./chunk.js";
 import type { RenderOptions } from "./render.js";
 import { enqueueRenderTask, settleRender } from "./render.js";
 import { beginRenderSession, type RenderSession } from "./session.js";
@@ -105,8 +106,7 @@ async function runStream(
       options.onChunk?.(html);
       return;
     }
-    for (let index = 0; index < html.length; index += chunkSize) {
-      const chunk = html.slice(index, index + chunkSize);
+    for (const chunk of splitChunks(html, chunkSize)) {
       controller.enqueue(chunk);
       options.onChunk?.(chunk);
     }

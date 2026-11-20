@@ -20,6 +20,9 @@ const VOID_ELEMENTS: ReadonlySet<string> = new Set([
   "wbr",
 ]);
 
+const RAW_TEXT_ELEMENTS: ReadonlySet<string> = new Set(["script", "style"]);
+const RCDATA_ELEMENTS: ReadonlySet<string> = new Set(["textarea", "title"]);
+
 const NAMED_ENTITIES: ReadonlyMap<string, string> = new Map([
   ["amp", "&"],
   ["apos", "'"],
@@ -198,6 +201,25 @@ class FragmentParser {
     if (svgRoot) {
       this.svgDepth += 1;
     }
+    if (!svgContext) {
+      if (RAW_TEXT_ELEMENTS.has(lowerName)) {
+        this.parseRawText(lowerName, false);
+      } else if (RCDATA_ELEMENTS.has(lowerName)) {
+        this.parseRawText(lowerName, true);
+      }
+    }
+  }
+
+  private parseRawText(tagName: string, decode: boolean): void {
+    const closing = new RegExp(`</${tagName}(?=[\\s/>]|$)`, "gi");
+    closing.lastIndex = this.index;
+    const match = closing.exec(this.source);
+    const end = match === null ? this.source.length : match.index;
+    const raw = this.source.slice(this.index, end);
+    this.index = end;
+    if (raw !== "") {
+      this.append(new TextImpl(decode ? decodeEntities(raw) : raw));
+    }
   }
 
   private parseAttribute(tagName: string): readonly [string, string] {
@@ -296,6 +318,20 @@ export class TemplateElementImpl extends ElementImpl implements DomTemplateEleme
     super("template");
     this.ownerDocument = document;
     this.content = new DocumentFragmentImpl();
+  }
+
+  override cloneNode(deep = false): TemplateElementImpl {
+    const clone = super.cloneNode(deep) as TemplateElementImpl;
+    if (deep) {
+      for (const child of this.content.childNodes) {
+        clone.content.appendChild(child.cloneNode(true));
+      }
+    }
+    return clone;
+  }
+
+  protected override createEmptyClone(): TemplateElementImpl {
+    return new TemplateElementImpl(this.ownerDocument);
   }
 
   get innerHTML(): string {
