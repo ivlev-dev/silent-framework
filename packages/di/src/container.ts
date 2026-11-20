@@ -107,6 +107,16 @@ export class MissingBindingError extends Error {
   }
 }
 
+export class ContainerDisposedError extends Error {
+  readonly container: Container;
+
+  constructor(container: Container) {
+    super(`Container "${container.name}" has been disposed`);
+    this.name = "ContainerDisposedError";
+    this.container = container;
+  }
+}
+
 function isFunctionValue(value: unknown): value is FunctionValue {
   return typeof value === "function";
 }
@@ -119,6 +129,11 @@ function isAsyncFunctionValue(fn: (...args: never[]) => unknown): boolean {
   return Object.prototype.toString.call(fn) === "[object AsyncFunction]";
 }
 
+function isAsyncClassSource(ctor: FunctionValue): boolean {
+  const create = (ctor as unknown as CreateAware)[DI_CREATE];
+  return typeof create === "function" && isAsyncFunctionValue(create);
+}
+
 function isAsyncFactorySource(factory: unknown): boolean {
   if (!isFunctionValue(factory)) {
     return false;
@@ -126,11 +141,30 @@ function isAsyncFactorySource(factory: unknown): boolean {
   if (!isClassSource(factory)) {
     return isAsyncFunctionValue(factory);
   }
-  const create = (factory as unknown as CreateAware)[DI_CREATE];
-  return typeof create === "function" && isAsyncFunctionValue(create);
+  return isAsyncClassSource(factory);
 }
 
-function toFactory(factory: unknown): Factory<unknown> {
+const CLASS_WITHOUT_NEW_PATTERNS: readonly RegExp[] = [
+  /class constructor .* cannot be invoked without 'new'/i,
+  /class constructors must be invoked with 'new'/i,
+  /constructor .* requires 'new'/i,
+  /cannot set propert(y|ies) of undefined/i,
+];
+
+function factoryInvocationError(error: unknown, token: unknown): unknown {
+  if (!(error instanceof TypeError)) {
+    return error;
+  }
+  if (!CLASS_WITHOUT_NEW_PATTERNS.some((pattern) => pattern.test(error.message))) {
+    return error;
+  }
+  return new TypeError(
+    `Не удалось вызвать фабрику токена "${describeToken(token)}" без new: ${error.message}. Похоже, передана функция-конструктор или встроенный класс. Зарегистрируйте класс через bind(token, class ...) или bindClass(token, Ctor), а явную фабрику — через bindFactory(token, fn).`,
+    { cause: error },
+  );
+}
+
+function toFactory(factory: unknown, token: unknown): Factory<unknown> {
   if (factory === undefined) {
     return async () => undefined;
   }
@@ -138,15 +172,21 @@ function toFactory(factory: unknown): Factory<unknown> {
     return async () => factory;
   }
   if (!isClassSource(factory)) {
-    return async (container) => factory(container);
+    return async (container) => {
+      let produced: unknown;
+      try {
+        produced = factory(container);
+      } catch (error) {
+        throw factoryInvocationError(error, token);
+      }
+      return produced;
+    };
   }
-  return async (container) => {
-    const create = (factory as unknown as CreateAware)[DI_CREATE];
-    if (typeof create === "function") {
-      return create.call(factory, container);
-    }
-    return new (factory as unknown as ConstructorValue)();
-  };
+  return toFallbackFactory(factory);
+}
+
+function toExplicitFactory(factory: FunctionValue): Factory<unknown> {
+  return async (container) => factory(container);
 }
 
 function toFallbackFactory(ctor: FunctionValue): Factory<unknown> {
@@ -180,6 +220,31 @@ function safeDisposeValue(value: unknown): void {
   }
 }
 
+function disposeLateValue(value: unknown): void {
+  if (value === null || (typeof value !== "object" && typeof value !== "function")) {
+    return;
+  }
+  if (SYMBOL_DISPOSE !== undefined) {
+    const symbolMethod = (value as Record<PropertyKey, unknown>)[SYMBOL_DISPOSE];
+    if (typeof symbolMethod === "function") {
+      symbolMethod.call(value);
+      return;
+    }
+  }
+  const method = (value as Record<PropertyKey, unknown>)["dispose"];
+  if (typeof method === "function") {
+    method.call(value);
+  }
+}
+
+function safeDisposeLateValue(value: unknown): void {
+  try {
+    disposeLateValue(value);
+  } catch {
+    return;
+  }
+}
+
 export class Container {
   readonly name: string;
 
@@ -191,6 +256,7 @@ export class Container {
   private resolved = new Map<unknown, unknown>();
   private resolving = new Map<unknown, unknown>();
   private syncContext: ResolutionContext | null = null;
+  private inFlight = new Set<(error: unknown) => void>();
   private disposeHooks: Array<() => void> = [];
   private disposed = false;
   private implicitBindingMode: ImplicitBindingMode;
@@ -210,19 +276,61 @@ export class Container {
 
   bind<T = unknown>(token: unknown, factory?: unknown): BindingBuilder {
     this.assertUsable();
+    const isConstant = factory !== undefined && !isFunctionValue(factory);
+    const commit = isConstant
+      ? (): void => {
+        this.resolved.set(token, factory);
+      }
+      : undefined;
+    return this.registerBinding(
+      token,
+      toFactory(factory, token),
+      isAsyncFactorySource(factory),
+      commit,
+    );
+  }
+
+  bindClass<T = unknown>(
+    token: unknown,
+    ctor: new (...args: never[]) => T,
+  ): BindingBuilder {
+    this.assertUsable();
+    if (!isFunctionValue(ctor)) {
+      throw new TypeError(
+        `bindClass для токена "${describeToken(token)}" ожидает конструктор класса`,
+      );
+    }
+    return this.registerBinding(token, toFallbackFactory(ctor), isAsyncClassSource(ctor));
+  }
+
+  bindFactory<T = unknown>(token: unknown, factory: Factory<T>): BindingBuilder {
+    this.assertUsable();
+    if (!isFunctionValue(factory)) {
+      throw new TypeError(
+        `bindFactory для токена "${describeToken(token)}" ожидает функцию-фабрику`,
+      );
+    }
+    return this.registerBinding(token, toExplicitFactory(factory), isAsyncFunctionValue(factory));
+  }
+
+  private registerBinding(
+    token: unknown,
+    factory: Factory<unknown>,
+    isAsync: boolean,
+    commit?: () => void,
+  ): BindingBuilder {
     const binding: Binding<unknown> = {
-      factory: toFactory(factory),
+      factory,
       scope: "singleton",
     };
-    if (isAsyncFactorySource(factory)) {
+    if (isAsync) {
       asyncBindings.add(binding);
     }
     this.bindings.set(token, binding);
     this.implicitTokens.delete(token);
-    this.clearCache(token);
-    if (factory !== undefined && !isFunctionValue(factory)) {
-      this.resolved.set(token, factory);
-    }
+    this.replaceCache(token, () => {
+      commit?.();
+    });
 
     const changeScope = (scope: ScopeName): BindingBuilder => {
       if (binding.scope !== scope) {
@@ -248,8 +356,9 @@ export class Container {
     };
     this.bindings.set(token, binding);
     this.implicitTokens.delete(token);
-    this.clearCache(token);
-    this.resolved.set(token, value);
+    this.replaceCache(token, () => {
+      this.resolved.set(token, value);
+    });
   }
 
   peekValue<T = unknown>(token: unknown): T | undefined {
@@ -340,21 +449,66 @@ export class Container {
   }
 
   clearCache(token?: unknown): void {
+    const removed = new Set<unknown>();
+    this.detachCacheEntries(token, removed);
+    this.disposeDetached(removed);
+  }
+
+  private replaceCache(token: unknown, commit: () => void): void {
+    const removed = new Set<unknown>();
+    this.detachCacheEntries(token, removed);
+    commit();
+    this.disposeDetached(removed);
+  }
+
+  private detachCacheEntries(token: unknown, removed: Set<unknown>): void {
     if (token === undefined) {
+      for (const value of this.resolved.values()) {
+        removed.add(value);
+      }
       this.cache.clear();
       this.resolved.clear();
       this.resolving.clear();
     } else {
+      if (this.resolved.has(token)) {
+        removed.add(this.resolved.get(token));
+      }
       this.cache.delete(token);
       this.resolved.delete(token);
       this.resolving.delete(token);
     }
     for (const child of [...this.children]) {
-      child.clearCache(token);
+      child.detachCacheEntries(token, removed);
     }
   }
 
+  private disposeDetached(removed: ReadonlySet<unknown>): void {
+    for (const value of removed) {
+      if (!this.isValueRetained(value)) {
+        safeDisposeValue(value);
+      }
+    }
+  }
+
+  private isValueRetained(value: unknown): boolean {
+    for (const resolvedValue of this.resolved.values()) {
+      if (Object.is(resolvedValue, value)) {
+        return true;
+      }
+    }
+    for (const child of this.children) {
+      if (child.isValueRetained(value)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   onDispose(fn: () => void): void {
+    if (this.disposed) {
+      fn();
+      return;
+    }
     this.disposeHooks.push(fn);
   }
 
@@ -363,6 +517,13 @@ export class Container {
       return;
     }
     this.disposed = true;
+
+    const disposeError = new ContainerDisposedError(this);
+    const pendingRejectors = [...this.inFlight];
+    this.inFlight.clear();
+    for (const reject of pendingRejectors) {
+      reject(disposeError);
+    }
 
     const errors: unknown[] = [];
 
@@ -427,7 +588,7 @@ export class Container {
 
   private assertUsable(): void {
     if (this.disposed) {
-      throw new Error(`Container "${this.name}" has been disposed`);
+      throw new ContainerDisposedError(this);
     }
   }
 
@@ -520,20 +681,26 @@ export class Container {
       }
     };
 
-    const promise: Promise<unknown> = instantiate().catch((error: unknown) => {
+    let promise: Promise<unknown>;
+    const settled: Promise<unknown> = instantiate().catch((error: unknown) => {
       if (cacheContainer.cache.get(token) === promise) {
         cacheContainer.cache.delete(token);
       }
       throw error;
     });
 
+    const pending = cacheContainer.trackPendingResolution();
+    promise = Promise.race([settled, pending.promise]);
+    const releasePending = pending.release;
+    void promise.then(releasePending, releasePending);
+
     cacheContainer.cache.set(token, promise);
 
-    void promise.then(
+    void settled.then(
       (value: unknown) => {
         if (cacheContainer.disposed) {
           if (binding.scope !== "transient") {
-            safeDisposeValue(value);
+            safeDisposeLateValue(value);
           }
           return;
         }
@@ -557,6 +724,26 @@ export class Container {
     }
 
     return promise as Promise<T>;
+  }
+
+  private trackPendingResolution(): { promise: Promise<never>; release: () => void } {
+    let rejectPending: (error: unknown) => void = () => undefined;
+    const promise = new Promise<never>((_resolve, reject) => {
+      rejectPending = (error: unknown): void => reject(error);
+    });
+    const rejector = (error: unknown): void => rejectPending(error);
+    this.inFlight.add(rejector);
+    let released = false;
+    return {
+      promise,
+      release: () => {
+        if (released) {
+          return;
+        }
+        released = true;
+        this.inFlight.delete(rejector);
+      },
+    };
   }
 
   private bindImplicit(token: FunctionValue, owner: Container): void {
@@ -674,3 +861,14 @@ export class Container {
 }
 
 export const container = new Container("root");
+
+export function bindClass<T = unknown>(
+  token: unknown,
+  ctor: new (...args: never[]) => T,
+): BindingBuilder {
+  return container.bindClass(token, ctor);
+}
+
+export function bindFactory<T = unknown>(token: unknown, factory: Factory<T>): BindingBuilder {
+  return container.bindFactory(token, factory);
+}

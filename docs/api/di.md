@@ -17,7 +17,14 @@
 - константа — сразу кладётся в `resolved`, поэтому `peek`/`peekValue`/`resolveSync` видят её без `resolve`; асинхронная фабрика при этом возвращает то же значение;
 - `undefined` — фабрика возвращает `undefined`.
 
-Повторный `bind` того же токена заменяет фабрику и очищает кеш токена в текущем контейнере и во всех потомках. Скоуп по умолчанию — `singleton`. Методы `BindingBuilder` меняют скоуп привязки; при смене скоупа кеш токена тоже очищается.
+Повторный `bind` того же токена заменяет фабрику и очищает кеш токена в текущем контейнере и во всех потомках; ранее разрешённый инстанс при этом освобождается (см. `[Symbol.dispose]`). Скоуп по умолчанию — `singleton`. Методы `BindingBuilder` меняют скоуп привязки; при смене скоупа кеш токена тоже очищается.
+
+Если эвристика «класс vs фабрика» ошибается (встроенный класс вроде `Map`, bound-класс, ES5-конструктор), `bind` подсказывает решение в тексте ошибки. Для явного выбора формы регистрации используйте:
+
+- `bindClass(token, Ctor)` — всегда создаёт экземпляр через `new` или `[DI_CREATE]`;
+- `bindFactory(token, fn)` — всегда вызывает `fn(container)` и никогда не применяет `new`.
+
+Обе формы доступны как методы `Container` и как экспортируемые функции, работающие с глобальным `container` (аналог `bind`).
 
 ### Неявные привязки (класс как токен)
 
@@ -87,6 +94,42 @@ try {
 
 Ограничения: выбрасывается синхронно внутри `bindImplicit`, но `resolve` возвращает отклонённый промис (resolve никогда не бросает синхронно). Имя ошибки — `"MissingBindingError"`.
 
+### `ContainerDisposedError`
+
+```ts
+class ContainerDisposedError extends Error {
+  readonly container: Container;
+}
+```
+
+Описание: ошибка обращения к освобождённому контейнеру. Поле `container` содержит сам контейнер. Используется в `assertUsable` (`resolve`, `resolveSync`, `bind`, `createScope` после `dispose`) и для отклонения незавершённых `resolve`, если контейнер освобождён до завершения фабрики. Имя ошибки — `"ContainerDisposedError"`, сообщение — `Container "<name>" has been disposed`.
+
+Пример:
+
+```ts
+import { Container, ContainerDisposedError, createToken } from "@ivlev-dev/silent-di";
+
+const root = new Container("app");
+const token = createToken<string>("slow");
+root.bind(token, async () => {
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  return "value";
+});
+
+const pending = root.resolve(token);
+root.dispose();
+
+try {
+  await pending;
+} catch (error) {
+  if (error instanceof ContainerDisposedError) {
+    console.log(error.container === root); // true
+  }
+}
+```
+
+Ограничения: ошибка приходит отклонённым промисом из `resolve` и синхронно из `resolveSync`/`bind`/`createScope`. Повторный `dispose()` остаётся no-op. Инстанс, созданный отложенной фабрикой после `dispose`, освобождается один раз, даже если `resolve` уже отклонён: через `[Symbol.dispose]`, а при его отсутствии — методом `dispose()`.
+
 ### Интерфейсы и автопоиск реализаций
 
 Рантайм-контейнер работает только с токенами. Автопоиск конкретной реализации интерфейса выполняется компилятором: сканер индекса строит отображение `интерфейс → список реализаций`, и при компиляции конструктора, принимающего интерфейс, подставляется единственная найденная реализация (её класс становится токеном). Ограничения описаны в разделе «Интеграция с компилятором».
@@ -95,7 +138,7 @@ try {
 
 - `singleton` — экземпляр кешируется в контейнере-владельце привязки и разделяется между всеми скоупами, которые обращаются к этой привязке.
 - `scoped` — экземпляр кешируется в контейнере, с которого начался `resolve`, и не разделяется между разными скоупами.
-- `transient` — после успешного разрешения значение не хранится в долговременном кеше; каждый последующий `resolve` создаёт новый экземпляр. При параллельных вызовах до завершения разрешения разделяется один промис.
+- `transient` — после успешного разрешения значение не хранится в долговременном кеше; каждый последующий `resolve` создаёт новый экземпляр. При параллельных вызовах до завершения разрешения разделяется один промис. Transient-инстанс принадлежит вызывающему коду: контейнер не освобождает его ни при rebind, ни при `clearCache`, ни при `dispose`; освобождение — ответственность того, кто получил значение.
 
 Дочерние скоупы создаются через `createScope(name?)` и наследуют привязки родителя.
 
@@ -134,7 +177,9 @@ Singleton и `scoped` в одном контейнере совместимы: �
 
 ### Кеш промисов
 
-Для каждого токена в подходящем контейнере хранится `Promise` разрешения. Параллельные `resolve` одного токена получают один и тот же промис. При ошибке factory кеш очищается, следующий `resolve` повторяет попытку. Транзиент очищает кеш после завершения. `clearCache(token?)` сбрасывает кеш и `resolved`-значения.
+Для каждого токена в подходящем контейнере хранится `Promise` разрешения. Параллельные `resolve` одного токена получают один и тот же промис. При ошибке factory кеш очищается, следующий `resolve` повторяет попытку. Транзиент очищает кеш после завершения. `clearCache(token?)`, `bind`, `bindValue` и смена scope сбрасывают кеш и `resolved`-значения, освобождая удалённые инстансы через `[Symbol.dispose]` (одно значение — не более одного раза за операцию; значения, которые остаются под другим токеном, не освобождаются).
+
+Если контейнер освобождается, пока фабрика ещё выполняется, все ожидающие `resolve` этого контейнера отклоняются `ContainerDisposedError`; поздно созданный инстанс освобождается один раз (для `singleton`/`scoped`) через `[Symbol.dispose]`, а при его отсутствии — методом `dispose()`.
 
 ### Обнаружение циклов
 
@@ -152,6 +197,8 @@ class Container {
   readonly implicitBindings: ImplicitBindingMode;
   constructor(name?: string, parent?: Container, options?: ContainerOptions);
   bind<T = unknown>(token: unknown, factory?: unknown): BindingBuilder;
+  bindClass<T = unknown>(token: unknown, ctor: new (...args: never[]) => T): BindingBuilder;
+  bindFactory<T = unknown>(token: unknown, factory: Factory<T>): BindingBuilder;
   bindValue<T>(token: unknown, value: T): void;
   resolve<T = unknown>(token: unknown): Promise<T>;
   resolveSync<T = unknown>(token: unknown): T;
@@ -167,7 +214,7 @@ class Container {
 }
 ```
 
-Описание: асинхронный контейнер зависимостей. Хранит привязки, кеш и дочерние скоупы. При передаче `parent` привязки разрешаются с учётом иерархии родителя, а сам контейнер регистрируется как ребёнок родителя. `bindValue` регистрирует готовое значение и сразу кладёт его в `resolved`, поэтому `peek`/`peekValue` синхронно возвращают его без `resolve`. Поле `implicitBindings` содержит текущий режим неявных биндингов (`"allow"`, `"warn"` или `"error"`), унаследованный при создании скоупа через `createScope`.
+Описание: асинхронный контейнер зависимостей. Хранит привязки, кеш и дочерние скоупы. При передаче `parent` привязки разрешаются с учётом иерархии родителя, а сам контейнер регистрируется как ребёнок родителя. `bindValue` регистрирует готовое значение и сразу кладёт его в `resolved`, поэтому `peek`/`peekValue` синхронно возвращают его без `resolve`. `bindClass` всегда создаёт класс через `new`/`[DI_CREATE]`, `bindFactory` всегда вызывает функцию-фабрику и никогда не применяет `new`. Поле `implicitBindings` содержит текущий режим неявных биндингов (`"allow"`, `"warn"` или `"error"`), унаследованный при создании скоупа через `createScope`.
 
 Пример:
 
@@ -210,7 +257,7 @@ root.createScope("request");
 console.log(root.snapshot().scopes); // 1
 ```
 
-Ограничения: глубина обхода ограничена 64 уровнями; для disposed-контейнера возвращается пустое дерево и нулевые счётчики.
+Ограничения: глубина обхода ограничена 64 уровнями; узлы глубже лимита не попадают в `children` (и их счётчики не агрегируются), отдельного флага «дерево обрезано» в `ContainerSnapshot` нет — это известное ограничение диагностического снимка. Для disposed-контейнера возвращается пустое дерево и нулевые счётчики.
 
 ### `container`
 
@@ -403,6 +450,31 @@ const factory: Factory<string> = (container: Container) => container.name;
 
 Ограничения: синхронный результат автоматически оборачивается в промис при вызове; исключения внутри фабрики отклоняют промис разрешения.
 
+### `bindClass` / `bindFactory`
+
+Сигнатуры:
+
+```ts
+function bindClass<T = unknown>(token: unknown, ctor: new (...args: never[]) => T): BindingBuilder;
+function bindFactory<T = unknown>(token: unknown, factory: Factory<T>): BindingBuilder;
+```
+
+Описание: явные формы регистрации для случаев, когда эвристика `bind` неоднозначна. `bindClass` всегда создаёт экземпляр через `new` или `[DI_CREATE]`; `bindFactory` всегда вызывает функцию и никогда не применяет `new`. Те же операции доступны как методы `Container.bindClass` и `Container.bindFactory`. Экспортируемые функции используют глобальный `container`.
+
+Пример:
+
+```ts
+import { bindClass, bindFactory, createToken } from "@ivlev-dev/silent-di";
+
+const mapToken = createToken<Map<string, number>>("Map");
+const configToken = createToken<{ mode: string }>("Config");
+
+bindClass(mapToken, Map);
+bindFactory(configToken, () => ({ mode: "test" }));
+```
+
+Ограничения: `bindClass` ожидает конструктор — стрелочная функция не подойдёт и приведёт к ошибке при `resolve`; `bindFactory` ожидает функцию-фабрику. Не-функция отклоняется `TypeError` уже при регистрации. Скоуп по умолчанию — `singleton`, дальнейшая настройка — через возвращённый `BindingBuilder`.
+
 ### `Binding`
 
 Сигнатура:
@@ -556,11 +628,17 @@ const t2 = await root.resolve(transientToken);
 
 ### `Container.dispose`
 
-Помечает контейнер как disposed, вызывает `onDispose`-хуки в порядке регистрации, освобождает разрешённые инстансы в порядке LIFO (вызывая `[Symbol.dispose]`, если он есть), очищает кеш, привязки и неявные токены, удаляет контейнер из `children` родителя, рекурсивно dispose-ит детей. Повторный вызов не делает ничего. Исключения хуков и `[Symbol.dispose]` не прерывают очистку: после неё выбрасывается первая ошибка или `AggregateError`.
+Помечает контейнер как disposed, отклоняет незавершённые `resolve` этого контейнера `ContainerDisposedError`, затем вызывает `onDispose`-хуки в порядке регистрации, освобождает разрешённые инстансы в порядке LIFO (вызывая `[Symbol.dispose]`, если он есть), очищает кеш, привязки и неявные токены, удаляет контейнер из `children` родителя, рекурсивно dispose-ит детей. Повторный вызов не делает ничего. Исключения хуков и `[Symbol.dispose]` не прерывают очистку: после неё выбрасывается первая ошибка или `AggregateError`.
+
+Инстанс, созданный отложенной фабрикой уже после `dispose`, освобождается ровно один раз (`singleton`/`scoped`): вызывается `[Symbol.dispose]`, а если его нет — обычный метод `dispose()`. Если объявлены оба, вызывается только `[Symbol.dispose]` (без двойного освобождения). `transient` принадлежит вызывающему и не освобождается.
 
 ### `Container.clearCache`
 
-Без аргумента очищает кеш, `resolved` и `resolving` текущего контейнера и всех потомков. С аргументом-токеном очищает только этот токен в текущем контейнере и потомках.
+Без аргумента очищает кеш, `resolved` и `resolving` текущего контейнера и всех потомков. С аргументом-токеном очищает только этот токен в текущем контейнере и потомках. Удалённые инстансы освобождаются через `[Symbol.dispose]`: одно значение — не более одного раза за операцию, ошибки освобождения подавляются и не мешают дальнейшей регистрации. Значение, которое осталось под другим токеном в том же поддереве, не освобождается.
+
+### `Container.onDispose`
+
+Регистрирует хук освобождения. Если контейнер уже disposed, хук выполняется сразу же (симметрично `registerCleanup` в reactivity), а не игнорируется.
 
 ### Родительские скоупы и наследование
 
@@ -588,8 +666,10 @@ const viewScope = root.createScope("view:home");
 
 - `has(token)` возвращает `false` (привязки очищены).
 - `peek(token)` возвращает `undefined`.
-- `resolve(token)` возвращает отклонённый промис `"Container ... has been disposed"`.
-- `resolveSync(token)`, `createScope()` и `bind()` выбрасывают синхронно.
+- `resolve(token)` возвращает отклонённый промис `ContainerDisposedError` (`"Container ... has been disposed"`).
+- Незавершённые на момент `dispose` `resolve` отклоняются `ContainerDisposedError`, а поздно созданный `singleton`/`scoped`-инстанс освобождается один раз через `[Symbol.dispose]` или `dispose()`.
+- `resolveSync(token)`, `createScope()` и `bind()` выбрасывают синхронно `ContainerDisposedError`.
+- `onDispose(fn)` выполняет `fn` сразу.
 - Вызов `dispose()` повторно — no-op.
 
 ## Ошибки
@@ -597,8 +677,10 @@ const viewScope = root.createScope("view:home");
 - `CircularDependencyError` — возникает при циклической зависимости. Поле `path: unknown[]` содержит путь из токенов.
 - `InvalidScopeError` — singleton-фабрика разрешает `scoped`-токен вне контейнера-владельца; поля `singletonToken`, `scopedToken`, `owner`.
 - `MissingBindingError` — в режиме `implicitBindings: "error"` `resolve` незабинженного класса отклоняется этой ошибкой; поля `token`, `container`. Экземпляр не создаётся.
+- `ContainerDisposedError` — обращение к освобождённому контейнеру или отклонение незавершённого `resolve` при `dispose`; поле `container`.
 - Отсутствующая привязка — `resolve` неизвестного токена (не функции-класса и не зарегистрированного) возвращает отклонённый промис с ошибкой `Error("Async DI: no binding registered for token ...")`.
-- Вызов после `dispose` — `resolve` возвращает отклонённый промис с `Error("Container \"name\" has been disposed")`.
+- Вызов после `dispose` — `resolve` возвращает отклонённый промис с `ContainerDisposedError("Container \"name\" has been disposed")`.
+- `bind(token, Ctor)` для встроенного/ES5-класса без `new` — `TypeError` с подсказкой использовать `class`/`bindClass`/`bindFactory`; исходная ошибка доступна в `cause`.
 - `resolve(undefined)` — отклонённый промис с `Error("Async DI: resolve<T>() must be transformed by silentwire before runtime")`.
 
 ## Интеграция с компилятором
