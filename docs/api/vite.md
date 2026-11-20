@@ -62,6 +62,7 @@ export default defineConfig({
 | `view` | `boolean` | `true` | Включить view/VM-рантайм. При `false` вырезает `component-view` и генерирует lazy-чанк только при наличии VM. |
 | `hydrate` | `boolean` | `true` | Включить клиентскую гидрацию. При `false` отключаются adoption-план и `staticRows` в компиляторе, из стартового чанка вырезаются hydration-ветки и прокси, а `config` ставит `define.__SILENT_HYDRATE__ = "false"`; вызов `hydrate()` в такой сборке бросает `Error`. Используйте только для mount-only приложений. |
 | `di` | `"allow" \| "warn" \| "error"` | `"warn"` | Политика DI-диагностик компилятора: `allow` — игнорировать, `warn` — выводить через `this.warn`, `error` — бросать ошибку в `transform`. |
+| `cacheLimit` | `number` | `4096` | Сколько записей персистентного кеша трансформаций хранить в `config.cacheDir/silent-transform`. Prune выполняется после `buildStart` отложенно (`setTimeout(0)`), чтобы не задерживать старт сборки; самые старые записи удаляются по `mtime`. |
 
 `ResolvedOptions` и `resolveOptions` — внутренние детали пакета: в `package.json` экспортируется только `"."`, поэтому через публичные пути они недоступны. `DEFAULT_INCLUDE`, `DEFAULT_EXCLUDE`, `DEFAULT_RUNTIME`, `matchesPattern`, `cleanModuleId`, `isVirtualModule`, `isInsideRoot`, `isSourceModule` определены в `options.ts` и используются плагином.
 
@@ -73,7 +74,7 @@ export default defineConfig({
 function resolveOptions(options?: SilentOptions): ResolvedOptions;
 ```
 
-Нормализует пользовательские опции: подставляет значения по умолчанию, разрешает `root` относительно `process.cwd()`. Возвращает объект с обязательными полями `include`, `exclude`, `root`, `swc`, `requirePreloader`, `runtime`, `hmr`, `index`, `view`, `hydrate`, `di`.
+Нормализует пользовательские опции: подставляет значения по умолчанию, разрешает `root` относительно `process.cwd()`. Возвращает объект с обязательными полями `include`, `exclude`, `root`, `swc`, `requirePreloader`, `runtime`, `hmr`, `index`, `view`, `hydrate`, `di`, `cacheLimit`.
 
 #### `DiMode`
 
@@ -104,6 +105,7 @@ interface ResolvedOptions {
   view: boolean;
   hydrate: boolean;
   di: DiMode;
+  cacheLimit: number;
 }
 ```
 
@@ -128,6 +130,12 @@ interface ResolvedOptions {
 6. `handleHotUpdate({ file })` — то же для HMR-обновлений исходных модулей.
 
 Индекс кешируется в памяти плагина: несколько `transform` не вызывают повторный scan.
+
+### Ограничение: входящая sourcemap
+
+Плагин возвращает карту относительно входного кода и не читает `transformOptions.inMap`. Если перед `silent` отработал другой `pre`-плагин и передал свою карту, итоговая sourcemap будет неверной: композиция карт требует поддержки в нативном аддоне.
+
+Правило: `silent` должен быть единственным `pre`-плагином, изменяющим TS/TSX/JS/JSX. В dev-режиме (`config.command === "serve"`) или при наличии `inMap` плагин один раз на инстанс выводит предупреждение «silent должен быть единственным pre-плагином; входящая sourcemap не учитывается». Обычная сборка без `inMap` предупреждений не выводит.
 
 ### Компиляция TS/TSX
 

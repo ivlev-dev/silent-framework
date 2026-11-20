@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { TRANSFORM_CACHE_LIMIT } from "./cache.js";
 
 export type DiMode = "allow" | "warn" | "error";
 
@@ -14,6 +15,7 @@ export interface SilentOptions {
   view?: boolean;
   hydrate?: boolean;
   di?: DiMode;
+  cacheLimit?: number;
 }
 
 export interface ResolvedOptions {
@@ -28,12 +30,20 @@ export interface ResolvedOptions {
   view: boolean;
   hydrate: boolean;
   di: DiMode;
+  cacheLimit: number;
 }
 
 export const DEFAULT_INCLUDE = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
 export const DEFAULT_EXCLUDE = /node_modules/;
 export const DEFAULT_RUNTIME = "@ivlev-dev/silent-core";
 export const DEFAULT_DI: DiMode = "warn";
+
+function normalizeCacheLimit(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value) || value < 0) {
+    return TRANSFORM_CACHE_LIMIT;
+  }
+  return Math.floor(value);
+}
 
 export function resolveOptions(options: SilentOptions = {}): ResolvedOptions {
   return {
@@ -48,12 +58,20 @@ export function resolveOptions(options: SilentOptions = {}): ResolvedOptions {
     view: options.view ?? true,
     hydrate: options.hydrate ?? true,
     di: options.di ?? DEFAULT_DI,
+    cacheLimit: normalizeCacheLimit(options.cacheLimit),
   };
 }
 
+// Скомпилированные копии шаблонов без флагов g/y: создаются один раз на RegExp.
+const normalizedPatterns = new WeakMap<RegExp, RegExp>();
+
 export function matchesPattern(pattern: RegExp, value: string): boolean {
-  const flags = pattern.flags.replace(/[gy]/g, "");
-  return new RegExp(pattern.source, flags).test(value);
+  let normalized = normalizedPatterns.get(pattern);
+  if (normalized === undefined) {
+    normalized = new RegExp(pattern.source, pattern.flags.replace(/[gy]/g, ""));
+    normalizedPatterns.set(pattern, normalized);
+  }
+  return normalized.test(value);
 }
 
 export function cleanModuleId(id: string): string {

@@ -6,6 +6,7 @@ import {
   hashContent,
   pruneTransformCache,
   readTransformCache,
+  TRANSFORM_CACHE_LIMIT,
   transformCacheKey,
   writeTransformCache,
 } from "../src/cache.js";
@@ -70,5 +71,9 @@ describe("transform cache", () => {
   it("хэш содержимого стабилен и различает входы", () => {
     expect(hashContent("value")).toBe(hashContent("value"));
     expect(hashContent("value")).not.toBe(hashContent("other"));
+  });
+
+  it("по умолчанию хранит до 4096 записей", () => {
+    expect(TRANSFORM_CACHE_LIMIT).toBe(4096);
   });
 });

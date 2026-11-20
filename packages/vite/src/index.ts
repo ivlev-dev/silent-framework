@@ -24,6 +24,9 @@ import {
 
 const EMPTY_INDEX_JSON = JSON.stringify({ interfaces: {}, values: {} });
 const DI_MESSAGE_PREFIX = "[silent-vite] DI: ";
+const SOURCE_MAP_WARNING =
+  "[silent-vite] silent должен быть единственным pre-плагином: " +
+  "входящая sourcemap (inMap) не учитывается, карта остаётся относительной входного файла.";
 
 interface DiagnosticContext {
   warn: (message: string) => void;
@@ -48,6 +51,11 @@ function reportDiagnostics(
   }
 }
 
+function readIncomingMap(options: unknown): unknown {
+  if (typeof options !== "object" || options === null) return undefined;
+  return (options as Record<string, unknown>).inMap;
+}
+
 export function silent(options: SilentOptions = {}): Plugin {
   const opts = resolveOptions(options);
 
@@ -62,6 +70,8 @@ export function silent(options: SilentOptions = {}): Plugin {
   let swcPromise: ReturnType<typeof loadSwc> | null = null;
   let cacheDirectory: string | null = null;
   let transformVersion: string | null = null;
+  let serveMode = false;
+  let warnedIncomingMap = false;
 
   const buildOptionsJson = (ssr: boolean): string =>
     JSON.stringify({
@@ -148,12 +158,18 @@ export function silent(options: SilentOptions = {}): Plugin {
     },
     async buildStart() {
       await ensureIndex();
-      if (cacheDirectory !== null) {
-        pruneTransformCache(cacheDirectory);
+      const directory = cacheDirectory;
+      if (directory !== null) {
+        // Prune не должен задерживать старт: тысячи statSync на большом кеше.
+        const timer = setTimeout(() => {
+          pruneTransformCache(directory, opts.cacheLimit);
+        }, 0);
+        timer.unref();
       }
     },
     configResolved(config: ResolvedConfig) {
       cacheDirectory = join(config.cacheDir, "silent-transform");
+      serveMode = config.command === "serve";
       viteAliasSnapshot = viteAliases(config.resolve?.alias ?? [], opts.root);
       rebuildAliases();
       invalidateIndex();
@@ -184,6 +200,16 @@ export function silent(options: SilentOptions = {}): Plugin {
         typeof this?.warn === "function"
           ? { warn: (message: string): void => { this.warn(message); } }
           : undefined;
+      const incomingMap = readIncomingMap(transformOptions);
+      const hasIncomingMap = incomingMap !== undefined && incomingMap !== null;
+      if (!warnedIncomingMap && (hasIncomingMap || serveMode)) {
+        warnedIncomingMap = true;
+        if (pluginContext) {
+          pluginContext.warn(SOURCE_MAP_WARNING);
+        } else {
+          console.warn(SOURCE_MAP_WARNING);
+        }
+      }
       const emit = (result: NativeTransformResult): {
         code: string;
         map: string | null;

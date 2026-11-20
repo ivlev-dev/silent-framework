@@ -12,7 +12,7 @@ import { join } from "node:path";
 import type { NativeTransformResult } from "@ivlev-dev/silent-swc";
 
 const CACHE_FORMAT = "silent-transform-v1";
-export const TRANSFORM_CACHE_LIMIT = 1024;
+export const TRANSFORM_CACHE_LIMIT = 4096;
 
 export function hashContent(value: string): string {
   return createHash("sha256").update(value).digest("hex");

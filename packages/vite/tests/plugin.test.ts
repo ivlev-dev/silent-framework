@@ -1,10 +1,11 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import type { Plugin, ResolvedConfig } from "vite";
 import { silent } from "../src/index.js";
 import type { SilentOptions } from "../src/index.js";
+import { matchesPattern } from "../src/options.js";
 import { transform as nativeTransform, scan as nativeScan } from "@ivlev-dev/silent-swc";
 
 const transformMock = vi.mocked(nativeTransform);
@@ -22,7 +23,11 @@ interface CallableHooks {
   config?: () => { define?: Record<string, string> } | undefined;
   buildStart?: () => Promise<void> | void;
   configResolved?: (config: ResolvedConfig) => void;
-  transform?: (code: string, id: string) => Promise<unknown> | unknown;
+  transform?: (
+    code: string,
+    id: string,
+    options?: { ssr?: boolean; inMap?: unknown },
+  ) => Promise<unknown> | unknown;
   watchChange?: (id: string, change: { event: string }) => void;
   handleHotUpdate?: (context: { file: string }) => void;
 }
@@ -603,6 +608,104 @@ describe("silent()", () => {
     await plugin.transform?.("four", fileFor("src", "d.cts"));
 
     expect(transformMock).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe("входящая sourcemap", () => {
+  it("предупреждает один раз на инстанс, если задан inMap", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const plugin = createPlugin();
+      const file = fileFor("src", "map.ts");
+      await plugin.transform?.("code", file, { inMap: { version: 3 } });
+      await plugin.transform?.("code", file, { inMap: { version: 3 } });
+      await plugin.transform?.("code", file);
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      const message = String(warn.mock.calls[0]?.[0]);
+      expect(message).toContain("единственным pre-плагином");
+      expect(message).toContain("sourcemap");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("предупреждает в dev-режиме и молчит в обычной сборке", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const cacheDir = mkdtempSync(path.join(tmpdir(), "silent-vite-sourcemap-"));
+    cacheDirectories.push(cacheDir);
+    try {
+      const dev = createPlugin();
+      dev.configResolved?.({ cacheDir, command: "serve" } as unknown as ResolvedConfig);
+      await dev.transform?.("code", fileFor("src", "dev.ts"));
+      expect(warn).toHaveBeenCalledTimes(1);
+
+      warn.mockClear();
+      const build = createPlugin();
+      build.configResolved?.({ cacheDir, command: "build" } as unknown as ResolvedConfig);
+      await build.transform?.("code", fileFor("src", "build.ts"));
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+describe("кеш трансформаций", () => {
+  it("удаляет лишние записи по cacheLimit, не задерживая buildStart", async () => {
+    const cacheDir = mkdtempSync(path.join(tmpdir(), "silent-vite-cache-limit-"));
+    cacheDirectories.push(cacheDir);
+    const directory = path.join(cacheDir, "silent-transform");
+    mkdirSync(directory, { recursive: true });
+    for (let index = 0; index < 3; index += 1) {
+      const file = path.join(directory, `key-${index}.json`);
+      writeFileSync(
+        file,
+        JSON.stringify({ code: "ok", map: null, diagnostics: [] }),
+      );
+      const time = new Date(Date.now() - (3 - index) * 1000);
+      utimesSync(file, time, time);
+    }
+
+    const plugin = createPlugin({ cacheLimit: 2 });
+    plugin.configResolved?.({ cacheDir, command: "build" } as unknown as ResolvedConfig);
+    await plugin.buildStart?.();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const names = readdirSync(directory)
+      .filter((name) => name.endsWith(".json"))
+      .sort();
+    expect(names).toEqual(["key-1.json", "key-2.json"]);
+  });
+});
+
+describe("matchesPattern", () => {
+  it("компилирует шаблон один раз на объект RegExp", () => {
+    const pattern = /\.ts$/;
+    let sourceReads = 0;
+    Object.defineProperty(pattern, "source", {
+      get: () => {
+        sourceReads += 1;
+        return "\\.ts$";
+      },
+    });
+
+    expect(matchesPattern(pattern, "a.ts")).toBe(true);
+    expect(matchesPattern(pattern, "b.ts")).toBe(true);
+    expect(matchesPattern(pattern, "c.css")).toBe(false);
+
+    expect(sourceReads).toBe(1);
+    expect(pattern.lastIndex).toBe(0);
+  });
+
+  it("не зависит от lastIndex при флагах g и y", () => {
+    const global = /a/g;
+    const sticky = /a/y;
+
+    expect(matchesPattern(global, "a")).toBe(true);
+    expect(matchesPattern(global, "a")).toBe(true);
+    expect(matchesPattern(sticky, "a")).toBe(true);
+    expect(matchesPattern(sticky, "a")).toBe(true);
   });
 });
 
