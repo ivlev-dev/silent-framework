@@ -9,6 +9,9 @@ import {
 } from "@ivlev-dev/silent-core";
 import { renderToString } from "../src/render.js";
 import { clearTemplateCache } from "../src/template-cache.js";
+import { createDocument } from "../src/dom/document.js";
+import { parseHtmlFragment } from "../src/dom/parser.js";
+import { ElementImpl } from "../src/dom/node.js";
 
 function render(view: () => Node): Promise<string> {
   return renderToString(view as unknown as AnyComponent).then((result) => result.html);
@@ -71,6 +74,29 @@ describe("raw-text SSR", () => {
     expect(await render(view)).toBe(
       '<textarea data-silent-a-0="" data-silent-text="">&lt;b&gt;&amp;</textarea>',
     );
+  });
+
+  it("нейтрализует <!-- в raw-text и не съедает следующий элемент", async () => {
+    const view = (): Node => {
+      const template = templateHoles(
+        '<script data-silent-a-0="" data-silent-text=""></script><p>after</p>',
+      )();
+      prop(
+        template.attrs[0]!,
+        "textContent",
+        () => "<!--<script>alert(1)</script>",
+      );
+      return template.node;
+    };
+
+    const html = await render(view);
+    expect(html).toContain("<\\!--<script>alert(1)<\\/script>");
+    expect(html).toContain("</script><p>after</p>");
+
+    const nodes = parseHtmlFragment(createDocument(), html);
+    const paragraph = nodes[1];
+    expect(paragraph).toBeInstanceOf(ElementImpl);
+    expect((paragraph as ElementImpl).tagName).toBe("P");
   });
 });
 
@@ -181,7 +207,7 @@ describe("select на SSR", () => {
     expect(await render(view)).toContain('<option value="b" selected>b</option>');
   });
 
-  it("не выводит value для select, созданного через DOM", async () => {
+  it("выводит selected для value у select, созданного через DOM", async () => {
     const view = (): Node => {
       const select = document.createElement("select");
       const first = document.createElement("option");
@@ -192,12 +218,13 @@ describe("select на SSR", () => {
       second.textContent = "b";
       select.appendChild(first);
       select.appendChild(second);
-      attr(select, "value", () => "b");
+      prop(select, "value", () => "b");
       return select;
     };
     const html = await render(view);
     expect(html.startsWith("<select>")).toBe(true);
     expect(html.slice(0, html.indexOf(">") + 1)).not.toContain("value=");
-    expect(html).not.toContain("selected");
+    expect(html).toContain('<option value="b" selected="">b</option>');
+    expect(html).not.toContain('<option value="a" selected="">');
   });
 });

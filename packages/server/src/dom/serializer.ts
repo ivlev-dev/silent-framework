@@ -29,6 +29,7 @@ const REPLACE_ATTRIBUTE = /[&<>"]/g;
 
 export interface PartSink {
   readonly stream?: boolean | undefined;
+  readonly markers?: boolean | undefined;
   push(...values: string[]): void;
 }
 
@@ -93,7 +94,7 @@ function pushAttributes(element: ElementImpl, parts: PartSink): void {
   }
 }
 
-function pushElement(element: ElementImpl, parts: PartSink): void {
+function pushElement(element: ElementImpl, parts: PartSink, markers: boolean): void {
   const tag = element.localName;
   parts.push("<", tag);
   pushAttributes(element, parts);
@@ -101,10 +102,13 @@ function pushElement(element: ElementImpl, parts: PartSink): void {
   if (element.namespaceURI === HTML_NAMESPACE && VOID_ELEMENTS.has(tag)) {
     return;
   }
+  if (element.namespaceURI === HTML_NAMESPACE && tag === "select") {
+    element.syncSelectOptions();
+  }
   if (element.namespaceURI === HTML_NAMESPACE && RAW_TEXT_ELEMENTS.has(tag)) {
-    pushRawChildren(element, parts);
+    pushRawChildren(element, parts, markers);
   } else {
-    pushChildren(element, parts);
+    pushChildren(element, parts, markers);
   }
   parts.push("</", tag, ">");
 }
@@ -114,7 +118,7 @@ interface RenderableNode {
   render?: () => string;
 }
 
-export function pushNode(node: DomNode, parts: PartSink): void {
+export function pushNode(node: DomNode, parts: PartSink, markers = true): void {
   const raw = node as unknown as RenderableNode;
   const renderInto = raw.renderInto;
   if (parts.stream === true && typeof renderInto === "function") {
@@ -133,7 +137,7 @@ export function pushNode(node: DomNode, parts: PartSink): void {
   switch (node.nodeType) {
     case NODE_ELEMENT:
       if (node instanceof ElementImpl) {
-        pushElement(node, parts);
+        pushElement(node, parts, markers);
       }
       return;
     case NODE_TEXT:
@@ -143,30 +147,33 @@ export function pushNode(node: DomNode, parts: PartSink): void {
       return;
     case NODE_COMMENT:
       if (node instanceof TextImpl) {
+        if (!markers && node.data.startsWith("silent-")) {
+          return;
+        }
         parts.push("<!--", node.data, "-->");
       }
       return;
     case NODE_DOCUMENT_FRAGMENT:
-      pushChildren(node, parts);
+      pushChildren(node, parts, markers);
       return;
     default:
       return;
   }
 }
 
-function pushChildren(node: DomNode, parts: PartSink): void {
+function pushChildren(node: DomNode, parts: PartSink, markers: boolean): void {
   for (const child of node.childNodes) {
-    pushNode(child, parts);
+    pushNode(child, parts, markers);
   }
 }
 
-function pushRawChildren(node: DomNode, parts: PartSink): void {
+function pushRawChildren(node: DomNode, parts: PartSink, markers: boolean): void {
   for (const child of node.childNodes) {
     if (child.nodeType === NODE_TEXT && child instanceof TextImpl) {
       parts.push(child.data);
       continue;
     }
-    pushNode(child, parts);
+    pushNode(child, parts, markers);
   }
 }
 
@@ -174,6 +181,7 @@ export function serializeNodeChunks(
   node: DomNode,
   chunkSize: number,
   emit: (chunk: string) => void,
+  markers = true,
 ): void {
   const buffer: string[] = [];
   let length = 0;
@@ -194,6 +202,7 @@ export function serializeNodeChunks(
   };
   const sink: PartSink = {
     stream: true,
+    markers,
     push(...values: string[]): void {
       for (const value of values) {
         if (value.length === 0) {
@@ -211,37 +220,59 @@ export function serializeNodeChunks(
   flush();
 }
 
-export function serializeNode(node: DomNode): string {
+export function serializeNode(node: DomNode, markers = true): string {
   const raw = node as unknown as RenderableNode;
-  const render = raw.render;
-  if (typeof render === "function") {
-    return render.call(node);
+  if (markers) {
+    const render = raw.render;
+    if (typeof render === "function") {
+      return render.call(node);
+    }
+  }
+  if (!markers) {
+    const out: string[] = [];
+    const sink: PartSink = {
+      stream: true,
+      markers: false,
+      push(...values: string[]): void {
+        for (const value of values) {
+          if (value !== "") {
+            out.push(value);
+          }
+        }
+      },
+    };
+    pushNode(node, sink, false);
+    return out.join("");
   }
   const parts = acquireParts();
   try {
-    pushNode(node, parts);
+    pushNode(node, parts, true);
     return parts.join("");
   } finally {
     releaseParts(parts);
   }
 }
 
-export function serializeChildren(node: DomNode): string {
+export function serializeChildren(node: DomNode, markers = true): string {
   const parts = acquireParts();
   try {
-    pushChildren(node, parts);
+    pushChildren(node, parts, markers);
     return parts.join("");
   } finally {
     releaseParts(parts);
   }
 }
 
-export function serializeBetween(start: DomNode, end: DomNode): string {
+export function serializeBetween(
+  start: DomNode,
+  end: DomNode,
+  markers = true,
+): string {
   const parts = acquireParts();
   try {
     let node = start.nextSibling;
     while (node !== null && node !== end) {
-      pushNode(node, parts);
+      pushNode(node, parts, markers);
       node = node.nextSibling;
     }
     return parts.join("");

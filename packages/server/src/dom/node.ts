@@ -242,6 +242,7 @@ export class ElementImpl extends NodeImpl implements DomElement {
   private attributesValue: AttributesImpl | null = null;
   private styleValue: StyleImpl | null = null;
   private valueState = "";
+  private selectValueSet = false;
 
   get attributes(): AttributesImpl {
     return (this.attributesValue ??= new AttributesImpl());
@@ -269,6 +270,11 @@ export class ElementImpl extends NodeImpl implements DomElement {
 
   setAttribute(name: string, value: string): void {
     const normalized = this.normalizeName(name);
+    if (normalized === "value" && this.tagName === "SELECT") {
+      this.valueState = String(value);
+      this.selectValueSet = true;
+      return;
+    }
     if (normalized === "style") {
       this.style.cssText = String(value);
       return;
@@ -282,6 +288,11 @@ export class ElementImpl extends NodeImpl implements DomElement {
 
   removeAttribute(name: string): void {
     const normalized = this.normalizeName(name);
+    if (normalized === "value" && this.tagName === "SELECT") {
+      this.valueState = "";
+      this.selectValueSet = false;
+      return;
+    }
     if (normalized === "style") {
       if (this.styleValue !== null) {
         this.styleValue.cssText = "";
@@ -301,6 +312,10 @@ export class ElementImpl extends NodeImpl implements DomElement {
   set value(next: string | number | boolean | null | undefined) {
     const text = next === null || next === undefined ? "" : String(next);
     this.valueState = text;
+    if (this.tagName === "SELECT") {
+      this.selectValueSet = true;
+      return;
+    }
     if (this.tagName === "TEXTAREA") {
       this.textContent = text;
       return;
@@ -310,6 +325,27 @@ export class ElementImpl extends NodeImpl implements DomElement {
       return;
     }
     this.setAttribute("value", text);
+  }
+
+  syncSelectOptions(): void {
+    if (this.tagName !== "SELECT" || !this.selectValueSet) {
+      return;
+    }
+    const multiple = this.hasAttribute("multiple");
+    let matched = false;
+    for (const child of this.childList) {
+      if (!(child instanceof ElementImpl) || child.localName !== "option") {
+        continue;
+      }
+      const optionValue = child.getAttribute("value") ?? child.textContent ?? "";
+      const selected = optionValue === this.valueState && (multiple || !matched);
+      if (selected) {
+        matched = true;
+        child.setAttribute("selected", "");
+      } else {
+        child.removeAttribute("selected");
+      }
+    }
   }
 
   get innerHTML(): string {

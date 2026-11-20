@@ -49,7 +49,7 @@ export function pushValue(value: unknown, parts: PartSink): void {
     return;
   }
   if (typeof Node !== "undefined" && value instanceof Node) {
-    pushNode(value as unknown as DomNode, parts);
+    pushNode(value as unknown as DomNode, parts, parts.markers !== false);
     return;
   }
   const text = escapeText(String(value));

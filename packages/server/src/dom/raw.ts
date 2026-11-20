@@ -14,6 +14,150 @@ export interface RawHole {
 const INSERT_START = "<!--silent-insert-->";
 const INSERT_END = "<!--silent-insert-end-->";
 
+const SELECT_CHUNK = /<\/?select\b[^>]*>|<option\b[^>]*>/gi;
+const OPTION_VALUE = /\svalue\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i;
+const SELECTED_ATTR = /\sselected(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?/i;
+
+interface SelectState {
+  readonly value: string;
+  multiple: boolean;
+  matched: boolean;
+}
+
+function isAttributeBoundary(char: string | undefined): boolean {
+  return (
+    char === undefined ||
+    char === " " ||
+    char === "\t" ||
+    char === "\n" ||
+    char === "\r" ||
+    char === "\f" ||
+    char === "/" ||
+    char === ">"
+  );
+}
+
+class MarkerAttrStripper {
+  private inTag = false;
+  private quote: string | null = null;
+
+  strip(value: string): string {
+    let out = "";
+    let index = 0;
+    while (index < value.length) {
+      const char = value[index] ?? "";
+      if (!this.inTag) {
+        out += char;
+        index += 1;
+        if (char === "<") {
+          this.inTag = true;
+          this.quote = null;
+        }
+        continue;
+      }
+      if (this.quote !== null) {
+        out += char;
+        index += 1;
+        if (char === this.quote) {
+          this.quote = null;
+        }
+        continue;
+      }
+      if (char === ">") {
+        this.inTag = false;
+        out += char;
+        index += 1;
+        continue;
+      }
+      if (
+        (char === " " || char === "\t" || char === "\n" || char === "\r") &&
+        value.startsWith("data-silent-", index + 1)
+      ) {
+        let cursor = index + 1;
+        while (cursor < value.length && !isAttributeBoundary(value[cursor])) {
+          if (value[cursor] === "=") {
+            break;
+          }
+          cursor += 1;
+        }
+        if (value[cursor] === "=") {
+          cursor += 1;
+          const quote = value[cursor];
+          if (quote === "\"" || quote === "'") {
+            cursor += 1;
+            while (cursor < value.length && value[cursor] !== quote) {
+              cursor += 1;
+            }
+            if (cursor < value.length) {
+              cursor += 1;
+            }
+          } else {
+            while (cursor < value.length && !isAttributeBoundary(value[cursor])) {
+              cursor += 1;
+            }
+          }
+        }
+        index = cursor;
+        continue;
+      }
+      out += char;
+      index += 1;
+    }
+    return out;
+  }
+}
+
+function stripHoleMarker(value: string, marker: string): string {
+  if (marker !== "" && value.startsWith(marker)) {
+    return value.slice(marker.length);
+  }
+  return value;
+}
+
+function addSelected(tag: string): string {
+  if (SELECTED_ATTR.test(tag)) {
+    return tag;
+  }
+  const closing = tag.endsWith("/>") ? "/>" : ">";
+  return tag.slice(0, tag.length - closing.length) + " selected" + closing;
+}
+
+function removeSelected(tag: string): string {
+  return tag.replace(SELECTED_ATTR, "");
+}
+
+function applySelectChunk(text: string, state: { active: SelectState | null }): string {
+  const active = state.active;
+  if (active === null && text.indexOf("<") === -1) {
+    return text;
+  }
+  if (active !== null && /\smultiple(?=[\s/>])/i.test(text)) {
+    active.multiple = true;
+  }
+  return text.replace(SELECT_CHUNK, (tag: string) => {
+    if (tag.startsWith("</")) {
+      state.active = null;
+      return tag;
+    }
+    const name = tag.slice(1, 2).toLowerCase();
+    if (name === "s") {
+      return tag;
+    }
+    const current = state.active;
+    if (current === null) {
+      return tag;
+    }
+    const match = OPTION_VALUE.exec(tag);
+    const optionValue =
+      match === null ? "" : (match[1] ?? match[2] ?? match[3] ?? "");
+    if (optionValue === current.value && (current.multiple || !current.matched)) {
+      current.matched = true;
+      return addSelected(tag);
+    }
+    return removeSelected(tag);
+  });
+}
+
 function isTextValue(
   value: unknown,
 ): value is string | number | bigint | boolean | null | undefined {
@@ -97,10 +241,11 @@ class RawSlot {
 export type RawContentMode = "text" | "raw" | "html";
 
 function rawText(value: string, pattern: RegExp | null): string {
+  const safe = value.indexOf("<!--") === -1 ? value : value.replace(/<!--/g, "<\\!--");
   if (pattern === null) {
-    return value;
+    return safe;
   }
-  return value.replace(pattern, (match) => "<\\/" + match.slice(2));
+  return safe.replace(pattern, (match) => "<\\/" + match.slice(2));
 }
 
 function staticAttributeText(name: string, value: unknown): string {
@@ -224,6 +369,11 @@ export class RawAttr {
       }
     }
     if (name === "value" && this.tag === "select") {
+      if (value === null || value === undefined || value === false) {
+        this.hole.parentNode.deleteSelectValue(this.hole.index);
+        return;
+      }
+      this.hole.parentNode.setSelectValue(this.hole.index, String(value));
       return;
     }
     const statics = this.statics;
@@ -294,6 +444,7 @@ export class RawNode extends NodeImpl {
   private readonly wrap: boolean;
   private readonly slots: Array<string | RawSlot | undefined>;
   private readonly holeList: RawHole[];
+  private readonly selectValues = new Map<number, string>();
 
   constructor(
     parts: readonly string[],
@@ -342,79 +493,90 @@ export class RawNode extends NodeImpl {
   }
 
   renderInto(parts: import("./serializer.js").PartSink): void {
-    const source = this.parts;
-    const count = this.indexes.length;
-    const head = source[0];
-    if (head !== undefined && head !== "") {
-      parts.push(head);
-    }
-    const tails = this.tails;
-    if (tails !== undefined) {
-      for (let position = 0; position < count; position += 1) {
-        this.pushSlot(position, parts);
-        const tail = tails[position];
-        if (tail !== undefined && tail !== "") {
-          parts.push(tail);
-        }
-      }
-      return;
-    }
-    const markers = this.markers;
-    for (let position = 0; position < count; position += 1) {
-      this.pushSlot(position, parts);
-      const marker = markers[position];
-      if (marker !== undefined && marker !== "") {
-        parts.push(marker);
-      }
-      const tail = source[position + 1];
-      if (tail !== undefined && tail !== "") {
-        parts.push(tail);
-      }
+    const text = this.renderText(parts.markers !== false);
+    if (text !== "") {
+      parts.push(text);
     }
   }
 
-  private pushSlot(position: number, parts: import("./serializer.js").PartSink): void {
-    const slot = this.slots[position];
-    if (slot === undefined) {
-      return;
-    }
-    if (typeof slot === "string") {
-      if (slot !== "") {
-        parts.push(slot);
-      }
-      return;
-    }
-    if (!this.wrap) {
-      pushValue(slot.value, parts);
-      return;
-    }
-    parts.push(INSERT_START);
-    pushValue(slot.value, parts);
-    parts.push(INSERT_END);
+  setSelectValue(position: number, value: string): void {
+    this.selectValues.set(position, value);
+  }
+
+  deleteSelectValue(position: number): void {
+    this.selectValues.delete(position);
   }
 
   render(): string {
+    return this.renderText(true);
+  }
+
+  private renderText(markersEnabled: boolean): string {
+    const output: string[] = [];
     const source = this.parts;
     const count = this.indexes.length;
-    let out = source[0] ?? "";
+    const selectState: { active: SelectState | null } = { active: null };
+    const stripper = markersEnabled ? null : new MarkerAttrStripper();
+    const pushStatic = (value: string | undefined): void => {
+      if (value === undefined || value === "") {
+        return;
+      }
+      const text = stripper === null ? value : stripper.strip(value);
+      const next = applySelectChunk(text, selectState);
+      if (next !== "") {
+        output.push(next);
+      }
+    };
+    const beginSelect = (position: number): void => {
+      const value = this.selectValues.get(position);
+      if (value === undefined) {
+        return;
+      }
+      const prefix = source[position] ?? "";
+      selectState.active = {
+        value,
+        multiple: /\smultiple(?=[\s/>])/i.test(prefix),
+        matched: false,
+      };
+    };
+    pushStatic(source[0]);
     const tails = this.tails;
     if (tails !== undefined) {
       for (let position = 0; position < count; position += 1) {
-        out += this.slotText(position);
-        out += tails[position] ?? "";
+        beginSelect(position);
+        const slot = this.slotText(position, markersEnabled);
+        if (slot !== "") {
+          output.push(slot);
+        }
+        const tail = tails[position];
+        if (tail !== undefined && tail !== "") {
+          pushStatic(
+            markersEnabled
+              ? tail
+              : stripHoleMarker(tail, this.markers[position] ?? ""),
+          );
+        }
       }
-      return out;
+      return output.join("");
     }
-    const markers = this.markers;
     for (let position = 0; position < count; position += 1) {
-      out += this.slotText(position);
-      out += markers[position] ?? "";
-      out += source[position + 1] ?? "";
+      beginSelect(position);
+      const slot = this.slotText(position, markersEnabled);
+      if (slot !== "") {
+        output.push(slot);
+      }
+      if (markersEnabled) {
+        const marker = this.markers[position];
+        if (marker !== undefined && marker !== "") {
+          output.push(marker);
+        }
+      }
+      pushStatic(source[position + 1]);
     }
-    return out;
+    return output.join("");
   }
 
-  private slotText(position: number): string {
+  private slotText(position: number, markersEnabled: boolean): string {
     const slot = this.slots[position];
     if (slot === undefined) {
       return "";
@@ -422,21 +584,26 @@ export class RawNode extends NodeImpl {
     if (typeof slot === "string") {
       return slot;
     }
-    const value = slot.value;
-    const nested = value as { render?: () => string } | null;
-    if (nested !== null && typeof nested === "object" && typeof nested.render === "function") {
-      const text = nested.render();
-      return this.wrap ? INSERT_START + text + INSERT_END : text;
+    const out: string[] = [];
+    const sink: import("./serializer.js").PartSink = {
+      stream: true,
+      markers: markersEnabled,
+      push(...values: string[]): void {
+        for (const value of values) {
+          if (value !== "") {
+            out.push(value);
+          }
+        }
+      },
+    };
+    if (this.wrap && markersEnabled) {
+      sink.push(INSERT_START);
     }
-    const parts: string[] = [];
-    if (this.wrap) {
-      parts.push(INSERT_START);
+    pushValue(slot.value, sink);
+    if (this.wrap && markersEnabled) {
+      sink.push(INSERT_END);
     }
-    pushValue(value, parts);
-    if (this.wrap) {
-      parts.push(INSERT_END);
-    }
-    return parts.length === 0 ? "" : parts.join("");
+    return out.join("");
   }
 
   override get textContent(): string {
@@ -453,11 +620,15 @@ export class RawNode extends NodeImpl {
       this.tails,
       this.bare,
       this.wrap,
-    );    for (let position = 0; position < this.slots.length; position += 1) {
+    );
+    for (let position = 0; position < this.slots.length; position += 1) {
       const value = this.slots[position];
       if (value !== undefined) {
         clone.slots[position] = value;
       }
+    }
+    for (const [position, value] of this.selectValues) {
+      clone.selectValues.set(position, value);
     }
     return clone;
   }

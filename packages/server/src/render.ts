@@ -18,12 +18,13 @@ export interface RenderOptions {
   readonly preloader?: Preloader | undefined;
   readonly onError?: ((error: unknown, component: AnyComponent) => void) | undefined;
   readonly markers?: boolean | undefined;
+  readonly signal?: AbortSignal | undefined;
+  readonly timeoutMs?: number | undefined;
 }
 
-const HYDRATION_MARKERS = /<!--silent-[^>]*-->|\sdata-silent-[a-z0-9-]+(?:="[^"]*")?/g;
-
-function stripMarkers(html: string): string {
-  return HYDRATION_MARKERS.test(html) ? html.replace(HYDRATION_MARKERS, "") : html;
+export interface SettleOptions {
+  readonly signal?: AbortSignal | undefined;
+  readonly timeoutMs?: number | undefined;
 }
 
 export interface RenderResult {
@@ -40,41 +41,128 @@ function finishTask(): void {
 
 export function enqueueRenderTask<T>(task: () => Promise<T>): Promise<T> {
   pendingTasks += 1;
-  if (pendingTasks === 1) {
-    const run = task();
-    queue = run.then(finishTask, finishTask);
-    return run;
-  }
-  const run = queue.then(task, task);
+  const previous = pendingTasks === 1 ? Promise.resolve() : queue;
+  const run = previous.then(task, task);
   queue = run.then(finishTask, finishTask);
   return run;
+}
+
+function abortFailure(): DOMException {
+  return new DOMException("Рендер отменён", "AbortError");
+}
+
+function timeoutFailure(timeoutMs: number): DOMException {
+  return new DOMException(`Рендер превысил таймаут ${timeoutMs} мс`, "TimeoutError");
+}
+
+interface SettleControl {
+  wait<T>(work: Promise<T>): Promise<T>;
+  throwIfFailed(): void;
+  dispose(): void;
+}
+
+function createSettleControl(options: SettleOptions): SettleControl {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let failed = false;
+  let failure: unknown = null;
+  let rejectGuard: ((reason: unknown) => void) | null = null;
+  const guard = new Promise<never>((_resolve, reject) => {
+    rejectGuard = reject;
+  });
+  void guard.catch(() => undefined);
+
+  const fail = (reason: unknown): void => {
+    if (failed) {
+      return;
+    }
+    failed = true;
+    failure = reason;
+    rejectGuard?.(reason);
+  };
+
+  const signal = options.signal;
+  const onAbort = (): void => {
+    fail(abortFailure());
+  };
+  if (signal !== undefined) {
+    if (signal.aborted) {
+      fail(abortFailure());
+    } else {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+  }
+
+  const timeoutMs = options.timeoutMs;
+  if (timeoutMs !== undefined && Number.isFinite(timeoutMs) && timeoutMs >= 0) {
+    timer = setTimeout(() => {
+      fail(timeoutFailure(timeoutMs));
+    }, timeoutMs);
+    const handle = timer as { unref?: () => void };
+    handle.unref?.();
+  }
+
+  return {
+    wait<T>(work: Promise<T>): Promise<T> {
+      void work.catch(() => undefined);
+      if (failed) {
+        return guard;
+      }
+      return Promise.race([work, guard]);
+    },
+    throwIfFailed(): void {
+      if (failed) {
+        throw failure;
+      }
+    },
+    dispose(): void {
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      signal?.removeEventListener("abort", onAbort);
+    },
+  };
 }
 
 export function renderToString(
   app: AnyComponent,
   options: RenderOptions = {},
 ): Promise<RenderResult> {
+  if (options.signal?.aborted === true) {
+    return Promise.reject(abortFailure());
+  }
   return enqueueRenderTask(() => renderOnce(app, options));
 }
 
 export async function settleRender(
   result: ComponentResult,
+  options: SettleOptions = {},
 ): Promise<void> {
-  const ready = result.ready;
-  const synchronous = ready === getReady(result.node);
-  const idleAfterCreate = !hasPendingWork();
+  const control = createSettleControl(options);
+  try {
+    control.throwIfFailed();
+    const ready = result.ready;
+    const synchronous = ready === getReady(result.node);
+    const idleAfterCreate = !hasPendingWork();
 
-  if (!synchronous) {
-    await ready;
-  }
-  flushSync();
-  if (!synchronous || !idleAfterCreate || hasPendingWork()) {
-    while (hasPendingWork()) {
-      await whenIdle();
+    if (!synchronous) {
+      await control.wait(ready);
+    }
+    control.throwIfFailed();
+    flushSync();
+    if (!synchronous || !idleAfterCreate || hasPendingWork()) {
+      while (hasPendingWork()) {
+        control.throwIfFailed();
+        await control.wait(whenIdle());
+        control.throwIfFailed();
+        flushSync();
+      }
+      await control.wait(Promise.resolve());
+      control.throwIfFailed();
       flushSync();
     }
-    await Promise.resolve();
-    flushSync();
+  } finally {
+    control.dispose();
   }
 }
 
@@ -82,20 +170,25 @@ async function renderOnce(
   app: AnyComponent,
   options: RenderOptions,
 ): Promise<RenderResult> {
+  if (options.signal?.aborted === true) {
+    throw abortFailure();
+  }
   const session = beginRenderSession(app, options);
   let rendered: RenderResult | null = null;
   let renderError: unknown = null;
   let renderFailed = false;
 
   try {
-    await settleRender(session.result);
+    await settleRender(session.result, {
+      signal: options.signal,
+      timeoutMs: options.timeoutMs,
+    });
     session.throwIfFailed();
-    let head = session.serializeHead();
-    let html = serializeNode(session.result.node as unknown as DomNode);
-    if (options.markers === false) {
-      html = stripMarkers(html);
-      head = stripMarkers(head);
-    }
+    const head = session.serializeHead();
+    const html = serializeNode(
+      session.result.node as unknown as DomNode,
+      options.markers !== false,
+    );
     rendered = { html, head };
   } catch (error) {
     renderFailed = true;

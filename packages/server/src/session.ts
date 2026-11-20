@@ -23,7 +23,7 @@ let requestSeq = 0;
 
 function noop(): void {}
 
-function serializeHead(nodes: readonly Element[]): string {
+function serializeHead(nodes: readonly Element[], markers: boolean): string {
   if (nodes.length === 0) {
     return "";
   }
@@ -32,7 +32,7 @@ function serializeHead(nodes: readonly Element[]): string {
     for (let index = 0; index < nodes.length; index += 1) {
       const node = nodes[index];
       if (node !== undefined) {
-        pushNode(node as unknown as DomNode, parts);
+        pushNode(node as unknown as DomNode, parts, markers);
       }
     }
     const only = parts[0];
@@ -110,7 +110,7 @@ export function beginRenderSession(
 
   const session: RenderSession = {
     result,
-    serializeHead: () => serializeHead(headNodes),
+    serializeHead: () => serializeHead(headNodes, options.markers !== false),
     throwIfFailed: () => {
       if (failed) {
         throw failure;

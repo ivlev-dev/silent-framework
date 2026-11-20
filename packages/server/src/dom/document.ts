@@ -156,13 +156,9 @@ interface SavedGlobal {
   readonly name: string;
   readonly descriptor: PropertyDescriptor | undefined;
   readonly writable: boolean;
+  readonly absent: boolean;
 }
 
-let savedGlobals: SavedGlobal[] | null = null;
-let writableGlobals = false;
-let absentGlobals = false;
-const previousValues: unknown[] = new Array<unknown>(GLOBAL_NAMES.length);
-const hadGlobals: boolean[] = new Array<boolean>(GLOBAL_NAMES.length);
 const GLOBAL_VALUE_LIST: readonly unknown[] = GLOBAL_VALUES.map(([, value]) => value);
 
 function captureGlobals(): SavedGlobal[] {
@@ -170,12 +166,15 @@ function captureGlobals(): SavedGlobal[] {
   for (let index = 0; index < GLOBAL_NAMES.length; index += 1) {
     const name = GLOBAL_NAMES[index] ?? "";
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, name);
-    previousValues[index] = descriptor === undefined ? undefined : descriptor.value;
-    hadGlobals[index] = descriptor !== undefined;
     saved[index] = {
       name,
       descriptor,
       writable: descriptor === undefined || descriptor.writable === true,
+      absent:
+        descriptor === undefined ||
+        (descriptor.value === undefined &&
+          descriptor.writable === true &&
+          descriptor.configurable === true),
     };
   }
   return saved;
@@ -195,9 +194,6 @@ function defineNodeConstants(): void {
   }
 }
 
-let restoreArmed = false;
-let keepShape = false;
-
 function installWritable(document: DocumentImpl): void {
   const target = globalThis as unknown as Record<string, unknown>;
   target["document"] = document;
@@ -211,11 +207,7 @@ function installWritable(document: DocumentImpl): void {
   target["NodeFilter"] = NODE_FILTER;
 }
 
-function installDefined(document: DocumentImpl): void {
-  const saved = savedGlobals;
-  if (saved === null) {
-    return;
-  }
+function installDefined(document: DocumentImpl, saved: readonly SavedGlobal[]): void {
   const target = globalThis as unknown as Record<string, unknown>;
   for (let index = 0; index < saved.length; index += 1) {
     const entry = saved[index];
@@ -237,87 +229,25 @@ function installDefined(document: DocumentImpl): void {
   }
 }
 
-function restoreWritable(shape: boolean): void {
+function restoreWritable(saved: readonly SavedGlobal[], shape: boolean): void {
   const target = globalThis as unknown as Record<string, unknown>;
-  if (absentGlobals) {
-    if (shape) {
-      target["document"] = undefined;
-      target["Node"] = undefined;
-      target["Element"] = undefined;
-      target["SVGElement"] = undefined;
-      target["DocumentFragment"] = undefined;
-      target["Text"] = undefined;
-      target["Comment"] = undefined;
-      target["HTMLTemplateElement"] = undefined;
-      target["NodeFilter"] = undefined;
-      return;
+  for (const entry of saved) {
+    if (entry.absent) {
+      if (shape) {
+        target[entry.name] = undefined;
+      } else {
+        delete target[entry.name];
+      }
+      continue;
     }
-    delete target["document"];
-    delete target["Node"];
-    delete target["Element"];
-    delete target["SVGElement"];
-    delete target["DocumentFragment"];
-    delete target["Text"];
-    delete target["Comment"];
-    delete target["HTMLTemplateElement"];
-    delete target["NodeFilter"];
-    return;
-  }
-  if (hadGlobals[0] === true) {
-    target["document"] = previousValues[0];
-  } else {
-    delete target["document"];
-  }
-  if (hadGlobals[1] === true) {
-    target["Node"] = previousValues[1];
-  } else {
-    delete target["Node"];
-  }
-  if (hadGlobals[2] === true) {
-    target["Element"] = previousValues[2];
-  } else {
-    delete target["Element"];
-  }
-  if (hadGlobals[3] === true) {
-    target["SVGElement"] = previousValues[3];
-  } else {
-    delete target["SVGElement"];
-  }
-  if (hadGlobals[4] === true) {
-    target["DocumentFragment"] = previousValues[4];
-  } else {
-    delete target["DocumentFragment"];
-  }
-  if (hadGlobals[5] === true) {
-    target["Text"] = previousValues[5];
-  } else {
-    delete target["Text"];
-  }
-  if (hadGlobals[6] === true) {
-    target["Comment"] = previousValues[6];
-  } else {
-    delete target["Comment"];
-  }
-  if (hadGlobals[7] === true) {
-    target["HTMLTemplateElement"] = previousValues[7];
-  } else {
-    delete target["HTMLTemplateElement"];
-  }
-  if (hadGlobals[8] === true) {
-    target["NodeFilter"] = previousValues[8];
-  } else {
-    delete target["NodeFilter"];
+    target[entry.name] = entry.descriptor?.value;
   }
 }
 
-function restoreDefined(): void {
-  const saved = savedGlobals;
-  if (saved === null) {
-    return;
-  }
+function restoreDefined(saved: readonly SavedGlobal[]): void {
   const target = globalThis as unknown as Record<string, unknown>;
   for (const entry of saved) {
-    if (entry.descriptor === undefined) {
+    if (entry.absent || entry.descriptor === undefined) {
       Reflect.deleteProperty(globalThis, entry.name);
       continue;
     }
@@ -329,20 +259,6 @@ function restoreDefined(): void {
   }
 }
 
-function restoreGlobals(): void {
-  if (!restoreArmed) {
-    return;
-  }
-  restoreArmed = false;
-  const shape = keepShape;
-  keepShape = false;
-  if (writableGlobals) {
-    restoreWritable(shape);
-    return;
-  }
-  restoreDefined();
-}
-
 export interface DomGlobalsOptions {
   readonly keepShape?: boolean;
 }
@@ -352,18 +268,24 @@ export function installDomGlobals(
   options: DomGlobalsOptions = {},
 ): () => void {
   defineNodeConstants();
-  if (savedGlobals === null) {
-    const captured = captureGlobals();
-    savedGlobals = captured;
-    writableGlobals = captured.every((entry) => entry.writable);
-    absentGlobals = hadGlobals.every((had) => had === false);
-  }
-  keepShape = options.keepShape === true;
-  if (writableGlobals) {
+  const saved = captureGlobals();
+  const writable = saved.every((entry) => entry.writable);
+  if (writable) {
     installWritable(document);
   } else {
-    installDefined(document);
+    installDefined(document, saved);
   }
-  restoreArmed = true;
-  return restoreGlobals;
+  const shape = options.keepShape === true;
+  let armed = true;
+  return (): void => {
+    if (!armed) {
+      return;
+    }
+    armed = false;
+    if (writable) {
+      restoreWritable(saved, shape);
+      return;
+    }
+    restoreDefined(saved);
+  };
 }

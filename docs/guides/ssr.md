@@ -41,7 +41,29 @@ function renderToString(
 ): Promise<RenderResult>;
 ```
 
-`RenderResult` содержит два поля: `html` — разметку приложения без метаданных, `head` — сериализованные `title`, `meta` и `link`. `RenderOptions` принимает `props`, `container`, `preloader`, `onError` и `markers`. Если `onError` не задан, первая ошибка резолва или загрузки отклоняет промис `renderToString`. `markers: false` удаляет из `html` и `head` служебные комментарии `silent-*` и атрибуты `data-silent-*`: разметка уменьшается, но не подходит для `hydrate`; на `renderToStream` опция не действует.
+`RenderResult` содержит два поля: `html` — разметку приложения без метаданных, `head` — сериализованные `title`, `meta` и `link`. `RenderOptions` принимает `props`, `container`, `preloader`, `onError`, `markers`, `signal` и `timeoutMs`. Если `onError` не задан, первая ошибка резолва или загрузки отклоняет промис `renderToString`.
+
+`markers: false` удаляет из `html` и `head` служебные комментарии `silent-*` и атрибуты `data-silent-*` во время обхода дерева: разметка уменьшается, но не подходит для `hydrate`. В `renderToStream` эта опция тоже работает и дополнительно отключает патчи `Suspense` вместе с inline-runtime: поток отдаёт только синхронный shell, а разметка остаётся негидрируемой.
+
+`signal` и `timeoutMs` ограничивают ожидание асинхронных ViewModel, `Suspense` и `lazy`. При отмене или превышении таймаута промис отклоняется `DOMException` с `name: "AbortError"` или `"TimeoutError"`, а сессия рендера, DOM-глобалы и request scope освобождаются. Уже aborted `signal` отклоняет вызов сразу, без создания сессии. Следующий рендер после таймаута или отмены работает как обычно:
+
+```ts
+const controller = new AbortController();
+
+try {
+  const { html } = await renderToString(App, {
+    props,
+    signal: controller.signal,
+    timeoutMs: 5_000,
+  });
+  // ...
+} catch (error) {
+  if (error instanceof DOMException && error.name === "TimeoutError") {
+    // Отдать fallback или 504.
+  }
+  throw error;
+}
+```
 
 На каждый рендер `renderToString` создаёт дочерний request scope от `options.container` (по умолчанию — глобальный `container`) и освобождает его в конце, даже при ошибке. `singleton`-привязки базового контейнера — process-wide состояние, общее для всех запросов; `scoped`-привязки изолированы request scope. Singleton-фабрика, разрешающая `scoped`-сервис из request scope, отклоняется `InvalidScopeError` — не храните данные пользователя или tenant в общих синглтонах.
 
@@ -153,7 +175,9 @@ server.listen(3000);
 | `onChunk(chunk)` | Каждый фактически записанный чанк тела. |
 | `chunkSize` | Максимальный размер чанка; по умолчанию 16 КиБ. Патчи также режутся по этому лимиту. |
 | `nonce` | Nonce для inline-runtime и скриптов патчей (CSP). |
-| `signal` | Отмена доставки. Рендер завершается и освобождает ресурсы, но новые чанки не пишутся. |
+| `markers` | При `false` не пишет маркеры и `data-silent-*`, а также отключает патчи и inline-runtime; итоговый поток негидрируем. |
+| `signal` | Отмена рендера и доставки. Промис/поток отклоняются `AbortError`, сессия и DOM-глобалы освобождаются. |
+| `timeoutMs` | Предельное время ожидания асинхронного рендера. По истечении поток закрывается `TimeoutError`. |
 
 Ограничения протокола:
 
@@ -163,6 +187,7 @@ server.listen(3000);
 - Ошибка после отправки shell закрывает поток ошибкой: соединение обрывается, fallback остаётся видимым. Ошибки до shell отклоняют поток без отправки тела.
 - Backpressure не учитывается: чанки буферизуются в `ReadableStream`, пока читатель их не заберёт.
 - Поток удерживает внутреннюю очередь SSR до завершения рендера: другие `renderToString`/`renderToStream` ждут.
+- При `markers: false` поток остаётся негидрируемым: досылка готовых `Suspense`/`lazy`-границ отключена, в ответе только синхронный shell с fallback.
 
 `renderToString` не изменился: он ждёт всё дерево и возвращает `{ html, head }` без служебных маркеров стриминга.
 

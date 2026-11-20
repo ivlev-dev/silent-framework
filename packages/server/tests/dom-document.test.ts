@@ -376,6 +376,24 @@ describe("installDomGlobals", () => {
     restore();
   });
 
+  it("не затирает globalThis.document, установленный между вызовами", () => {
+    const target = globalThis as unknown as Record<string, unknown>;
+    const restore = installDomGlobals(createDocument());
+    restore();
+    expect(target["document"]).toBeUndefined();
+
+    const fake = createDocument();
+    target["document"] = fake;
+    try {
+      const restoreSecond = installDomGlobals(createDocument());
+      expect(target["document"]).not.toBe(fake);
+      restoreSecond();
+      expect(target["document"]).toBe(fake);
+    } finally {
+      delete target["document"];
+    }
+  });
+
   it("работает с templateHoles из @ivlev-dev/silent-core", async () => {
     const previous = Object.getOwnPropertyDescriptor(globalThis, "document");
     const restore = installDomGlobals();

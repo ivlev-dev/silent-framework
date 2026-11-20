@@ -76,6 +76,7 @@ async function runStream(
   chunkSize: number,
   state: StreamState,
 ): Promise<void> {
+  const markers = options.markers !== false;
   const abortStream = (): void => {
     state.cancelled = true;
     try {
@@ -193,7 +194,7 @@ async function runStream(
     },
   };
 
-  setServerStreamCollector(collector);
+  setServerStreamCollector(markers ? collector : null);
   let session: RenderSession | null = null;
   let streamFailed = false;
   let streamError: unknown = null;
@@ -208,15 +209,18 @@ async function runStream(
     }
     const node = session.result.node as unknown as DomNode;
     if (options.onShell === undefined) {
-      serializeNodeChunks(node, chunkSize, emit);
+      serializeNodeChunks(node, chunkSize, emit, markers);
     } else {
-      const shell = serializeNode(node);
+      const shell = serializeNode(node, markers);
       options.onShell(shell);
       emit(shell);
     }
     shellEmitted = true;
 
-    await settleRender(session.result);
+    await settleRender(session.result, {
+      signal: options.signal,
+      timeoutMs: options.timeoutMs,
+    });
     await drainSettles();
     flushSync();
     await drainSettles();
