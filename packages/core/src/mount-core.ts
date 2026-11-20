@@ -44,8 +44,11 @@ export function handleFor(result: ComponentResult, rootDispose: () => void): Mou
         return;
       }
       disposed = true;
-      result.dispose();
-      rootDispose();
+      try {
+        result.dispose();
+      } finally {
+        rootDispose();
+      }
     },
   };
 }

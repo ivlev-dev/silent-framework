@@ -7,8 +7,16 @@ import {
   resolveValue,
 } from "./dom.js";
 import { extractMetadata } from "./metadata.js";
-import { settleWindow } from "./hydration-cursor.js";
-import { collectBetween, currentWindow, isHydrating, mismatch } from "./hydration-proxy.js";
+import { regionMatches, settleWindow } from "./hydration-cursor.js";
+import { settleNodes } from "./dom-hydration-state.js";
+import {
+  collectBetween,
+  currentWindow,
+  isHydrating,
+  mismatch,
+  withWindow,
+} from "./hydration-proxy.js";
+import type { HydrationWindow } from "./hydration-state.js";
 
 
 declare const __SILENT_HYDRATE__: boolean | undefined;
@@ -79,6 +87,7 @@ export function Transition(props: TransitionProps): Node {
   let anchor: Comment;
   let mount: ReturnType<typeof createMountPoint>;
   let adopted = false;
+  let hydrationOuter: HydrationWindow | null = null;
 
   if (hydrating) {
     const outer = currentWindow();
@@ -95,7 +104,7 @@ export function Transition(props: TransitionProps): Node {
     }
     anchor = claimed;
     mount = createMountPoint(parent, anchor, collectBetween(outer.start, anchor));
-    settleWindow(outer, anchor);
+    hydrationOuter = outer;
     container = document.createDocumentFragment();
     adopted = true;
   } else {
@@ -220,18 +229,36 @@ export function Transition(props: TransitionProps): Node {
     finishLeave();
   };
 
+  const resolveBranch = (): unknown => {
+    if (mounted()) {
+      return resolveValue(props.children);
+    }
+    if (props.fallback !== undefined) {
+      return resolveValue(props.fallback);
+    }
+    return null;
+  };
+
   const content = (): void => {
     if (contentAdopted) {
       contentAdopted = false;
+      if (hydrationOuter !== null) {
+        const window: HydrationWindow = {
+          start: hydrationOuter.start,
+          end: anchor,
+          cursor: hydrationOuter.cursor ?? hydrationOuter.start.nextSibling,
+        };
+        const value = withWindow(window, resolveBranch);
+        settleNodes(anchor, value);
+        if (!regionMatches(window, anchor, value)) {
+          mismatch("содержимое Transition не совпало");
+        }
+        settleWindow(hydrationOuter, anchor);
+        syncClass();
+      }
       return;
     }
-    if (mounted()) {
-      mount.render(resolveValue(props.children));
-    } else if (props.fallback !== undefined) {
-      mount.render(resolveValue(props.fallback));
-    } else {
-      mount.render(null);
-    }
+    mount.render(resolveBranch());
     syncClass();
   };
 

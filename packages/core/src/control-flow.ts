@@ -550,10 +550,26 @@ export function For<T>(props: ForProps<T>): Node {
     states = [];
     spare = [];
     createdBuffer.length = 0;
+    stopFallbackEffect();
+    const errors: unknown[] = [];
     for (const state of snapshot) {
-      removeState(state);
+      try {
+        removeState(state);
+      } catch (error) {
+        errors.push(error);
+      }
     }
-    fallbackMount.clear();
+    try {
+      fallbackMount.clear();
+    } catch (error) {
+      errors.push(error);
+    }
+    if (errors.length === 1) {
+      throw errors[0];
+    }
+    if (errors.length > 1) {
+      throw new AggregateError(errors, "Ошибки при удалении элементов For");
+    }
   };
 
   const ensureAnchors = (list: readonly ItemState<T>[]): void => {
@@ -664,6 +680,8 @@ export function For<T>(props: ForProps<T>): Node {
   ): ItemState<T> => makeState(item, null, null, position, sink, tail, children);
 
   let fallbackMount: MountPoint;
+  let fallbackShown = false;
+  let fallbackEffectDispose: (() => void) | null = null;
   let skipFirst = hydrating;
 
   if (hydration !== null) {
@@ -683,6 +701,7 @@ export function For<T>(props: ForProps<T>): Node {
       endAnchor,
       seeded.fallbackSeed,
     );
+    fallbackShown = seeded.fallbackSeed.length > 0;
   } else {
     endAnchor = document.createComment(LIST_END);
     if (target !== null) {
@@ -702,6 +721,41 @@ export function For<T>(props: ForProps<T>): Node {
       endAnchor,
     );
   }
+
+  const startFallbackEffect = (): void => {
+    if (fallbackEffectDispose !== null) {
+      return;
+    }
+    runWithOwner(parentOwner, () => {
+      const root = createRoot((dispose) => {
+        fallbackEffectDispose = dispose;
+        createRenderEffect(() => fallbackMount.render(resolve(fallback())));
+        return null;
+      });
+      void root;
+    });
+  };
+
+  const stopFallbackEffect = (): void => {
+    const disposeEffect = fallbackEffectDispose;
+    fallbackEffectDispose = null;
+    disposeEffect?.();
+  };
+
+  const syncFallback = (empty: boolean): void => {
+    const shouldShow = empty && hasFallback;
+    if (shouldShow === fallbackShown) {
+      return;
+    }
+    fallbackShown = shouldShow;
+    if (shouldShow) {
+      startFallbackEffect();
+      return;
+    }
+    stopFallbackEffect();
+    fallbackMount.render(null);
+  };
+
 
   const renderList = (): void => {
     const parent = endAnchor.parentNode;
@@ -758,7 +812,7 @@ export function For<T>(props: ForProps<T>): Node {
             parent.insertBefore(batch, endAnchor);
           }
         }
-        fallbackMount.render(nextLength === 0 && hasFallback ? resolve(fallback()) : null);
+        syncFallback(nextLength === 0);
         return;
       }
       const removedTrailing = previous.slice(nextLength, previousLength);
@@ -767,7 +821,7 @@ export function For<T>(props: ForProps<T>): Node {
         removeState(state);
       }
       previous.length = nextLength;
-      fallbackMount.render(nextLength === 0 && hasFallback ? resolve(fallback()) : null);
+      syncFallback(nextLength === 0);
       return;
     }
 
@@ -930,7 +984,7 @@ export function For<T>(props: ForProps<T>): Node {
     previous.length = 0;
     created.length = 0;
 
-    fallbackMount.render(nextLength === 0 && hasFallback ? resolve(fallback()) : null);
+    syncFallback(nextLength === 0);
   };
 
   createRenderEffect(() => {

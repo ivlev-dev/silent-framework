@@ -46,12 +46,13 @@ describe("hydration", () => {
 
   it("Transition adopts server DOM", async () => {
     vi.useFakeTimers();
+    const plan: TemplatePlan = { roots: 1, holes: [], attrs: [], strips: [] };
     const [show, setShow] = createSignal(true);
     class VM {}
     function View(this: { vm: VM }): Node {
       return Transition({
         show,
-        children: document.createElement("span"),
+        children: templateHoles("<span>content</span>", plan)().node,
         leaveClass: "leave",
         duration: 100,
       });
@@ -73,6 +74,64 @@ describe("hydration", () => {
     vi.advanceTimersByTime(100);
     flushSync();
     expect(target.querySelector("span")).toBeNull();
+  });
+});
+
+describe("Transition: сверка ветки при гидрации", () => {
+  it("не адоптирует ветку, расходящуюся с серверной разметкой", async () => {
+    class VM {}
+    function View(this: { vm: VM }): Node {
+      return Transition({
+        show: true,
+        fallback: "loading",
+        children: () => {
+          const span = document.createElement("span");
+          span.textContent = "content";
+          return span;
+        },
+      });
+    }
+    attachMeta(View, VM);
+    const target = host(
+      "<!--silent-view-->loading<!--silent-transition--><!--silent-view-end-->",
+    );
+    const mismatches: unknown[] = [];
+    await hydrate(target, View as unknown as AnyComponent, {
+      onMismatch: (error) => mismatches.push(error),
+    });
+    expect(mismatches.length).toBe(1);
+    expect(target.textContent).toBe("content");
+  });
+
+  it("адоптирует совпадающую ветку без потери обработчиков", async () => {
+    const plan: TemplatePlan = { roots: 1, holes: [], attrs: [], strips: [] };
+    const [show] = createSignal(true);
+    let clicks = 0;
+    class VM {}
+    function View(this: { vm: VM }): Node {
+      return Transition({
+        show,
+        get children() {
+          return templateHoles("<button>go</button>", plan)().node;
+        },
+      });
+    }
+    attachMeta(View, VM);
+    const target = host(
+      "<!--silent-view--><button>go</button><!--silent-transition--><!--silent-view-end-->",
+    );
+    const serverButton = target.querySelector("button");
+    serverButton?.addEventListener("click", () => {
+      clicks += 1;
+    });
+    const mismatches: unknown[] = [];
+    await hydrate(target, View as unknown as AnyComponent, {
+      onMismatch: (error) => mismatches.push(error),
+    });
+    expect(mismatches).toEqual([]);
+    expect(target.querySelector("button")).toBe(serverButton);
+    serverButton?.dispatchEvent(new Event("click"));
+    expect(clicks).toBe(1);
   });
 });
 

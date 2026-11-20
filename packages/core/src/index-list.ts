@@ -1,6 +1,7 @@
 import type { Accessor, Setter } from "@ivlev-dev/silent-reactivity";
 import {
   createRenderEffect,
+  createRoot,
   createSignal,
   getOwner,
   onCleanup,
@@ -310,10 +311,26 @@ export function Index<T>(props: IndexProps<T>): Node {
   const removeAll = (): void => {
     const snapshot = states;
     states = [];
+    stopFallbackEffect();
+    const errors: unknown[] = [];
     for (const state of snapshot) {
-      removeState(state);
+      try {
+        removeState(state);
+      } catch (error) {
+        errors.push(error);
+      }
     }
-    fallbackMount.clear();
+    try {
+      fallbackMount.clear();
+    } catch (error) {
+      errors.push(error);
+    }
+    if (errors.length === 1) {
+      throw errors[0];
+    }
+    if (errors.length > 1) {
+      throw new AggregateError(errors, "Ошибки при удалении элементов Index");
+    }
   };
 
   let runWindow: MutableWindow | null = null;
@@ -503,6 +520,43 @@ export function Index<T>(props: IndexProps<T>): Node {
   const fallbackMount = hydrating
     ? createMountPoint(fallbackParent as Node, endAnchor, fallbackSeed)
     : createMountPoint(target ?? (container ??= document.createDocumentFragment()), endAnchor);
+  let fallbackShown = hydrating ? fallbackSeed.length > 0 : false;
+  let fallbackEffectDispose: (() => void) | null = null;
+
+  const startFallbackEffect = (): void => {
+    if (fallbackEffectDispose !== null) {
+      return;
+    }
+    runWithOwner(parentOwner, () => {
+      const root = createRoot((dispose) => {
+        fallbackEffectDispose = dispose;
+        createRenderEffect(() => fallbackMount.render(resolve(fallback())));
+        return null;
+      });
+      void root;
+    });
+  };
+
+  const stopFallbackEffect = (): void => {
+    const disposeEffect = fallbackEffectDispose;
+    fallbackEffectDispose = null;
+    disposeEffect?.();
+  };
+
+  const syncFallback = (empty: boolean): void => {
+    const shouldShow = empty && hasFallback;
+    if (shouldShow === fallbackShown) {
+      return;
+    }
+    fallbackShown = shouldShow;
+    if (shouldShow) {
+      startFallbackEffect();
+      return;
+    }
+    stopFallbackEffect();
+    fallbackMount.render(null);
+  };
+
 
   const renderList = (): void => {
     const parent = endAnchor.parentNode;
@@ -540,7 +594,7 @@ export function Index<T>(props: IndexProps<T>): Node {
       parent.insertBefore(batch, endAnchor);
     }
 
-    fallbackMount.render(items.length === 0 && hasFallback ? resolve(fallback()) : null);
+    syncFallback(items.length === 0);
   };
 
   createRenderEffect(() => {

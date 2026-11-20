@@ -206,14 +206,34 @@ export function Portal(props: PortalProps): Node {
   let disposed = false;
   let host: PortalHost | null = null;
   let rootDispose: (() => void) | null = null;
-  let retryScheduled = false;
   const [hostEpoch, setHostEpoch] = createSignal(0);
+  let observer: MutationObserver | null = null;
+  let retryFrame: number | null = null;
+  let retryCount = 0;
+  let lastTarget: Element | null = null;
+  let lastConnected = false;
+  const MAX_RETRY_FRAMES = 240;
+
+  const stopWaiting = (): void => {
+    if (observer !== null) {
+      observer.disconnect();
+      observer = null;
+    }
+    if (retryFrame !== null) {
+      if (typeof cancelAnimationFrame === "function") {
+        cancelAnimationFrame(retryFrame);
+      }
+      retryFrame = null;
+    }
+    retryCount = 0;
+  };
 
   const dispose = (): void => {
     if (disposed) {
       return;
     }
     disposed = true;
+    stopWaiting();
     const disposeRoot = rootDispose;
     rootDispose = null;
     disposeRoot?.();
@@ -221,13 +241,47 @@ export function Portal(props: PortalProps): Node {
     host = null;
   };
 
+  /**
+   * Ожидание target без прокрутки microtask-очереди: MutationObserver
+   * реагирует на появление узла, rAF-ветка ограничена по числу кадров
+   * и отменяется вместе с порталом.
+   */
   const scheduleRetry = (): void => {
-    if (retryScheduled || disposed) {
+    if (disposed || observer !== null || retryFrame !== null) {
       return;
     }
-    retryScheduled = true;
-    queueMicrotask(() => {
-      retryScheduled = false;
+    const root = typeof document === "undefined" ? null : document.documentElement;
+    if (typeof MutationObserver === "function" && root !== null) {
+      const active = new MutationObserver(() => {
+        if (disposed) {
+          stopWaiting();
+          return;
+        }
+        const next = resolvePortalTarget(props.target);
+        const connected = marker.parentNode !== null;
+        const changed = next !== lastTarget || connected !== lastConnected;
+        stopWaiting();
+        if (changed) {
+          setHostEpoch((value) => value + 1);
+          return;
+        }
+        // Мутации от собственного рендера не должны запускать новый цикл:
+        // продолжаем ждать без перерасчёта эффекта.
+        scheduleRetry();
+      });
+      observer = active;
+      active.observe(root, { childList: true, subtree: true });
+      return;
+    }
+    if (typeof requestAnimationFrame !== "function") {
+      return;
+    }
+    retryCount += 1;
+    if (retryCount > MAX_RETRY_FRAMES) {
+      return;
+    }
+    retryFrame = requestAnimationFrame(() => {
+      retryFrame = null;
       if (!disposed) {
         setHostEpoch((value) => value + 1);
       }
@@ -243,13 +297,15 @@ export function Portal(props: PortalProps): Node {
         return;
       }
       const target = resolvePortalTarget(props.target);
-      if (target === null && marker.parentNode === null) {
+      lastTarget = target;
+      lastConnected = marker.parentNode !== null;
+      if (target === null) {
         scheduleRetry();
-        return;
+      } else {
+        stopWaiting();
       }
       const parent = target ?? marker.parentNode;
       if (parent === null) {
-        scheduleRetry();
         return;
       }
       const anchor = target === null ? marker : null;

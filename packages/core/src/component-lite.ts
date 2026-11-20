@@ -452,6 +452,7 @@ function buildLightInstance(
   fn: AnyComponent,
   props: Record<string, unknown>,
   options: RuntimeOptions,
+  onDispose: ((instance: LightInstance) => void) | null = null,
 ): LightInstance {
   const inheritedContext = captureContextValues();
   const propsProxy = createPropsProxy(props);
@@ -502,6 +503,7 @@ function buildLightInstance(
       }
       instance.disposed = true;
       resolveDisposed?.();
+      onDispose?.(instance);
       const disposeRender = instance.renderRootDispose;
       instance.renderRootDispose = null;
       disposeRender?.();
@@ -563,7 +565,7 @@ function cacheFor(owner: Owner): LightOwnerCache {
     onCleanup(() => {
       lightCacheCleanup.delete(owner);
       if (owner.disposed) {
-        for (const instance of cache.instances) {
+        for (const instance of [...cache.instances]) {
           instance.dispose();
         }
         cache.instances.clear();
@@ -615,7 +617,9 @@ function lightFromCache(
     }
     return lightResult(existing);
   }
-  const instance = buildLightInstance(fn, props, options);
+  const instance = buildLightInstance(fn, props, options, (disposed) => {
+    cache.instances.delete(disposed);
+  });
   cache.instances.add(instance);
   slot.instance = instance.single ? instance : null;
   return lightResult(instance);
