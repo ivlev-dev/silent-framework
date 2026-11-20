@@ -307,6 +307,10 @@ function createGuard<Path extends string = string, Query = RouteQuery>(
 
 `LinkProps`: `to`, `replace`, `activeClass`, `exactActiveClass`, `class`, `children`, `router?: IRouter`, `prefetch?: boolean | "hover" | "visible"`. `prefetch: true` и `"hover"` вызывают `router.prefetch` на `pointerenter`, `pointerdown` и `focus`; `"visible"` — когда ссылка появляется во viewport (`IntersectionObserver`), а без него сразу после монтирования (на сервере не срабатывает). Рендерит настоящий `<a href>`, перехватывает только левый клик без модификаторов, active-классы реактивны, а на точный активный маршрут ставит `aria-current="page"`. Внешние `http(s)://`, `mailto:`, `tel:`, `//` и hash-ссылки не перехватываются и не prefetch-ятся.
 
+Схемы обрабатываются по allow-list: `http`, `https`, `mailto`, `tel`, а также протокол-относительные `//` и hash-ссылки `#`. Любая другая схема (`javascript:`, `data:`, `vbscript:` и неизвестные) считается небезопасной: атрибут `href` не выставляется, клик не перехватывается и не навигирует, active-классы и `aria-current` не применяются.
+
+Если для внутренней цели не нашлось маршрута, `Link` не выбрасывает исключение (это важно для SSR): `href` берётся из сырой строки `to`, а для объектной цели не выставляется; `aria-current` и active-классы не применяются. Клик по строковой цели при этом передаётся в `router.push`/`replace`, а ошибка `no-match` не всплывает из рендера. Публичный `router.resolve` по-прежнему сообщает об отсутствии маршрута через `RouterNavigationError`.
+
 ## `RouterView`
 
 ```tsx

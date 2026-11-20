@@ -6,7 +6,8 @@ import {
   createMemoryHistory,
   type RouteRecord,
 } from "../src/index";
-import { setServerMode } from "@ivlev-dev/silent-core";
+import { setServerMode, type AnyComponent } from "@ivlev-dev/silent-core";
+import { renderToString } from "@ivlev-dev/silent-server";
 import { leaf, render, tick, type Rendered } from "./support";
 
 const routers: Router[] = [];
@@ -402,5 +403,109 @@ describe("Link", () => {
       routers.pop()?.dispose();
     }
     expect(() => Link({ to: "/", children: "x" })).toThrow(RouterMissingError);
+  });
+
+  it.each([
+    "javascript:alert(1)",
+    "JavaScript:alert(1)",
+    " javascript:alert(1)",
+    "java\tscript:alert(1)",
+    "data:text/html,<script>alert(1)</script>",
+    "vbscript:msgbox(1)",
+    "file:///etc/passwd",
+    "foo:bar",
+  ])("не выставляет href и не перехватывает опасную схему %s", async (to) => {
+    const { router } = setup();
+    await router.start();
+    const push = vi.spyOn(router, "push");
+    const { host } = mount(() => Link({ to, children: "опасно" }));
+    const anchor = host.querySelector("a")!;
+    expect(anchor.getAttribute("href")).toBeNull();
+    expect(anchor.getAttribute("aria-current")).toBeNull();
+
+    const event = new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+    });
+    anchor.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "http://example.com",
+    "https://example.com/docs?q=1",
+    "mailto:dev@example.com",
+    "tel:+79001234567",
+    "//cdn.example.com/app.js",
+    "#section",
+  ])("оставляет разрешённую внешнюю ссылку %s без перехвата", async (to) => {
+    const { router } = setup();
+    await router.start();
+    const push = vi.spyOn(router, "push");
+    const { host } = mount(() => Link({ to, children: "внешняя" }));
+    const anchor = host.querySelector("a")!;
+    expect(anchor.getAttribute("href")).toBe(to);
+    expect(anchor.getAttribute("aria-current")).toBeNull();
+
+    const event = new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+    });
+    anchor.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("не бросает при отсутствии маршрута и отдаёт сырой href", async () => {
+    const { router } = setup();
+    await router.start();
+    const push = vi.spyOn(router, "push");
+    const { host } = mount(() => Link({
+      to: "/nope",
+      class: "nav",
+      activeClass: "active",
+      exactActiveClass: "exact",
+      children: "404",
+    }));
+    const anchor = host.querySelector("a")!;
+    expect(anchor.getAttribute("href")).toBe("/nope");
+    expect(anchor.getAttribute("aria-current")).toBeNull();
+    expect(anchor.className).toBe("nav");
+
+    const event = new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+    });
+    anchor.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(push).toHaveBeenCalledWith("/nope");
+  });
+
+  it("не бросает для объектной цели без маршрута и не выставляет href", async () => {
+    const { router } = setup();
+    await router.start();
+    const { host } = mount(() => Link({
+      to: { name: "missing" },
+      activeClass: "active",
+      children: "404",
+    }));
+    const anchor = host.querySelector("a")!;
+    expect(anchor.getAttribute("href")).toBeNull();
+    expect(anchor.getAttribute("aria-current")).toBeNull();
+    expect(anchor.className).toBe("");
+  });
+
+  it("не падает при SSR-рендере ссылки на отсутствующий маршрут", async () => {
+    const { router } = setup();
+    await router.start();
+    const rendered = await renderToString(
+      (() => Link({ to: "/nope", children: "404" })) as AnyComponent,
+    );
+    expect(rendered.html).toContain('href="/nope"');
+    expect(rendered.html).not.toContain("aria-current");
   });
 });

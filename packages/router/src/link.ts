@@ -10,7 +10,12 @@ import {
   type ClassNameValue,
 } from "@ivlev-dev/silent-core";
 import { createRenderEffect, onCleanup } from "@ivlev-dev/silent-reactivity";
-import { RouterMissingError, isPathActive, type RouteTarget } from "./match.js";
+import {
+  RouterMissingError,
+  isPathActive,
+  type RouteLocation,
+  type RouteTarget,
+} from "./match.js";
 import { Router, type IRouter } from "./router.js";
 
 export interface LinkProps {
@@ -43,11 +48,65 @@ function resolveTarget(to: RouteTarget | (() => RouteTarget)): RouteTarget {
   return typeof to === "function" ? (to as () => RouteTarget)() : to;
 }
 
-function externalHref(target: RouteTarget): string | null {
+type TargetKind = "external" | "internal" | "unsafe";
+
+interface TargetInfo {
+  readonly kind: TargetKind;
+  readonly externalHref: string | null;
+}
+
+const SCHEME_PATTERN = /^([a-z][a-z0-9+.-]*):/i;
+const ALLOWED_SCHEMES: ReadonlySet<string> = new Set(["http", "https", "mailto", "tel"]);
+
+/**
+ * Классифицирует цель ссылки. Внешними считаются только схемы из allow-list
+ * (`http(s)`, `mailto`, `tel`), протокол-относительные (`//`) и hash-ссылки (`#`).
+ * Неизвестные и опасные схемы (`javascript:`, `data:`, `vbscript:` и т.п.)
+ * помечаются как `unsafe`: href не выставляется, клик не перехватывается.
+ */
+function inspectTarget(target: RouteTarget): TargetInfo {
   if (typeof target !== "string") {
+    return { kind: "internal", externalHref: null };
+  }
+  // Браузер игнорирует ASCII-пробелы и управляющие символы в URL,
+  // поэтому схему проверяем по нормализованной строке.
+  const probe = target.replace(/[\u0000-\u0020]+/g, "");
+  if (probe.startsWith("#") || probe.startsWith("//")) {
+    return { kind: "external", externalHref: target };
+  }
+  const scheme = SCHEME_PATTERN.exec(probe);
+  if (scheme === null) {
+    return { kind: "internal", externalHref: null };
+  }
+  const name = (scheme[1] ?? "").toLowerCase();
+  if (ALLOWED_SCHEMES.has(name)) {
+    return { kind: "external", externalHref: target };
+  }
+  return { kind: "unsafe", externalHref: null };
+}
+
+function safeResolve(router: IRouter, target: RouteTarget): RouteLocation | null {
+  try {
+    return router.resolve(target);
+  } catch {
     return null;
   }
-  return /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(target) ? target : null;
+}
+
+function safeHref(router: IRouter, target: RouteTarget): string | null {
+  const info = inspectTarget(target);
+  if (info.kind === "external") {
+    return info.externalHref;
+  }
+  if (info.kind === "unsafe") {
+    return null;
+  }
+  try {
+    return router.href(target);
+  } catch {
+    // Нет подходящего маршрута: для строки отдаём сырой путь, для объекта — null.
+    return typeof target === "string" ? target : null;
+  }
 }
 
 function matchesParams(
@@ -67,7 +126,10 @@ function isExactActive(router: IRouter, target: RouteTarget): boolean {
   if (current === null) {
     return false;
   }
-  const location = router.resolve(target);
+  const location = safeResolve(router, target);
+  if (location === null) {
+    return false;
+  }
   if (location.name !== null && current.name === location.name) {
     return matchesParams(current.params, location.params);
   }
@@ -81,11 +143,13 @@ export function Link(props: LinkProps): Node {
 
   attr(element, "href", () => {
     const value = target();
-    return externalHref(value) ?? router.href(value);
+    return safeHref(router, value);
   });
   attr(element, "aria-current", () => {
     const value = target();
-    return externalHref(value) === null && isExactActive(router, value) ? "page" : null;
+    return inspectTarget(value).kind === "internal" && isExactActive(router, value)
+      ? "page"
+      : null;
   });
 
   if (
@@ -96,14 +160,14 @@ export function Link(props: LinkProps): Node {
     attr(element, "class", () => {
       const value = target();
       const custom = normalizeClass(props.class);
-      if (externalHref(value) !== null) {
+      if (inspectTarget(value).kind !== "internal") {
         return custom;
       }
       const current = router.state().route;
-      const location = router.resolve(value);
+      const location = safeResolve(router, value);
       let active = false;
       let exact = false;
-      if (current !== null) {
+      if (current !== null && location !== null) {
         if (location.name !== null && current.name === location.name) {
           exact = matchesParams(current.params, location.params);
           active = exact;
@@ -141,7 +205,7 @@ export function Link(props: LinkProps): Node {
       }
       started = true;
       const value = target();
-      if (externalHref(value) !== null) {
+      if (inspectTarget(value).kind !== "internal") {
         return;
       }
       void router.prefetch(value).catch(() => {});
@@ -182,7 +246,7 @@ export function Link(props: LinkProps): Node {
       return;
     }
     const value = target();
-    if (externalHref(value) !== null) {
+    if (inspectTarget(value).kind !== "internal") {
       return;
     }
     event.preventDefault();
