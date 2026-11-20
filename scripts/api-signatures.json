@@ -1054,7 +1054,7 @@
       },
       "EffectErrorHandler": {
         "kind": "type",
-        "signature": "export type EffectErrorHandler = (error: unknown) => void;"
+        "signature": "export type EffectErrorHandler = (error: unknown, owner: Owner | null) => void;"
       },
       "flushSync": {
         "kind": "function",

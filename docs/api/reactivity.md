@@ -86,13 +86,14 @@ const opts: MemoOptions<number> = { equals: (a, b) => a === b, name: "double" };
 Стабильность: public
 
 ```ts
-type EffectErrorHandler = (error: unknown) => void;
+type EffectErrorHandler = (error: unknown, owner: Owner | null) => void;
 ```
 
-Тип обработчика ошибок эффектов, передаваемого в `setEffectErrorHandler`.
+Тип обработчика ошибок эффектов, передаваемого в `setEffectErrorHandler`. Второй аргумент — `Owner` вычисления, в котором произошла ошибка, либо `null` для эффекта, созданного вне контекста владельца. Обработчики с одной сигнатурой остаются совместимыми: лишний аргумент просто игнорируется.
 
 ```ts
-const handler: EffectErrorHandler = (error) => console.error(error);
+const handler: EffectErrorHandler = (error, owner) =>
+  console.error(error, owner?.disposed);
 ```
 
 #### `OnOptions`
@@ -230,7 +231,7 @@ self(); // CircularComputationError: self -> self
 Стабильность: public
 
 ```ts
-type EffectErrorHandler = (error: unknown) => void;
+type EffectErrorHandler = (error: unknown, owner: Owner | null) => void;
 
 function setEffectErrorHandler(
   handler: EffectErrorHandler | null,
@@ -239,8 +240,10 @@ function setEffectErrorHandler(
 
 Настраивает обработчик ошибок эффектов. По умолчанию ошибки выводятся через `console.error`. Возвращает предыдущий обработчик; `null` отключает вывод, но не отключает изоляцию — остальные эффекты всё равно выполняются. Ошибка эффекта не прерывает flush и не влияет на последующие flush.
 
+Второй аргумент обработчика — `Owner` сбойного эффекта (позволяет привязать ошибку к нужному `ErrorBoundary`), либо `null`, если эффект создан вне контекста владельца. Сюда же приходит диагностическая ошибка превышения лимита flush (см. `flushSync`).
+
 ```ts
-const previous = setEffectErrorHandler((error) => report(error));
+const previous = setEffectErrorHandler((error, owner) => report(error, owner));
 // ...
 setEffectErrorHandler(previous);
 ```
@@ -313,6 +316,8 @@ function flushSync(): void;
 ```
 
 Принудительно прогоняет начальные и обычные эффекты (initial + queued). Игнорирует планирование через микротаску.
+
+Лимит flush — диагностика, а не падение рантайма. Если один эффект за flush запускается больше 1000 раз (или суммарно набирается больше 100 000 итераций), он считается runaway: ошибка передаётся в `setEffectErrorHandler` вместе с `owner`, узел снимается с очереди и больше не ставится в неё автоматически (пользовательские cleanup не вызываются). Остальные эффекты продолжают выполняться, а `flushSync` и микротаска не бросают исключение.
 
 ```ts
 import { createEffect, createSignal, flushSync } from "@ivlev-dev/silent-reactivity";
@@ -686,7 +691,9 @@ writeField(instance, "count", 5, (v) => {
 4. `batch(fn)` подавляет flush до выхода из внешнего батча; вложенные батчи не запускают flush. `batch` не запускает начальные эффекты и не прерывает их выполнение: если `batch` вызван внутри начального эффекта, обычные обновления ждут завершения всех начальных эффектов.
 5. `flushSync()` принудительно прогоняет `flushInitialEffects` и `flushEffects`, минуя микротаску.
 6. Обычный flush происходит один раз на микротаску (`scheduleFlush`); при разрывах батча — через `flushEffects`.
-7. Исключение одного эффекта изолируется: остальные эффекты выполняются, а ошибка передаётся в `setEffectErrorHandler`.
+7. Исключение одного эффекта изолируется: остальные эффекты выполняются, а ошибка передаётся в `setEffectErrorHandler` вместе с `owner` сбойного вычисления.
+8. Если эффект изменил источник, прочитанный в этом же прогоне (включая самый первый), узел помечается `DIRTY` и выполняется повторно — поведение первого и последующих прогонов совпадает.
+9. Превышение лимита flush не бросает исключение: runaway-эффект снимается с очереди и отключается, ошибка уходит в `setEffectErrorHandler` с `owner`, остальные эффекты выполняются.
 
 Следствие: синхронные render-эффекты видят состояние сразу; обычные эффекты асинхронны; `batch` объединяет несколько записей в один прогон.
 
@@ -762,6 +769,7 @@ class ReadonlyMutationError extends TypeError {}
 - Повторная обёртка: экземпляры классов, отмеченных через `markReactiveClass` (компилятором для классов с `@reactive`), `deepReactive` не оборачивает повторно.
 - Ленивость мемо: `createMemo` не вычисляется до первого чтения; dependent-эффекты уведомляются только при реальном изменении значения (с учётом `equals`).
 - Ошибки мемо не кешируются: после исключения мемо остаётся `DIRTY` и пересчитывается при следующем чтении. Циклические мемо завершаются `CircularComputationError`.
-- Ошибки эффектов изолированы и передаются в `setEffectErrorHandler`; синхронный первый запуск `createRenderEffect` по-прежнему пробрасывает исключение вызывающему.
+- Ошибки эффектов изолированы и передаются в `setEffectErrorHandler` (второй аргумент — `owner` сбойного вычисления или `null`); синхронный первый запуск `createRenderEffect` по-прежнему пробрасывает исключение вызывающему.
+- Превышение лимита flush не роняет рантайм: runaway-эффект отключается до пересоздания, ошибка приходит в `setEffectErrorHandler`; независимые эффекты продолжают обновляться.
 - `deepReactive` не оборачивает DOM-узлы, `Date`, `Promise`, `RegExp`, `Error`, буферы и прочие не-plain объекты; `Map`/`Set` оборачиваются, если не помечены `markRaw`.
 - `Setter` updater использует `peek()` и не регистрирует зависимость; запись с `equals === true` не уведомляет наблюдателей.

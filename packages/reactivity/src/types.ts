@@ -2,7 +2,7 @@ export type Accessor<T> = () => T;
 
 export type Setter<T> = (value: T | ((prev: T) => T)) => T;
 
-export type EffectErrorHandler = (error: unknown) => void;
+export type EffectErrorHandler = (error: unknown, owner: Owner | null) => void;
 
 export interface SignalOptions<T> {
   equals?: (a: T, b: T) => boolean;

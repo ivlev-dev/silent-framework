@@ -14,6 +14,7 @@ const CLEAN: NodeState = 0;
 const CHECK: NodeState = 1;
 const DIRTY: NodeState = 2;
 const MAX_FLUSH_ITERATIONS = 100000;
+const MAX_EFFECT_RUNS_PER_FLUSH = 1000;
 
 let reconcileStampSeq = 0;
 let wakeStampSeq = 0;
@@ -55,13 +56,13 @@ export function setEffectErrorHandler(
   return previous;
 }
 
-function reportEffectError(error: unknown): void {
+function reportEffectError(error: unknown, owner: Owner | null = null): void {
   const handler = effectErrorHandler;
   if (handler === null) {
     return;
   }
   try {
-    handler(error);
+    handler(error, owner);
   } catch (handlerError) {
     console.error(handlerError);
   }
@@ -114,6 +115,7 @@ interface EffectNode {
   disposed: boolean;
   initialized: boolean;
   running: boolean;
+  failed: boolean;
   deps: SourceNode[] | null;
   depVersions: number[] | null;
   nextDepMap: Map<SourceNode, number> | null;
@@ -302,6 +304,33 @@ function depsChanged(node: ComputationNode): boolean {
   return false;
 }
 
+/**
+ * Проверяет, изменились ли источники, прочитанные во время текущего прогона.
+ * Нужен для первого прогона: подписка появляется только после тела эффекта,
+ * поэтому запись в прочитанный сигнал не помечает узел dirty автоматически.
+ */
+function depsChangedSinceRead(node: ComputationNode): boolean {
+  const deps = node.deps;
+  const depVersions = node.depVersions;
+  if (deps === null || depVersions === null) {
+    return false;
+  }
+  for (let index = 0; index < deps.length; index += 1) {
+    const dep = deps[index];
+    const version = depVersions[index];
+    if (dep === undefined || version === undefined) {
+      continue;
+    }
+    if (dep.version !== version) {
+      return true;
+    }
+    if (dep.type === "memo" && !dep.disposed && dep.state !== CLEAN) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function updateIfNecessary(node: ComputationNode): void {
   if (node.disposed || node.state === CLEAN) {
     return;
@@ -438,7 +467,7 @@ function recomputeMemo(node: MemoNode): void {
 }
 
 function runEffect(node: EffectNode): void {
-  if (node.disposed) {
+  if (node.disposed || node.failed) {
     return;
   }
   effectRuns += 1;
@@ -446,10 +475,17 @@ function runEffect(node: EffectNode): void {
   node.state = CLEAN;
   node.initialized = true;
   runWithTracking(node, node.fn);
+  if (node.disposed || node.state !== CLEAN) {
+    return;
+  }
+  if (depsChangedSinceRead(node)) {
+    node.state = DIRTY;
+    queueEffect(node);
+  }
 }
 
 function queueEffect(node: EffectNode): void {
-  if (node.disposed) {
+  if (node.disposed || node.failed) {
     return;
   }
   if (node.initialized) {
@@ -472,8 +508,16 @@ function scheduleFlush(): void {
   });
 }
 
+function effectOwner(node: EffectNode): Owner | null {
+  const owner = node.owner;
+  if (owner.parent === null) {
+    return null;
+  }
+  return toOwner(owner);
+}
+
 function runQueuedEffect(node: EffectNode): void {
-  if (node.disposed) {
+  if (node.disposed || node.failed) {
     return;
   }
   try {
@@ -482,8 +526,51 @@ function runQueuedEffect(node: EffectNode): void {
     if (node.state === DIRTY) {
       node.state = CLEAN;
     }
-    reportEffectError(error);
+    reportEffectError(error, effectOwner(node));
   }
+}
+
+interface FlushBudget {
+  iterations: number;
+  readonly runs: Map<EffectNode, number>;
+}
+
+function createFlushBudget(): FlushBudget {
+  return { iterations: 0, runs: new Map<EffectNode, number>() };
+}
+
+/**
+ * Помечает эффект как сбойный: ошибка уходит в обработчик, узел снимается
+ * с очереди и больше не ставится в неё автоматически. Пользовательские
+ * cleanup не вызываются — состояние владельца не трогаем.
+ */
+function failRunawayEffect(node: EffectNode): void {
+  node.failed = true;
+  node.state = CLEAN;
+  effectQueue.delete(node);
+  pendingInitial.delete(node);
+  reportEffectError(
+    new Error("Reactivity flush exceeded iteration limit"),
+    effectOwner(node),
+  );
+}
+
+function runBudgetedEffect(node: EffectNode, budget: FlushBudget): void {
+  if (node.disposed || node.failed) {
+    return;
+  }
+  const runs = (budget.runs.get(node) ?? 0) + 1;
+  budget.runs.set(node, runs);
+  budget.iterations += 1;
+  if (
+    runs > MAX_EFFECT_RUNS_PER_FLUSH ||
+    budget.iterations > MAX_FLUSH_ITERATIONS
+  ) {
+    budget.iterations = 0;
+    failRunawayEffect(node);
+    return;
+  }
+  runQueuedEffect(node);
 }
 
 function flushInitialEffects(): void {
@@ -492,16 +579,12 @@ function flushInitialEffects(): void {
   }
   initialFlushing = true;
   try {
-    let iterations = 0;
+    const budget = createFlushBudget();
     while (pendingInitial.size > 0) {
       const nodes = Array.from(pendingInitial);
       pendingInitial.clear();
       for (const node of nodes) {
-        runQueuedEffect(node);
-      }
-      iterations += nodes.length;
-      if (iterations > MAX_FLUSH_ITERATIONS) {
-        throw new Error("Reactivity flush exceeded iteration limit");
+        runBudgetedEffect(node, budget);
       }
     }
   } finally {
@@ -515,18 +598,14 @@ function flushEffects(): void {
   }
   flushing = true;
   try {
-    let iterations = 0;
+    const budget = createFlushBudget();
     while (effectQueue.size > 0) {
       const entry = effectQueue.values().next();
       if (entry.done === true) {
         break;
       }
       effectQueue.delete(entry.value);
-      runQueuedEffect(entry.value);
-      iterations += 1;
-      if (iterations > MAX_FLUSH_ITERATIONS) {
-        throw new Error("Reactivity flush exceeded iteration limit");
-      }
+      runBudgetedEffect(entry.value, budget);
     }
   } finally {
     flushing = false;
@@ -668,6 +747,7 @@ function createEffectNode(type: "effect" | "renderEffect", fn: () => void): Effe
     disposed: false,
     initialized: false,
     running: false,
+    failed: false,
     deps: null,
     depVersions: null,
     nextDepMap: null,

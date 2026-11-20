@@ -345,7 +345,16 @@ describe("batch during initial effects", () => {
     });
 
     flushSync();
-    expect(log).toEqual(["render:0", "initial-a", "initial-b:1", "render:1"]);
+    // Первый прогон эффекта записал в сигнал, который сам же прочитал,
+    // поэтому по завершении начальных эффектов он перезапускается —
+    // так же, как это происходит на последующих прогонах.
+    expect(log).toEqual([
+      "render:0",
+      "initial-a",
+      "initial-b:1",
+      "render:1",
+      "initial-a",
+    ]);
   });
 
   it("does not force a pending initial effect from batch", () => {
