@@ -204,11 +204,14 @@
       "withRuntimeOptions"
     ],
     "@ivlev-dev/silent-di": [
+      "bindClass",
+      "bindFactory",
       "Binding",
       "BindingBuilder",
       "CircularDependencyError",
       "container",
       "Container",
+      "ContainerDisposedError",
       "ContainerOptions",
       "ContainerResolutionEvent",
       "ContainerResolutionInspector",
@@ -318,6 +321,7 @@
       "RouterNavigationError",
       "RouterOptions",
       "RouterState",
+      "RouterTransitionOptions",
       "RouterView",
       "RouterViewComponentProps",
       "RouterViewProps",
