@@ -1136,8 +1136,77 @@ class Unknowns {
     expect(fields).toBe(
       '"mapped": "map", "set": "set", '
       + '"list": ["array",["union",["string","number","boolean","bigint","symbol","object","function","undefined","null"]]], '
-      + '"record": "object"',
+      + '"record": ["record",["union",["string","number","boolean","bigint","symbol","object","function","undefined","null"]]]',
     );
+  });
+
+  it("диагностирует generic-элементы контейнеров в обычном режиме", () => {
+    const messages: string[] = [];
+    const { sourceFile, checker } = programFor(`
+class Generic<T> {
+  accessor list: T[] = [];
+  accessor set: Set<T> = new Set();
+  accessor map: Map<string, T> = new Map();
+  accessor record: Record<string, T> = {};
+}
+`);
+    const blocks = generateValidationBlocks({
+      sourceFile,
+      checker,
+      runtimeRef: (symbol) => symbol.getName(),
+      diagnostics: (message) => messages.push(message),
+    });
+    expect(blocks).toHaveLength(1);
+    expect(messages).toHaveLength(4);
+    expect(messages.every((message) => message.includes("тип T не поддерживается"))).toBe(true);
+    expect(messages.map((message) => message.match(/Generic\.(\w+):/)?.[1]))
+      .toEqual(["list", "set", "map", "record"]);
+    const code = blocks[0]!.code;
+    expect(code).toContain('"list": ["array",');
+    expect(code).toContain('"set": "set"');
+    expect(code).toContain('"map": "map"');
+    expect(code).toContain('"record": ["record",["union",');
+  });
+
+  it.each([
+    ["list", "accessor list: T[] = [];", "Generic.list"],
+    ["set", "accessor set: Set<T> = new Set();", "Generic.set"],
+    ["map", "accessor map: Map<string, T> = new Map();", "Generic.map"],
+    ["record", "accessor record: Record<string, T> = {};", "Generic.record"],
+  ])("бросает ошибку в strict-режиме для generic-контейнера %s", (_name, member, path) => {
+    const { sourceFile, checker } = programFor(`
+class Generic<T> {
+  ${member}
+}
+`);
+    expect(() => generateValidationBlocks({
+      sourceFile,
+      checker,
+      runtimeRef: (symbol) => symbol.getName(),
+      strict: true,
+    })).toThrow(new RegExp(`${path}: тип T не поддерживается`));
+  });
+
+  it("заменяет небезопасную ссылку на класс на undefined с диагностикой", () => {
+    const messages: string[] = [];
+    const { sourceFile, checker } = programFor(`
+class Money {}
+class Wallet {
+  accessor money: Money = new Money();
+  accessor name: string = "";
+}
+`);
+    const blocks = generateValidationBlocks({
+      sourceFile,
+      checker,
+      runtimeRef: () => "alias.a-b",
+      diagnostics: (message) => messages.push(message),
+    });
+    expect(blocks).toHaveLength(1);
+    expect(messages.some((message) => message.includes("не является корректным идентификатором"))).toBe(true);
+    expect(blocks[0]!.code).toContain('"money": ["class",()=>undefined]');
+    expect(blocks[0]!.code).toContain('"name": "string"');
+    expect(blocks[0]!.code).not.toContain("alias.a-b");
   });
 
   it("превращает числовой index signature в record", () => {

@@ -397,6 +397,12 @@ function siblingRuntimeExists(fileName: string): boolean {
   return candidates.some((candidate) => ts.sys.fileExists(candidate));
 }
 
+const REFERENCE_IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
+
+function isSafeReference(reference: string): boolean {
+  return reference.split(".").every((part) => REFERENCE_IDENTIFIER.test(part));
+}
+
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -417,7 +423,83 @@ function collectRuntimeTargets(value: unknown, key: string, targets: string[]): 
   }
 }
 
+function runtimeTargetsExist(
+  directory: string,
+  data: Readonly<Record<string, unknown>>,
+): boolean {
+  const targets: string[] = [];
+  if (typeof data.main === "string") targets.push(data.main);
+  if (typeof data.module === "string") targets.push(data.module);
+  if (data.exports !== undefined) collectRuntimeTargets(data.exports, "exports", targets);
+  for (const target of targets) {
+    const resolved = path.resolve(directory, target);
+    if (
+      RUNTIME_FILE_PATTERN.test(resolved)
+      && !isDeclarationFile(resolved)
+      && ts.sys.fileExists(resolved)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function packageDirectoryHasRuntime(directory: string): boolean {
+  const packageFile = path.join(directory, "package.json");
+  if (ts.sys.fileExists(packageFile)) {
+    const text = ts.sys.readFile(packageFile);
+    if (text !== undefined) {
+      try {
+        const data: unknown = JSON.parse(text);
+        if (isPlainRecord(data) && runtimeTargetsExist(directory, data)) {
+          return true;
+        }
+      } catch {
+        // Некорректный package.json — проверяем файлы пакета ниже.
+      }
+    }
+  }
+  for (const candidate of ["index.js", "index.mjs", "index.cjs"]) {
+    if (ts.sys.fileExists(path.join(directory, candidate))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function typesRuntimeDirectory(fileName: string): string | null {
+  const normalized = fileName.replace(/\\/g, "/");
+  const marker = "/node_modules/@types/";
+  const index = normalized.lastIndexOf(marker);
+  if (index < 0) return null;
+  const rest = normalized.slice(index + marker.length);
+  const segments = rest.split("/");
+  const first = segments[0];
+  if (first === undefined || first.length === 0) return null;
+  let packageName: string;
+  if (first.startsWith("@")) {
+    const name = segments[1];
+    if (name === undefined || name.length === 0) return null;
+    packageName = `${first}/${name}`;
+  } else {
+    const separator = first.indexOf("__");
+    if (separator > 0) {
+      const scope = first.slice(0, separator);
+      const name = first.slice(separator + 2);
+      if (name.length === 0) return null;
+      packageName = `@${scope}/${name}`;
+    } else {
+      packageName = first;
+    }
+  }
+  return `${normalized.slice(0, index + "/node_modules/".length)}${packageName}`;
+}
+
 function packageRuntimeExists(fileName: string): boolean {
+  const typesDirectory = typesRuntimeDirectory(fileName);
+  if (typesDirectory !== null) {
+    return packageDirectoryHasRuntime(typesDirectory);
+  }
   let directory = path.dirname(fileName);
   for (;;) {
     const packageFile = path.join(directory, "package.json");
@@ -431,21 +513,7 @@ function packageRuntimeExists(fileName: string): boolean {
         return false;
       }
       if (!isPlainRecord(data)) return false;
-      const targets: string[] = [];
-      if (typeof data.main === "string") targets.push(data.main);
-      if (typeof data.module === "string") targets.push(data.module);
-      if (data.exports !== undefined) collectRuntimeTargets(data.exports, "exports", targets);
-      for (const target of targets) {
-        const resolved = path.resolve(directory, target);
-        if (
-          RUNTIME_FILE_PATTERN.test(resolved)
-          && !isDeclarationFile(resolved)
-          && ts.sys.fileExists(resolved)
-        ) {
-          return true;
-        }
-      }
-      return false;
+      return runtimeTargetsExist(directory, data);
     }
     const parent = path.dirname(directory);
     if (parent === directory) return false;
@@ -686,12 +754,26 @@ function createRuntimeRefResolver(
   sourceFile: ts.SourceFile,
   checker: ts.TypeChecker,
   options: ts.CompilerOptions,
+  report: (message: string) => void,
 ): RuntimeRefResolver {
   const bindings = collectImportBindings(sourceFile, checker);
   const usedNames = collectUsedNames(sourceFile);
   const aliases = new Map<string, string>();
   const imports: ImportInsertion[] = [];
   const runtimeModules = new Map<string, boolean>();
+
+  const unsafeReference = (reference: string, moduleName: string | null): string => {
+    const moduleText = moduleName === null ? "" : ` из модуля ${JSON.stringify(moduleName)}`;
+    report(
+      `${sourceFile.fileName}: ссылка на класс ${JSON.stringify(reference)}${moduleText} не является корректным идентификатором; класс пропущен`,
+    );
+    return "undefined";
+  };
+
+  const safeLocalReference = (reference: string | null): string => {
+    if (reference === null) return "undefined";
+    return isSafeReference(reference) ? reference : unsafeReference(reference, null);
+  };
 
   const moduleHasRuntime = (moduleName: string): boolean => {
     const cached = runtimeModules.get(moduleName);
@@ -802,8 +884,10 @@ function createRuntimeRefResolver(
         && entry.module === moduleName
         && !entry.typeOnly,
     );
-    if (namespaceBinding !== undefined) return `${namespaceBinding.localName}.${name}`;
-    return `${aliasFor(moduleName)}.${name}`;
+    const reference = namespaceBinding !== undefined
+      ? `${namespaceBinding.localName}.${name}`
+      : `${aliasFor(moduleName)}.${name}`;
+    return isSafeReference(reference) ? reference : unsafeReference(reference, moduleName);
   };
 
   const runtimeRef = (symbol: ts.Symbol): string => {
@@ -811,11 +895,11 @@ function createRuntimeRefResolver(
     if (info === null) return "undefined";
     if (isGlobalAugmentation(info.declaration)) return "undefined";
     if (info.file.fileName === sourceFile.fileName) {
-      return localQualifiedName(checker, symbol) ?? "undefined";
+      return safeLocalReference(localQualifiedName(checker, symbol));
     }
     if (isGlobalDeclaration(info.file)) {
       if (!isDeclarationFile(info.file.fileName) || isDefaultLibraryFile(info.file)) {
-        return localQualifiedName(checker, symbol) ?? "undefined";
+        return safeLocalReference(localQualifiedName(checker, symbol));
       }
       const ambient = ambientModuleName(info.declaration);
       if (ambient === null) return "undefined";
@@ -834,7 +918,7 @@ function createRuntimeRefResolver(
     const name = matching.find((entry) => entry.exportedName !== undefined)?.exportedName
       ?? exportedName(checker, symbol, info.file);
     if (name === null) {
-      return localQualifiedName(checker, symbol) ?? "undefined";
+      return safeLocalReference(localQualifiedName(checker, symbol));
     }
     const moduleName = matching[0]?.module
       ?? moduleSpecifierFor(sourceFile, info.file, checker);
@@ -1378,7 +1462,12 @@ export function validation(options: ValidationPluginOptions = {}): Plugin {
         }
         const checker = entry.program.getTypeChecker();
         const targets = baseSymbolsFor(entry.program, checker);
-        const resolver = createRuntimeRefResolver(sourceFile, checker, entry.project.options);
+        const resolver = createRuntimeRefResolver(
+          sourceFile,
+          checker,
+          entry.project.options,
+          warn,
+        );
         const shouldGenerate = (
           declaration: ts.ClassDeclaration | ts.ClassExpression,
         ): boolean => {

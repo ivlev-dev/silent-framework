@@ -360,6 +360,9 @@ function builtinBaseNode(type: ts.Type, state: SerializeState): SchemaNode | nul
       if (name === "Array" || name === "ReadonlyArray") {
         const element = typeArguments(base, state.checker)[0];
         const schema = element === undefined ? null : serializeType(element, state);
+        if (element !== undefined && schema === null) {
+          reportUnsupported(state, state.path, element);
+        }
         return { kind: "array", element: schema ?? wildcardNode() };
       }
       if (typeIsOpaque(base, state.checker)) {
@@ -846,6 +849,9 @@ function serializeObject(
   if (builtin === "ArrayLike" || builtin === "ReadonlyArrayLike") {
     const element = args[0];
     const schema = element === undefined ? null : serializeType(element, state);
+    if (element !== undefined && schema === null) {
+      reportUnsupported(state, state.path, element);
+    }
     return {
       kind: "union",
       members: [
@@ -860,6 +866,9 @@ function serializeObject(
       return { kind: "array", element: wildcardNode() };
     }
     const schema = serializeType(element, state);
+    if (schema === null) {
+      reportUnsupported(state, state.path, element);
+    }
     return { kind: "array", element: schema ?? wildcardNode() };
   }
   if (builtin === "WeakMap") {
@@ -876,6 +885,12 @@ function serializeObject(
     }
     const keySchema = serializeType(key, state);
     const valueSchema = serializeType(value, state);
+    if (keySchema === null) {
+      reportUnsupported(state, state.path, key);
+    }
+    if (valueSchema === null) {
+      reportUnsupported(state, state.path, value);
+    }
     if (keySchema === null || valueSchema === null) {
       return primitive("map");
     }
@@ -887,6 +902,9 @@ function serializeObject(
       return primitive("set");
     }
     const schema = serializeType(element, state);
+    if (schema === null) {
+      reportUnsupported(state, state.path, element);
+    }
     return schema === null ? primitive("set") : { kind: "setof", element: schema };
   }
   if (builtin === "Promise") {
@@ -920,7 +938,14 @@ function serializeObject(
     if (isAmbientWithoutRuntime(declaration)) {
       return { kind: "class", reference: "undefined" };
     }
-    return { kind: "class", reference: state.runtimeRef(symbol) };
+    const reference = state.runtimeRef(symbol);
+    if (!isSafeReference(reference)) {
+      state.report(
+        `${state.sourceFile.fileName}: ${state.path.join(".")}: ссылка на класс ${JSON.stringify(reference)} не является корректным идентификатором; класс пропущен`,
+      );
+      return { kind: "class", reference: "undefined" };
+    }
+    return { kind: "class", reference };
   }
   const baseNode = builtinBaseNode(type, state);
   if (baseNode !== null) {
@@ -930,8 +955,13 @@ function serializeObject(
     return primitive("function");
   }
   if (builtin === "Record" && args.length === 2) {
-    const valueSchema = serializeType(args[1]!, state);
-    return valueSchema === null ? primitive("object") : { kind: "record", value: valueSchema };
+    const valueType = args[1]!;
+    const valueSchema = serializeType(valueType, state);
+    if (valueSchema === null) {
+      reportUnsupported(state, state.path, valueType);
+      return { kind: "record", value: wildcardNode() };
+    }
+    return { kind: "record", value: valueSchema };
   }
   if (typeIsOpaque(type, state.checker)) {
     return primitive("object");
@@ -942,13 +972,17 @@ function serializeObject(
   const indexNodes: SchemaNode[] = [];
   if (stringIndex !== undefined) {
     const valueSchema = serializeType(stringIndex, state);
-    if (valueSchema !== null) {
+    if (valueSchema === null) {
+      reportUnsupported(state, state.path, stringIndex);
+    } else {
       indexNodes.push({ kind: "record", value: valueSchema });
     }
   }
   if (numberIndex !== undefined && properties.length === 0) {
     const valueSchema = serializeType(numberIndex, state);
-    if (valueSchema !== null) {
+    if (valueSchema === null) {
+      reportUnsupported(state, state.path, numberIndex);
+    } else {
       indexNodes.push({ kind: "record", value: valueSchema });
     }
   }
@@ -1113,6 +1147,12 @@ export function schemaHasClassRef(
     default:
       return false;
   }
+}
+
+const REFERENCE_IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
+
+function isSafeReference(reference: string): boolean {
+  return reference.split(".").every((part) => REFERENCE_IDENTIFIER.test(part));
 }
 
 function renderFieldKey(name: string): string {

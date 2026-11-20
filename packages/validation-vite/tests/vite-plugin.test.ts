@@ -707,6 +707,146 @@ describe("validation()", () => {
     );
   });
 
+  it("находит рантайм для класса из отдельного пакета @types/<name>", () => {
+    const directory = createProject();
+    const typesDirectory = path.join(directory, "node_modules", "@types", "foo");
+    mkdirSync(typesDirectory, { recursive: true });
+    writeFileSync(
+      path.join(typesDirectory, "index.d.ts"),
+      "export declare class Foo {\n  value: string;\n}\n",
+    );
+    const runtimeDirectory = path.join(directory, "node_modules", "foo");
+    mkdirSync(runtimeDirectory, { recursive: true });
+    writeFileSync(
+      path.join(runtimeDirectory, "package.json"),
+      JSON.stringify({ name: "foo", type: "module", main: "index.js" }, null, 2),
+    );
+    writeFileSync(
+      path.join(runtimeDirectory, "index.js"),
+      "export class Foo {}\n",
+    );
+    const file = path.join(directory, "types-wallet.ts");
+    writeFileSync(
+      file,
+      [
+        'import type { Foo } from "foo";',
+        'import { ValidationModel } from "@ivlev-dev/silent-validation";',
+        "",
+        "export class TypesWallet extends ValidationModel {",
+        "  accessor foo: Foo = null as unknown as Foo;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const warnings: string[] = [];
+    const result = getTransform(validation()).call(
+      { warn: (message: string) => warnings.push(message) },
+      readFileSync(file, "utf8"),
+      file,
+    );
+    expect(result).not.toBeNull();
+    const code = (result as TransformOutput).code;
+    expect(code).toMatch(/\["class",\(\)=>__silent_validation_\d+\.Foo\]/);
+    expect(code).toMatch(
+      /import \* as __silent_validation_\d+ from ["']foo["'];/,
+    );
+    expect(warnings).toHaveLength(0);
+
+    const source = readFileSync(file, "utf8");
+    expect(() => getTransform(validation({ strict: true }))(source, file)).not.toThrow();
+  });
+
+  it("находит рантайм для scoped-класса из @types/scope__name", () => {
+    const directory = createProject();
+    const typesDirectory = path.join(directory, "node_modules", "@types", "scope__foo");
+    mkdirSync(typesDirectory, { recursive: true });
+    writeFileSync(
+      path.join(typesDirectory, "index.d.ts"),
+      "export declare class Foo {\n  value: string;\n}\n",
+    );
+    const runtimeDirectory = path.join(directory, "node_modules", "@scope", "foo");
+    mkdirSync(runtimeDirectory, { recursive: true });
+    writeFileSync(
+      path.join(runtimeDirectory, "package.json"),
+      JSON.stringify({ name: "@scope/foo", type: "module", main: "index.js" }, null, 2),
+    );
+    writeFileSync(
+      path.join(runtimeDirectory, "index.js"),
+      "export class Foo {}\n",
+    );
+    const file = path.join(directory, "scoped-types-wallet.ts");
+    writeFileSync(
+      file,
+      [
+        'import type { Foo } from "@scope/foo";',
+        'import { ValidationModel } from "@ivlev-dev/silent-validation";',
+        "",
+        "export class ScopedTypesWallet extends ValidationModel {",
+        "  accessor foo: Foo = null as unknown as Foo;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const warnings: string[] = [];
+    const result = getTransform(validation()).call(
+      { warn: (message: string) => warnings.push(message) },
+      readFileSync(file, "utf8"),
+      file,
+    );
+    expect(result).not.toBeNull();
+    const code = (result as TransformOutput).code;
+    expect(code).toMatch(/\["class",\(\)=>__silent_validation_\d+\.Foo\]/);
+    expect(code).toMatch(
+      /import \* as __silent_validation_\d+ from ["']@scope\/foo["'];/,
+    );
+    expect(warnings).toHaveLength(0);
+  });
+
+  it("не подставляет небезопасное строковое имя экспорта в код", () => {
+    const directory = createProject();
+    writeFileSync(
+      path.join(directory, "string-export.ts"),
+      ["class Remote {}", 'export { Remote as "remote-class" };', ""].join("\n"),
+    );
+    const file = path.join(directory, "string-export-holder.ts");
+    writeFileSync(
+      file,
+      [
+        'import type { "remote-class" as Remote } from "./string-export";',
+        'import { ValidationModel } from "@ivlev-dev/silent-validation";',
+        "",
+        "export class StringExportHolder extends ValidationModel {",
+        "  accessor remote: Remote = null as unknown as Remote;",
+        '  accessor name: string = "";',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const warnings: string[] = [];
+    const result = getTransform(validation()).call(
+      { warn: (message: string) => warnings.push(message) },
+      readFileSync(file, "utf8"),
+      file,
+    );
+    expect(result).not.toBeNull();
+    const code = (result as TransformOutput).code;
+    expect(code).not.toContain(".remote-class");
+    expect(code).not.toMatch(/=>[^;\n]*remote-class/);
+    expect(warnings.some((message) => message.includes("не является корректным идентификатором")))
+      .toBe(true);
+    expect(code).toMatch(/["']name["']\s*:/);
+    const parsed = ts.createSourceFile(
+      file,
+      code,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    const parseDiagnostics = (parsed as unknown as { parseDiagnostics?: readonly unknown[] })
+      .parseDiagnostics;
+    expect(parseDiagnostics ?? []).toEqual([]);
+  });
+
   it("считает node:* рантайм-доступным ambient-модулем", () => {
     const directory = createProject();
     writeFileSync(
