@@ -34,6 +34,10 @@ type MetadataPatch = Omit<FieldMetadata, "name">;
 
 const metadataByClass = new WeakMap<Function, Map<string, FieldMetadata>>();
 const validationInvalidators = new WeakMap<object, () => void>();
+const fieldBinders = new WeakMap<
+  object,
+  (name: string, value: unknown) => void
+>();
 
 /** @internal Регистрирует инвалидатор проверки для экземпляра формы. */
 export function registerValidationInvalidator(
@@ -46,6 +50,19 @@ export function registerValidationInvalidator(
 /** @internal Снимает регистрацию инвалидатора. */
 export function unregisterValidationInvalidator(instance: object): void {
   validationInvalidators.delete(instance);
+}
+
+/** @internal Регистрирует обработчик инициализации `@Field`-значения. */
+export function registerFieldBinder(
+  instance: object,
+  bind: (name: string, value: unknown) => void,
+): void {
+  fieldBinders.set(instance, bind);
+}
+
+/** @internal Снимает регистрацию обработчика. */
+export function unregisterFieldBinder(instance: object): void {
+  fieldBinders.delete(instance);
 }
 
 function notifyValidationInvalidator(instance: object): void {
@@ -156,6 +173,7 @@ export function Field(): FieldDecorator {
         base.set?.call(this, value);
       },
       init(this: object, value: unknown): unknown {
+        fieldBinders.get(this)?.(name, value);
         return base.init === undefined ? value : base.init.call(this, value);
       },
     };

@@ -20,6 +20,19 @@
 - Эталон для `reset()` снимается после завершения конструкции (микрозадача + fallback), клонируется глубоко; `reset()` каждый раз пишет свежую копию (`Map`/`Set`/`Date`, массивы, plain-объекты). `values` — такой же снимок-копия.
 - Ошибки с bracket-путями (`tags[0]`) принадлежат полю `tags` в `getFieldProps` и корректно снимаются после исправления.
 
+### Форма: исправления аудита (P1)
+
+- `dispose()` рекурсивно освобождает owned-вложенные формы (дети и внуки), очищает `propsCache`, снимает регистрацию инвалидатора; `@watch`/эффекты ребёнка после dispose не срабатывают.
+- Привязка вложенной формы атомарна: `bindParent`/`ensureCanBind` проверяют владение и цикл до отвязки старого ребёнка и записи значения; `setValues`/`reset` при конфликте оставляют форму и старого ребёнка рабочими.
+- Кэш `FieldProps` инвалидируется при direct↔nested смене вида поля и при attach/detach, поэтому ошибки/`isValid`/`isReady` актуальны.
+- `@FormField` может иметь собственные правила: ошибка самого поля-формы попадает в `errors`, `validateField("address")` проверяет правила корня и ребёнка; `@ValidateIf(false)` отключает проверку ребёнка в `validate()`/`validateSubmitFields()`/`isReady`.
+- Ярлыки: `@Label` ребёнка → `labels["address.city"]` → `labels["city"]` → имя; `ValidationOptions` (`validate`/`validateField`) мержатся с локальными labels, ребёнку передаются с префиксом.
+- Публичные `validate(options?)`/`validateField(field, options?)` пробрасывают `groups`/`cascade`/`stopAtFirst`/`types`/`locale` в валидатор, включая вложенные формы.
+- `setDirectValue` при `Object.is`-равенстве не помечает `dirty` и не очищает внешние ошибки; `select multiple` читает `selectedOptions`/`options[selected]` и отдаёт массив строк.
+- Внутренние мемо (`isReady`/`isValid`/`isDirty`/`errors`/`values`) переведены на `Symbol`: `@computed override get isReady()` с `super` не даёт `Circular memo computation detected`.
+- `id` вычисляется заранее и одинаков при доступе через родителя и ребёнка (`ProfileForm-address.city`); два экземпляра без `formId` дают одинаковые id — для списков/SSR нужен уникальный `formId`. Ошибка поля-формы (`setFieldErrors("address", ...)`) снимается при изменении любого ребёнка.
+- Мелочи: убрана мёртвая ветка `setFieldErrors`; документированы async-ready `FieldProps.isReady`, отсутствие `touched` у `validateField`, ограничение async `@ValidateIf` и nullable/union `FieldPath`.
+
 ### Реактивность: opt-in для классов
 
 - `deepReactive` больше не оборачивает экземпляры пользовательских классов автоматически: прокси ломал `accessor`- и `#private`-поля (`Cannot read private member`). Реактивность классов — через store (`@reactive`/`@Field`), вложенные DTO остаются сырыми. Это поведенческое изменение; plain-объекты, массивы, `Map`/`Set` по-прежнему оборачиваются.
