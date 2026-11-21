@@ -10,19 +10,11 @@ import {
   Placeholder,
   Required,
 } from "@ivlev-dev/silent-form";
+import type { FieldProps } from "@ivlev-dev/silent-form";
 import { AddressForm } from "./address.form";
 
-export interface ProfileFields {
-  name: string;
-  email: string;
-  age: number;
-  avatar: string;
-  address: AddressForm;
-  interests: string;
-}
-
 /** Форма профиля: плоские поля, вложенная форма и поле с ручной готовностью. */
-export class ProfileForm extends Form<ProfileFields> {
+export class ProfileForm extends Form {
   @Field()
   @Label("Имя")
   @Placeholder("Иван")
@@ -60,11 +52,20 @@ export class ProfileForm extends Form<ProfileFields> {
   private uploadTimer: ReturnType<typeof setTimeout> | undefined;
 
   /**
+   * Полиморфный `this` в TypeScript не раскрывает `FieldPath<this>`,
+   * поэтому внутри методов берём тип класса явно.
+   */
+  private avatarField(): FieldProps<string> {
+    const self: ProfileForm = this;
+    return self.getFieldProps("avatar");
+  }
+
+  /**
    * Симуляция загрузки файла: поле не готово к отправке, пока «загрузка»
    * не завершится. Таймер снимается в `reset` и `dispose`.
    */
   upload(file: File): void {
-    const avatar = this.getFieldProps("avatar");
+    const avatar = this.avatarField();
     this.clearUploadTimer();
     avatar.setReady(false);
     this.uploadTimer = setTimeout(() => {
@@ -91,6 +92,6 @@ export class ProfileForm extends Form<ProfileFields> {
     clearTimeout(this.uploadTimer);
     this.uploadTimer = undefined;
     // Отменённая загрузка не должна навсегда оставлять поле неготовым.
-    this.getFieldProps("avatar").setReady(true);
+    this.avatarField().setReady(true);
   }
 }

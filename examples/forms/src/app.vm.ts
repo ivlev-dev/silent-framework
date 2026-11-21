@@ -2,7 +2,7 @@ import { reactive, ViewModel } from "@ivlev-dev/silent-core";
 import { ProfileForm } from "./profile.form";
 
 export class AppVM extends ViewModel {
-  readonly form = new ProfileForm({ formId: "profile" });
+  readonly form = new ProfileForm();
 
   @reactive accessor status = "";
 

@@ -93,7 +93,7 @@ if (!result.valid) {
 ```ts
 import { Field, Form, IsEmail, Label, Required } from "@ivlev-dev/silent-form";
 
-class LoginForm extends Form<{ email: string }> {
+class LoginForm extends Form {
   @Field()
   @Label("Email")
   @Required()
@@ -101,14 +101,14 @@ class LoginForm extends Form<{ email: string }> {
   public accessor email = "";
 }
 
-const form = new LoginForm({ formId: "login" });
+const form = new LoginForm();
 const email = form.getFieldProps("email");
 
 email.onChange({ currentTarget: { value: "user@example.com" } });
 await form.onSubmit((submitted) => api.login(submitted.values))();
 ```
 
-`getFieldProps` отдаёт реактивные `value`, `label`, `placeholder`, `hint`, `error`, `isReady`, `isValid`, `isValidating` и обработчики `onInput`/`onChange`/`onBlur`. Вложенные формы подключаются через `@FormField()` — значения, ошибки и готовность агрегируются, пути типизированы (`address.city`); серверные ошибки ставятся `setFieldErrors` и снимаются при изменении значения. Подробнее — [`docs/api/form.md`](./docs/api/form.md), полный пример — [`examples/forms`](./examples/forms).
+`getFieldProps` отдаёт реактивные `value`, `label`, `placeholder`, `hint`, `error`, `isReady`, `isValid`, `isValidating` и обработчики `onInput`/`onChange`/`onBlur`, а также DOM-`id` по умолчанию `${className}-${path}` (`LoginForm-email`); `formId` задаёт свой префикс. Вложенные формы подключаются через `@FormField()` — значения, ошибки и готовность агрегируются, пути типизированы (`address.city`); серверные ошибки ставятся `setFieldErrors` и снимаются при изменении значения. Подробнее — [`docs/api/form.md`](./docs/api/form.md), полный пример — [`examples/forms`](./examples/forms).
 
 ## Компонент и ViewModel
 

@@ -13,43 +13,23 @@ import type {
 
 type ErrorsMap = Readonly<Record<string, readonly string[]>>;
 
-type FormInstance = Form<Record<string, unknown>>;
-
-interface FormSurface {
-  readonly isReady: boolean;
-  readonly isValid: boolean;
-  readonly isDirty: boolean;
-  readonly isSubmitting: boolean;
-  readonly errors: Readonly<Record<string, readonly string[]>>;
-  readonly values: Record<string, unknown>;
-  getFieldProps: (...args: never[]) => unknown;
-  validateField: (...args: never[]) => unknown;
-  validate: (...args: never[]) => unknown;
-  onSubmit: (...args: never[]) => unknown;
-  setFieldErrors: (...args: never[]) => unknown;
-  clearFieldErrors: (...args: never[]) => unknown;
-  setValues: (...args: never[]) => unknown;
-  reset: (...args: never[]) => unknown;
-  dispose: (...args: never[]) => unknown;
-}
-
-type FieldsOf<Self, F> = [F] extends [never] ? Omit<Self, keyof FormSurface> : F;
+type FormInstance = Form;
 
 type SetValuesInput<T> = {
-  [K in keyof T]?: T[K] extends Form<infer Nested>
-    ? T[K] | SetValuesInput<Nested>
+  [K in keyof T as K extends keyof Form
+    ? never
+    : T[K] extends (...args: never[]) => unknown
+      ? never
+      : K]?: T[K] extends Form
+    ? T[K] | SetValuesInput<T[K]>
     : T[K];
 };
 
-type FieldValue<T, P extends string> = T extends Form<infer Nested>
-  ? [Nested] extends [never]
-    ? FieldValueByPath<T, P>
-    : FieldValue<Nested, P>
-  : FieldValueByPath<T, P>;
-
-type FieldValueByPath<T, P extends string> = P extends `${infer Head}.${infer Rest}`
+type FieldValue<T, P extends string> = P extends `${infer Head}.${infer Rest}`
   ? Head extends keyof T
-    ? FieldValue<T[Head], Rest>
+    ? T[Head] extends Form
+      ? FieldValue<T[Head], Rest>
+      : never
     : never
   : P extends keyof T
     ? T[P]
@@ -171,7 +151,7 @@ function normalizeErrorMessages(
  * Поля объявляются через `@Field()` (или `@FormField()` для вложенной формы).
  * Значения, ошибки и флаги доступны реактивно через `getFieldProps`.
  */
-export abstract class Form<Fields extends object = never> {
+export abstract class Form {
   private readonly options: ResolvedFormOptions;
 
   private readonly validationErrors = createSignal<ErrorsMap>({});
@@ -296,28 +276,26 @@ export abstract class Form<Fields extends object = never> {
    * Для пути вложенной формы (`address.city`) делегирует вложенной форме,
    * но `name`/`id` содержат полный путь.
    */
-  getFieldProps<K extends FieldPath<FieldsOf<this, Fields>>>(
+  getFieldProps<K extends FieldPath<this>>(
     field: K,
-  ): FieldProps<FieldValue<FieldsOf<this, Fields>, K>> {
+  ): FieldProps<FieldValue<this, K>> {
     const path = String(field);
     this.ensureInitialized();
     const cached = this.propsCache.get(path);
     if (cached !== undefined) {
-      return cached as unknown as FieldProps<FieldValue<FieldsOf<this, Fields>, K>>;
+      return cached as unknown as FieldProps<FieldValue<this, K>>;
     }
     const created = this.createProps(path);
     this.propsCache.set(path, created);
-    return created as unknown as FieldProps<FieldValue<FieldsOf<this, Fields>, K>>;
+    return created as unknown as FieldProps<FieldValue<this, K>>;
   }
 
   /** Проверить одно поле (включая путь вложенной формы). */
-  async validateField(
-    field: FieldPath<FieldsOf<this, Fields>>,
-  ): Promise<boolean> {
+  async validateField(field: FieldPath<this>): Promise<boolean> {
     const path = String(field);
     const { root, rest } = this.locate(path);
     if (rest !== undefined) {
-      return this.requireChild(root).validateField(rest);
+      return this.requireChild(root).validateAt(rest);
     }
     if (this.childFor(root) !== undefined) {
       return this.requireChild(root).validate();
@@ -405,14 +383,14 @@ export abstract class Form<Fields extends object = never> {
 
   /** Установить внешние (серверные) ошибки поля. */
   setFieldErrors(
-    field: FieldPath<FieldsOf<this, Fields>>,
+    field: FieldPath<this>,
     errors: string | readonly (string | { readonly message: string })[],
   ): void {
     const path = String(field);
     const { root, rest } = this.locate(path);
     const messages = normalizeErrorMessages(errors);
     if (rest !== undefined) {
-      this.requireChild(root).setFieldErrors(rest, messages);
+      this.requireChild(root).setErrorsAt(rest, messages);
       return;
     }
     if (this.childFor(root) !== undefined) {
@@ -426,7 +404,7 @@ export abstract class Form<Fields extends object = never> {
    * Очистить внешние ошибки поля или всей формы.
    * Ошибки правил остаются и пересчитываются валидацией.
    */
-  clearFieldErrors(field?: FieldPath<FieldsOf<this, Fields>>): void {
+  clearFieldErrors(field?: FieldPath<this>): void {
     this.ensureInitialized();
     this.syncChildren();
     if (field === undefined) {
@@ -439,7 +417,7 @@ export abstract class Form<Fields extends object = never> {
     const path = String(field);
     const { root, rest } = this.locate(path);
     if (rest !== undefined) {
-      this.requireChild(root).clearFieldErrors(rest);
+      this.requireChild(root).clearErrorsAt(rest);
       return;
     }
     if (this.childFor(root) !== undefined) {
@@ -451,7 +429,7 @@ export abstract class Form<Fields extends object = never> {
   }
 
   /** Установить несколько значений. Вложенным формам можно передать объект. */
-  setValues(values: SetValuesInput<FieldsOf<this, Fields>>): void {
+  setValues(values: SetValuesInput<this>): void {
     this.ensureInitialized();
     this.syncChildren();
     for (const [name, value] of Object.entries(values as unknown as Record<string, unknown>)) {
@@ -688,9 +666,33 @@ export abstract class Form<Fields extends object = never> {
   }
 
   private idFor(path: string): string {
-    return this.options.formId === undefined
-      ? path
-      : `${this.options.formId}-${path}`;
+    const trimmed = this.options.formId?.trim();
+    const prefix = trimmed !== undefined && trimmed !== ""
+      ? trimmed
+      : this.constructor.name !== ""
+        ? this.constructor.name
+        : "form";
+    return `${prefix}-${path}`;
+  }
+
+  /** Внутренний доступ по строковому пути: сужает публичный `FieldPath`. */
+  private propsAt(path: string): FieldProps<unknown> {
+    return this.getFieldProps(path as never) as unknown as FieldProps<unknown>;
+  }
+
+  /** Внутренняя проверка по строковому пути. */
+  private validateAt(path: string): Promise<boolean> {
+    return this.validateField(path as never);
+  }
+
+  /** Внутренняя установка внешних ошибок по строковому пути. */
+  private setErrorsAt(path: string, messages: readonly string[]): void {
+    this.setFieldErrors(path as never, messages);
+  }
+
+  /** Внутренняя очистка внешних ошибок по строковому пути. */
+  private clearErrorsAt(path: string): void {
+    this.clearFieldErrors(path as never);
   }
 
   private createProps(path: string): FieldProps<unknown> {
@@ -858,7 +860,7 @@ export abstract class Form<Fields extends object = never> {
   ): FieldProps<unknown> {
     const self = this;
     const childProps = (): FieldProps<unknown> =>
-      self.requireChild(root).getFieldProps(rest);
+      self.requireChild(root).propsAt(rest);
     return {
       get value() {
         return childProps().value;

@@ -16,12 +16,7 @@ const flush = (): Promise<void> => new Promise((resolve) => {
   setTimeout(resolve, 0);
 });
 
-class ProfileForm extends Form<{
-  name: string;
-  email: string;
-  age: number;
-  nickname: string;
-}> {
+class ProfileForm extends Form {
   @Field()
   @Required()
   @Label("Имя")
@@ -44,7 +39,7 @@ class ProfileForm extends Form<{
 
 describe("@Field и реактивность", () => {
   it("пересчитывает эффекты и @computed при изменении поля", () => {
-    class ReactiveForm extends Form<{ first: string; last: string }> {
+    class ReactiveForm extends Form {
       @Field()
       public accessor first = "Иван";
 
@@ -74,7 +69,7 @@ describe("@Field и реактивность", () => {
   });
 
   it("работает вместе с @watch из core", () => {
-    class WatchedForm extends Form<{ name: string }> {
+    class WatchedForm extends Form {
       readonly changes: Array<{ next: string; prev: string | undefined }> = [];
 
       @Field()
@@ -110,14 +105,28 @@ describe("метаданные поля", () => {
     expect(form.getFieldProps("name")).toBe(form.getFieldProps("name"));
   });
 
-  it("строит id из formId", () => {
+  it("строит id из formId или имени класса формы", () => {
+    const defaults = new ProfileForm();
+    expect(defaults.getFieldProps("name").id).toBe("ProfileForm-name");
+    expect(defaults.getFieldProps("name").name).toBe("name");
+
     const form = new ProfileForm({ formId: "profile" });
     expect(form.getFieldProps("name").id).toBe("profile-name");
     expect(form.getFieldProps("name").name).toBe("name");
+
+    const classFallback = new ProfileForm({ formId: "   " });
+    expect(classFallback.getFieldProps("name").id).toBe("ProfileForm-name");
+
+    const AnonymousForm = class extends Form {
+      @Field()
+      public accessor title = "";
+    };
+    Object.defineProperty(AnonymousForm, "name", { value: "" });
+    expect(new AnonymousForm().getFieldProps("title").id).toBe("form-title");
   });
 
   it("берёт ярлык из FormOptions.labels, если @Label нет", () => {
-    class LabelsForm extends Form<{ city: string }> {
+    class LabelsForm extends Form {
       @Field()
       public accessor city = "";
     }
@@ -128,7 +137,7 @@ describe("метаданные поля", () => {
 
 describe("валидация", () => {
   it("работает при порядке декораторов @Required над @Field", async () => {
-    class OrderForm extends Form<{ name: string }> {
+    class OrderForm extends Form {
       @Required()
       @Field()
       public accessor name = "";
@@ -152,7 +161,7 @@ describe("валидация", () => {
   });
 
   it("не проверяет поле на change при @ValidateOn('blur')", async () => {
-    class BlurForm extends Form<{ email: string }> {
+    class BlurForm extends Form {
       @Field()
       @Required()
       @IsEmail()
@@ -173,7 +182,7 @@ describe("валидация", () => {
   });
 
   it("проверяет на input, если форма это разрешает", async () => {
-    class InputForm extends Form<{ email: string }> {
+    class InputForm extends Form {
       @Field()
       @IsEmail()
       public accessor email = "";
@@ -187,7 +196,7 @@ describe("валидация", () => {
   });
 
   it("@ValidateOn('none') отключает проверку по событиям", async () => {
-    class NoneForm extends Form<{ email: string }> {
+    class NoneForm extends Form {
       @Field()
       @IsEmail()
       @ValidateOn("none")
@@ -232,7 +241,7 @@ describe("валидация", () => {
   });
 
   it("использует @Label в сообщении валидатора", async () => {
-    class LabelForm extends Form<{ name: string }> {
+    class LabelForm extends Form {
       @Field()
       @Required()
       @Label("Имя")
@@ -307,7 +316,7 @@ describe("внешние ошибки", () => {
   });
 
   it("не очищает внешние ошибки, если это отключено", () => {
-    class KeepErrorsForm extends Form<{ email: string }> {
+    class KeepErrorsForm extends Form {
       @Field()
       public accessor email = "";
     }
@@ -320,7 +329,7 @@ describe("внешние ошибки", () => {
 
 describe("onSubmit", () => {
   it("проверяет поле с @ValidateOn('submit') даже при validateOnSubmit: false", async () => {
-    class SubmitModeForm extends Form<{ name: string }> {
+    class SubmitModeForm extends Form {
       @Field()
       @Required()
       @ValidateOn("submit")
@@ -425,7 +434,7 @@ describe("onChange", () => {
   });
 
   it("читает checkbox как boolean", () => {
-    class CheckForm extends Form<{ agree: boolean }> {
+    class CheckForm extends Form {
       @Field()
       public accessor agree = false;
     }
@@ -437,7 +446,7 @@ describe("onChange", () => {
   });
 
   it("устанавливает radio только по checked", () => {
-    class RadioForm extends Form<{ plan: string }> {
+    class RadioForm extends Form {
       @Field()
       public accessor plan = "basic";
     }

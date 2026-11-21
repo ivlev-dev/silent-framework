@@ -6,13 +6,8 @@ import {
   Required,
 } from "@ivlev-dev/silent-form";
 
-export interface AddressFields {
-  city: string;
-  state: string;
-}
-
 /** Вложенная форма адреса: подключается в профиль как поле. */
-export class AddressForm extends Form<AddressFields> {
+export class AddressForm extends Form {
   @Field()
   @Label("Город")
   @Placeholder("Москва")

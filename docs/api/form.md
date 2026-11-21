@@ -5,7 +5,7 @@
 ```ts
 import { Field, Form, IsEmail, Label, Required } from "@ivlev-dev/silent-form";
 
-class LoginForm extends Form<{ email: string; password: string }> {
+class LoginForm extends Form {
   @Field()
   @Required()
   @IsEmail()
@@ -17,22 +17,24 @@ class LoginForm extends Form<{ email: string; password: string }> {
   public accessor password = "";
 }
 
-const form = new LoginForm({ formId: "login" });
+const form = new LoginForm();
 const email = form.getFieldProps("email");
 
 email.onChange({ currentTarget: { value: "user@example.com" } });
 await form.onSubmit(() => console.log(form.values))();
 ```
 
+`getFieldProps` возвращает DOM-`id` по умолчанию в виде `${className}-${path}`: `LoginForm-email`, `ProfileForm-address.city`. Опция `formId` задаёт собственный префикс (`new LoginForm({ formId: "login" })` → `login-email`).
+
 Пакет переиспользует правила и сообщения валидатора: `@Required`, `@IsEmail`, `@Min`, `@ValidateIf`, `@Optional` и остальные правила работают как в `@ivlev-dev/silent-validation`. Локально переопределены только `Required` и `Label`: они дополнительно заполняют метаданные формы (обязательность и подпись для UI).
 
 ## `Form`
 
 ```ts
-abstract class Form<Fields extends object = never> {}
+abstract class Form {}
 ```
 
-Базовый класс формы. Поля объявляются через `@Field()` (или `@FormField()` для вложенной формы). Экземпляр создаётся с необязательными `FormOptions`.
+Базовый класс формы. Поля объявляются через `@Field()` (или `@FormField()` для вложенной формы). Экземпляр создаётся с необязательными `FormOptions`; generic не нужен — пути полей выводятся из accessor-полей самого класса.
 
 ### `FormOptions`
 
@@ -46,7 +48,7 @@ abstract class Form<Fields extends object = never> {}
 | `validateNested` | `boolean` | `true` | Проверять вложенные формы в `validate()` |
 | `debounceMs` | `number` | `0` | Задержка автоматической проверки поля |
 | `clearExternalErrorsOnChange` | `boolean` | `true` | Очищать серверные ошибки при изменении значения |
-| `formId` | `string` | — | Префикс DOM-идентификаторов |
+| `formId` | `string` | имя класса формы | Префикс DOM-идентификаторов; пустая строка или пробелы — как «не задан» |
 | `labels` | `Readonly<Record<string, string>>` | `{}` | Ярлыки полей для UI и сообщений |
 | `onError` | `(error: unknown) => void` | `console.error` | Ошибки проверки, отправки и колбэка |
 
@@ -70,10 +72,18 @@ abstract class Form<Fields extends object = never> {}
 ### `FieldPath`
 
 ```ts
-type FieldPath<T> = ...;
+type FieldPath<T> = {
+  [K in keyof T & string]: K extends FormMemberKey
+    ? never
+    : T[K] extends (...args: never[]) => unknown
+      ? never
+      : NonNullable<T[K]> extends Form
+        ? K | `${K}.${FieldPath<NonNullable<T[K]>>}`
+        : K;
+}[keyof T & string];
 ```
 
-Пути полей формы. Для `interface ProfileFields { name: string; age: number; address: AddressForm }` и `class ProfileForm extends Form<ProfileFields>` тип содержит `"name"`, `"age"`, `"address"`, `"address.city"` и `"address.state"`. Невалидный путь — ошибка компиляции, методы и служебные свойства `Form` в пути не попадают. Для формы без generic используется `FieldPath<this>`.
+Пути полей строятся по accessor-полям класса формы. Для класса с полями `name`, `age` и вложенной формой `address` тип `FieldPath<ProfileForm>` содержит `"name"`, `"age"`, `"address"`, `"address.city"` и `"address.state"`. Методы и служебные члены `Form` (`validate`, `values`, `setValues` и т. п.) в пути не попадают, поэтому невалидный путь — ошибка компиляции, а автодополнение предлагает только поля. В сигнатурах `Form` используется `FieldPath<this>`, так что отдельный generic-интерфейс полей не нужен.
 
 ### `FieldProps`
 
@@ -107,7 +117,9 @@ interface FieldProps<Value = unknown> {
 
 `onBlur` помечает поле посещённым и запускает проверку по режимам. `onFocus` зарезервирован и не меняет состояние. `setValue` не запускает проверку и не помечает `touched`.
 
-Для пути вложенного поля (`address.city`) свойства делегируют вложенной форме, но `name` и `id` содержат полный путь. Для пути самой вложенной формы (`address`) `value` — экземпляр `Form`, а `errors`, `isReady` и `validate()` агрегируют её состояние.
+Для пути вложенного поля (`address.city`) свойства делегируют вложенной форме, но `name` и `id` содержат полный путь. Для пути самой вложенной формы (`address`) `value` — экземпляр `Form`, а `errors`, `isReady` и `validate()` агрегируют её состояние. `id` — `${prefix}-${path}`, где `prefix` — `formId` (после `trim`), иначе имя класса формы, иначе `"form"` для анонимного класса.
+
+Если id должны быть стабильны между сервером и клиентом или не зависеть от минификатора (он может переименовать класс), задайте `formId` явно.
 
 ### `ValidateOnMode`
 
@@ -216,7 +228,7 @@ import {
   ValidateOn,
 } from "@ivlev-dev/silent-form";
 
-class AddressForm extends Form<{ city: string; zip: string }> {
+class AddressForm extends Form {
   @Field()
   @Required()
   @Label("Город")
@@ -227,14 +239,7 @@ class AddressForm extends Form<{ city: string; zip: string }> {
   public accessor zip = "";
 }
 
-interface ProfileFields {
-  name: string;
-  email: string;
-  age: number;
-  address: AddressForm;
-}
-
-class ProfileForm extends Form<ProfileFields> {
+class ProfileForm extends Form {
   @Field()
   @Required()
   @Label("Имя")
@@ -252,17 +257,20 @@ class ProfileForm extends Form<ProfileFields> {
   public accessor age = 0;
 
   @FormField()
+  @Label("Адрес")
   public accessor address = new AddressForm();
 }
 
-const form = new ProfileForm({ formId: "profile", debounceMs: 200 });
+const form = new ProfileForm({ debounceMs: 200 });
 
 const name = form.getFieldProps("name");
 name.label; // "Имя"
 name.isRequired; // true
+name.id; // "ProfileForm-name" — префикс по имени класса
 name.onChange({ currentTarget: { value: "Иван" } });
 
 const city = form.getFieldProps("address.city");
+city.id; // "ProfileForm-address.city"
 city.onBlur(); // пометит address.city посещённым и проверит по режимам
 
 form.setFieldErrors("email", ["Этот email уже занят"]);
@@ -276,6 +284,7 @@ await form.onSubmit(async (submitted) => {
 ## Ограничения
 
 - Только stage-3 `accessor`-поля (`public accessor email = ""`), без `experimentalDecorators`. Приватные, статические и символьные имена полей бросают `TypeError`.
+- Внутри методов самой формы полиморфный `this` не раскрывает `FieldPath<this>`: TypeScript откладывает условные типы. Привяжите `this` к типу класса (`const self: ProfileForm = this`) или вызывайте `getFieldProps` на экземпляре формы.
 - Поле, которое не отмечено ни одним декоратором формы, в метаданные не попадает: `getFieldProps` бросит ошибку с перечнем доступных путей.
 - Внешние ошибки очищаются при изменении значения только при `clearExternalErrorsOnChange` (по умолчанию `true`); ошибки правил остаются до повторной проверки.
 - Вложенная форма — только значение `instanceof Form`. Один экземпляр не может быть полем двух форм; повторная привязка даёт ошибку. Присвоение новой вложенной формы подхватывается при следующем обращении к метаданным, `values` или проверке.

@@ -14,7 +14,8 @@
 - Вложенные формы (`@FormField()`) связываются автоматически: значения, ошибки и `isReady` агрегируются.
 - Режимы проверки: `change`, `input`, `blur`, `submit`, `none`, для поля и для формы.
 - Серверные ошибки через `setFieldErrors` с автоочисткой при изменении.
-- Типизированные пути полей, включая `address.city`.
+- Типизированные пути полей, включая `address.city`, без generic-интерфейса.
+- DOM-`id` по умолчанию: `${className}-${path}`; `formId` переопределяет префикс.
 
 ## Установка
 
@@ -44,7 +45,7 @@ import {
   Required,
 } from "@ivlev-dev/silent-form";
 
-class LoginForm extends Form<{ email: string; password: string }> {
+class LoginForm extends Form {
   @Field()
   @Required()
   @IsEmail()
@@ -58,11 +59,12 @@ class LoginForm extends Form<{ email: string; password: string }> {
   public accessor password = "";
 }
 
-const form = new LoginForm({ formId: "login" });
+const form = new LoginForm();
 const email = form.getFieldProps("email");
 
 email.label; // "Email"
 email.isRequired; // true
+email.id; // "LoginForm-email"
 email.onChange({ currentTarget: { value: "user@example.com" } });
 email.onBlur();
 
@@ -70,6 +72,8 @@ await form.onSubmit(async (submitted) => {
   await api.login(submitted.values);
 })();
 ```
+
+Пути полей выводятся из accessor-полей класса: `form.getFieldProps("email")` типизирован, а `form.getFieldProps("surname")` — ошибка компиляции (методы и служебные члены `Form` тоже не являются путями). DOM-`id` по умолчанию — `${className}-${path}`; опция `formId` задаёт свой префикс: `new LoginForm({ formId: "login" })` → `login-email`.
 
 `getFieldProps` возвращает стабильный объект с `value`, `label`, `placeholder`, `hint`, `error`, `errors`, `isRequired`, `isReady`, `isValidating`, `touched`, `dirty`, `isValid`, `name`, `id`, `setValue`, `setReady`, обработчиками `onChange`/`onInput`/`onFocus`/`onBlur` и `validate()`.
 
@@ -80,18 +84,13 @@ await form.onSubmit(async (submitted) => {
 ```ts
 import { Field, Form, FormField, Required } from "@ivlev-dev/silent-form";
 
-class AddressForm extends Form<{ city: string }> {
+class AddressForm extends Form {
   @Field()
   @Required()
   public accessor city = "";
 }
 
-interface ProfileFields {
-  name: string;
-  address: AddressForm;
-}
-
-class ProfileForm extends Form<ProfileFields> {
+class ProfileForm extends Form {
   @Field()
   @Required()
   public accessor name = "";
@@ -104,6 +103,7 @@ const form = new ProfileForm();
 form.getFieldProps("address.city").onChange({
   currentTarget: { value: "Москва" },
 });
+form.getFieldProps("address.city").id; // "ProfileForm-address.city"
 
 form.errors; // { "address.city": [...] } после проверки
 form.isReady; // учитывает готовность вложенной формы
@@ -149,6 +149,8 @@ await form.onSubmit(async (submitted) => {
 - `reset()` восстанавливает значения, зафиксированные `@Field` при создании экземпляра.
 - `@ValidateOn("none")` отключает автоматическую проверку по событиям; явные `validate()`/`validateField()` работают всегда.
 - Вложенность определяется по `instanceof Form`.
+- `FieldPath` видит все публичные не-методы класса, но `getFieldProps` работает только для полей, отмеченных декоратором формы (иначе — понятная ошибка).
+- DOM-`id` по умолчанию строится из имени класса; минификатор может его переименовать. Для стабильных id/SSR задайте `formId`.
 
 ## Ссылки
 

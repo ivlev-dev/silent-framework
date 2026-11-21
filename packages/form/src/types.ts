@@ -66,7 +66,7 @@ export interface FieldProps<Value = unknown> {
   readonly isValid: boolean;
   /** Полный путь поля, например `address.city`. */
   readonly name: string;
-  /** DOM-идентификатор: `formId-путь` или просто путь. */
+  /** DOM-идентификатор: `префикс-путь`, где префикс — `formId` или имя класса формы. */
   readonly id: string;
   /** Установить значение без автоматической проверки. */
   setValue(value: Value): void;
@@ -105,10 +105,10 @@ type FormMemberKey =
 /**
  * Допустимые пути полей формы.
  *
- * Для `interface ProfileFields { name: string; address: AddressForm }`
- * и `class ProfileForm extends Form<ProfileFields>` тип содержит
- * `"name"`, `"address"`, `"address.city"` и остальные поля вложенной формы.
- * Методы и служебные свойства `Form` в пути не попадают.
+ * Для класса формы с accessor-полями `name`, `age` и `address`
+ * (вложенная форма) тип содержит `"name"`, `"age"`, `"address"`,
+ * `"address.city"` и остальные поля вложенной формы.
+ * Методы и служебные члены `Form` в пути не попадают.
  */
 export type FieldPath<T> = [T] extends [never]
   ? string
@@ -117,7 +117,7 @@ export type FieldPath<T> = [T] extends [never]
         ? never
         : T[K] extends (...args: never[]) => unknown
           ? never
-          : NonNullable<T[K]> extends Form<infer Nested>
-            ? K | `${K}.${FieldPath<Nested>}`
+          : NonNullable<T[K]> extends Form
+            ? K | `${K}.${FieldPath<NonNullable<T[K]>>}`
             : K;
     }[keyof T & string];

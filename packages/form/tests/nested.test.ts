@@ -5,12 +5,7 @@ const flush = (): Promise<void> => new Promise((resolve) => {
   setTimeout(resolve, 0);
 });
 
-interface AddressFields {
-  city: string;
-  state: string;
-}
-
-class AddressForm extends Form<AddressFields> {
+class AddressForm extends Form {
   @Field()
   @Required()
   @Label("Город")
@@ -20,12 +15,7 @@ class AddressForm extends Form<AddressFields> {
   public accessor state = "";
 }
 
-interface ProfileFields {
-  name: string;
-  address: AddressForm;
-}
-
-class ProfileForm extends Form<ProfileFields> {
+class ProfileForm extends Form {
   @Field()
   @Required()
   public accessor name = "";
@@ -57,6 +47,14 @@ describe("вложенные формы", () => {
 
     expect(await form.validateField("address.city")).toBe(true);
     expect(form.errors["address.city"]).toBeUndefined();
+  });
+
+  it("строит id вложенных полей с именем класса по умолчанию", () => {
+    const form = new ProfileForm();
+    expect(form.getFieldProps("address").id).toBe("ProfileForm-address");
+    expect(form.getFieldProps("address.city").id).toBe(
+      "ProfileForm-address.city",
+    );
   });
 
   it("агрегирует ошибки с префиксами путей", async () => {
@@ -108,7 +106,7 @@ describe("вложенные формы", () => {
   });
 
   it("не регистрирует вложенную форму без @Field/@FormField", () => {
-    class PlainNested extends Form<{ address: AddressForm }> {
+    class PlainNested extends Form {
       public accessor address = new AddressForm();
     }
     const form = new PlainNested();
@@ -183,14 +181,14 @@ describe("вложенные формы", () => {
 
 describe("валидация вложенной формы", () => {
   it("использует правила вложенного класса", async () => {
-    class EmailForm extends Form<{ email: string }> {
+    class EmailForm extends Form {
       @Field()
       @Required()
       @IsEmail()
       public accessor email = "";
     }
 
-    class OuterForm extends Form<{ contact: EmailForm }> {
+    class OuterForm extends Form {
       @FormField()
       public accessor contact = new EmailForm();
     }
