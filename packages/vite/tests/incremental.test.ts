@@ -6,6 +6,7 @@ import {
   moduleFingerprint,
   modulePathCandidates,
   modulePathOfFile,
+  pruneEmptyInterfaceTokens,
   removeModuleFromIndex,
   stableIndexJson,
 } from "../src/incremental.js";
@@ -69,6 +70,35 @@ describe("incremental index", () => {
     expect(index.values).toEqual({});
     expect(index.interfaces).toEqual({
       [`${modulePath("types")}#Store`]: [`${modulePath("memory")}#MemoryStore`],
+    });
+  });
+
+  it("удаляет только пустые токены, объявленные модулем", () => {
+    const index: SilentIndex = {
+      interfaces: {
+        [`${modulePath("types")}#Empty`]: [],
+        [`${modulePath("types")}#Used`]: [`${modulePath("memory")}#MemoryStore`],
+        [`${modulePath("other")}#Empty`]: [],
+      },
+      values: {},
+    };
+
+    expect(pruneEmptyInterfaceTokens(index, modulePath("types.ts"))).toBe(true);
+    expect(index.interfaces).toEqual({
+      [`${modulePath("types")}#Used`]: [`${modulePath("memory")}#MemoryStore`],
+      [`${modulePath("other")}#Empty`]: [],
+    });
+  });
+
+  it("не трогает пустые токены чужих модулей", () => {
+    const index: SilentIndex = {
+      interfaces: { [`${modulePath("other")}#Empty`]: [] },
+      values: {},
+    };
+
+    expect(pruneEmptyInterfaceTokens(index, modulePath("types.ts"))).toBe(false);
+    expect(index.interfaces).toEqual({
+      [`${modulePath("other")}#Empty`]: [],
     });
   });
 

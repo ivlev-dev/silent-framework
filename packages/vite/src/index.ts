@@ -17,6 +17,7 @@ import type { DiMode, SilentOptions } from "./options.js";
 import {
   mergeIndexDelta,
   moduleFingerprint,
+  pruneEmptyInterfaceTokens,
   removeModuleFromIndex,
   stableIndexJson,
 } from "./incremental.js";
@@ -73,6 +74,7 @@ export function silent(options: SilentOptions = {}): Plugin {
   let cachedIndexJson: string | null = null;
   let cachedIndexHash: string | null = null;
   let indexPromise: Promise<string> | null = null;
+  let fullRefreshPromise: Promise<void> | null = null;
   let indexGeneration = 0;
   // Операции с индексом сериализованы: инкрементальный апдейт и полный scan
   // не могут перезаписать результат друг друга.
@@ -176,6 +178,29 @@ export function silent(options: SilentOptions = {}): Plugin {
   };
 
   /**
+   * Режим `scan: "full"`: инвалидирует индекс и тут же запускает полный scan.
+   * Повторные вызовы во время уже запланированного скана переиспользуют его —
+   * задача всё равно читает актуальное состояние файловой системы.
+   */
+  const refreshFullIndex = (): Promise<void> => {
+    const reuse = fullRefreshPromise !== null && cachedIndexJson === null;
+    invalidateIndex();
+    if (reuse) return fullRefreshPromise!;
+    const pending = startFullScan().then(() => undefined);
+    fullRefreshPromise = pending;
+    const forget = (): void => {
+      if (fullRefreshPromise === pending) fullRefreshPromise = null;
+    };
+    void pending.then(forget, forget);
+    return pending;
+  };
+
+  const scheduleFullRefresh = (): Promise<void> =>
+    refreshFullIndex().catch(() => {
+      invalidateIndex();
+    });
+
+  /**
    * Инкрементальное обновление индекса для одного файла. Если индекс ещё не
    * построен или уже инвалидирован, обновление пропускается: полный scan
    * увидит актуальное состояние файловой системы.
@@ -209,6 +234,7 @@ export function silent(options: SilentOptions = {}): Plugin {
         }
         mergeIndexDelta(cachedIndex, delta);
       }
+      pruneEmptyInterfaceTokens(cachedIndex, file);
       const after = moduleFingerprint(cachedIndex, file);
       if (after === before) return;
       cachedIndexJson = JSON.stringify(cachedIndex);
@@ -226,6 +252,15 @@ export function silent(options: SilentOptions = {}): Plugin {
       // Ошибка нативного скана: следующий ensureIndex пересоберёт индекс целиком.
       invalidateIndex();
     });
+
+  const refreshSourceChange = (
+    id: string,
+    event: "create" | "update" | "delete",
+  ): Promise<void> => {
+    if (!opts.index) return Promise.resolve();
+    if (opts.scan === "full") return scheduleFullRefresh();
+    return scheduleModuleRefresh(id, event);
+  };
 
   return {
     name: "silent",
@@ -277,17 +312,25 @@ export function silent(options: SilentOptions = {}): Plugin {
       if (isTsconfigFile(opts.root, id)) {
         // tsconfig paths перечитываются, Vite-алиасы берутся из снимка.
         rebuildAliases();
+        if (opts.index && opts.scan === "full") {
+          return scheduleFullRefresh();
+        }
         invalidateIndex();
         return;
       }
       if (isSourceModule(id) && !isVirtualModule(id)) {
-        return scheduleModuleRefresh(id, change.event);
+        return refreshSourceChange(id, change.event);
       }
       return;
     },
     handleHotUpdate({ file }) {
       if (isSourceModule(file) && !isVirtualModule(file)) {
-        return scheduleModuleRefresh(file, "update");
+        if (opts.scan === "full") {
+          // Полный scan выполнит watchChange/следующий ensureIndex.
+          invalidateIndex();
+          return;
+        }
+        return refreshSourceChange(file, "update");
       }
     },
     async transform(code, id, transformOptions) {

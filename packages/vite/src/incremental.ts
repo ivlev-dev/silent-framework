@@ -138,6 +138,24 @@ export function mergeIndexDelta(index: SilentIndex, delta: SilentIndex): boolean
 }
 
 /**
+ * Удаляет пустые токены интерфейсов, объявленные модулем. Реализации из других
+ * файлов не затрагиваются: токен остаётся, пока в нём есть хоть одна запись.
+ */
+export function pruneEmptyInterfaceTokens(index: SilentIndex, file: string): boolean {
+  const keys = new Set(modulePathCandidates(file));
+  let changed = false;
+
+  for (const [token, implementations] of Object.entries(index.interfaces)) {
+    if (implementations.length === 0 && keys.has(moduleOfToken(token))) {
+      delete index.interfaces[token];
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
+/**
  * Снимок только тех записей индекса, которые относятся к модулю. Позволяет
  * дешево понять, изменилось ли содержимое после remove+merge, не сортируя и не
  * сериализуя весь индекс.

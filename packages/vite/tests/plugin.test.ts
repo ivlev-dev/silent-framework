@@ -81,6 +81,7 @@ beforeEach(() => {
   scanFilesMock.mockImplementation(
     () => JSON.stringify({ interfaces: {}, values: {} }),
   );
+  vi.unstubAllEnvs();
 });
 
 describe("silent()", () => {
@@ -586,6 +587,49 @@ describe("silent()", () => {
     expect(transformMock).toHaveBeenCalledTimes(4);
   });
 
+  it("по умолчанию использует инкрементальный режим", async () => {
+    const plugin = createPlugin();
+    await plugin.buildStart?.();
+    await plugin.watchChange?.(fileFor("src", "types.ts"), { event: "update" });
+
+    expect(scanFilesMock).toHaveBeenCalledTimes(1);
+    expect(scanMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("scan: \"full\" на изменение выполняет полный scan без scanFiles", async () => {
+    const plugin = createPlugin({ scan: "full" });
+    await plugin.buildStart?.();
+    expect(scanMock).toHaveBeenCalledTimes(1);
+
+    await plugin.watchChange?.(fileFor("src", "types.ts"), { event: "update" });
+    expect(scanMock).toHaveBeenCalledTimes(2);
+    expect(scanFilesMock).not.toHaveBeenCalled();
+
+    await plugin.transform?.("code", fileFor("src", "app.ts"));
+    // Индекс уже пересобран изменением: transform не запускает ещё один scan.
+    expect(scanMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("SILENT_SCAN=full включает полный режим", async () => {
+    vi.stubEnv("SILENT_SCAN", "full");
+    const plugin = createPlugin();
+    await plugin.buildStart?.();
+    await plugin.watchChange?.(fileFor("src", "types.ts"), { event: "update" });
+
+    expect(scanMock).toHaveBeenCalledTimes(2);
+    expect(scanFilesMock).not.toHaveBeenCalled();
+  });
+
+  it("SILENT_SCAN_FULL=1 включает полный режим", async () => {
+    vi.stubEnv("SILENT_SCAN_FULL", "1");
+    const plugin = createPlugin();
+    await plugin.buildStart?.();
+    await plugin.watchChange?.(fileFor("src", "types.ts"), { event: "update" });
+
+    expect(scanMock).toHaveBeenCalledTimes(2);
+    expect(scanFilesMock).not.toHaveBeenCalled();
+  });
+
   it("инкрементально обновляет индекс на watchChange для TS/JS и игнорирует .css", async () => {
     const plugin = createPlugin();
     await plugin.buildStart?.();
@@ -642,6 +686,55 @@ describe("silent()", () => {
       `${root}/src/memory-store#MemoryStore`,
     ]);
     expect(index.values[`${root}/src/memory-store`]).toEqual(["MemoryStore"]);
+  });
+
+  it("при delete удаляет пустой токен интерфейса", async () => {
+    const root = process.cwd();
+    scanMock.mockImplementation(
+      () =>
+        JSON.stringify({
+          interfaces: { [`${root}/src/types#Store`]: [] },
+          values: { [`${root}/src/types`]: ["Store"] },
+        }),
+    );
+    const plugin = createPlugin();
+    await plugin.buildStart?.();
+
+    await plugin.watchChange?.(fileFor("src", "types.ts"), { event: "delete" });
+    await plugin.transform?.("code", fileFor("src", "app.ts"));
+
+    const index = JSON.parse(transformMock.mock.calls.at(-1)?.[3] ?? "{}");
+    expect(index.interfaces).toEqual({});
+    expect(index.values).toEqual({});
+  });
+
+  it("при изменении файла с интерфейсом сохраняет токен с чужими реализациями", async () => {
+    const root = process.cwd();
+    scanMock.mockImplementation(
+      () =>
+        JSON.stringify({
+          interfaces: {
+            [`${root}/src/types#Store`]: [`${root}/src/memory-store#MemoryStore`],
+          },
+          values: {
+            [`${root}/src/types`]: ["Store"],
+            [`${root}/src/memory-store`]: ["MemoryStore"],
+          },
+        }),
+    );
+    scanFilesMock.mockImplementation(() => JSON.stringify({ interfaces: {}, values: {} }));
+    const plugin = createPlugin();
+    await plugin.buildStart?.();
+
+    // types.ts больше не объявляет Store, но реализация в memory-store.ts
+    // не пересканировалась — токен с ней должен остаться.
+    await plugin.watchChange?.(fileFor("src", "types.ts"), { event: "update" });
+    await plugin.transform?.("code", fileFor("src", "app.ts"));
+
+    const index = JSON.parse(transformMock.mock.calls.at(-1)?.[3] ?? "{}");
+    expect(index.interfaces[`${root}/src/types#Store`]).toEqual([
+      `${root}/src/memory-store#MemoryStore`,
+    ]);
   });
 
   it("добавляет записи модуля на событие create", async () => {

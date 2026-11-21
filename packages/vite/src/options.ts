@@ -2,6 +2,7 @@ import * as path from "node:path";
 import { TRANSFORM_CACHE_LIMIT } from "./cache.js";
 
 export type DiMode = "allow" | "warn" | "error";
+export type ScanMode = "incremental" | "full";
 
 export interface SilentOptions {
   include?: RegExp;
@@ -12,6 +13,7 @@ export interface SilentOptions {
   runtime?: string;
   hmr?: boolean;
   index?: boolean;
+  scan?: ScanMode;
   view?: boolean;
   hydrate?: boolean;
   di?: DiMode;
@@ -27,6 +29,7 @@ export interface ResolvedOptions {
   runtime: string;
   hmr: boolean;
   index: boolean;
+  scan: ScanMode;
   view: boolean;
   hydrate: boolean;
   di: DiMode;
@@ -37,12 +40,32 @@ export const DEFAULT_INCLUDE = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
 export const DEFAULT_EXCLUDE = /node_modules/;
 export const DEFAULT_RUNTIME = "@ivlev-dev/silent-core";
 export const DEFAULT_DI: DiMode = "warn";
+export const DEFAULT_SCAN: ScanMode = "incremental";
 
 function normalizeCacheLimit(value: number | undefined): number {
   if (value === undefined || !Number.isFinite(value) || value < 0) {
     return TRANSFORM_CACHE_LIMIT;
   }
   return Math.floor(value);
+}
+
+function isScanMode(value: string | undefined): value is ScanMode {
+  return value === "incremental" || value === "full";
+}
+
+/**
+ * Аварийный режим через окружение: `SILENT_SCAN=full` или `SILENT_SCAN_FULL=1`.
+ * Env имеет приоритет над опцией, чтобы можно было оперативно отключить
+ * инкрементальный скан без правки конфига.
+ */
+function envScanMode(): ScanMode | undefined {
+  if (process.env.SILENT_SCAN_FULL === "1") return "full";
+  const value = process.env.SILENT_SCAN?.trim().toLowerCase();
+  return isScanMode(value) ? value : undefined;
+}
+
+function resolveScanMode(value: ScanMode | undefined): ScanMode {
+  return envScanMode() ?? (value !== undefined && isScanMode(value) ? value : DEFAULT_SCAN);
 }
 
 export function resolveOptions(options: SilentOptions = {}): ResolvedOptions {
@@ -55,6 +78,7 @@ export function resolveOptions(options: SilentOptions = {}): ResolvedOptions {
     runtime: options.runtime ?? DEFAULT_RUNTIME,
     hmr: options.hmr ?? true,
     index: options.index ?? true,
+    scan: resolveScanMode(options.scan),
     view: options.view ?? true,
     hydrate: options.hydrate ?? true,
     di: options.di ?? DEFAULT_DI,
