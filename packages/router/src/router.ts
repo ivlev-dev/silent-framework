@@ -41,6 +41,7 @@ import {
   type RouteInput,
   type RouteLoadContext,
 } from "./route.js";
+import { registerRouterInternals } from "./internals.js";
 
 export interface RouterState {
   readonly route: RouteLocation | null;
@@ -151,6 +152,10 @@ export class Router implements IRouter {
   private readonly componentLoader: RouterComponentLoader | undefined;
   private readonly onError: ((error: RouterNavigationError, to: RouteTarget) => void) | undefined;
   private readonly stateSignal: readonly [Accessor<RouterState>, Setter<RouterState>];
+  private readonly routeSignal: readonly [
+    Accessor<RouteLocation | null>,
+    Setter<RouteLocation | null>,
+  ];
   private readonly loadedComponents = new Map<RouteRecord, AnyComponent>();
   private readonly savedPositions = new Map<string, ScrollPosition>();
   private unlisten: (() => void) | null = null;
@@ -178,7 +183,12 @@ export class Router implements IRouter {
       pending: false,
       error: null,
     });
+    this.routeSignal = createSignal<RouteLocation | null>(null);
     this.state = this.stateSignal[0];
+    registerRouterInternals(this, {
+      route: this.routeSignal[0],
+      resolve: (to) => this.resolve(to),
+    });
     if (options.container !== undefined) {
       this.provide(options.container);
     }
@@ -220,7 +230,7 @@ export class Router implements IRouter {
 
   resolve(to: RouteTarget): RouteLocation {
     return this.attachComponents(
-      resolveLocation(this.compiled, to, this.stateSignal[0]().route, this.loadedComponents),
+      resolveLocation(this.compiled, to, this.routeSignal[0](), this.loadedComponents),
     );
   }
 
@@ -627,6 +637,7 @@ export class Router implements IRouter {
         this.history.push(to);
       }
     }
+    this.routeSignal[1](location);
     this.stateSignal[1]({
       route: location,
       params: location.params,

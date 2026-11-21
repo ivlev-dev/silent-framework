@@ -9,7 +9,7 @@ import {
   type Children,
   type ClassNameValue,
 } from "@ivlev-dev/silent-core";
-import { createRenderEffect, onCleanup } from "@ivlev-dev/silent-reactivity";
+import { createMemo, createRenderEffect, onCleanup } from "@ivlev-dev/silent-reactivity";
 import {
   RouterMissingError,
   isPathActive,
@@ -18,6 +18,7 @@ import {
   type RouteTarget,
 } from "./match.js";
 import { Router, type IRouter } from "./router.js";
+import { getRouterInternals, type RouterInternals } from "./internals.js";
 
 export interface LinkProps {
   readonly to: RouteTarget | (() => RouteTarget);
@@ -99,28 +100,60 @@ function inspectTarget(target: RouteTarget): TargetInfo {
   return { kind: "unsafe", externalHref: null };
 }
 
-function safeResolve(router: IRouter, target: RouteTarget): RouteLocation | null {
-  try {
-    return router.resolve(target);
-  } catch {
-    return null;
+function internalsFor(router: IRouter): RouterInternals {
+  const internal = getRouterInternals(router);
+  if (internal !== undefined) {
+    return internal;
   }
+  // Сторонние реализации IRouter не обязаны поддерживать внутренний контракт.
+  return {
+    route: () => router.state().route,
+    resolve: (to) => router.resolve(to),
+  };
 }
 
-function safeHref(router: IRouter, target: RouteTarget): string | null {
-  const info = inspectTarget(target);
-  if (info.kind === "external") {
-    return info.externalHref;
-  }
-  if (info.kind === "unsafe") {
-    return null;
-  }
+interface LinkState {
+  readonly href: string | null;
+  readonly active: boolean;
+  readonly exact: boolean;
+}
+
+const INACTIVE_STATE: LinkState = Object.freeze({
+  href: null,
+  active: false,
+  exact: false,
+});
+
+function computeInternalState(
+  router: IRouter,
+  internals: RouterInternals,
+  target: RouteTarget,
+  current: RouteLocation | null,
+  exactQuery: boolean,
+): LinkState {
+  let location: RouteLocation | null;
   try {
-    return router.href(target);
+    location = internals.resolve(target);
   } catch {
-    // Нет подходящего маршрута: для строки отдаём сырой путь, для объекта — null.
-    return typeof target === "string" ? target : null;
+    location = null;
   }
+  const href = location === null
+    ? typeof target === "string" ? target : null
+    : `${router.base}${location.fullPath}`;
+  if (current === null || location === null) {
+    return { href, active: false, exact: false };
+  }
+  let active: boolean;
+  if (location.name !== null && current.name === location.name) {
+    active = matchesParams(current.params, location.params);
+  } else {
+    active = isPathActive(current.path, location.path, false);
+  }
+  return {
+    href,
+    active,
+    exact: active && isExactMatch(current, location, exactQuery),
+  };
 }
 
 function matchesParams(
@@ -187,39 +220,33 @@ function isExactMatch(
   return current.path === location.path;
 }
 
-function isExactActive(
-  router: IRouter,
-  target: RouteTarget,
-  exactQuery: boolean,
-): boolean {
-  const current = router.state().route;
-  if (current === null) {
-    return false;
-  }
-  const location = safeResolve(router, target);
-  if (location === null) {
-    return false;
-  }
-  return isExactMatch(current, location, exactQuery);
-}
-
 export function Link(props: LinkProps): Node {
   const router = resolveRouter(props.router);
+  const internals = internalsFor(router);
   const exactQuery = props.exactQuery !== false;
   const element = createElement("a");
   const target = (): RouteTarget => resolveTarget(props.to);
+  // Один мемоизированный результат на ссылку: href, aria-current и class
+  // переиспользуют его, а смена pending/error не запускает resolve заново.
+  const state = createMemo<LinkState>(() => {
+    const value = target();
+    const info = inspectTarget(value);
+    if (info.kind !== "internal") {
+      return info.kind === "external"
+        ? { href: info.externalHref, active: false, exact: false }
+        : INACTIVE_STATE;
+    }
+    return computeInternalState(
+      router,
+      internals,
+      value,
+      internals.route(),
+      exactQuery,
+    );
+  });
 
-  attr(element, "href", () => {
-    const value = target();
-    return safeHref(router, value);
-  });
-  attr(element, "aria-current", () => {
-    const value = target();
-    return inspectTarget(value).kind === "internal"
-      && isExactActive(router, value, exactQuery)
-      ? "page"
-      : null;
-  });
+  attr(element, "href", () => state().href);
+  attr(element, "aria-current", () => (state().exact ? "page" : null));
 
   if (
     props.class !== undefined
@@ -227,31 +254,16 @@ export function Link(props: LinkProps): Node {
     || props.exactActiveClass !== undefined
   ) {
     attr(element, "class", () => {
-      const value = target();
+      const computed = state();
       const custom = normalizeClass(props.class);
-      if (inspectTarget(value).kind !== "internal") {
-        return custom;
-      }
-      const current = router.state().route;
-      const location = safeResolve(router, value);
-      let active = false;
-      let exact = false;
-      if (current !== null && location !== null) {
-        if (location.name !== null && current.name === location.name) {
-          active = matchesParams(current.params, location.params);
-        } else {
-          active = isPathActive(current.path, location.path, false);
-        }
-        exact = active && isExactMatch(current, location, exactQuery);
-      }
       const classes: string[] = [];
       if (custom !== "") {
         classes.push(custom);
       }
-      if (active && props.activeClass !== undefined) {
+      if (computed.active && props.activeClass !== undefined) {
         classes.push(props.activeClass);
       }
-      if (exact && props.exactActiveClass !== undefined) {
+      if (computed.exact && props.exactActiveClass !== undefined) {
         classes.push(props.exactActiveClass);
       }
       return classes.join(" ");

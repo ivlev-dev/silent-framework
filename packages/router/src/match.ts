@@ -186,6 +186,7 @@ export interface CompiledRoute {
   readonly segments: readonly PatternSegment[];
   readonly score: readonly number[];
   readonly order: number;
+  readonly build: (params: Readonly<Record<string, string | number>>) => string;
 }
 
 const WILDCARD_PARAM = "*";
@@ -214,7 +215,25 @@ export function normalizePath(path: string): string {
 }
 
 function pathSegments(path: string): string[] {
-  return normalizePath(path).split("/").filter((segment) => segment.length > 0);
+  const normalized = normalizePath(path);
+  const result: string[] = [];
+  let start = -1;
+  for (let index = 0; index < normalized.length; index += 1) {
+    if (normalized[index] === "/") {
+      if (start !== -1) {
+        result.push(normalized.slice(start, index));
+        start = -1;
+      }
+      continue;
+    }
+    if (start === -1) {
+      start = index;
+    }
+  }
+  if (start !== -1) {
+    result.push(normalized.slice(start));
+  }
+  return result;
 }
 
 function safeDecode(value: string): string {
@@ -379,6 +398,7 @@ export function compileRoutes(
         segments,
         score: scoreOf(segments),
         order: compiled.length,
+        build: (params) => interpolateSegments(segments, params, fullPath),
       });
       if (record.children !== undefined && record.children.length > 0) {
         visit(record.children, fullPath, nextChain, nextPaths);
@@ -421,10 +441,18 @@ function matchPattern(
   let position = 0;
   for (const segment of segments) {
     if (segment.kind === "wildcard") {
-      params[segment.name] = parts
-        .slice(position)
-        .map((part) => safeDecode(part))
-        .join("/");
+      let value = "";
+      for (let index = position; index < parts.length; index += 1) {
+        const part = parts[index];
+        if (part === undefined) {
+          continue;
+        }
+        if (value !== "") {
+          value += "/";
+        }
+        value += safeDecode(part);
+      }
+      params[segment.name] = value;
       return params;
     }
     const part = parts[position];
@@ -465,12 +493,60 @@ export interface RouteMatch {
   readonly params: RouteParams;
 }
 
+interface RouteIndex {
+  readonly byFirst: ReadonlyMap<string, readonly CompiledRoute[]>;
+  readonly fallback: readonly CompiledRoute[];
+}
+
+const routeIndexes = new WeakMap<readonly CompiledRoute[], RouteIndex>();
+
+// Статические первые сегменты всегда специфичнее mixed/param/wildcard,
+// поэтому достаточно проверить bucket точного сегмента, затем fallback.
+function routeIndexFor(compiled: readonly CompiledRoute[]): RouteIndex {
+  const cached = routeIndexes.get(compiled);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const byFirst = new Map<string, CompiledRoute[]>();
+  const fallback: CompiledRoute[] = [];
+  for (const route of compiled) {
+    const first = route.segments[0];
+    if (first?.kind === "static") {
+      const key = safeDecode(first.value);
+      const bucket = byFirst.get(key);
+      if (bucket === undefined) {
+        byFirst.set(key, [route]);
+      } else {
+        bucket.push(route);
+      }
+      continue;
+    }
+    fallback.push(route);
+  }
+  const index: RouteIndex = { byFirst, fallback };
+  routeIndexes.set(compiled, index);
+  return index;
+}
+
 export function matchRoutes(
   compiled: readonly CompiledRoute[],
   pathname: string,
 ): RouteMatch | null {
   const parts = pathSegments(pathname);
-  for (const route of compiled) {
+  const index = routeIndexFor(compiled);
+  const firstPart = parts[0];
+  if (firstPart !== undefined) {
+    const bucket = index.byFirst.get(safeDecode(firstPart));
+    if (bucket !== undefined) {
+      for (const route of bucket) {
+        const params = matchPattern(route.segments, parts);
+        if (params !== null) {
+          return { route, params };
+        }
+      }
+    }
+  }
+  for (const route of index.fallback) {
     const params = matchPattern(route.segments, parts);
     if (params !== null) {
       return { route, params };
@@ -532,7 +608,10 @@ function normalizeQuery(query: Readonly<Record<string, QueryInput>>): RouteQuery
       continue;
     }
     if (Array.isArray(value)) {
-      const items = (value as readonly (string | number | boolean)[]).map((item) => String(item));
+      const items: string[] = [];
+      for (const item of value) {
+        items.push(String(item));
+      }
       if (items.length === 0) {
         continue;
       }
@@ -664,11 +743,11 @@ function encodeParam(value: string): string {
   return encodeURIComponent(value);
 }
 
-function interpolatePath(
-  pattern: string,
+function interpolateSegments(
+  segments: readonly PatternSegment[],
   params: Readonly<Record<string, string | number>>,
+  pattern: string,
 ): string {
-  const segments = compilePattern(pattern);
   const output: string[] = [];
   for (const segment of segments) {
     if (segment.kind === "static") {
@@ -720,6 +799,13 @@ function interpolatePath(
     output.push(encodeParam(String(raw)));
   }
   return normalizePath(`/${output.filter((part) => part.length > 0).join("/")}`);
+}
+
+function interpolatePath(
+  pattern: string,
+  params: Readonly<Record<string, string | number>>,
+): string {
+  return interpolateSegments(compilePattern(pattern), params, pattern);
 }
 
 function findByName(
@@ -913,7 +999,7 @@ export function resolveLocation(
         describeTarget(target),
       );
     }
-    targetPath = interpolatePath(route.path, params);
+    targetPath = route.build(params);
   } else if (target.path !== undefined && target.path !== "") {
     const split = splitTarget(target.path);
     targetPath = split.path.includes(":") || split.path.includes("{")
