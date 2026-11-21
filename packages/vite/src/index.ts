@@ -70,7 +70,6 @@ export function silent(options: SilentOptions = {}): Plugin {
   let swcPromise: ReturnType<typeof loadSwc> | null = null;
   let cacheDirectory: string | null = null;
   let transformVersion: string | null = null;
-  let serveMode = false;
   let warnedIncomingMap = false;
 
   const buildOptionsJson = (ssr: boolean): string =>
@@ -175,7 +174,6 @@ export function silent(options: SilentOptions = {}): Plugin {
     },
     configResolved(config: ResolvedConfig) {
       cacheDirectory = join(config.cacheDir, "silent-transform");
-      serveMode = config.command === "serve";
       viteAliasSnapshot = viteAliases(config.resolve?.alias ?? [], opts.root);
       rebuildAliases();
       invalidateIndex();
@@ -208,7 +206,7 @@ export function silent(options: SilentOptions = {}): Plugin {
           : undefined;
       const incomingMap = readIncomingMap(transformOptions);
       const hasIncomingMap = incomingMap !== undefined && incomingMap !== null;
-      if (!warnedIncomingMap && (hasIncomingMap || serveMode)) {
+      if (!warnedIncomingMap && hasIncomingMap) {
         warnedIncomingMap = true;
         if (pluginContext) {
           pluginContext.warn(SOURCE_MAP_WARNING);

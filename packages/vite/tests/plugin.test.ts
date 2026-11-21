@@ -649,7 +649,7 @@ describe("входящая sourcemap", () => {
     }
   });
 
-  it("предупреждает в dev-режиме и молчит в обычной сборке", async () => {
+  it("молчит без входящей sourcemap в dev и build", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const cacheDir = mkdtempSync(path.join(tmpdir(), "silent-vite-sourcemap-"));
     cacheDirectories.push(cacheDir);
@@ -657,9 +657,8 @@ describe("входящая sourcemap", () => {
       const dev = createPlugin();
       dev.configResolved?.({ cacheDir, command: "serve" } as unknown as ResolvedConfig);
       await dev.transform?.("code", fileFor("src", "dev.ts"));
-      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).not.toHaveBeenCalled();
 
-      warn.mockClear();
       const build = createPlugin();
       build.configResolved?.({ cacheDir, command: "build" } as unknown as ResolvedConfig);
       await build.transform?.("code", fileFor("src", "build.ts"));
