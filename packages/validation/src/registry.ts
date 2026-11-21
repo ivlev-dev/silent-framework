@@ -5,9 +5,13 @@ import type {
   FieldKey,
   FieldRuleEntry,
   FieldSlot,
+  RuleDefinition,
+  RuleOptions,
 } from "./types.js";
 
 const states = new WeakMap<Function, ClassValidationState>();
+
+const conditionIdentities = new WeakMap<FieldCondition, unknown>();
 
 export function classStateFor(ctor: Function): ClassValidationState {
   let state = states.get(ctor);
@@ -60,6 +64,111 @@ function beginToken(
   return true;
 }
 
+function sameValue(
+  a: unknown,
+  b: unknown,
+  seen: Map<object, Set<object>>,
+): boolean {
+  if (Object.is(a, b)) {
+    return true;
+  }
+  if (typeof a !== "object" || a === null || typeof b !== "object" || b === null) {
+    return false;
+  }
+  if (a instanceof RegExp || b instanceof RegExp) {
+    return a instanceof RegExp
+      && b instanceof RegExp
+      && a.source === b.source
+      && a.flags === b.flags;
+  }
+  if (a instanceof Date || b instanceof Date) {
+    return a instanceof Date
+      && b instanceof Date
+      && a.getTime() === b.getTime();
+  }
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+      return false;
+    }
+    for (let index = 0; index < a.length; index += 1) {
+      if (!sameValue(a[index], b[index], seen)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  if (a instanceof Map || b instanceof Map || a instanceof Set || b instanceof Set) {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(a);
+  if (proto !== Object.getPrototypeOf(b) || (proto !== Object.prototype && proto !== null)) {
+    return false;
+  }
+  let matched = seen.get(a);
+  if (matched?.has(b) === true) {
+    return true;
+  }
+  if (matched === undefined) {
+    matched = new Set<object>();
+    seen.set(a, matched);
+  }
+  matched.add(b);
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) {
+    return false;
+  }
+  for (const key of keysA) {
+    if (!Object.hasOwn(b, key)) {
+      return false;
+    }
+    const left = (a as Readonly<Record<string, unknown>>)[key];
+    const right = (b as Readonly<Record<string, unknown>>)[key];
+    if (!sameValue(left, right, seen)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function sameGroups(
+  left: readonly string[] | undefined,
+  right: readonly string[] | undefined,
+): boolean {
+  const leftEmpty = left === undefined || left.length === 0;
+  const rightEmpty = right === undefined || right.length === 0;
+  if (leftEmpty || rightEmpty) {
+    return leftEmpty && rightEmpty;
+  }
+  return left.length === right.length
+    && left.every((group, index) => group === right[index]);
+}
+
+function sameOptions(left: RuleOptions, right: RuleOptions): boolean {
+  return left.message === right.message
+    && left.messageKey === right.messageKey
+    && left.label === right.label
+    && left.when === right.when
+    && left.each === right.each
+    && sameGroups(left.groups, right.groups);
+}
+
+function sameRule(left: RuleDefinition, right: RuleDefinition): boolean {
+  if (left === right) {
+    return true;
+  }
+  if (left.name !== right.name || left.nested !== right.nested || left.check !== right.check) {
+    return false;
+  }
+  return sameValue(left.params, right.params, new Map<object, Set<object>>());
+}
+
+function hasSameRule(slot: FieldSlot, entry: FieldRuleEntry): boolean {
+  return slot.rules.some((existing) => (
+    sameRule(existing.rule, entry.rule) && sameOptions(existing.options, entry.options)
+  ));
+}
+
 export function installRule(
   ctor: Function,
   token: symbol,
@@ -69,7 +178,11 @@ export function installRule(
   if (!beginToken(state, token, entry.field)) {
     return;
   }
-  fieldSlot(state, entry.field, entry.fieldName).rules.push(entry);
+  const slot = fieldSlot(state, entry.field, entry.fieldName);
+  if (hasSameRule(slot, entry)) {
+    return;
+  }
+  slot.rules.push(entry);
 }
 
 export function installLabel(
@@ -119,12 +232,22 @@ export function installCondition(
   field: FieldKey,
   fieldName: string,
   condition: FieldCondition,
+  identity?: unknown,
 ): void {
   const state = classStateFor(ctor);
   if (!beginToken(state, token, field)) {
     return;
   }
-  fieldSlot(state, field, fieldName).conditions.push(condition);
+  const slot = fieldSlot(state, field, fieldName);
+  const key = identity ?? condition;
+  const existing = slot.conditions.some((candidate) => (
+    (conditionIdentities.get(candidate) ?? candidate) === key
+  ));
+  if (existing) {
+    return;
+  }
+  conditionIdentities.set(condition, key);
+  slot.conditions.push(condition);
 }
 
 export function validationStateFor(instance: object): ClassValidationState {

@@ -28,7 +28,7 @@ export function ValidateIf(
       }
       return result === true;
     };
-    installCondition(ctor, entryToken, field, fieldName, condition);
+    installCondition(ctor, entryToken, field, fieldName, condition, predicate);
   });
 }
 
