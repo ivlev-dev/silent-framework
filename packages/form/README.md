@@ -248,6 +248,14 @@ await form.onSubmit(async (submitted) => {
 - `@ValidateIf` с async-предикатом: `isReady` оптимистичен (thenable считается неактивным), окончательное решение — за `validate()`/submit.
 - DOM-`id` по умолчанию строится из имени класса; минификатор может его переименовать, а два экземпляра без `formId` получают одинаковые id. Для списков/SSR задайте уникальный `formId`.
 
+## Структура пакета
+
+- `src/form.ts` — жизненный цикл, публичный API, валидация, вложенность и массивы.
+- `src/errors.ts` — карты ошибок, индекс по корню, замена ошибок поля.
+- `src/field-props.ts` — фабрики `FieldProps` (direct/nested/array).
+- `src/form-array.ts` — `FormArray` и операции с элементами.
+- `src/metadata.ts`, `src/types.ts`, `src/utils.ts` — декораторы, публичные типы, чистые утилиты.
+
 ## Ссылки
 
 - Документация API: [docs/api/form.md](https://github.com/ivlev-dev/silent-framework/blob/main/docs/api/form.md)

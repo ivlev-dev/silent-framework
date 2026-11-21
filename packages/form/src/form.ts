@@ -9,6 +9,18 @@ import {
   unregisterValidationInvalidator,
 } from "./metadata.js";
 import type { FieldMetadata } from "./metadata.js";
+import { ErrorStore } from "./errors.js";
+import {
+  createArrayItemFieldProps,
+  createArrayItemProps,
+  createDirectProps,
+  createFormArrayProps,
+  createNestedFieldProps,
+  createNestedFormProps,
+} from "./field-props.js";
+import type { FieldPropsHost } from "./field-props.js";
+import { createFieldArray } from "./form-array.js";
+import type { FormArrayHost } from "./form-array.js";
 import type {
   ArrayFieldPath,
   FieldEventLike,
@@ -19,19 +31,15 @@ import type {
   ValidateOnMode,
 } from "./types.js";
 import {
-  EMPTY_ERRORS,
-  EMPTY_ERRORS_MAP,
   cloneValue,
   coerceValue,
   eventTarget,
-  isFieldKey,
   isPlainObject,
   isRequiredEmpty,
   isThenable,
   lastSegment,
   normalizeErrorMessages,
   rootSegment,
-  sameMessages,
   selectedValues,
 } from "./utils.js";
 
@@ -122,12 +130,10 @@ export abstract class Form extends ValidationModel {
   private readonly options: ResolvedFormOptions;
   private readonly baseValidationOptions: ValidationOptions | undefined;
 
-  private readonly validationErrors = createSignal<
-    ReadonlyMap<string, readonly string[]>
-  >(EMPTY_ERRORS_MAP);
-  private readonly externalErrors = createSignal<
-    ReadonlyMap<string, readonly string[]>
-  >(EMPTY_ERRORS_MAP);
+  private readonly errorsRevision = createSignal(0);
+  private readonly errorStore: ErrorStore;
+  private readonly propsHost: FieldPropsHost;
+  private readonly arrayHost: FormArrayHost;
   private readonly touchedFields = createSignal<ReadonlySet<string>>(new Set());
   private readonly dirtyFields = createSignal<ReadonlySet<string>>(new Set());
   private readonly readyStates = new Map<string, boolean>();
@@ -156,16 +162,6 @@ export abstract class Form extends ValidationModel {
   private disposed = false;
   private validationGeneration = 0;
   private validationRunCount = 0;
-  private validationErrorsVersion = 0;
-  private externalErrorsVersion = 0;
-  private readonly validationKeyCounts = new Map<string, number>();
-  private errorIndexCache:
-    | {
-        readonly validationVersion: number;
-        readonly externalVersion: number;
-        readonly index: ReadonlyMap<string, readonly string[]>;
-      }
-    | undefined;
   private validatePromise: Promise<boolean> | undefined;
   private parentForm: FormInstance | undefined;
   private parentField: string | undefined;
@@ -187,6 +183,67 @@ export abstract class Form extends ValidationModel {
       formId: options?.formId,
       labels: options?.labels ?? {},
       onError: options?.onError,
+    };
+    this.errorStore = new ErrorStore({
+      onChange: () => this.errorsRevision[1]((version) => version + 1),
+    });
+    this.propsHost = {
+      labels: this.options.labels,
+      readValue: (name) => this.readOwnValue(name),
+      metadata: (name) => this.metadata.get(name),
+      labelFor: (name) => this.labelFor(name),
+      metadataLabelFor: (path) => this.metadataLabelFor(path),
+      directErrors: (name) => this.directErrors(name),
+      nestedFormErrors: (name) => this.nestedFormErrors(name),
+      readyState: (name) => {
+        this.readyVersion[0]();
+        return this.readyStates.get(name) ?? true;
+      },
+      isValidatingField: (name) => {
+        this.validatingVersion[0]();
+        return this.validatingFieldSet.has(name);
+      },
+      isTouched: (name) => this.touchedFields[0]().has(name),
+      isDirtyField: (name) => this.dirtyFields[0]().has(name),
+      idFor: (path) => this.idFor(path),
+      setValue: (name, value) => this.setDirectValue(name, value),
+      setReady: (name, ready) => this.setReadyFor(name, ready),
+      handleEvent: (name, event, mode) =>
+        this.handleValueEvent(name, event, mode),
+      markTouched: (name) => this.markTouched(name),
+      validateForEvent: (name, mode) => this.validateForEvent(name, mode),
+      runFieldValidation: (name) => this.runFieldValidation(name),
+      requireChild: (name) => this.requireChild(name),
+      childProps: (child, path) => child.propsAt(path),
+      hasAnyTouched: (child) => child.hasAnyTouched(),
+      hasValidating: (child) => child.hasValidating(),
+      nestedBindingError: (name, handler) =>
+        this.nestedBindingError(name, handler),
+      isFormInstance: (value): value is Form => value instanceof Form,
+      arrayItems: (name) => this.arrayItems(name),
+      requireArrayItem: (root, index) => this.requireArrayItem(root, index),
+      requireArrayItems: (name) => this.requireArrayItems(name),
+      arrayErrors: (name) => this.arrayErrors(name),
+      arrayItemExternalErrors: (path) => this.errorStore.externalMap.get(path),
+      replaceArray: (name, value) => this.replaceArray(name, value),
+      commitArray: (name, next, removed) =>
+        this.commitArray(name, next, removed),
+      runFormArrayValidation: (name) => this.runFormArrayValidation(name),
+    };
+    this.arrayHost = {
+      items: (name) => this.arrayItems(name),
+      requireItems: (name) => this.requireArrayItems(name),
+      directErrors: (name) => this.directErrors(name),
+      arrayErrors: (name) => this.arrayErrors(name),
+      isTouched: (name) => this.touchedFields[0]().has(name),
+      isDirtyField: (name) => this.dirtyFields[0]().has(name),
+      ensureCanBind: (item, name, index) => {
+        item.ensureCanBind(asInstance(this), `${name}[${index}]`);
+      },
+      commit: (name, next, removed) => {
+        this.commitArray(name, next, removed);
+      },
+      isBaseline: (item) => this.isBaselineArrayItem(item),
     };
     const trimmed = options?.formId?.trim();
     this.ownIdPrefix = trimmed !== undefined && trimmed !== ""
@@ -258,8 +315,8 @@ export abstract class Form extends ValidationModel {
         }
       }
       return (
-        this.validationErrors[0]().size === 0 &&
-        this.externalErrors[0]().size === 0
+        this.validationMap().size === 0 &&
+        this.externalMap().size === 0
       );
     });
   }
@@ -269,7 +326,7 @@ export abstract class Form extends ValidationModel {
     return getComputed(this, MEMO_IS_VALID, () => {
       this.ensureInitialized();
       this.syncChildren();
-      if (this.validationErrors[0]().size > 0 || this.externalErrors[0]().size > 0) {
+      if (this.validationMap().size > 0 || this.externalMap().size > 0) {
         return false;
       }
       for (const child of this.children.values()) {
@@ -360,112 +417,9 @@ export abstract class Form extends ValidationModel {
     const name = field as string;
     this.ensureInitialized();
     this.ensureArrayItems(name);
-    const self = this;
-    const itemsOf = (): FormInstance[] => self.requireArrayItems(name);
-    const arrayErrors = (): Readonly<Record<string, readonly string[]>> => {
-      const prefix = `${name}[`;
-      const result: Record<string, readonly string[]> = {};
-      for (const [key, messages] of Object.entries(self.errors)) {
-        if (key.startsWith(prefix)) {
-          result[key] = messages;
-        }
-      }
-      return result;
-    };
-    const array: FormArray<Form> = {
-      get items() {
-        return itemsOf();
-      },
-      get length() {
-        return itemsOf().length;
-      },
-      get errors() {
-        return arrayErrors();
-      },
-      get isReady() {
-        return (
-          self.directErrors(name).length === 0 &&
-          itemsOf().every((item) => item.isReady)
-        );
-      },
-      get isDirty() {
-        return (
-          self.dirtyFields[0]().has(name) ||
-          itemsOf().some((item) => item.isDirty)
-        );
-      },
-      at(index: number) {
-        return itemsOf()[index];
-      },
-      add(item) {
-        return self.insertArrayItem(name, itemsOf().length, item);
-      },
-      insert(index, item) {
-        return self.insertArrayItem(name, index, item);
-      },
-      remove(index) {
-        const items = itemsOf();
-        if (!Number.isInteger(index) || index < 0 || index >= items.length) {
-          throw new RangeError(`Индекс ${index} вне массива "${name}"`);
-        }
-        const removed = items[index]!;
-        const next = [...items];
-        next.splice(index, 1);
-        self.commitArray(name, next, [removed]);
-        if (!self.isBaselineArrayItem(removed)) {
-          removed.dispose();
-        }
-      },
-      move(from, to) {
-        const items = itemsOf();
-        if (
-          !Number.isInteger(from) ||
-          !Number.isInteger(to) ||
-          from < 0 ||
-          to < 0 ||
-          from >= items.length ||
-          to >= items.length
-        ) {
-          throw new RangeError(`Индекс вне массива "${name}"`);
-        }
-        if (from === to) {
-          return;
-        }
-        const next = [...items];
-        const [moved] = next.splice(from, 1);
-        next.splice(to, 0, moved!);
-        self.commitArray(name, next, []);
-      },
-      clear() {
-        const items = [...itemsOf()];
-        if (items.length === 0) {
-          return;
-        }
-        self.commitArray(name, [], items);
-        for (const item of items) {
-          if (!self.isBaselineArrayItem(item)) {
-            item.dispose();
-          }
-        }
-      },
-    };
-    return array as unknown as FormArray<ArrayItemOf<this, K>>;
-  }
-
-  private insertArrayItem(
-    name: string,
-    index: number,
-    item: FormInstance,
-  ): FormInstance {
-    const items = this.requireArrayItems(name);
-    if (!Number.isInteger(index) || index < 0 || index > items.length) {
-      throw new RangeError(`Индекс ${index} вне массива "${name}"`);
-    }
-    item.ensureCanBind(asInstance(this), `${name}[${index}]`);
-    const next = [...items];
-    next.splice(index, 0, item);
-    this.commitArray(name, next, []);
-    return item;
+    return createFieldArray<Form>(this.arrayHost, name) as unknown as FormArray<
+      ArrayItemOf<this, K>
+    >;
   }
 
   /** Записывает новый массив, перепривязывает элементы и пути/id. */
@@ -525,7 +479,7 @@ export abstract class Form extends ValidationModel {
       this.invalidateValidation();
       this.markDirty(name);
       if (this.options.clearExternalErrorsOnChange) {
-        this.removeExternalErrors(name);
+        this.errorStore.removeExternal(name);
       }
     }
   }
@@ -766,7 +720,7 @@ export abstract class Form extends ValidationModel {
           existing.push(error.message);
         }
       }
-      this.setValidationErrors(map);
+      this.errorStore.setValidation(map);
       this.markAllTouched();
 
       if (this.options.validateNested) {
@@ -800,13 +754,13 @@ export abstract class Form extends ValidationModel {
           return this.isValid;
         }
         const ownValid =
-          this.validationErrors[0]().size === 0 &&
-          this.externalErrors[0]().size === 0;
+          this.validationMap().size === 0 &&
+          this.externalMap().size === 0;
         return result.valid && ownValid && results.every(Boolean);
       }
       const ownValid =
-        this.validationErrors[0]().size === 0 &&
-        this.externalErrors[0]().size === 0;
+        this.validationMap().size === 0 &&
+        this.externalMap().size === 0;
       return result.valid && ownValid && this.isValid;
     } finally {
       if (!this.disposed && generation === this.validationGeneration) {
@@ -864,7 +818,7 @@ export abstract class Form extends ValidationModel {
       if (rest !== undefined) {
         item.setErrorsAt(rest, messages);
       } else {
-        this.setExternalErrors(path, messages);
+        this.errorStore.setExternal(path, messages);
       }
       return;
     }
@@ -872,7 +826,7 @@ export abstract class Form extends ValidationModel {
       this.requireChild(root).setErrorsAt(rest, messages);
       return;
     }
-    this.setExternalErrors(root, messages);
+    this.errorStore.setExternal(root, messages);
   }
 
   /**
@@ -897,8 +851,8 @@ export abstract class Form extends ValidationModel {
     if (field === undefined) {
       this.ensureInitialized();
       this.syncChildren();
-      if (this.externalErrors[0]().size > 0) {
-        this.setExternalErrorsMap(EMPTY_ERRORS_MAP);
+      if (this.externalMap().size > 0) {
+        this.errorStore.clearExternal();
       }
       for (const child of this.children.values()) {
         child.clearFieldErrors();
@@ -917,7 +871,7 @@ export abstract class Form extends ValidationModel {
       if (rest !== undefined) {
         item.clearErrorsAt(rest);
       } else {
-        this.removeExternalErrors(path);
+        this.errorStore.removeExternal(path);
         item.clearFieldErrors();
       }
       return;
@@ -927,18 +881,18 @@ export abstract class Form extends ValidationModel {
       return;
     }
     if (this.childFor(root) !== undefined) {
-      this.removeExternalErrors(root);
+      this.errorStore.removeExternal(root);
       this.requireChild(root).clearFieldErrors();
       return;
     }
     if (this.arrayItems(root) !== undefined) {
-      this.removeExternalErrors(root);
+      this.errorStore.removeExternal(root);
       for (const item of this.requireArrayItems(root)) {
         item.clearFieldErrors();
       }
       return;
     }
-    this.removeExternalErrors(root);
+    this.errorStore.removeExternal(root);
   }
 
   /**
@@ -1020,7 +974,7 @@ export abstract class Form extends ValidationModel {
         child.setValues(value);
         this.markDirty(name);
         if (this.options.clearExternalErrorsOnChange) {
-          this.removeExternalErrors(name);
+          this.errorStore.removeExternal(name);
         }
         continue;
       }
@@ -1055,11 +1009,11 @@ export abstract class Form extends ValidationModel {
     }
     this.invalidateValidation();
     this.clearTimers();
-    if (this.validationErrors[0]().size > 0) {
-      this.setValidationErrors(EMPTY_ERRORS_MAP);
+    if (this.validationMap().size > 0) {
+      this.errorStore.clearValidation();
     }
-    if (this.externalErrors[0]().size > 0) {
-      this.setExternalErrorsMap(EMPTY_ERRORS_MAP);
+    if (this.externalMap().size > 0) {
+      this.errorStore.clearExternal();
     }
     this.touchedFields[1](new Set());
     this.dirtyFields[1](new Set());
@@ -1696,7 +1650,7 @@ export abstract class Form extends ValidationModel {
     const field = this.parentField;
     if (parent !== undefined && field !== undefined) {
       // Ошибка уровня поля-формы снимается при изменении любого ребёнка.
-      parent.removeExternalErrors(field);
+      parent.errorStore.removeExternal(field);
       parent.invalidateValidation();
     }
   }
@@ -1794,22 +1748,27 @@ export abstract class Form extends ValidationModel {
   private createProps(path: string): FieldProps<unknown> {
     const { root, index, rest } = this.locate(path);
     if (index !== undefined) {
-      const item = this.requireArrayItem(root, index);
       if (rest !== undefined) {
-        return this.createArrayItemFieldProps(path, root, index, rest, item);
+        return createArrayItemFieldProps(
+          this.propsHost,
+          path,
+          root,
+          index,
+          rest,
+        );
       }
-      return this.createArrayItemProps(path, root, index, item);
+      return createArrayItemProps(this.propsHost, path, root, index);
     }
     if (rest !== undefined) {
-      return this.createNestedFieldProps(path, root, rest);
+      return createNestedFieldProps(this.propsHost, path, root, rest);
     }
     if (this.childFor(root) !== undefined) {
-      return this.createNestedFormProps(root);
+      return createNestedFormProps(this.propsHost, root);
     }
     if (this.arrayItems(root) !== undefined) {
-      return this.createFormArrayProps(root);
+      return createFormArrayProps(this.propsHost, root);
     }
-    return this.createDirectProps(root);
+    return createDirectProps(this.propsHost, root);
   }
 
   private arrayErrors(name: string): Readonly<Record<string, readonly string[]>> {
@@ -1821,97 +1780,6 @@ export abstract class Form extends ValidationModel {
       }
     }
     return result;
-  }
-
-  private createFormArrayProps(name: string): FieldProps<unknown> {
-    const metadata = this.metadata.get(name);
-    const id = this.idFor(name);
-    const self = this;
-    const items = (): FormInstance[] => self.requireArrayItems(name);
-    const allErrors = (): readonly string[] => {
-      const result: string[] = [...self.directErrors(name)];
-      for (const [, messages] of Object.entries(self.arrayErrors(name))) {
-        result.push(...messages);
-      }
-      return result;
-    };
-    return {
-      get value() {
-        return items();
-      },
-      get label() {
-        return self.labelFor(name);
-      },
-      get placeholder() {
-        return metadata?.placeholder;
-      },
-      get hint() {
-        return metadata?.hint;
-      },
-      get error() {
-        return allErrors()[0];
-      },
-      get errors() {
-        return allErrors();
-      },
-      get isRequired() {
-        return metadata?.required === true;
-      },
-      get isReady() {
-        return (
-          self.directErrors(name).length === 0 &&
-          items().every((item) => item.isReady)
-        );
-      },
-      get isValidating() {
-        return items().some((item) => item.hasValidating());
-      },
-      get touched() {
-        return (
-          self.touchedFields[0]().has(name) ||
-          items().some((item) => item.hasAnyTouched())
-        );
-      },
-      get dirty() {
-        return (
-          self.dirtyFields[0]().has(name) ||
-          items().some((item) => item.isDirty)
-        );
-      },
-      get isValid() {
-        return (
-          self.directErrors(name).length === 0 &&
-          items().every((item) => item.isValid)
-        );
-      },
-      get name() {
-        return name;
-      },
-      get id() {
-        return id;
-      },
-      setValue(value) {
-        self.replaceArray(name, value);
-      },
-      setReady(ready) {
-        self.setReadyFor(name, ready);
-      },
-      onChange(_event) {
-        self.nestedBindingError(name, "onChange");
-      },
-      onInput(_event) {
-        self.nestedBindingError(name, "onInput");
-      },
-      onFocus(_event) {
-        self.nestedBindingError(name, "onFocus");
-      },
-      onBlur(_event) {
-        self.nestedBindingError(name, "onBlur");
-      },
-      validate() {
-        return self.runFormArrayValidation(name);
-      },
-    };
   }
 
   private replaceArray(name: string, value: unknown): void {
@@ -1931,467 +1799,25 @@ export abstract class Form extends ValidationModel {
     this.commitArray(name, items, removed);
   }
 
-  private createArrayItemProps(
-    path: string,
-    root: string,
-    index: number,
-    item: FormInstance,
-  ): FieldProps<unknown> {
-    const self = this;
-    const id = this.idFor(path);
-    const fieldPath = `${root}[${index}]`;
-    const itemErrors = (): readonly string[] => {
-      const result: string[] = [];
-      for (const messages of Object.values(item.errors)) {
-        result.push(...messages);
-      }
-      const external = self.externalErrors[0]().get(fieldPath);
-      if (external !== undefined) {
-        result.push(...external);
-      }
-      return result;
-    };
-    return {
-      get value() {
-        return self.requireArrayItem(root, index);
-      },
-      get label() {
-        return self.labelFor(root);
-      },
-      get placeholder() {
-        return undefined;
-      },
-      get hint() {
-        return undefined;
-      },
-      get error() {
-        return itemErrors()[0];
-      },
-      get errors() {
-        return itemErrors();
-      },
-      get isRequired() {
-        return false;
-      },
-      get isReady() {
-        return self.requireArrayItem(root, index).isReady;
-      },
-      get isValidating() {
-        return self.requireArrayItem(root, index).hasValidating();
-      },
-      get touched() {
-        return (
-          self.touchedFields[0]().has(fieldPath) ||
-          self.requireArrayItem(root, index).hasAnyTouched()
-        );
-      },
-      get dirty() {
-        return (
-          self.dirtyFields[0]().has(fieldPath) ||
-          self.requireArrayItem(root, index).isDirty
-        );
-      },
-      get isValid() {
-        return self.requireArrayItem(root, index).isValid;
-      },
-      get name() {
-        return path;
-      },
-      get id() {
-        return id;
-      },
-      setValue(value) {
-        if (!(value instanceof Form)) {
-          throw new TypeError(`Поле "${path}" — элемент массива: ожидался Form`);
-        }
-        const items = [...self.requireArrayItems(root)];
-        const previous = items[index];
-        if (previous === undefined) {
-          throw new Error(`Элемент "${path}" больше не существует`);
-        }
-        const next = asInstance(value);
-        next.ensureCanBind(asInstance(self), fieldPath);
-        items[index] = next;
-        self.commitArray(root, items, [previous]);
-      },
-      setReady(ready) {
-        self.setReadyFor(fieldPath, ready);
-      },
-      onChange(_event) {
-        self.nestedBindingError(path, "onChange");
-      },
-      onInput(_event) {
-        self.nestedBindingError(path, "onInput");
-      },
-      onFocus(_event) {
-        self.nestedBindingError(path, "onFocus");
-      },
-      onBlur(_event) {
-        self.nestedBindingError(path, "onBlur");
-      },
-      validate() {
-        return self.requireArrayItem(root, index).validate();
-      },
-    };
-  }
-
-  private createArrayItemFieldProps(
-    path: string,
-    root: string,
-    index: number,
-    rest: string,
-    _item: FormInstance,
-  ): FieldProps<unknown> {
-    const self = this;
-    const id = this.idFor(path);
-    const childProps = (): FieldProps<unknown> =>
-      self.requireArrayItem(root, index).propsAt(rest);
-    return {
-      get value() {
-        return childProps().value;
-      },
-      get label() {
-        return (
-          self.metadataLabelFor(path) ??
-          self.options.labels[path] ??
-          self.options.labels[lastSegment(path)] ??
-          childProps().label
-        );
-      },
-      get placeholder() {
-        return childProps().placeholder;
-      },
-      get hint() {
-        return childProps().hint;
-      },
-      get error() {
-        return childProps().error;
-      },
-      get errors() {
-        return childProps().errors;
-      },
-      get isRequired() {
-        return childProps().isRequired;
-      },
-      get isReady() {
-        return childProps().isReady;
-      },
-      get isValidating() {
-        return childProps().isValidating;
-      },
-      get touched() {
-        return childProps().touched;
-      },
-      get dirty() {
-        return childProps().dirty;
-      },
-      get isValid() {
-        return childProps().isValid;
-      },
-      get name() {
-        return path;
-      },
-      get id() {
-        return id;
-      },
-      setValue(value) {
-        childProps().setValue(value);
-      },
-      setReady(ready) {
-        childProps().setReady(ready);
-      },
-      onChange(event) {
-        childProps().onChange(event);
-      },
-      onInput(event) {
-        childProps().onInput(event);
-      },
-      onFocus(event) {
-        childProps().onFocus(event);
-      },
-      onBlur(event) {
-        childProps().onBlur(event);
-      },
-      validate() {
-        return childProps().validate();
-      },
-    };
-  }
-
-  private createDirectProps(name: string): FieldProps<unknown> {
-    const metadata = this.metadata.get(name);
-    const id = this.idFor(name);
-    const self = this;
-    return {
-      get value() {
-        return self.readOwnValue(name);
-      },
-      get label() {
-        return self.labelFor(name);
-      },
-      get placeholder() {
-        return metadata?.placeholder;
-      },
-      get hint() {
-        return metadata?.hint;
-      },
-      get error() {
-        return self.directErrors(name)[0];
-      },
-      get errors() {
-        return self.directErrors(name);
-      },
-      get isRequired() {
-        return metadata?.required === true;
-      },
-      get isReady() {
-        self.readyVersion[0]();
-        return self.readyStates.get(name) ?? true;
-      },
-      get isValidating() {
-        self.validatingVersion[0]();
-        return self.validatingFieldSet.has(name);
-      },
-      get touched() {
-        return self.touchedFields[0]().has(name);
-      },
-      get dirty() {
-        return self.dirtyFields[0]().has(name);
-      },
-      get isValid() {
-        return self.directErrors(name).length === 0;
-      },
-      get name() {
-        return name;
-      },
-      get id() {
-        return id;
-      },
-      setValue(value) {
-        self.setDirectValue(name, value);
-      },
-      setReady(ready) {
-        self.setReadyFor(name, ready);
-      },
-      onChange(event) {
-        self.handleValueEvent(name, event, "change");
-      },
-      onInput(event) {
-        self.handleValueEvent(name, event, "input");
-      },
-      onFocus(_event) {
-        // Фокус намеренно не меняет состояние: touched ставится на blur.
-      },
-      onBlur(_event) {
-        self.markTouched(name);
-        self.validateForEvent(name, "blur");
-      },
-      validate() {
-        return self.runFieldValidation(name);
-      },
-    };
-  }
-
-  private createNestedFormProps(name: string): FieldProps<unknown> {
-    const metadata = this.metadata.get(name);
-    const id = this.idFor(name);
-    const self = this;
-    return {
-      get value() {
-        return self.requireChild(name);
-      },
-      get label() {
-        return self.labelFor(name);
-      },
-      get placeholder() {
-        return metadata?.placeholder;
-      },
-      get hint() {
-        return metadata?.hint;
-      },
-      get error() {
-        return self.nestedFormErrors(name)[0];
-      },
-      get errors() {
-        return self.nestedFormErrors(name);
-      },
-      get isRequired() {
-        return metadata?.required === true;
-      },
-      get isReady() {
-        return self.requireChild(name).isReady;
-      },
-      get isValidating() {
-        return self.requireChild(name).hasValidating();
-      },
-      get touched() {
-        return self.touchedFields[0]().has(name)
-          || self.requireChild(name).hasAnyTouched();
-      },
-      get dirty() {
-        return self.dirtyFields[0]().has(name) || self.requireChild(name).isDirty;
-      },
-      get isValid() {
-        return self.requireChild(name).isValid;
-      },
-      get name() {
-        return name;
-      },
-      get id() {
-        return id;
-      },
-      setValue(value) {
-        if (!(value instanceof Form)) {
-          throw new TypeError(
-            `Поле "${name}" — вложенная форма: ожидался экземпляр Form`,
-          );
-        }
-        self.setDirectValue(name, value);
-      },
-      setReady(ready) {
-        self.setReadyFor(name, ready);
-      },
-      onChange(_event) {
-        self.nestedBindingError(name, "onChange");
-      },
-      onInput(_event) {
-        self.nestedBindingError(name, "onInput");
-      },
-      onFocus(_event) {
-        self.nestedBindingError(name, "onFocus");
-      },
-      onBlur(_event) {
-        self.nestedBindingError(name, "onBlur");
-      },
-      validate() {
-        return self.requireChild(name).validate();
-      },
-    };
-  }
-
-  private createNestedFieldProps(
-    path: string,
-    root: string,
-    rest: string,
-  ): FieldProps<unknown> {
-    const self = this;
-    const id = this.idFor(path);
-    const childProps = (): FieldProps<unknown> =>
-      self.requireChild(root).propsAt(rest);
-    return {
-      get value() {
-        return childProps().value;
-      },
-      get label() {
-        return self.labelForNested(path, childProps().label);
-      },
-      get placeholder() {
-        return childProps().placeholder;
-      },
-      get hint() {
-        return childProps().hint;
-      },
-      get error() {
-        return childProps().error;
-      },
-      get errors() {
-        return childProps().errors;
-      },
-      get isRequired() {
-        return childProps().isRequired;
-      },
-      get isReady() {
-        return childProps().isReady;
-      },
-      get isValidating() {
-        return childProps().isValidating;
-      },
-      get touched() {
-        return childProps().touched;
-      },
-      get dirty() {
-        return childProps().dirty;
-      },
-      get isValid() {
-        return childProps().isValid;
-      },
-      get name() {
-        return path;
-      },
-      get id() {
-        return id;
-      },
-      setValue(value) {
-        childProps().setValue(value);
-      },
-      setReady(ready) {
-        childProps().setReady(ready);
-      },
-      onChange(event) {
-        childProps().onChange(event);
-      },
-      onInput(event) {
-        childProps().onInput(event);
-      },
-      onFocus(event) {
-        childProps().onFocus(event);
-      },
-      onBlur(event) {
-        childProps().onBlur(event);
-      },
-      validate() {
-        return childProps().validate();
-      },
-    };
-  }
-
   private nestedBindingError(name: string, handler: string): never {
     throw new Error(
       `Поле "${name}" — вложенная форма: ${handler} не привязан к одному input, используйте путь вложенного поля`,
     );
   }
 
-  /** Индекс сообщений по корню поля (validation + external), O(1) чтение. */
-  private errorIndex(): ReadonlyMap<string, readonly string[]> {
-    const cached = this.errorIndexCache;
-    if (
-      cached !== undefined &&
-      cached.validationVersion === this.validationErrorsVersion &&
-      cached.externalVersion === this.externalErrorsVersion
-    ) {
-      return cached.index;
-    }
-    const merged = new Map<string, string[]>();
-    const push = (map: ReadonlyMap<string, readonly string[]>): void => {
-      for (const [key, messages] of map) {
-        if (messages.length === 0) {
-          continue;
-        }
-        const root = rootSegment(key);
-        const existing = merged.get(root);
-        if (existing === undefined) {
-          merged.set(root, [...messages]);
-        } else {
-          existing.push(...messages);
-        }
-      }
-    };
-    push(this.validationErrors[0]());
-    push(this.externalErrors[0]());
-    const index = new Map<string, readonly string[]>();
-    for (const [root, messages] of merged) {
-      index.set(root, Object.freeze(messages));
-    }
-    this.errorIndexCache = {
-      validationVersion: this.validationErrorsVersion,
-      externalVersion: this.externalErrorsVersion,
-      index,
-    };
-    return index;
+  private validationMap(): ReadonlyMap<string, readonly string[]> {
+    this.errorsRevision[0]();
+    return this.errorStore.validationMap;
+  }
+
+  private externalMap(): ReadonlyMap<string, readonly string[]> {
+    this.errorsRevision[0]();
+    return this.errorStore.externalMap;
   }
 
   private directErrors(name: string): readonly string[] {
-    return this.errorIndex().get(name) ?? EMPTY_ERRORS;
+    this.errorsRevision[0]();
+    return this.errorStore.fieldErrors(name);
   }
 
   private nestedFormErrors(name: string): readonly string[] {
@@ -2419,8 +1845,8 @@ export abstract class Form extends ValidationModel {
           : [...existing, ...messages];
       }
     };
-    merge(this.validationErrors[0]());
-    merge(this.externalErrors[0]());
+    merge(this.validationMap());
+    merge(this.externalMap());
     for (const name of this.metadata.keys()) {
       const child = this.childFor(name);
       if (child !== undefined) {
@@ -2467,7 +1893,7 @@ export abstract class Form extends ValidationModel {
         ) {
           return result.valid;
         }
-        this.replaceValidationErrors(name, result.errors);
+        this.errorStore.replaceFieldErrors(name, result.errors);
         return result.valid;
       } finally {
         if (!this.disposed && generation === this.validationGeneration) {
@@ -2479,65 +1905,6 @@ export abstract class Form extends ValidationModel {
         onSettled?.();
       }
     })();
-  }
-
-  private replaceValidationErrors(
-    name: string,
-    errors: readonly { readonly path: string; readonly field: string; readonly message: string }[],
-  ): void {
-    const current = this.validationErrors[0]();
-    const currentCount = this.validationKeyCounts.get(name) ?? 0;
-    if (errors.length === 0) {
-      if (currentCount === 0) {
-        return;
-      }
-    } else if (errors.length === 1 && currentCount === 1) {
-      const error = errors[0]!;
-      const key = error.path === "" ? error.field : error.path;
-      const existing = current.get(key);
-      if (
-        key === name &&
-        existing !== undefined &&
-        existing.length === 1 &&
-        existing[0] === error.message
-      ) {
-        return;
-      }
-    }
-    const nextValues = new Map<string, string[]>();
-    for (const error of errors) {
-      const key = error.path === "" ? error.field : error.path;
-      const existing = nextValues.get(key);
-      if (existing === undefined) {
-        nextValues.set(key, [error.message]);
-      } else {
-        existing.push(error.message);
-      }
-    }
-    let changed = currentCount !== nextValues.size;
-    if (!changed) {
-      for (const [key, messages] of nextValues) {
-        if (!sameMessages(current.get(key) ?? EMPTY_ERRORS, messages)) {
-          changed = true;
-          break;
-        }
-      }
-    }
-    if (!changed) {
-      return;
-    }
-    const next = new Map(current);
-    for (const key of [...next.keys()]) {
-      if (isFieldKey(key, name)) {
-        next.delete(key);
-      }
-    }
-    for (const [key, messages] of nextValues) {
-      if (messages.length > 0) {
-        next.set(key, Object.freeze(messages));
-      }
-    }
-    this.setValidationErrors(next);
   }
 
   private setDirectValue(name: string, value: unknown): void {
@@ -2562,7 +1929,7 @@ export abstract class Form extends ValidationModel {
     this.invalidateProps(name);
     this.markDirty(name);
     if (this.options.clearExternalErrorsOnChange) {
-      this.removeExternalErrors(name);
+      this.errorStore.removeExternal(name);
     }
   }
 
@@ -2796,67 +2163,6 @@ export abstract class Form extends ValidationModel {
       }
     }
     return false;
-  }
-
-  private setExternalErrors(name: string, messages: readonly string[]): void {
-    const current = this.externalErrors[0]();
-    if (messages.length === 0) {
-      if (!current.has(name)) {
-        return;
-      }
-      const next = new Map(current);
-      next.delete(name);
-      this.setExternalErrorsMap(next);
-      return;
-    }
-    const before = current.get(name) ?? EMPTY_ERRORS;
-    if (sameMessages(before, messages)) {
-      return;
-    }
-    const next = new Map(current);
-    next.set(name, Object.freeze([...messages]));
-    this.setExternalErrorsMap(next);
-  }
-
-  private removeExternalErrors(name: string): void {
-    const current = this.externalErrors[0]();
-    let next: Map<string, readonly string[]> | undefined;
-    for (const key of current.keys()) {
-      if (isFieldKey(key, name)) {
-        if (next === undefined) {
-          next = new Map(current);
-        }
-        next.delete(key);
-      }
-    }
-    if (next !== undefined) {
-      this.setExternalErrorsMap(next);
-    }
-  }
-
-  private setValidationErrors(
-    map: ReadonlyMap<string, readonly string[]>,
-  ): void {
-    this.validationErrorsVersion += 1;
-    this.recountValidationKeys(map);
-    this.validationErrors[1](map);
-  }
-
-  private recountValidationKeys(
-    map: ReadonlyMap<string, readonly string[]>,
-  ): void {
-    this.validationKeyCounts.clear();
-    for (const key of map.keys()) {
-      const root = rootSegment(key);
-      this.validationKeyCounts.set(root, (this.validationKeyCounts.get(root) ?? 0) + 1);
-    }
-  }
-
-  private setExternalErrorsMap(
-    map: ReadonlyMap<string, readonly string[]>,
-  ): void {
-    this.externalErrorsVersion += 1;
-    this.externalErrors[1](map);
   }
 
   /** labels текущей формы + переданные, с приоритетом переданных. */
