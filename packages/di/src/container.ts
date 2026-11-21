@@ -257,6 +257,7 @@ export class Container {
   private resolving = new Map<unknown, unknown>();
   private syncContext: ResolutionContext | null = null;
   private inFlight = new Set<(error: unknown) => void>();
+  private activeTokens = new Set<unknown>();
   private disposeHooks: Array<() => void> = [];
   private disposed = false;
   private implicitBindingMode: ImplicitBindingMode;
@@ -280,6 +281,8 @@ export class Container {
     const commit = isConstant
       ? (): void => {
         this.resolved.set(token, factory);
+        this.cache.set(token, Promise.resolve(factory));
+        this.markActive(token);
       }
       : undefined;
     return this.registerBinding(
@@ -358,6 +361,8 @@ export class Container {
     this.implicitTokens.delete(token);
     this.replaceCache(token, () => {
       this.resolved.set(token, value);
+      this.cache.set(token, Promise.resolve(value));
+      this.markActive(token);
     });
   }
 
@@ -462,6 +467,9 @@ export class Container {
   }
 
   private detachCacheEntries(token: unknown, removed: Set<unknown>): void {
+    if (token !== undefined && !this.activeTokens.has(token)) {
+      return;
+    }
     if (token === undefined) {
       for (const value of this.resolved.values()) {
         removed.add(value);
@@ -469,6 +477,7 @@ export class Container {
       this.cache.clear();
       this.resolved.clear();
       this.resolving.clear();
+      this.activeTokens.clear();
     } else {
       if (this.resolved.has(token)) {
         removed.add(this.resolved.get(token));
@@ -476,9 +485,18 @@ export class Container {
       this.cache.delete(token);
       this.resolved.delete(token);
       this.resolving.delete(token);
+      this.activeTokens.delete(token);
     }
     for (const child of [...this.children]) {
       child.detachCacheEntries(token, removed);
+    }
+  }
+
+  private markActive(token: unknown): void {
+    let node: Container | undefined = this;
+    while (node !== undefined) {
+      node.activeTokens.add(token);
+      node = node.parent;
     }
   }
 
@@ -558,6 +576,7 @@ export class Container {
       this.cache.clear();
       this.resolved.clear();
       this.resolving.clear();
+      this.activeTokens.clear();
       this.bindings.clear();
       this.implicitTokens.clear();
     } catch (error) {
@@ -640,6 +659,9 @@ export class Container {
     this.reportResolution(token, owner, binding, false);
 
     const marker: object = {};
+    if (!cacheContainer.activeTokens.has(token)) {
+      cacheContainer.markActive(token);
+    }
     cacheContainer.resolving.set(token, marker);
 
     let nextCaptive: CaptiveFrame | null = captive;
@@ -784,17 +806,29 @@ export class Container {
   }
 
   private static guard(target: Container, context: ResolutionContext): Container {
+    const resolveInContext = (token: unknown): Promise<unknown> =>
+      Container.resolveInContext(target, context, token);
+    const createScoped = (name?: string): Container =>
+      Container.guard(target.createScope(name), context);
+    const boundMethods = new Map<PropertyKey, unknown>();
     return new Proxy(target, {
       get(object: Container, property: string | symbol): unknown {
         if (property === "resolve") {
-          return (token: unknown): Promise<unknown> =>
-            Container.resolveInContext(object, context, token);
+          return resolveInContext;
         }
         if (property === "createScope") {
-          return (name?: string): Container => Container.guard(object.createScope(name), context);
+          return createScoped;
+        }
+        if (boundMethods.has(property)) {
+          return boundMethods.get(property);
         }
         const value: unknown = Reflect.get(object, property, object);
-        return typeof value === "function" ? value.bind(object) : value;
+        if (typeof value !== "function" || property === "constructor") {
+          return value;
+        }
+        const method = value.bind(object);
+        boundMethods.set(property, method);
+        return method;
       },
     });
   }
