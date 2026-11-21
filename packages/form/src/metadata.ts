@@ -33,6 +33,7 @@ export interface FieldMetadata {
 type MetadataPatch = Omit<FieldMetadata, "name">;
 
 const metadataByClass = new WeakMap<Function, Map<string, FieldMetadata>>();
+const mergedMetadataCache = new WeakMap<Function, Map<string, FieldMetadata>>();
 const validationInvalidators = new WeakMap<object, () => void>();
 const fieldBinders = new WeakMap<
   object,
@@ -277,6 +278,10 @@ export function ValidateOn(
 
 /** Метаданные класса с учётом наследования (базовые поля идут первыми). */
 export function fieldMetadataFor(ctor: Function): Map<string, FieldMetadata> {
+  const cached = mergedMetadataCache.get(ctor);
+  if (cached !== undefined) {
+    return cached;
+  }
   const chain: Function[] = [];
   let current: unknown = ctor;
   while (typeof current === "function" && current !== Function.prototype) {
@@ -293,5 +298,6 @@ export function fieldMetadataFor(ctor: Function): Map<string, FieldMetadata> {
       merged.set(name, metadata);
     }
   }
+  mergedMetadataCache.set(ctor, merged);
   return merged;
 }

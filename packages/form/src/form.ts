@@ -29,6 +29,9 @@ const MEMO_IS_DIRTY = Symbol("silent.form.isDirty");
 const MEMO_ERRORS = Symbol("silent.form.errors");
 const MEMO_VALUES = Symbol("silent.form.values");
 
+const EMPTY_ERRORS: readonly string[] = Object.freeze([]);
+const EMPTY_ERRORS_MAP: ReadonlyMap<string, readonly string[]> = new Map();
+
 type FormInstance = Form;
 
 type SetValuesInput<T> = {
@@ -148,13 +151,35 @@ function rootSegment(path: string): string {
   return path.slice(0, index);
 }
 
+function isFieldKey(key: string, name: string): boolean {
+  return (
+    key === name ||
+    key.startsWith(`${name}.`) ||
+    key.startsWith(`${name}[`)
+  );
+}
+
+function sameMessages(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  if (left === right) {
+    return true;
+  }
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function lastSegment(path: string): string {
   const dot = path.lastIndexOf(".");
   return dot === -1 ? path : path.slice(dot + 1);
-}
-
-function freezeMap(map: Record<string, readonly string[]>): ErrorsMap {
-  return Object.freeze(map);
 }
 
 function eventTarget(event: FieldEventLike): EventTargetLike | undefined {
@@ -251,30 +276,50 @@ function normalizeErrorMessages(
  */
 export abstract class Form {
   private readonly options: ResolvedFormOptions;
+  private readonly baseValidationOptions: ValidationOptions | undefined;
 
-  private readonly validationErrors = createSignal<ErrorsMap>({});
-  private readonly externalErrors = createSignal<ErrorsMap>({});
+  private readonly validationErrors = createSignal<
+    ReadonlyMap<string, readonly string[]>
+  >(EMPTY_ERRORS_MAP);
+  private readonly externalErrors = createSignal<
+    ReadonlyMap<string, readonly string[]>
+  >(EMPTY_ERRORS_MAP);
   private readonly touchedFields = createSignal<ReadonlySet<string>>(new Set());
   private readonly dirtyFields = createSignal<ReadonlySet<string>>(new Set());
-  private readonly readyFields = createSignal<Readonly<Record<string, boolean>>>({});
-  private readonly validatingFields = createSignal<ReadonlySet<string>>(new Set());
+  private readonly readyStates = new Map<string, boolean>();
+  private readonly readyVersion = createSignal(0);
+  private readonly validatingFieldSet = new Set<string>();
+  private readonly validatingVersion = createSignal(0);
   private readonly validatingForm = createSignal(0);
   private readonly submittingSignal = createSignal(false);
 
-  private readonly metadata = new Map<string, FieldMetadata>();
+  private metadata: ReadonlyMap<string, FieldMetadata> = new Map();
   private readonly initialValues = new Map<string, unknown>();
   private readonly children = new Map<string, FormInstance>();
   private readonly propsCache = new Map<string, FieldProps<unknown>>();
   private readonly validationTokens = new Map<string, number>();
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly reportedUnregisteredRoots = new Set<string>();
-  private readonly fieldValidationPromises = new Map<string, Promise<boolean>>();
+  private readonly fieldValidationPromises = new Map<
+    string,
+    { readonly promise: Promise<boolean>; active: boolean }
+  >();
 
   private initialized = false;
   private initialCaptured = false;
   private disposed = false;
   private validationGeneration = 0;
   private validationRunCount = 0;
+  private validationErrorsVersion = 0;
+  private externalErrorsVersion = 0;
+  private readonly validationKeyCounts = new Map<string, number>();
+  private errorIndexCache:
+    | {
+        readonly validationVersion: number;
+        readonly externalVersion: number;
+        readonly index: ReadonlyMap<string, readonly string[]>;
+      }
+    | undefined;
   private validatePromise: Promise<boolean> | undefined;
   private parentForm: FormInstance | undefined;
   private parentField: string | undefined;
@@ -303,6 +348,9 @@ export abstract class Form {
         ? this.constructor.name
         : "form";
     this.idPrefix = this.ownIdPrefix;
+    this.baseValidationOptions = Object.keys(this.options.labels).length > 0
+      ? { labels: this.options.labels }
+      : undefined;
     registerValidationInvalidator(this, () => this.invalidateValidation());
     registerFieldBinder(this, (name, value) => this.bindInitialField(name, value));
     queueMicrotask(() => {
@@ -332,19 +380,19 @@ export abstract class Form {
     return getComputed(this, MEMO_IS_READY, () => {
       this.ensureInitialized();
       this.syncChildren();
-      if (this.validatingFields[0]().size > 0 || this.validatingForm[0]() > 0) {
+      this.validatingVersion[0]();
+      if (this.validatingFieldSet.size > 0 || this.validatingForm[0]() > 0) {
         return false;
       }
-      const ready = this.readyFields[0]();
-      for (const name of this.metadata.keys()) {
-        if (ready[name] === false) {
+      this.readyVersion[0]();
+      const ready = this.readyStates;
+      for (const [name, metadata] of this.metadata) {
+        if (ready.get(name) === false) {
           return false;
         }
-        const metadata = this.metadata.get(name);
         const value = this.readOwnValue(name);
-        const active = metadata === undefined || this.isFieldActive(metadata);
+        const active = this.isFieldActive(metadata);
         if (
-          metadata !== undefined &&
           this.isRequirementActive(metadata, value, active) &&
           isRequiredEmpty(value)
         ) {
@@ -354,13 +402,28 @@ export abstract class Form {
           return false;
         }
       }
-      return Object.keys(this.errors).length === 0;
+      return (
+        this.validationErrors[0]().size === 0 &&
+        this.externalErrors[0]().size === 0
+      );
     });
   }
 
   /** У формы нет ошибок. */
   get isValid(): boolean {
-    return getComputed(this, MEMO_IS_VALID, () => Object.keys(this.errors).length === 0);
+    return getComputed(this, MEMO_IS_VALID, () => {
+      this.ensureInitialized();
+      this.syncChildren();
+      if (this.validationErrors[0]().size > 0 || this.externalErrors[0]().size > 0) {
+        return false;
+      }
+      for (const child of this.children.values()) {
+        if (!child.isValid) {
+          return false;
+        }
+      }
+      return true;
+    });
   }
 
   /** Хотя бы одно поле менялось пользователем или программно. */
@@ -433,65 +496,97 @@ export abstract class Form {
     field: FieldPath<this>,
     options?: ValidationOptions,
   ): Promise<boolean> {
-    const path = String(field);
+    const path = field as string;
     const running = this.fieldValidationPromises.get(path);
     if (running !== undefined) {
-      return running;
+      if (running.active) {
+        return running.promise;
+      }
+      this.fieldValidationPromises.delete(path);
     }
-    let resolve!: (value: boolean) => void;
-    let reject!: (error: unknown) => void;
-    const promise = new Promise<boolean>((res, rej) => {
-      resolve = res;
-      reject = rej;
-    });
-    this.fieldValidationPromises.set(path, promise);
-    const release = (): void => {
-      if (this.fieldValidationPromises.get(path) === promise) {
+    const entry: { promise: Promise<boolean>; active: boolean } = {
+      promise: Promise.resolve(false),
+      active: true,
+    };
+    const onSettled = (): void => {
+      entry.active = false;
+      if (this.fieldValidationPromises.get(path) === entry) {
         this.fieldValidationPromises.delete(path);
       }
     };
-    promise.then(release, release);
+    let promise: Promise<boolean>;
     try {
-      this.runFieldPath(path, options).then(resolve, reject);
+      promise = this.runFieldPath(path, options, onSettled);
     } catch (error) {
-      reject(error);
+      entry.active = false;
+      promise = Promise.reject(error);
     }
+    entry.promise = promise;
+    this.fieldValidationPromises.set(path, entry);
     return promise;
+  }
+
+  private settleNested(
+    promise: Promise<boolean>,
+    onSettled: (() => void) | undefined,
+  ): Promise<boolean> {
+    if (onSettled === undefined) {
+      return promise;
+    }
+    return promise.then(
+      (value) => {
+        onSettled();
+        return value;
+      },
+      (error: unknown) => {
+        onSettled();
+        throw error;
+      },
+    );
   }
 
   private runFieldPath(
     path: string,
     options?: ValidationOptions,
+    onSettled?: () => void,
   ): Promise<boolean> {
     const { root, rest } = this.locate(path);
     if (rest !== undefined) {
-      return this.requireChild(root).validateAt(
-        rest,
-        this.childValidationOptions(root, options),
+      return this.settleNested(
+        this.requireChild(root).validateAt(
+          rest,
+          this.childValidationOptions(root, options),
+        ),
+        onSettled,
       );
     }
     if (this.childFor(root) !== undefined) {
-      return this.runFormFieldValidation(root, options);
+      return this.runFormFieldValidation(root, options, onSettled);
     }
-    return this.runFieldValidation(root, options);
+    return this.runFieldValidation(root, options, onSettled);
   }
 
   /** Правила самого поля-формы, затем проверка ребёнка (если условие активно). */
   private async runFormFieldValidation(
     root: string,
     options?: ValidationOptions,
+    onSettled?: () => void,
   ): Promise<boolean> {
     const child = this.requireChild(root);
     const metadata = this.metadata.get(root);
     const active = metadata === undefined || this.isFieldActive(metadata);
-    const rootValid = await this.runFieldValidation(root, options);
-    if (!active) {
-      return rootValid;
+    try {
+      const rootValid = await this.runFieldValidation(root, options);
+      if (!active) {
+        return rootValid;
+      }
+      const childValid = await child.validate(
+        this.childValidationOptions(root, options),
+      );
+      return rootValid && childValid;
+    } finally {
+      onSettled?.();
     }
-    const childValid = await child.validate(
-      this.childValidationOptions(root, options),
-    );
-    return rootValid && childValid;
   }
 
   /**
@@ -526,19 +621,22 @@ export abstract class Form {
     this.syncChildren();
     this.clearTimers();
     const generation = this.validationGeneration;
+    const hadFieldRuns = this.validationRunCount > 0;
     this.validationRunCount += 1;
     this.validatingForm[1](1);
-    for (const name of this.metadata.keys()) {
-      this.validationTokens.set(name, (this.validationTokens.get(name) ?? 0) + 1);
+    if (hadFieldRuns) {
+      for (const name of this.metadata.keys()) {
+        this.validationTokens.set(name, (this.validationTokens.get(name) ?? 0) + 1);
+      }
     }
-    this.validatingFields[1](new Set());
+    this.clearValidatingFields();
 
     try {
       const result = await validateAsync(this, this.validationOptions(options));
       if (this.disposed || generation !== this.validationGeneration) {
         return this.isValid;
       }
-      const map: Record<string, readonly string[]> = {};
+      const map = new Map<string, string[]>();
       for (const error of result.errors) {
         const key = error.path === "" ? error.field : error.path;
         const root = rootSegment(key);
@@ -551,27 +649,40 @@ export abstract class Form {
         if (!this.metadata.has(root)) {
           this.reportUnregisteredField(root, key);
         }
-        const existing = map[key];
-        map[key] = existing === undefined
-          ? [error.message]
-          : [...existing, error.message];
+        const existing = map.get(key);
+        if (existing === undefined) {
+          map.set(key, [error.message]);
+        } else {
+          existing.push(error.message);
+        }
       }
-      this.validationErrors[1](freezeMap(map));
+      this.setValidationErrors(map);
       this.markAllTouched();
 
       if (this.options.validateNested) {
+        const pending: Promise<boolean>[] = [];
         for (const [name, metadata] of this.metadata) {
           const child = this.childFor(name);
           if (child === undefined || !this.isFieldActive(metadata)) {
             continue;
           }
-          await child.validate(this.childValidationOptions(name, options));
+          pending.push(
+            child.validate(this.childValidationOptions(name, options)),
+          );
         }
+        const results = await Promise.all(pending);
         if (this.disposed || generation !== this.validationGeneration) {
           return this.isValid;
         }
+        const ownValid =
+          this.validationErrors[0]().size === 0 &&
+          this.externalErrors[0]().size === 0;
+        return result.valid && ownValid && results.every(Boolean);
       }
-      return result.valid && this.isValid;
+      const ownValid =
+        this.validationErrors[0]().size === 0 &&
+        this.externalErrors[0]().size === 0;
+      return result.valid && ownValid && this.isValid;
     } finally {
       if (!this.disposed && generation === this.validationGeneration) {
         this.validationRunCount = Math.max(0, this.validationRunCount - 1);
@@ -635,10 +746,12 @@ export abstract class Form {
    * Ошибки правил остаются и пересчитываются валидацией.
    */
   clearFieldErrors(field?: FieldPath<this>): void {
-    this.ensureInitialized();
-    this.syncChildren();
     if (field === undefined) {
-      this.externalErrors[1]({});
+      this.ensureInitialized();
+      this.syncChildren();
+      if (this.externalErrors[0]().size > 0) {
+        this.setExternalErrorsMap(EMPTY_ERRORS_MAP);
+      }
       for (const child of this.children.values()) {
         child.clearFieldErrors();
       }
@@ -661,7 +774,6 @@ export abstract class Form {
   /** Установить несколько значений. Вложенным формам можно передать объект. */
   setValues(values: SetValuesInput<this>): void {
     this.ensureInitialized();
-    this.syncChildren();
     for (const [name, value] of Object.entries(values as unknown as Record<string, unknown>)) {
       if (!this.metadata.has(name)) {
         throw this.unknownFieldError(name);
@@ -705,11 +817,18 @@ export abstract class Form {
     }
     this.invalidateValidation();
     this.clearTimers();
-    this.validationErrors[1]({});
-    this.externalErrors[1]({});
+    if (this.validationErrors[0]().size > 0) {
+      this.setValidationErrors(EMPTY_ERRORS_MAP);
+    }
+    if (this.externalErrors[0]().size > 0) {
+      this.setExternalErrorsMap(EMPTY_ERRORS_MAP);
+    }
     this.touchedFields[1](new Set());
     this.dirtyFields[1](new Set());
-    this.readyFields[1]({});
+    if (this.readyStates.size > 0) {
+      this.readyStates.clear();
+      this.readyVersion[1]((version) => version + 1);
+    }
 
     for (const { name, current, restored } of restorations) {
       if (current instanceof Form && current !== restored) {
@@ -746,6 +865,7 @@ export abstract class Form {
     }
     this.parentForm = undefined;
     this.parentField = undefined;
+    this.initialValues.clear();
     this.propsCache.clear();
     unregisterFieldBinder(this);
     unregisterValidationInvalidator(this);
@@ -763,9 +883,7 @@ export abstract class Form {
         }
       }
       this.initialized = true;
-      for (const [name, metadata] of fields) {
-        this.metadata.set(name, metadata);
-      }
+      this.metadata = fields;
       this.linkNested();
     }
     if (!this.initialCaptured) {
@@ -934,7 +1052,6 @@ export abstract class Form {
 
   private locate(path: string): { root: string; rest: string | undefined } {
     this.ensureInitialized();
-    this.syncChildren();
     if (path === "") {
       throw new Error("Путь поля не может быть пустым");
     }
@@ -953,10 +1070,17 @@ export abstract class Form {
   }
 
   private unknownFieldError(path: string): Error {
-    const available = this.availablePaths();
-    return new Error(
-      `Поле "${path}" не зарегистрировано. Доступные поля: ${available.length > 0 ? available.join(", ") : "—"}`,
-    );
+    const form = this;
+    const error = new Error();
+    Object.defineProperty(error, "message", {
+      configurable: true,
+      enumerable: false,
+      get(): string {
+        const available = form.availablePaths();
+        return `Поле "${path}" не зарегистрировано. Доступные поля: ${available.length > 0 ? available.join(", ") : "—"}`;
+      },
+    });
+    return error;
   }
 
   private availablePaths(visited = new Set<object>()): string[] {
@@ -1022,7 +1146,7 @@ export abstract class Form {
       this.validatePromise = undefined;
       this.fieldValidationPromises.clear();
       this.validationRunCount = 0;
-      this.validatingFields[1](new Set());
+      this.clearValidatingFields();
       this.validatingForm[1](0);
     }
     const parent = this.parentForm;
@@ -1144,10 +1268,12 @@ export abstract class Form {
         return metadata?.required === true;
       },
       get isReady() {
-        return self.readyFields[0]()[name] ?? true;
+        self.readyVersion[0]();
+        return self.readyStates.get(name) ?? true;
       },
       get isValidating() {
-        return self.validatingFields[0]().has(name);
+        self.validatingVersion[0]();
+        return self.validatingFieldSet.has(name);
       },
       get touched() {
         return self.touchedFields[0]().has(name);
@@ -1348,27 +1474,47 @@ export abstract class Form {
     );
   }
 
+  /** Индекс сообщений по корню поля (validation + external), O(1) чтение. */
+  private errorIndex(): ReadonlyMap<string, readonly string[]> {
+    const cached = this.errorIndexCache;
+    if (
+      cached !== undefined &&
+      cached.validationVersion === this.validationErrorsVersion &&
+      cached.externalVersion === this.externalErrorsVersion
+    ) {
+      return cached.index;
+    }
+    const merged = new Map<string, string[]>();
+    const push = (map: ReadonlyMap<string, readonly string[]>): void => {
+      for (const [key, messages] of map) {
+        if (messages.length === 0) {
+          continue;
+        }
+        const root = rootSegment(key);
+        const existing = merged.get(root);
+        if (existing === undefined) {
+          merged.set(root, [...messages]);
+        } else {
+          existing.push(...messages);
+        }
+      }
+    };
+    push(this.validationErrors[0]());
+    push(this.externalErrors[0]());
+    const index = new Map<string, readonly string[]>();
+    for (const [root, messages] of merged) {
+      index.set(root, Object.freeze(messages));
+    }
+    this.errorIndexCache = {
+      validationVersion: this.validationErrorsVersion,
+      externalVersion: this.externalErrorsVersion,
+      index,
+    };
+    return index;
+  }
+
   private directErrors(name: string): readonly string[] {
-    const result: string[] = [];
-    for (const [key, messages] of Object.entries(this.validationErrors[0]())) {
-      if (
-        key === name ||
-        key.startsWith(`${name}.`) ||
-        key.startsWith(`${name}[`)
-      ) {
-        result.push(...messages);
-      }
-    }
-    for (const [key, messages] of Object.entries(this.externalErrors[0]())) {
-      if (
-        key === name ||
-        key.startsWith(`${name}.`) ||
-        key.startsWith(`${name}[`)
-      ) {
-        result.push(...messages);
-      }
-    }
-    return result;
+    return this.errorIndex().get(name) ?? EMPTY_ERRORS;
   }
 
   private nestedFormErrors(name: string): readonly string[] {
@@ -1385,20 +1531,19 @@ export abstract class Form {
     this.ensureInitialized();
     this.syncChildren();
     const result: Record<string, readonly string[]> = {};
-    for (const [key, messages] of Object.entries(this.validationErrors[0]())) {
-      if (messages.length > 0) {
-        result[key] = messages;
+    const merge = (map: ReadonlyMap<string, readonly string[]>): void => {
+      for (const [key, messages] of map) {
+        if (messages.length === 0) {
+          continue;
+        }
+        const existing = result[key];
+        result[key] = existing === undefined
+          ? messages
+          : [...existing, ...messages];
       }
-    }
-    for (const [key, messages] of Object.entries(this.externalErrors[0]())) {
-      if (messages.length === 0) {
-        continue;
-      }
-      const existing = result[key];
-      result[key] = existing === undefined
-        ? messages
-        : [...existing, ...messages];
-    }
+    };
+    merge(this.validationErrors[0]());
+    merge(this.externalErrors[0]());
     for (const name of this.metadata.keys()) {
       const child = this.childFor(name);
       if (child === undefined) {
@@ -1408,12 +1553,13 @@ export abstract class Form {
         result[`${name}.${key}`] = messages;
       }
     }
-    return freezeMap(result);
+    return result;
   }
 
   private runFieldValidation(
     name: string,
     options?: ValidationOptions,
+    onSettled?: () => void,
   ): Promise<boolean> {
     const generation = this.validationGeneration;
     const token = (this.validationTokens.get(name) ?? 0) + 1;
@@ -1443,6 +1589,7 @@ export abstract class Form {
             this.removeValidating(name);
           }
         }
+        onSettled?.();
       }
     })();
   }
@@ -1451,26 +1598,59 @@ export abstract class Form {
     name: string,
     errors: readonly { readonly path: string; readonly field: string; readonly message: string }[],
   ): void {
-    const next: Record<string, readonly string[]> = {
-      ...this.validationErrors[0](),
-    };
-    for (const key of Object.keys(next)) {
+    const current = this.validationErrors[0]();
+    const currentCount = this.validationKeyCounts.get(name) ?? 0;
+    if (errors.length === 0) {
+      if (currentCount === 0) {
+        return;
+      }
+    } else if (errors.length === 1 && currentCount === 1) {
+      const error = errors[0]!;
+      const key = error.path === "" ? error.field : error.path;
+      const existing = current.get(key);
       if (
-        key === name ||
-        key.startsWith(`${name}.`) ||
-        key.startsWith(`${name}[`)
+        key === name &&
+        existing !== undefined &&
+        existing.length === 1 &&
+        existing[0] === error.message
       ) {
-        delete next[key];
+        return;
       }
     }
+    const nextValues = new Map<string, string[]>();
     for (const error of errors) {
       const key = error.path === "" ? error.field : error.path;
-      const existing = next[key];
-      next[key] = existing === undefined
-        ? [error.message]
-        : [...existing, error.message];
+      const existing = nextValues.get(key);
+      if (existing === undefined) {
+        nextValues.set(key, [error.message]);
+      } else {
+        existing.push(error.message);
+      }
     }
-    this.validationErrors[1](freezeMap(next));
+    let changed = currentCount !== nextValues.size;
+    if (!changed) {
+      for (const [key, messages] of nextValues) {
+        if (!sameMessages(current.get(key) ?? EMPTY_ERRORS, messages)) {
+          changed = true;
+          break;
+        }
+      }
+    }
+    if (!changed) {
+      return;
+    }
+    const next = new Map(current);
+    for (const key of [...next.keys()]) {
+      if (isFieldKey(key, name)) {
+        next.delete(key);
+      }
+    }
+    for (const [key, messages] of nextValues) {
+      if (messages.length > 0) {
+        next.set(key, Object.freeze(messages));
+      }
+    }
+    this.setValidationErrors(next);
   }
 
   private setDirectValue(name: string, value: unknown): void {
@@ -1632,11 +1812,21 @@ export abstract class Form {
 
   private markAllTouched(): void {
     this.ensureInitialized();
-    const next = new Set(this.touchedFields[0]());
+    const current = this.touchedFields[0]();
+    let missing = false;
     for (const name of this.metadata.keys()) {
-      next.add(name);
+      if (!current.has(name)) {
+        missing = true;
+        break;
+      }
     }
-    this.touchedFields[1](next);
+    if (missing) {
+      const next = new Set(current);
+      for (const name of this.metadata.keys()) {
+        next.add(name);
+      }
+      this.touchedFields[1](next);
+    }
     for (const name of this.metadata.keys()) {
       const child = this.childFor(name);
       if (child !== undefined) {
@@ -1646,31 +1836,34 @@ export abstract class Form {
   }
 
   private setReadyFor(name: string, ready: boolean): void {
-    const current = this.readyFields[0]();
-    if ((current[name] ?? true) === ready) {
+    if ((this.readyStates.get(name) ?? true) === ready) {
       return;
     }
-    this.readyFields[1]({ ...current, [name]: ready });
+    this.readyStates.set(name, ready);
+    this.readyVersion[1]((version) => version + 1);
   }
 
   private addValidating(name: string): void {
-    const current = this.validatingFields[0]();
-    if (current.has(name)) {
+    if (this.validatingFieldSet.has(name)) {
       return;
     }
-    const next = new Set(current);
-    next.add(name);
-    this.validatingFields[1](next);
+    this.validatingFieldSet.add(name);
+    this.validatingVersion[1]((version) => version + 1);
   }
 
   private removeValidating(name: string): void {
-    const current = this.validatingFields[0]();
-    if (!current.has(name)) {
+    if (!this.validatingFieldSet.delete(name)) {
       return;
     }
-    const next = new Set(current);
-    next.delete(name);
-    this.validatingFields[1](next);
+    this.validatingVersion[1]((version) => version + 1);
+  }
+
+  private clearValidatingFields(): void {
+    if (this.validatingFieldSet.size === 0) {
+      return;
+    }
+    this.validatingFieldSet.clear();
+    this.validatingVersion[1]((version) => version + 1);
   }
 
   private hasAnyTouched(): boolean {
@@ -1690,7 +1883,8 @@ export abstract class Form {
   private hasValidating(): boolean {
     this.ensureInitialized();
     this.syncChildren();
-    if (this.validatingFields[0]().size > 0 || this.validatingForm[0]() > 0) {
+    this.validatingVersion[0]();
+    if (this.validatingFieldSet.size > 0 || this.validatingForm[0]() > 0) {
       return true;
     }
     for (const child of this.children.values()) {
@@ -1702,50 +1896,88 @@ export abstract class Form {
   }
 
   private setExternalErrors(name: string, messages: readonly string[]): void {
-    const next: Record<string, readonly string[]> = {
-      ...this.externalErrors[0](),
-    };
+    const current = this.externalErrors[0]();
     if (messages.length === 0) {
-      delete next[name];
-    } else {
-      next[name] = messages;
+      if (!current.has(name)) {
+        return;
+      }
+      const next = new Map(current);
+      next.delete(name);
+      this.setExternalErrorsMap(next);
+      return;
     }
-    this.externalErrors[1](freezeMap(next));
+    const before = current.get(name) ?? EMPTY_ERRORS;
+    if (sameMessages(before, messages)) {
+      return;
+    }
+    const next = new Map(current);
+    next.set(name, Object.freeze([...messages]));
+    this.setExternalErrorsMap(next);
   }
 
   private removeExternalErrors(name: string): void {
     const current = this.externalErrors[0]();
-    let changed = false;
-    const next: Record<string, readonly string[]> = {};
-    for (const [key, messages] of Object.entries(current)) {
-      if (
-        key === name ||
-        key.startsWith(`${name}.`) ||
-        key.startsWith(`${name}[`)
-      ) {
-        changed = true;
-        continue;
+    let next: Map<string, readonly string[]> | undefined;
+    for (const key of current.keys()) {
+      if (isFieldKey(key, name)) {
+        if (next === undefined) {
+          next = new Map(current);
+        }
+        next.delete(key);
       }
-      next[key] = messages;
     }
-    if (changed) {
-      this.externalErrors[1](freezeMap(next));
+    if (next !== undefined) {
+      this.setExternalErrorsMap(next);
     }
+  }
+
+  private setValidationErrors(
+    map: ReadonlyMap<string, readonly string[]>,
+  ): void {
+    this.validationErrorsVersion += 1;
+    this.recountValidationKeys(map);
+    this.validationErrors[1](map);
+  }
+
+  private recountValidationKeys(
+    map: ReadonlyMap<string, readonly string[]>,
+  ): void {
+    this.validationKeyCounts.clear();
+    for (const key of map.keys()) {
+      const root = rootSegment(key);
+      this.validationKeyCounts.set(root, (this.validationKeyCounts.get(root) ?? 0) + 1);
+    }
+  }
+
+  private setExternalErrorsMap(
+    map: ReadonlyMap<string, readonly string[]>,
+  ): void {
+    this.externalErrorsVersion += 1;
+    this.externalErrors[1](map);
   }
 
   /** labels текущей формы + переданные, с приоритетом переданных. */
   private validationOptions(
     options?: ValidationOptions,
   ): ValidationOptions | undefined {
+    if (options === undefined) {
+      return this.baseValidationOptions;
+    }
+    const localLabels = this.options.labels;
+    const extraLabels = options.labels;
+    if (
+      Object.keys(localLabels).length === 0 &&
+      (extraLabels === undefined || Object.keys(extraLabels).length === 0)
+    ) {
+      return options;
+    }
     const labels = {
-      ...this.options.labels,
-      ...(options?.labels ?? {}),
+      ...localLabels,
+      ...(extraLabels ?? {}),
     };
-    const result: ValidationOptions = {
-      ...options,
-      ...(Object.keys(labels).length > 0 ? { labels } : {}),
-    };
-    return Object.keys(result).length === 0 ? undefined : result;
+    return Object.keys(labels).length > 0
+      ? { ...options, labels }
+      : options;
   }
 
   /**

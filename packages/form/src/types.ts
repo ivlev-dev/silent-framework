@@ -117,7 +117,7 @@ export type FieldPath<T> = [T] extends [never]
         ? never
         : T[K] extends (...args: never[]) => unknown
           ? never
-          : NonNullable<T[K]> extends Form
-            ? K | `${K}.${FieldPath<NonNullable<T[K]>>}`
+          : T[K] extends Form
+            ? K | `${K}.${FieldPath<T[K]>}`
             : K;
     }[keyof T & string];

@@ -73,17 +73,17 @@ abstract class Form {}
 
 ```ts
 type FieldPath<T> = {
-  [K in keyof T & string]: K extends FormMemberKey
+  [K in keyof T & string]: K extends keyof Form
     ? never
     : T[K] extends (...args: never[]) => unknown
       ? never
-      : NonNullable<T[K]> extends Form
-        ? K | `${K}.${FieldPath<NonNullable<T[K]>>}`
+      : T[K] extends Form
+        ? K | `${K}.${FieldPath<T[K]>}`
         : K;
 }[keyof T & string];
 ```
 
-Пути полей строятся по accessor-полям класса формы. Для класса с полями `name`, `age` и вложенной формой `address` тип `FieldPath<ProfileForm>` содержит `"name"`, `"age"`, `"address"`, `"address.city"` и `"address.state"`. Методы и служебные члены `Form` (`validate`, `values`, `setValues` и т. п.) в пути не попадают, поэтому невалидный путь — ошибка компиляции, а автодополнение предлагает только поля. В сигнатурах `Form` используется `FieldPath<this>`, так что отдельный generic-интерфейс полей не нужен.
+Пути полей строятся по accessor-полям класса формы. Для класса с полями `name`, `age` и вложенной формой `address` тип `FieldPath<ProfileForm>` содержит `"name"`, `"age"`, `"address"`, `"address.city"` и `"address.state"`. Методы и служебные члены `Form` (`validate`, `values`, `setValues` и т. п.) в пути не попадают, поэтому невалидный путь — ошибка компиляции, а автодополнение предлагает только поля. Если поле объявлено как `AddressForm | null`/`| undefined`, вложенные пути (`address.city`) не предлагаются: проверяйте `null` и используйте не-nullable поле для вложенной формы. В сигнатурах `Form` используется `FieldPath<this>`, так что отдельный generic-интерфейс полей не нужен.
 
 ### `FieldProps`
 

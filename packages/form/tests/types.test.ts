@@ -34,6 +34,11 @@ class PlainForm extends Form {
   public accessor login = "";
 }
 
+class NullableForm extends Form {
+  @FormField()
+  public accessor address: AddressForm | null = null;
+}
+
 describe("типизация путей", () => {
   it("автодополняет простые и вложенные пути", async () => {
     const form = new ProfileForm();
@@ -96,5 +101,16 @@ describe("типизация путей", () => {
     }
 
     expect(form).toBeInstanceOf(Form);
+  });
+
+  it("не предлагает вложенные пути для nullable-формы", () => {
+    const nullable = new NullableForm();
+    const address: AddressForm | null = nullable.getFieldProps("address").value;
+    expect(address).toBeNull();
+
+    if (false) {
+      // @ts-expect-error nullable-поле не разворачивает вложенные пути
+      nullable.getFieldProps("address.city");
+    }
   });
 });

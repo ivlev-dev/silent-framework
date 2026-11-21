@@ -1015,7 +1015,7 @@
       },
       "FieldPath": {
         "kind": "type",
-        "signature": "export type FieldPath<T> = [T] extends [never] ? string : { [K in keyof T & string]: K extends FormMemberKey ? never : T[K] extends (...args: never[]) => unknown ? never : NonNullable<T[K]> extends Form ? K | `${K}.${FieldPath<NonNullable<T[K]>>}` : K; }[keyof T & string];"
+        "signature": "export type FieldPath<T> = [T] extends [never] ? string : { [K in keyof T & string]: K extends FormMemberKey ? never : T[K] extends (...args: never[]) => unknown ? never : T[K] extends Form ? K | `${K}.${FieldPath<T[K]>}` : K; }[keyof T & string];"
       },
       "FieldProps": {
         "kind": "interface",
