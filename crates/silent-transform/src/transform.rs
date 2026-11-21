@@ -88,6 +88,7 @@ pub(crate) struct SilentPass {
     pub(crate) used_helpers: HashSet<String>,
     pub(crate) metadata: Vec<ModuleItem>,
     pub(crate) view_stack: Vec<bool>,
+    pub(crate) type_param_scopes: Vec<HashSet<String>>,
     pub(crate) hmr: bool,
     pub(crate) ssr: bool,
     pub(crate) hydrate: bool,
@@ -123,6 +124,7 @@ impl SilentPass {
             used_helpers: HashSet::new(),
             metadata: Vec::new(),
             view_stack: Vec::new(),
+            type_param_scopes: Vec::new(),
             hmr: options.hmr,
             ssr: options.ssr,
             hydrate: options.hydrate,
@@ -439,7 +441,9 @@ impl SilentPass {
     }
 
     fn transform_class(&mut self, class_name: &str, class: &mut swc_core::ecma::ast::Class) {
-        if class.is_abstract {
+        // Generic-класс нельзя корректно разрешить контейнером, поэтому DI-фабрику
+        // не генерируем и диагностику не выдаём.
+        if class.is_abstract || class.type_params.is_some() {
             return;
         }
         let Some(constructor) = class.body.iter().find_map(|member| match member {
@@ -511,13 +515,16 @@ impl SilentPass {
                 },
             };
             let Some(type_ann) = type_ann else {
-                self.error(format!(
-                    "класс {class_name}: параметр конструктора {} без аннотации типа",
-                    ident.sym
-                ));
+                // Параметр без аннотации не участвует в DI: класс остаётся обычным.
+                // Такой конструктор встречается в обычном коде и в собранном JS.
                 return None;
             };
             if ident.sym == "this" {
+                return None;
+            }
+            // Ссылка на type-параметр (в т.ч. из объемлющей generic-функции/класса)
+            // не является внедряемым типом и не должна давать диагностику.
+            if self.refers_to_type_param(&type_ann.type_ann) {
                 return None;
             }
             // Примитивы и структурные типы не участвуют в DI: класс остаётся обычным.
@@ -534,6 +541,43 @@ impl SilentPass {
             dependencies.push(dependency);
         }
         Some(dependencies)
+    }
+
+    fn refers_to_type_param(&self, ty: &TsType) -> bool {
+        match ty {
+            TsType::TsTypeRef(reference) => {
+                let TsEntityName::Ident(ident) = &reference.type_name else {
+                    return false;
+                };
+                self.type_param_scopes
+                    .iter()
+                    .any(|scope| scope.contains(ident.sym.as_ref()))
+            }
+            TsType::TsParenthesizedType(paren) => self.refers_to_type_param(&paren.type_ann),
+            _ => false,
+        }
+    }
+
+    fn enter_type_params(
+        &mut self,
+        params: Option<&swc_core::ecma::ast::TsTypeParamDecl>,
+    ) -> usize {
+        let depth = self.type_param_scopes.len();
+        if let Some(params) = params {
+            let names: HashSet<String> = params
+                .params
+                .iter()
+                .map(|param| param.name.sym.to_string())
+                .collect();
+            if !names.is_empty() {
+                self.type_param_scopes.push(names);
+            }
+        }
+        depth
+    }
+
+    fn leave_type_params(&mut self, depth: usize) {
+        self.type_param_scopes.truncate(depth);
     }
 
     fn collect_component_metadata(&mut self, module: &Module) {
@@ -827,9 +871,11 @@ impl VisitMut for SilentPass {
             inject_this_alias(&mut node.function);
         }
         crate::props::rewrite_function_props(&mut node.function);
+        let depth = self.enter_type_params(node.function.type_params.as_deref());
         self.view_stack.push(is_view);
         node.visit_mut_children_with(self);
         self.view_stack.pop();
+        self.leave_type_params(depth);
     }
 
     fn visit_mut_fn_expr(&mut self, node: &mut swc_core::ecma::ast::FnExpr) {
@@ -838,20 +884,26 @@ impl VisitMut for SilentPass {
             inject_this_alias(&mut node.function);
         }
         crate::props::rewrite_function_props(&mut node.function);
+        let depth = self.enter_type_params(node.function.type_params.as_deref());
         self.view_stack.push(is_view);
         node.visit_mut_children_with(self);
         self.view_stack.pop();
+        self.leave_type_params(depth);
     }
 
     fn visit_mut_arrow_expr(&mut self, node: &mut swc_core::ecma::ast::ArrowExpr) {
         crate::props::rewrite_arrow_props(node);
+        let depth = self.enter_type_params(node.type_params.as_deref());
         node.visit_mut_children_with(self);
+        self.leave_type_params(depth);
     }
 
     fn visit_mut_class_decl(&mut self, class: &mut ClassDecl) {
         let class_name = class.ident.sym.to_string();
         self.transform_class(&class_name, &mut class.class);
+        let depth = self.enter_type_params(class.class.type_params.as_deref());
         class.visit_mut_children_with(self);
+        self.leave_type_params(depth);
     }
 
     fn visit_mut_class_expr(&mut self, class: &mut ClassExpr) {
@@ -861,7 +913,9 @@ impl VisitMut for SilentPass {
             .map(|ident| ident.sym.to_string())
             .unwrap_or_else(|| "<anonymous>".to_string());
         self.transform_class(&class_name, &mut class.class);
+        let depth = self.enter_type_params(class.class.type_params.as_deref());
         class.visit_mut_children_with(self);
+        self.leave_type_params(depth);
     }
 
     fn visit_mut_call_expr(&mut self, call: &mut CallExpr) {

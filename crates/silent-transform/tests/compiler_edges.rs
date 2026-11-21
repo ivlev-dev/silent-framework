@@ -656,20 +656,13 @@ fn unresolvable_constructor_dependency_reports_error() {
 }
 
 #[test]
-fn constructor_parameter_without_type_reports_error() {
-    let error = compile(
+fn constructor_parameter_without_type_skips_di() {
+    let code = run(
         r#"export class Service { constructor(private readonly dep) {} }"#,
         "/proj/src/service.ts",
-        "{}",
-        Index::default(),
-    )
-    .unwrap_err();
-    assert!(error.contains("Service"), "unexpected error: {error}");
-    assert!(error.contains("dep"), "unexpected error: {error}");
-    assert!(
-        error.contains("без аннотации типа"),
-        "unexpected error: {error}"
     );
+    assert!(code.contains("class Service"), "{code}");
+    assert!(!code.contains("silent.di.create"), "{code}");
 }
 
 #[test]
@@ -686,4 +679,31 @@ export class Service {
         error.contains("некорректный токен реализации"),
         "unexpected error: {error}"
     );
+}
+
+#[test]
+fn generic_class_skips_di_without_error() {
+    let source = r#"
+export class ComponentContext<P = unknown> {
+  constructor(props: P, container: Container, signal: SignalSource) {}
+}
+"#;
+    let (code, diagnostics) = compile_with_diagnostics(source, "/proj/src/component-context.ts");
+    assert!(code.contains("class ComponentContext"), "{code}");
+    assert!(!code.contains("silent.di.create"), "{code}");
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+}
+
+#[test]
+fn class_inside_generic_function_skips_di_without_error() {
+    let source = r#"
+export function make<T>() {
+  return class Service {
+    constructor(private readonly value: T) {}
+  };
+}
+"#;
+    let (code, diagnostics) = compile_with_diagnostics(source, "/proj/src/service.ts");
+    assert!(!code.contains("silent.di.create"), "{code}");
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
 }
