@@ -525,6 +525,23 @@ describe("validate", () => {
     });
   });
 
+  it("ожидает асинхронное when в validateAsync", async () => {
+    class Box {
+      enabled = true;
+
+      @ruleDecorator(alwaysInvalid, {
+        when: async (instance) => (instance as Box).enabled,
+      })
+      public accessor value = "x";
+    }
+
+    const box = new Box();
+    expect((await validateAsync(box)).valid).toBe(false);
+
+    box.enabled = false;
+    expect((await validateAsync(box)).valid).toBe(true);
+  });
+
   it("распознаёт функцию-thenable в синхронной проверке", () => {
     const functionThenable = Object.assign(() => undefined, {
       then: () => undefined,

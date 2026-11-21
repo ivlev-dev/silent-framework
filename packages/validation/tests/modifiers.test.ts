@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { validate, validateAsync } from "../src/engine";
+import {
+  safeParseAsync,
+  validate,
+  validateAsync,
+  validateProperty,
+  validatePropertyAsync,
+} from "../src/engine";
 import { ruleDecorator } from "../src/rule";
 import { Groups, Label, Optional, ValidateIf } from "../src/modifiers";
+import { Each, IsEmail, Nested, Required } from "../src/index";
 import { AsyncRuleError } from "../src/types";
 import type {
   InstancePredicate,
@@ -91,7 +98,7 @@ describe("ValidateIf", () => {
     expect(result.errors.map((error) => error.field)).toEqual(["always"]);
   });
 
-  it("сообщает об асинхронном предикате и гасит отклонённый промис", async () => {
+  it("сообщает об асинхронном предикате в синхронном движке и гасит промис", async () => {
     const predicate = (() => Promise.reject(new Error("boom"))) as unknown as InstancePredicate;
 
     class Conditional {
@@ -124,8 +131,6 @@ describe("ValidateIf", () => {
       expect((thrown as AsyncRuleError).field).toBe("name");
       expect((thrown as AsyncRuleError).rule).toBe("validateIf");
 
-      await expect(validateAsync(new Conditional())).rejects.toBeInstanceOf(AsyncRuleError);
-
       await new Promise<void>((resolve) => {
         setTimeout(resolve, 0);
       });
@@ -134,6 +139,191 @@ describe("ValidateIf", () => {
     }
 
     expect(rejections).toEqual([]);
+  });
+});
+
+describe("ValidateIf: асинхронные условия", () => {
+  it("ожидает true и false в validateAsync", async () => {
+    class Conditional {
+      enabled = true;
+
+      @ValidateIf(async (instance) => (instance as Conditional).enabled)
+      @ruleDecorator(required)
+      public accessor name = "";
+    }
+
+    const instance = new Conditional();
+    expect((await validateAsync(instance)).valid).toBe(false);
+
+    instance.enabled = false;
+    expect((await validateAsync(instance)).valid).toBe(true);
+  });
+
+  it("в синхронном движке бросает AsyncRuleError", async () => {
+    class Conditional {
+      @ValidateIf(async () => true)
+      @ruleDecorator(required)
+      public accessor name = "";
+    }
+
+    expect(() => validate(new Conditional())).toThrow(AsyncRuleError);
+    expect(() => validateProperty(new Conditional(), "name")).toThrow(AsyncRuleError);
+    // Промис предиката не должен всплыть как unhandled rejection.
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+  });
+
+  it("отклонённый предикат отклоняет validateAsync исходной ошибкой", async () => {
+    const boom = new Error("boom");
+
+    class Conditional {
+      @ValidateIf(async () => {
+        throw boom;
+      })
+      @ruleDecorator(required)
+      public accessor name = "";
+    }
+
+    await expect(validateAsync(new Conditional())).rejects.toBe(boom);
+  });
+
+  it("сочетается с Required и IsEmail", async () => {
+    class EmailModel {
+      enabled = true;
+
+      @ValidateIf(async (instance) => (instance as EmailModel).enabled)
+      @Required()
+      @IsEmail()
+      public accessor email = "not-an-email";
+    }
+
+    const instance = new EmailModel();
+    const invalid = await validateAsync(instance);
+    expect(invalid.errors.map((error) => error.rule)).toEqual(["isEmail"]);
+
+    instance.enabled = false;
+    expect((await validateAsync(instance)).valid).toBe(true);
+  });
+
+  it("объединяет несколько асинхронных условий по «И»", async () => {
+    class Conditional {
+      first = true;
+      second = true;
+
+      @ValidateIf(async (instance) => (instance as Conditional).first)
+      @ValidateIf(async (instance) => (instance as Conditional).second)
+      @ruleDecorator(required)
+      public accessor name = "";
+    }
+
+    const instance = new Conditional();
+    expect((await validateAsync(instance)).valid).toBe(false);
+
+    instance.first = false;
+    expect((await validateAsync(instance)).valid).toBe(true);
+
+    instance.first = true;
+    instance.second = false;
+    expect((await validateAsync(instance)).valid).toBe(true);
+  });
+
+  it("учитывает groups и stopAtFirst при асинхронном условии", async () => {
+    class Conditional {
+      enabled = true;
+
+      @ValidateIf(async (instance) => (instance as Conditional).enabled)
+      @Groups("update")
+      @ruleDecorator(required)
+      public accessor name = "";
+
+      @ruleDecorator(required)
+      public accessor other = "";
+    }
+
+    const instance = new Conditional();
+    const create = await validateAsync(instance, {
+      groups: ["create"],
+      stopAtFirst: true,
+    });
+    expect(create.errors.map((error) => error.field)).toEqual(["other"]);
+
+    const update = await validateAsync(instance, {
+      groups: ["update"],
+      stopAtFirst: true,
+    });
+    expect(update.errors.map((error) => error.field)).toEqual(["name"]);
+  });
+
+  it("не вызывает предикат для Optional-поля без значения", async () => {
+    let calls = 0;
+
+    class Conditional {
+      @Optional()
+      @ValidateIf(async () => {
+        calls += 1;
+        return true;
+      })
+      @ruleDecorator(required)
+      public accessor name: string | undefined = undefined;
+    }
+
+    expect((await validateAsync(new Conditional())).valid).toBe(true);
+    expect(calls).toBe(0);
+  });
+
+  it("работает в validatePropertyAsync и safeParseAsync", async () => {
+    class Conditional {
+      enabled = false;
+
+      @ValidateIf(async (instance) => (instance as Conditional).enabled)
+      @ruleDecorator(required)
+      public accessor name = "";
+    }
+
+    const instance = new Conditional();
+    expect((await validatePropertyAsync(instance, "name")).valid).toBe(true);
+
+    instance.enabled = true;
+    const parsed = await safeParseAsync(instance);
+    expect(parsed.success).toBe(false);
+    expect(parsed.errors.map((error) => error.field)).toEqual(["name"]);
+  });
+
+  it("работает во вложенных формах и в @Each", async () => {
+    class Child {
+      enabled = true;
+
+      @ValidateIf(async (instance) => (instance as Child).enabled)
+      @ruleDecorator(required)
+      public accessor name = "";
+    }
+
+    class Parent {
+      @Nested()
+      public accessor child = new Child();
+    }
+
+    const parent = new Parent();
+    expect((await validateAsync(parent)).errors.map((error) => error.path))
+      .toEqual(["child.name"]);
+
+    parent.child.enabled = false;
+    expect((await validateAsync(parent)).valid).toBe(true);
+
+    class List {
+      @Each()
+      public accessor children = [new Child(), new Child()];
+    }
+
+    const list = new List();
+    const first = list.children[0];
+    expect(first).toBeDefined();
+    if (first !== undefined) {
+      first.enabled = false;
+    }
+    const result = await validateAsync(list);
+    expect(result.errors.map((error) => error.path)).toEqual(["children[1].name"]);
   });
 });
 

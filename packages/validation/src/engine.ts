@@ -357,6 +357,22 @@ function isRunnable(entry: FieldRuleEntry, slot: FieldSlot, target: object, stat
   return groupsMatch(entry.options.groups ?? slot.groups, state.callGroups);
 }
 
+async function isRunnableAsync(
+  entry: FieldRuleEntry,
+  slot: FieldSlot,
+  target: object,
+  state: RuntimeState,
+): Promise<boolean> {
+  if (entry.options.when !== undefined) {
+    const condition: unknown = entry.options.when(target);
+    const runnable = isThenable(condition) ? await condition : condition;
+    if (!runnable) {
+      return false;
+    }
+  }
+  return groupsMatch(entry.options.groups ?? slot.groups, state.callGroups);
+}
+
 function callFor(
   target: object,
   slot: FieldSlot,
@@ -571,26 +587,15 @@ function uniqueNested(entries: readonly NestedInstance[]): readonly NestedInstan
   return unique;
 }
 
-function prepareField(
+function completeFieldPreparation(
   target: object,
   run: FieldRun,
-  prefix: string,
+  value: unknown,
+  path: string,
   state: RuntimeState,
-  asyncTypes = false,
+  asyncTypes: boolean,
 ): PreparedField | null {
-  const value = readFieldValue(target, run.key);
   const slot = run.slot;
-  if (slot !== undefined && slot.optional && (value === null || value === undefined)) {
-    return null;
-  }
-  if (slot !== undefined) {
-    for (const condition of slot.conditions) {
-      if (!condition(target, value)) {
-        return null;
-      }
-    }
-  }
-  const path = `${prefix}${run.fieldName}`;
   if (state.types && run.schema !== undefined && !schemaSkips(run.schema, value)) {
     const typeConfig =
       asyncTypes && state.config.resolve !== undefined
@@ -651,6 +656,115 @@ function prepareField(
     return { value, path, nested };
   }
   return { value, path, nested: EMPTY_NESTED };
+}
+
+function prepareField(
+  target: object,
+  run: FieldRun,
+  prefix: string,
+  state: RuntimeState,
+): PreparedField | null {
+  const value = readFieldValue(target, run.key);
+  const slot = run.slot;
+  if (slot !== undefined && slot.optional && (value === null || value === undefined)) {
+    return null;
+  }
+  if (slot !== undefined) {
+    for (const condition of slot.conditions) {
+      const result: unknown = condition(target, value);
+      if (isThenable(result)) {
+        suppress(result);
+        throw new AsyncRuleError(slot.fieldName, "validateIf");
+      }
+      if (result !== true) {
+        return null;
+      }
+    }
+  }
+  const path = `${prefix}${run.fieldName}`;
+  if (state.types && run.schema !== undefined && !schemaSkips(run.schema, value)) {
+    const label = slot?.label
+      ?? labelAtPath(state.labels, run.fieldName, path)
+      ?? run.fieldName;
+    let nested: readonly NestedInstance[] = EMPTY_NESTED;
+    let failed = false;
+    const fast = validateFastPrimitive(value, run.schema, {
+      instance: target,
+      field: run.fieldName,
+      label,
+      path,
+      config: state.config,
+      labels: state.labels,
+    });
+    if (fast !== undefined) {
+      if (fast !== null) {
+        failed = true;
+        state.errors.push(fast);
+      }
+    } else {
+      const collected: NestedInstance[] = [];
+      const runtime = state.runtime ??= { visiting: state.visiting };
+      const result = validateType(value, run.schema, {
+        instance: target,
+        field: run.fieldName,
+        label,
+        path,
+        config: state.config,
+        labels: state.labels,
+        runtime,
+        nested: collected,
+        stopAtFirst: state.stopAtFirst,
+      });
+      if (result !== null) {
+        failed = true;
+        const errors = Array.isArray(result) ? result : [result];
+        const limit = state.stopAtFirst ? 1 : errors.length;
+        for (let index = 0; index < limit; index += 1) {
+          const error = errors[index];
+          if (error !== undefined) {
+            state.errors.push(error);
+          }
+        }
+      }
+      nested = uniqueNested(collected);
+    }
+    if (state.stopAtFirst && failed) {
+      state.stopped = true;
+      return null;
+    }
+    if (failed && !state.cascade) {
+      return null;
+    }
+    return { value, path, nested };
+  }
+  return { value, path, nested: EMPTY_NESTED };
+}
+
+async function prepareFieldAsync(
+  target: object,
+  run: FieldRun,
+  prefix: string,
+  state: RuntimeState,
+): Promise<PreparedField | null> {
+  const value = readFieldValue(target, run.key);
+  const slot = run.slot;
+  if (slot !== undefined && slot.optional && (value === null || value === undefined)) {
+    return null;
+  }
+  const path = `${prefix}${run.fieldName}`;
+  if (slot !== undefined) {
+    for (const condition of slot.conditions) {
+      const result: unknown = condition(target, value);
+      if (isThenable(result)) {
+        if ((await result) !== true) {
+          return null;
+        }
+      } else if (result !== true) {
+        return null;
+      }
+    }
+  }
+  return completeFieldPreparation(target, run, value, path, state, true);
 }
 
 function shouldVisitNested(
@@ -845,7 +959,7 @@ async function runFieldAsync(
   depth: number,
 ): Promise<void> {
   const start = state.errors.length;
-  const prepared = prepareField(target, run, prefix, state, true);
+  const prepared = await prepareFieldAsync(target, run, prefix, state);
   if (state.config.resolve !== undefined && state.errors.length > start) {
     await rerenderErrorsAsync(state, start, target);
   }
@@ -883,7 +997,7 @@ async function runRuleAsync(
   state: RuntimeState,
   depth: number,
 ): Promise<void> {
-  if (!isRunnable(entry, slot, target, state)) {
+  if (!(await isRunnableAsync(entry, slot, target, state))) {
     return;
   }
   const rule = entry.rule;

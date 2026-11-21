@@ -44,7 +44,7 @@ export type MessageResolver = (
 ) => string | undefined | Promise<string | undefined>;
 
 export type InstancePredicate = {
-  bivarianceHack(instance: object): boolean;
+  bivarianceHack(instance: object): boolean | PromiseLike<boolean>;
 }["bivarianceHack"];
 
 export interface RuleOptions {
@@ -107,7 +107,10 @@ export interface FieldRuleEntry {
   readonly options: RuleOptions;
 }
 
-export type FieldCondition = (instance: object, value: unknown) => boolean;
+export type FieldCondition = (
+  instance: object,
+  value: unknown,
+) => boolean | PromiseLike<boolean>;
 
 export interface FieldSlot {
   readonly field: FieldKey;

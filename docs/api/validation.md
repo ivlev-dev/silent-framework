@@ -110,7 +110,7 @@ function validate(instance: object, options?: ValidationOptions): ValidationResu
 const result = validate(user, { stopAtFirst: true });
 ```
 
-Ограничения: не поддерживает правила, возвращающие промис, и асинхронные резолверы сообщений: в первом случае бросает `AsyncRuleError`, во втором — `Error`.
+Ограничения: не поддерживает правила, возвращающие промис, асинхронные условия `@ValidateIf`/`when` и асинхронные резолверы сообщений: в первых двух случаях бросает `AsyncRuleError`, в последнем — `Error`.
 
 ### `validateAsync`
 
@@ -121,7 +121,7 @@ function validateAsync(
 ): Promise<ValidationResult>;
 ```
 
-Асинхронная проверка: последовательно ожидает результат каждого правила. Поддерживает синхронные и асинхронные `Custom`-правила.
+Асинхронная проверка: последовательно ожидает результат каждого правила. Поддерживает синхронные и асинхронные `Custom`-правила, асинхронные условия `@ValidateIf` и асинхронный `when` в опциях правила. Если условие отклоняет промис, `validateAsync` отклоняется той же ошибкой.
 
 ```ts
 const result = await validateAsync(user, { groups: ["admin"] });
@@ -779,10 +779,14 @@ class Order {
 ### `ValidateIf`
 
 ```ts
-function ValidateIf(predicate: (instance: object) => boolean): RuleDecorator;
+function ValidateIf(
+  predicate: (instance: object) => boolean | Promise<boolean>,
+): RuleDecorator;
 ```
 
 Выполняет правила поля, только если предикат вернул `true` для экземпляра. Несколько `ValidateIf` на одном поле объединяются по «И».
+
+Предикат может быть асинхронным: `validateAsync`, `validatePropertyAsync`, `validatePartialAsync`, `safeParseAsync` и `validateOrThrowAsync` дожидаются его результата, включая вложенные формы и элементы `@Each`. Синхронные `validate`, `validateProperty`, `validatePartial`, `safeParse` и `validateOrThrow` в этом случае бросают `AsyncRuleError` с правилом `validateIf`. Отклонённый промис предиката отклоняет асинхронную проверку исходной ошибкой.
 
 ### `Optional`
 
@@ -985,6 +989,18 @@ configureValidation({
 });
 ```
 
+### Кэш сообщений
+
+Готовые строки из встроенных каталогов и `config.messages` кэшируются по ключу `(locale, каталог, key, плюральный суффикс, field, label, скалярные params)`. Кэш — LRU на 1024 записи; `configureValidation` и `resetValidationConfig` его сбрасывают.
+
+Сообщение не кэшируется, если:
+
+- задан `resolve` или `message` (пользовательский резолвер/фабрика);
+- шаблон зависит от `{value}` или `{index}`;
+- в `params` есть нескалярное значение (объект, массив, функция, символ).
+
+Плюрализация через `Intl.PluralRules` учитывается: суффикс входит в ключ кэша, поэтому формы `_one`/`_few`/`_many`/`_other` не смешиваются. Каталоги сообщений и `params` правил считаются неизменяемыми; после изменения конфигурации вызовите `configureValidation` или `resetValidationConfig`, чтобы сбросить кэш.
+
 ### `I18nextLike`
 
 ```ts
@@ -1003,12 +1019,12 @@ interface RuleOptions {
   readonly messageKey?: string | undefined;
   readonly label?: string | undefined;
   readonly groups?: readonly string[] | undefined;
-  readonly when?: ((instance: object) => boolean) | undefined;
+  readonly when?: ((instance: object) => boolean | Promise<boolean>) | undefined;
   readonly each?: boolean | undefined;
 }
 ```
 
-Опции правила: собственное сообщение или ключ, ярлык, группы, условие выполнения и опция `each` — применить правило к каждому элементу массива или `Set` вместо значения целиком.
+Опции правила: собственное сообщение или ключ, ярлык, группы, условие выполнения и опция `each` — применить правило к каждому элементу массива или `Set` вместо значения целиком. `when` может вернуть промис: асинхронные функции дожидаются результата, синхронные бросают `AsyncRuleError`.
 
 ### `RuleDecorator`
 
@@ -1041,7 +1057,7 @@ class AsyncRuleError extends Error {
 }
 ```
 
-Бросается синхронными `validate`, `validateProperty`, `validatePartial`, `safeParse` и `validateOrThrow`, если правило вернуло промис. Содержит имя поля и правила.
+Бросается синхронными `validate`, `validateProperty`, `validatePartial`, `safeParse` и `validateOrThrow`, если правило или условие (`ValidateIf`/`when`) вернуло промис. Содержит имя поля и правила.
 
 ## Функции сообщений
 

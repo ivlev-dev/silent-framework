@@ -153,7 +153,25 @@ const ASYNC_RESOLVER_ERROR =
 
 const PLURAL_RULES_CACHE_LIMIT = 50;
 
+const MESSAGE_CACHE_LIMIT = 1024;
+
+const PLURAL_SUFFIX_CACHE_LIMIT = 1024;
+
 const pluralRulesCache = new Map<string, Intl.PluralRules | null>();
+
+const pluralSuffixCache = new Map<string, string>();
+
+const paramsKeys = new WeakMap<object, string | null>();
+
+/**
+ * Готовые строки для шаблонов каталога без `{value}`/`{index}`.
+ * Пользовательские резолверы и `message` не кэшируются.
+ */
+const messageCache = new Map<string, string>();
+
+const catalogIds = new WeakMap<object, number>();
+
+let nextCatalogId = 0;
 
 let currentConfig: ValidationConfig = {};
 
@@ -166,15 +184,109 @@ export function configureValidation(config: ValidationConfig): void {
     ...(config.cascade === undefined ? {} : { cascade: config.cascade }),
   };
   pluralRulesCache.clear();
+  pluralSuffixCache.clear();
+  messageCache.clear();
 }
 
 export function resetValidationConfig(): void {
   currentConfig = {};
   pluralRulesCache.clear();
+  pluralSuffixCache.clear();
+  messageCache.clear();
 }
 
 export function getValidationConfig(): ValidationConfig {
   return currentConfig;
+}
+
+/** @internal Размер кэша сообщений (для тестов). */
+export function validationMessageCacheSize(): number {
+  return messageCache.size;
+}
+
+function catalogIdOf(
+  messages: ValidationConfig["messages"],
+): number {
+  if (messages === undefined) {
+    return 0;
+  }
+  let id = catalogIds.get(messages);
+  if (id === undefined) {
+    nextCatalogId += 1;
+    id = nextCatalogId;
+    catalogIds.set(messages, id);
+  }
+  return id;
+}
+
+function scalarParamsKey(
+  params: Readonly<Record<string, unknown>>,
+): string | undefined {
+  const cached = paramsKeys.get(params);
+  if (cached !== undefined) {
+    return cached ?? undefined;
+  }
+  const parts: string[] = [];
+  for (const key of Object.keys(params).sort()) {
+    const value = params[key];
+    if (value === null) {
+      parts.push(JSON.stringify([key, "null"]));
+      continue;
+    }
+    if (value === undefined) {
+      parts.push(JSON.stringify([key, "undefined"]));
+      continue;
+    }
+    const type = typeof value;
+    if (type === "string" || type === "number" || type === "boolean") {
+      parts.push(JSON.stringify([key, type, String(value)]));
+      continue;
+    }
+    // Объекты, массивы, функции и символы не сериализуем: такие сообщения
+    // не кэшируем, чтобы не получить ложное попадание.
+    paramsKeys.set(params, null);
+    return undefined;
+  }
+  const encoded = JSON.stringify(parts);
+  paramsKeys.set(params, encoded);
+  return encoded;
+}
+
+function messageCacheKey(
+  locale: string,
+  catalogId: number,
+  key: string,
+  suffix: string | undefined,
+  field: string,
+  label: string,
+  paramsKey: string,
+): string {
+  return `${locale}\u0000${catalogId}\u0000${key}\u0000${suffix ?? ""}\u0000${field}\u0000${label}\u0000${paramsKey}`;
+}
+
+function cachedMessage(key: string): string | undefined {
+  const cached = messageCache.get(key);
+  if (cached === undefined) {
+    return undefined;
+  }
+  // Обновляем позицию: Map хранит порядок вставки, получаем LRU.
+  messageCache.delete(key);
+  messageCache.set(key, cached);
+  return cached;
+}
+
+function storeMessage(key: string, message: string): void {
+  if (messageCache.size >= MESSAGE_CACHE_LIMIT) {
+    const oldest = messageCache.keys().next().value;
+    if (oldest !== undefined) {
+      messageCache.delete(oldest);
+    }
+  }
+  messageCache.set(key, message);
+}
+
+function templateDependsOnValue(template: string): boolean {
+  return template.includes("{value}") || template.includes("{index}");
 }
 
 function pluralRulesFor(locale: string): Intl.PluralRules | null {
@@ -260,11 +372,21 @@ function pluralSuffix(
   if (count === undefined) {
     return undefined;
   }
+  const cacheKey = `${locale}\u0000${count}`;
+  const cached = pluralSuffixCache.get(cacheKey);
+  if (cached !== undefined) {
+    return cached;
+  }
   const rules = pluralRulesFor(locale);
   if (rules === null) {
     return undefined;
   }
-  return rules.select(count);
+  const suffix = rules.select(count);
+  if (pluralSuffixCache.size >= PLURAL_SUFFIX_CACHE_LIMIT) {
+    pluralSuffixCache.clear();
+  }
+  pluralSuffixCache.set(cacheKey, suffix);
+  return suffix;
 }
 
 function formatValue(value: unknown): string {
@@ -349,7 +471,7 @@ function catalogTemplate(
   config: ValidationConfig,
   locale: string,
   key: string,
-  context: MessageContext,
+  suffix: string | undefined,
 ): string | undefined {
   return lookupSources(
     [
@@ -360,8 +482,46 @@ function catalogTemplate(
       validationMessages.en,
     ],
     key,
-    pluralSuffix(locale, context),
+    suffix,
   );
+}
+
+function resolveCatalogMessage(
+  context: MessageContext,
+  config: ValidationConfig,
+  locale: string,
+  key: string,
+): string {
+  const suffix = pluralSuffix(locale, context);
+  const paramsKey = config.resolve === undefined
+    ? scalarParamsKey(context.params)
+    : undefined;
+  const cacheKey = paramsKey === undefined
+    ? undefined
+    : messageCacheKey(
+      locale,
+      catalogIdOf(config.messages),
+      key,
+      suffix,
+      context.field,
+      context.label,
+      paramsKey,
+    );
+  if (cacheKey !== undefined) {
+    const cached = cachedMessage(cacheKey);
+    if (cached !== undefined) {
+      return cached;
+    }
+  }
+  const template = catalogTemplate(config, locale, key, suffix);
+  if (template === undefined) {
+    return `${context.label}: ${key}`;
+  }
+  const message = interpolate(template, context);
+  if (cacheKey !== undefined && !templateDependsOnValue(template)) {
+    storeMessage(cacheKey, message);
+  }
+  return message;
 }
 
 function builtinTemplate(
@@ -405,11 +565,7 @@ export function resolveMessage(
   if (resolved !== undefined) {
     return interpolate(resolved, context);
   }
-  const template = catalogTemplate(config, locale, key, context);
-  if (template !== undefined) {
-    return interpolate(template, context);
-  }
-  return `${context.label}: ${key}`;
+  return resolveCatalogMessage(context, config, locale, key);
 }
 
 export async function resolveMessageAsync(
@@ -433,11 +589,7 @@ export async function resolveMessageAsync(
   if (resolved !== undefined) {
     return interpolate(resolved, context);
   }
-  const template = catalogTemplate(config, locale, key, context);
-  if (template !== undefined) {
-    return interpolate(template, context);
-  }
-  return `${context.label}: ${key}`;
+  return resolveCatalogMessage(context, config, locale, key);
 }
 
 export interface I18nextLike {

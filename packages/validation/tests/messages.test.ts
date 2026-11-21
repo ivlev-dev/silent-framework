@@ -6,6 +6,8 @@ import {
   getValidationConfig,
   resetValidationConfig,
   resolveMessage,
+  resolveMessageAsync,
+  validationMessageCacheSize,
   validationMessages,
 } from "../src/messages.js";
 import {
@@ -933,5 +935,175 @@ describe("createI18nextResolver", () => {
     );
 
     expect(message).toBe("В поле Теги должно быть не меньше 3 элемента");
+  });
+});
+
+describe("Кэш сообщений", () => {
+  it("переиспользует строку для одинаковых locale, label и params", () => {
+    expect(validationMessageCacheSize()).toBe(0);
+
+    const first = resolveMessage(contextOf(), { locale: "ru" });
+    expect(validationMessageCacheSize()).toBe(1);
+
+    expect(resolveMessage(contextOf(), { locale: "ru" })).toBe(first);
+    expect(validationMessageCacheSize()).toBe(1);
+  });
+
+  it("различает locale, label и params", () => {
+    expect(resolveMessage(contextOf(), { locale: "ru" })).toBe(
+      "Значение поля Возраст должно быть не меньше 3",
+    );
+    expect(
+      resolveMessage(contextOf({ label: "Age", params: { min: 3 } }), { locale: "en" }),
+    ).toBe("Age must be at least 3");
+    expect(
+      resolveMessage(contextOf({ label: "Возраст", params: { min: 5 } }), { locale: "ru" }),
+    ).toBe("Значение поля Возраст должно быть не меньше 5");
+    expect(
+      resolveMessage(contextOf({ label: "Годы", params: { min: 3 } }), { locale: "ru" }),
+    ).toBe("Значение поля Годы должно быть не меньше 3");
+
+    expect(validationMessageCacheSize()).toBe(4);
+  });
+
+  it("не путает разные каталоги config.messages", () => {
+    const first: ValidationConfig = {
+      locale: "ru",
+      messages: { ru: { "validation.min": "Первый {min}" } },
+    };
+    const second: ValidationConfig = {
+      locale: "ru",
+      messages: { ru: { "validation.min": "Второй {min}" } },
+    };
+
+    expect(resolveMessage(contextOf(), first)).toBe("Первый 3");
+    expect(resolveMessage(contextOf(), second)).toBe("Второй 3");
+    expect(validationMessageCacheSize()).toBe(2);
+  });
+
+  it("не кэширует шаблон с {value}", () => {
+    const config: ValidationConfig = {
+      locale: "ru",
+      messages: { ru: { "validation.customValue": "{label}: {value}" } },
+    };
+
+    const first = resolveMessage(
+      contextOf({
+        rule: "customValue",
+        key: "validation.customValue",
+        value: 1,
+        params: {},
+      }),
+      config,
+    );
+    const second = resolveMessage(
+      contextOf({
+        rule: "customValue",
+        key: "validation.customValue",
+        value: 2,
+        params: {},
+      }),
+      config,
+    );
+
+    expect(first).toBe("Возраст: 1");
+    expect(second).toBe("Возраст: 2");
+    expect(validationMessageCacheSize()).toBe(0);
+  });
+
+  it("не кэширует шаблон с {index}", () => {
+    const first = resolveMessage(
+      contextOf({
+        rule: "each",
+        key: "validation.each",
+        label: "Теги",
+        params: {},
+        value: "x",
+        index: 0,
+      }),
+      { locale: "ru" },
+    );
+    const second = resolveMessage(
+      contextOf({
+        rule: "each",
+        key: "validation.each",
+        label: "Теги",
+        params: {},
+        value: "x",
+        index: 1,
+      }),
+      { locale: "ru" },
+    );
+
+    expect(first).toBe("Элемент 0 поля Теги некорректен");
+    expect(second).toBe("Элемент 1 поля Теги некорректен");
+    expect(validationMessageCacheSize()).toBe(0);
+  });
+
+  it("не кэширует пользовательские resolve и message", () => {
+    const resolve = vi.fn<MessageResolver>(() => "resolved");
+    const config: ValidationConfig = { locale: "ru", resolve };
+
+    expect(resolveMessage(contextOf(), config)).toBe("resolved");
+    expect(resolveMessage(contextOf(), config)).toBe("resolved");
+    expect(resolve).toHaveBeenCalledTimes(2);
+
+    expect(resolveMessage(contextOf({ message: "Своё {label}" }), {})).toBe(
+      "Своё Возраст",
+    );
+    expect(resolveMessage(contextOf({ message: () => "Функция" }), {})).toBe(
+      "Функция",
+    );
+    expect(validationMessageCacheSize()).toBe(0);
+  });
+
+  it("не кэширует нескалярные params", () => {
+    expect(
+      resolveMessage(contextOf({ params: { values: [1, 2, 3] } }), {}),
+    ).toBe("Значение поля Возраст должно быть не меньше {min}");
+    expect(validationMessageCacheSize()).toBe(0);
+  });
+
+  it("сбрасывается при configureValidation и resetValidationConfig", () => {
+    resolveMessage(contextOf(), {});
+    expect(validationMessageCacheSize()).toBe(1);
+
+    configureValidation({ locale: "en" });
+    expect(validationMessageCacheSize()).toBe(0);
+
+    resolveMessage(contextOf({ label: "Age" }), getValidationConfig());
+    expect(validationMessageCacheSize()).toBe(1);
+
+    resetValidationConfig();
+    expect(validationMessageCacheSize()).toBe(0);
+  });
+
+  it("кэширует готовые плюральные формы", () => {
+    const message = (min: number): string =>
+      resolveMessage(
+        contextOf({
+          rule: "minLength",
+          key: "validation.minLength",
+          label: "Имя",
+          params: { min },
+          value: "x",
+        }),
+        { locale: "ru" },
+      );
+
+    expect(message(1)).toBe("Длина поля Имя должна быть не меньше 1 символ");
+    expect(message(2)).toBe("Длина поля Имя должна быть не меньше 2 символа");
+    expect(message(5)).toBe("Длина поля Имя должна быть не меньше 5 символов");
+    expect(validationMessageCacheSize()).toBe(3);
+
+    expect(message(2)).toBe("Длина поля Имя должна быть не меньше 2 символа");
+    expect(validationMessageCacheSize()).toBe(3);
+  });
+
+  it("кэширует и асинхронный путь без резолвера", async () => {
+    await expect(resolveMessageAsync(contextOf(), { locale: "ru" })).resolves.toBe(
+      "Значение поля Возраст должно быть не меньше 3",
+    );
+    expect(validationMessageCacheSize()).toBe(1);
   });
 });

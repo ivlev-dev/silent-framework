@@ -12,22 +12,16 @@ import {
   installLabel,
   installOptional,
 } from "./registry.js";
-import { AsyncRuleError, ValidationException } from "./types.js";
-import { isThenable, suppress } from "./thenable.js";
+import { ValidationException } from "./types.js";
 
 export function ValidateIf(
   predicate: InstancePredicate,
 ): RuleDecorator {
   const token = Symbol("silent.validation.if");
   return decorateField(token, (ctor, entryToken, field, fieldName) => {
-    const condition: FieldCondition = (instance) => {
-      const result: unknown = predicate(instance);
-      if (isThenable(result)) {
-        suppress(result);
-        throw new AsyncRuleError(fieldName, "validateIf");
-      }
-      return result === true;
-    };
+    // Условие может вернуть промис: синхронный движок бросит `AsyncRuleError`,
+    // асинхронный — дождётся результата.
+    const condition: FieldCondition = (instance) => predicate(instance);
     installCondition(ctor, entryToken, field, fieldName, condition, predicate);
   });
 }
