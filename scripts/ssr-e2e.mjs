@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
 import { homedir } from "node:os";
@@ -448,6 +449,365 @@ async function main() {
       await routerVite.close();
     }
 
+    // Сценарий формы идёт последним: после SSR полной формы последующий
+    // renderToString в том же процессе получает чужой request scope
+    // (форма/вложенная форма оставляют owner), и SSR роутера теряет Router.
+    // Держим проверку изолированной до исправления в рантайме.
+    const formsDir = join(root, "examples", "forms");
+    const formsVite = await createServer({
+      configFile: join(formsDir, "vite.config.ts"),
+      root: formsDir,
+      logLevel: "error",
+      appType: "custom",
+      server: { middlewareMode: true, hmr: false },
+    });
+    let formsHttp = null;
+    try {
+      const formsModule = await formsVite.ssrLoadModule("/src/entry-server.tsx");
+      const formsRendered = await formsModule.render("/");
+      const formsMarkup = formsRendered.html.replace(
+        '<form class="profile"',
+        '<form data-ssr="1" class="profile"',
+      );
+
+      assert.match(
+        formsMarkup,
+        /<form data-ssr="1" class="profile"/,
+        "SSR формы не отрендерил форму профиля",
+      );
+      assert.match(
+        formsMarkup,
+        /id="profile-name"[^>]*required=""/,
+        `SSR формы потерял required у поля name: ${formsMarkup.slice(0, 400)}`,
+      );
+      assert.match(
+        formsMarkup,
+        /id="profile-email"[^>]*aria-required="true"/,
+        "SSR формы потерял aria-required у поля email",
+      );
+      assert.ok(
+        formsMarkup.includes('id="profile-address.city"') &&
+          formsMarkup.includes('id="profile-address.state"'),
+        "SSR формы потерял id вложенной формы адреса",
+      );
+      const requiredStars =
+        formsMarkup.match(/aria-hidden="true"> \*<\/span>/g)?.length ?? 0;
+      assert.equal(
+        requiredStars,
+        4,
+        `SSR формы потерял звёздочки обязательных полей: ${String(requiredStars)}`,
+      );
+      assert.ok(
+        !formsMarkup.includes('class="error"'),
+        "SSR формы сразу отрендерил ошибки валидации",
+      );
+      assert.match(
+        formsRendered.head,
+        /<title>Silent Framework: форма профиля<\/title>/,
+        `SSR формы не отдал title: ${formsRendered.head}`,
+      );
+
+      const secondRender = await formsModule.render("/");
+      const idsOf = (markup) =>
+        (markup.match(/id="profile-[^"]*"/g) ?? []).sort();
+      assert.deepEqual(
+        idsOf(secondRender.html),
+        idsOf(formsMarkup),
+        "id формы изменились между двумя SSR-запросами",
+      );
+
+      const formsHtml = await formsVite.transformIndexHtml(
+        "/",
+        pageTemplate(formsMarkup, formsRendered.head),
+      );
+
+      formsHttp = createHttpServer((request, response) => {
+        if (request.url === "/favicon.ico") {
+          response.statusCode = 204;
+          response.end();
+          return;
+        }
+        if (request.url === "/" || request.url?.startsWith("/?")) {
+          response.setHeader("content-type", "text/html; charset=utf-8");
+          response.end(formsHtml);
+          return;
+        }
+        formsVite.middlewares(request, response, () => {
+          response.statusCode = 404;
+          response.end("not found");
+        });
+      });
+      await new Promise((resolve) =>
+        formsHttp.listen(0, "127.0.0.1", resolve),
+      );
+      const formsAddress = formsHttp.address();
+      if (formsAddress === null || typeof formsAddress === "string") {
+        throw new Error("Не удалось определить порт SSR-сервера форм");
+      }
+      const formsUrl = `http://127.0.0.1:${String(formsAddress.port)}/`;
+
+      const formsPage = await browser.newPage();
+      const formsErrors = [];
+      const formsWarnings = [];
+      const isDevServerNoise = (text) =>
+        text.includes("WebSocket") || text.includes("[vite] failed to connect");
+      formsPage.on("console", (message) => {
+        if (message.type() === "error" && !isDevServerNoise(message.text())) {
+          formsErrors.push(message.text());
+        } else if (message.type() === "warning") {
+          formsWarnings.push(message.text());
+        }
+      });
+      formsPage.on("pageerror", (error) => {
+        if (!isDevServerNoise(error.message)) {
+          formsErrors.push(error.message);
+        }
+      });
+
+      await formsPage.goto(formsUrl, { waitUntil: "load" });
+      await formsPage.waitForFunction(
+        () => globalThis.__silentReady === true,
+        undefined,
+        { timeout: 10_000 },
+      );
+      await formsPage.waitForFunction(
+        () => !document.body.innerHTML.includes("data-silent-"),
+        undefined,
+        { timeout: 10_000 },
+      );
+
+      const formsState = await formsPage.evaluate(() => {
+        const name = document.querySelector("#profile-name");
+        const email = document.querySelector("#profile-email");
+        const city = document.querySelector('input[id="profile-address.city"]');
+        const state = document.querySelector('select[id="profile-address.state"]');
+        return {
+          apps: document.querySelectorAll("main.app").length,
+          adopted: document.querySelectorAll("[data-ssr]").length,
+          nameId: name?.id ?? null,
+          emailId: email?.id ?? null,
+          cityId: city?.id ?? null,
+          stateId: state?.id ?? null,
+          nameRequired: name?.getAttribute("required") ?? null,
+          nameAriaRequired: name?.getAttribute("aria-required") ?? null,
+          nameStars:
+            document.querySelectorAll(
+              'label[for="profile-name"] span[aria-hidden="true"]',
+            ).length,
+          markers: document.body.innerHTML.includes("data-silent-"),
+        };
+      });
+      assert.equal(formsState.apps, 1, "после гидрации осталось несколько копий формы");
+      assert.equal(
+        formsState.adopted,
+        1,
+        "серверная форма не адоптирована: гидрация откатилась на клиентский рендер",
+      );
+      assert.equal(formsState.nameId, "profile-name");
+      assert.equal(formsState.emailId, "profile-email");
+      assert.equal(formsState.cityId, "profile-address.city");
+      assert.equal(formsState.stateId, "profile-address.state");
+      assert.equal(formsState.nameRequired, "");
+      assert.equal(formsState.nameAriaRequired, "true");
+      assert.equal(formsState.nameStars, 1, "звёздочка обязательного поля пропала");
+      assert.equal(formsState.markers, false, "маркеры data-silent-* остались в DOM");
+      assert.equal(
+        await formsPage.locator('label[for="profile-name"]').count(),
+        1,
+        "id поля перестал совпадать с label после гидрации",
+      );
+
+      const nameInput = formsPage.locator("#profile-name");
+      const emailInput = formsPage.locator("#profile-email");
+      const cityInput = formsPage.locator('input[id="profile-address.city"]');
+      const stateSelect = formsPage.locator('select[id="profile-address.state"]');
+
+      await nameInput.fill("Алиса");
+      assert.equal(await nameInput.inputValue(), "Алиса", "ввод не работает после гидрации");
+      await emailInput.fill("не-email");
+      await emailInput.blur();
+      const emailError = formsPage.locator("#profile-email-error");
+      await emailError.waitFor();
+      assert.equal(await emailError.getAttribute("role"), "alert");
+      assert.match((await emailError.textContent()) ?? "", /email/i);
+
+      await emailInput.fill("alice@example.com");
+      const submitButton = formsPage.getByRole("button", { name: "Сохранить" });
+      assert.equal(
+        await submitButton.isDisabled(),
+        true,
+        "кнопка доступна, пока обязательные поля пусты",
+      );
+
+      await formsPage.evaluate(() => {
+        const form = document.querySelector("form.profile");
+        if (!(form instanceof HTMLFormElement)) {
+          throw new Error("form.profile не найдена");
+        }
+        form.requestSubmit();
+      });
+      const cityError = formsPage.locator('[id="profile-address.city-error"]');
+      await cityError.waitFor();
+      assert.match((await cityError.textContent()) ?? "", /обязательн/i);
+
+      await cityInput.fill("Москва");
+      await stateSelect.selectOption("moscow");
+      await formsPage.evaluate(() => {
+        const form = document.querySelector("form.profile");
+        if (!(form instanceof HTMLFormElement)) {
+          throw new Error("form.profile не найдена");
+        }
+        form.requestSubmit();
+      });
+      const formsSuccess = formsPage
+        .getByRole("status")
+        .filter({ hasText: "Профиль сохранён: Алиса" });
+      await formsSuccess.waitFor();
+      assert.equal(await formsSuccess.getAttribute("aria-live"), "polite");
+      assert.equal(await stateSelect.inputValue(), "moscow");
+      assert.equal(
+        await submitButton.isEnabled(),
+        true,
+        "после успешной отправки кнопка осталась disabled",
+      );
+      await submitButton.click();
+
+      const formsAfterSubmit = await formsPage.evaluate(() => ({
+        apps: document.querySelectorAll("main.app").length,
+        markers: document.body.innerHTML.includes("data-silent-"),
+        errors: document.querySelectorAll('p.error[role="alert"]').length,
+      }));
+      assert.equal(formsAfterSubmit.apps, 1, "отправка формы продублировала приложение");
+      assert.equal(formsAfterSubmit.markers, false);
+      assert.equal(formsAfterSubmit.errors, 0, "валидная отправка оставила ошибки");
+      assert.deepEqual(
+        formsErrors,
+        [],
+        `ошибки в консоли формы: ${formsErrors.join(" | ")}`,
+      );
+      assert.deepEqual(
+        formsWarnings.filter((text) => text.includes("гидрация")),
+        [],
+        `предупреждения гидрации формы: ${formsWarnings.join(" | ")}`,
+      );
+      await formsPage.close();
+
+      const formsServerEntry = join(formsDir, "dist", "server", "entry-server.js");
+      if (existsSync(formsServerEntry)) {
+        const child = spawn(process.execPath, ["server.mjs"], {
+          cwd: formsDir,
+          env: { ...process.env, NODE_ENV: "production", PORT: "0" },
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        try {
+          const prodUrl = await new Promise((resolve, reject) => {
+            let output = "";
+            let settled = false;
+            let timer = null;
+            const finish = (action) => {
+              if (settled) {
+                return;
+              }
+              settled = true;
+              if (timer !== null) {
+                clearTimeout(timer);
+              }
+              action();
+            };
+            timer = setTimeout(() => {
+              finish(() =>
+                reject(
+                  new Error(`production-сервер формы не стартовал: ${output}`),
+                ),
+              );
+            }, 15_000);
+            child.stdout.setEncoding("utf8");
+            child.stdout.on("data", (chunk) => {
+              output += chunk;
+              const match = output.match(/forms-ssr: (http:\/\/localhost:\d+\/)/);
+              if (match !== null) {
+                finish(() => resolve(match[1]));
+              }
+            });
+            child.once("exit", (code) => {
+              finish(() =>
+                reject(
+                  new Error(
+                    `production-сервер формы завершился с кодом ${String(code)}: ${output}`,
+                  ),
+                ),
+              );
+            });
+          });
+          const response = await fetch(prodUrl);
+          assert.equal(response.status, 200, "production-сервер формы вернул не 200");
+          const prodHtml = await response.text();
+          assert.match(prodHtml, /id="profile-name"[^>]*required=""/);
+          assert.match(prodHtml, /id="profile-address\.city"/);
+          assert.match(prodHtml, /<title>Silent Framework: форма профиля<\/title>/);
+          assert.ok(
+            !prodHtml.includes('class="error"'),
+            "production-сервер формы отдал ошибки валидации",
+          );
+
+          const prodPage = await browser.newPage();
+          const prodErrors = [];
+          prodPage.on("console", (message) => {
+            if (message.type() === "error") {
+              prodErrors.push(message.text());
+            }
+          });
+          prodPage.on("pageerror", (error) => {
+            prodErrors.push(error.message);
+          });
+          await prodPage.goto(prodUrl, { waitUntil: "load" });
+          await prodPage.waitForFunction(
+            () => globalThis.__silentReady === true,
+            undefined,
+            { timeout: 10_000 },
+          );
+          await prodPage.waitForFunction(
+            () => !document.body.innerHTML.includes("data-silent-"),
+            undefined,
+            { timeout: 10_000 },
+          );
+          const prodState = await prodPage.evaluate(() => ({
+            apps: document.querySelectorAll("main.app").length,
+            markers: document.body.innerHTML.includes("data-silent-"),
+            nameRequired:
+              document.querySelector("#profile-name")?.getAttribute("required") ??
+              null,
+          }));
+          assert.equal(prodState.apps, 1, "production-гидрация продублировала форму");
+          assert.equal(prodState.markers, false);
+          assert.equal(prodState.nameRequired, "");
+          const prodName = prodPage.locator("#profile-name");
+          await prodName.fill("Борис");
+          assert.equal(await prodName.inputValue(), "Борис");
+          assert.deepEqual(
+            prodErrors,
+            [],
+            `ошибки в консоли production-формы: ${prodErrors.join(" | ")}`,
+          );
+          await prodPage.close();
+          console.log("ssr forms: production server ok");
+        } finally {
+          child.kill();
+          if (child.exitCode === null) {
+            await new Promise((resolve) => child.once("exit", resolve));
+          }
+        }
+      } else {
+        console.log(
+          "ssr forms: dist/server/entry-server.js не найден — production-проверка пропущена",
+        );
+      }
+    } finally {
+      if (formsHttp !== null) {
+        await new Promise((resolve) => formsHttp.close(resolve));
+      }
+      await formsVite.close();
+    }
 
     const source = readFileSync(join(example, "src", "main.tsx"), "utf8");
     assert.ok(source.includes("hydrate"), "main.tsx не использует hydrate");

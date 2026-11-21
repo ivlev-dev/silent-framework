@@ -291,6 +291,9 @@ importers:
       '@ivlev-dev/silent-reactivity':
         specifier: workspace:*
         version: link:../../packages/reactivity
+      '@ivlev-dev/silent-server':
+        specifier: workspace:*
+        version: link:../../packages/server
       '@ivlev-dev/silent-validation':
         specifier: workspace:*
         version: link:../../packages/validation

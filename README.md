@@ -375,6 +375,7 @@ silent({
 
 - [С чего начать](./docs/getting-started.md)
 - [SSR и деплой](./docs/guides/ssr.md)
+- [Формы и SSR](./docs/guides/forms.md)
 - [Гидрация](./docs/guides/hydration.md)
 - [Dependency Injection](./docs/guides/di.md)
 - [Роутер](./docs/guides/router.md)

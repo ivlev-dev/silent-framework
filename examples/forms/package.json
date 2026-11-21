@@ -4,9 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
+    "dev": "node server.mjs",
+    "build:client": "vite build",
+    "build:ssr": "vite build --ssr src/entry-server.tsx --outDir dist/server",
+    "build": "pnpm build:client && pnpm build:ssr",
+    "start": "NODE_ENV=production node server.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
@@ -14,6 +16,7 @@
     "@ivlev-dev/silent-di": "workspace:*",
     "@ivlev-dev/silent-form": "workspace:*",
     "@ivlev-dev/silent-reactivity": "workspace:*",
+    "@ivlev-dev/silent-server": "workspace:*",
     "@ivlev-dev/silent-validation": "workspace:*"
   },
   "devDependencies": {
