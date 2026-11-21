@@ -94,15 +94,34 @@ describe("silent()", () => {
   it("клиентская сборка вырезает серверный код", () => {
     const plugin = createPlugin();
     expect(plugin.config?.({}, { command: "build", mode: "production" })).toEqual({
-      define: { __SILENT_SERVER__: "false" },
+      define: { __SILENT_SERVER__: "false", __SILENT_DEV__: "false" },
     });
     expect(
       plugin.config?.({ build: { ssr: "src/entry-server.tsx" } }, {
         command: "build",
         mode: "production",
       }),
-    ).toBeUndefined();
-    expect(plugin.config?.({}, { command: "serve", mode: "development" })).toBeUndefined();
+    ).toEqual({ define: { __SILENT_DEV__: "false" } });
+    expect(plugin.config?.({}, { command: "serve", mode: "development" })).toEqual({
+      define: { __SILENT_DEV__: "true" },
+    });
+  });
+
+  it("define __SILENT_DEV__ включает dev-предупреждения только в serve", () => {
+    const plugin = createPlugin();
+    expect(plugin.config?.({}, { command: "build", mode: "production" })).toEqual({
+      define: { __SILENT_SERVER__: "false", __SILENT_DEV__: "false" },
+    });
+    expect(
+      plugin.config?.({ build: { ssr: "src/entry-server.tsx" } }, {
+        command: "build",
+        mode: "production",
+      }),
+    ).toEqual({ define: { __SILENT_DEV__: "false" } });
+    expect(plugin.config?.({}, { command: "serve", mode: "development" })).toEqual({
+      define: { __SILENT_DEV__: "true" },
+    });
+    expect(plugin.config?.({})).toBeUndefined();
   });
 
   it("hydrate: false вырезает клиентскую гидрацию через define", () => {

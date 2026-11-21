@@ -144,6 +144,12 @@ export function silent(options: SilentOptions = {}): Plugin {
       if (!opts.hydrate) {
         define.__SILENT_HYDRATE__ = "false";
       }
+      if (env?.command === "build") {
+        // В production-бандле dev-предупреждения реактивности не нужны.
+        define.__SILENT_DEV__ = "false";
+      } else if (env?.command === "serve") {
+        define.__SILENT_DEV__ = "true";
+      }
       if (env?.command === "build" && !config.build?.ssr) {
         define.__SILENT_SERVER__ = "false";
       }

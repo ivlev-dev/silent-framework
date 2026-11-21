@@ -115,7 +115,7 @@ interface ResolvedOptions {
 
 ### Порядок хуков плагина
 
-1. `config(config, env)` — возвращает `define`-константы: `__SILENT_VIEW__ = "false"` при `view: false`, `__SILENT_HYDRATE__ = "false"` при `hydrate: false`, `__SILENT_SERVER__ = "false"` для клиентской production-сборки (`build` без `build.ssr`). При `view: false` также отключает полифилл `build.modulePreload`, если пользователь не задал его сам.
+1. `config(config, env)` — возвращает `define`-константы: `__SILENT_DEV__` (`"false"` для `build`, включая SSR; `"true"` для `serve`; при отсутствии `env` не задаётся), `__SILENT_VIEW__ = "false"` при `view: false`, `__SILENT_HYDRATE__ = "false"` при `hydrate: false`, `__SILENT_SERVER__ = "false"` для клиентской production-сборки (`build` без `build.ssr`). При `view: false` также отключает полифилл `build.modulePreload`, если пользователь не задал его сам.
 2. `configResolved(config)` — запоминает каталог кэша (`config.cacheDir/silent-transform`), сохраняет снимок строковых алиасов Vite (`resolve.alias`) и объединяет его с `compilerOptions.paths` из tsconfig, а затем сбрасывает индекс, чтобы scan учитывал актуальные правила.
 3. `buildStart` — вызывается один раз (или лениво при первом `transform`): при `index: true` нативный addon сканирует `root` и строит индекс DI; персистентный кэш трансформаций очищается от старых записей.
 4. `transform(code, id, options)` — для каждого модуля:
