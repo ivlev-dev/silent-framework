@@ -70,6 +70,23 @@ const reactiveClasses = new WeakSet<Function>();
 const rawValues = new WeakSet<object>();
 const rawClasses = new WeakSet<Function>();
 
+interface PrototypeFlags {
+  readonly generation: number;
+  readonly raw: boolean;
+  readonly reactive: boolean;
+  readonly classPrototype: boolean;
+}
+
+const EMPTY_PROTOTYPE_FLAGS: PrototypeFlags = {
+  generation: 0,
+  raw: false,
+  reactive: false,
+  classPrototype: false,
+};
+
+const prototypeFlags = new WeakMap<object, PrototypeFlags>();
+let prototypeGeneration = 0;
+
 const readonlyByRaw = new WeakMap<object, ReadonlyRecord>();
 const readonlyToRaw = new WeakMap<object, object>();
 const readonlyProxies = new WeakSet<object>();
@@ -837,36 +854,58 @@ function isDomNode(value: object): boolean {
   return typeof Node !== "undefined" && value instanceof Node;
 }
 
-function hasReactivePrototype(value: object): boolean {
-  let current: object | null = Object.getPrototypeOf(value) as object | null;
+function computePrototypeFlags(
+  prototype: object | null,
+): PrototypeFlags {
+  let raw = false;
+  let reactive = false;
+  let classPrototype = false;
+  let current = prototype;
   while (current !== null) {
     const descriptor = Reflect.getOwnPropertyDescriptor(current, "constructor");
     if (
       descriptor !== undefined &&
       typeof descriptor.value === "function" &&
-      reactiveClasses.has(descriptor.value)
+      descriptor.value !== Object
     ) {
-      return true;
+      classPrototype = true;
+      if (rawClasses.has(descriptor.value)) {
+        raw = true;
+      }
+      if (reactiveClasses.has(descriptor.value)) {
+        reactive = true;
+      }
+      if (raw && reactive) {
+        break;
+      }
     }
     current = Object.getPrototypeOf(current) as object | null;
   }
-  return false;
+  return {
+    generation: prototypeGeneration,
+    raw,
+    reactive,
+    classPrototype,
+  };
 }
 
-function hasRawPrototype(value: object): boolean {
-  let current: object | null = Object.getPrototypeOf(value) as object | null;
-  while (current !== null) {
-    const descriptor = Reflect.getOwnPropertyDescriptor(current, "constructor");
-    if (
-      descriptor !== undefined &&
-      typeof descriptor.value === "function" &&
-      rawClasses.has(descriptor.value)
-    ) {
-      return true;
-    }
-    current = Object.getPrototypeOf(current) as object | null;
+/**
+ * Флаги прототипа кэшируются на сам прототип: цепочка обходится один раз,
+ * а `markReactiveClass`/`markRaw(класс)` инкрементируют поколение и
+ * инвалидируют все записи, включая наследников.
+ */
+function getPrototypeFlags(value: object): PrototypeFlags {
+  const prototype = Object.getPrototypeOf(value) as object | null;
+  if (prototype === null) {
+    return EMPTY_PROTOTYPE_FLAGS;
   }
-  return false;
+  const cached = prototypeFlags.get(prototype);
+  if (cached !== undefined && cached.generation === prototypeGeneration) {
+    return cached;
+  }
+  const flags = computePrototypeFlags(prototype);
+  prototypeFlags.set(prototype, flags);
+  return flags;
 }
 
 function isNonReactiveTag(tag: string): boolean {
@@ -897,30 +936,15 @@ function isRawMarked(value: object): boolean {
   if (rawValues.has(value)) {
     return true;
   }
-  return hasRawPrototype(value);
-}
-
-function hasClassPrototype(value: object): boolean {
-  let current = Object.getPrototypeOf(value) as object | null;
-  while (current !== null) {
-    const descriptor = Reflect.getOwnPropertyDescriptor(current, "constructor");
-    if (
-      descriptor !== undefined &&
-      typeof descriptor.value === "function" &&
-      descriptor.value !== Object
-    ) {
-      return true;
-    }
-    current = Object.getPrototypeOf(current) as object | null;
-  }
-  return false;
+  return getPrototypeFlags(value).raw;
 }
 
 function shouldWrap(value: object): boolean {
-  if (isRawMarked(value)) {
+  const flags = getPrototypeFlags(value);
+  if (rawValues.has(value) || flags.raw) {
     return false;
   }
-  if (hasReactivePrototype(value)) {
+  if (flags.reactive) {
     return false;
   }
   if (Array.isArray(value)) {
@@ -940,7 +964,7 @@ function shouldWrap(value: object): boolean {
   // с литеральным прототипом). Экземпляры пользовательских классов не
   // оборачиваются: прокси ломает `#private`-поля и accessor-декораторы
   // (`@reactive`/`@Field` сами управляют реактивностью через store).
-  return tag === "[object Object]" && !hasClassPrototype(value);
+  return tag === "[object Object]" && !flags.classPrototype;
 }
 
 function objectGet(record: ReactiveRecord, key: PropertyKey): unknown {
@@ -1365,7 +1389,11 @@ export class ReadonlyMutationError extends TypeError {
 }
 
 export function markReactiveClass(ctor: Function): void {
+  if (reactiveClasses.has(ctor)) {
+    return;
+  }
   reactiveClasses.add(ctor);
+  prototypeGeneration += 1;
 }
 
 export function isReactiveClass(value: unknown): boolean {
@@ -1374,7 +1402,10 @@ export function isReactiveClass(value: unknown): boolean {
 
 export function markRaw<T>(value: T): T {
   if (typeof value === "function") {
-    rawClasses.add(value);
+    if (!rawClasses.has(value)) {
+      rawClasses.add(value);
+      prototypeGeneration += 1;
+    }
   } else if (typeof value === "object" && value !== null) {
     rawValues.add(value);
   }
