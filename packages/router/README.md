@@ -11,7 +11,7 @@
 - Синтаксис `/edit/{id}` и совместимый `:id`, вложенные маршруты, `*`, index-маршруты.
 - Runtime-схема query (`QuerySchema`) приводит `number`, `boolean` и массивы; `RouteViewProps.query` и `router.query` содержат уже распарсенные значения.
 - `redirect`, синхронные и асинхронные `beforeEnter`, ленивый `load(context)` с кешированием.
-- `Link` и `RouterView` получают роутер из DI-контекста синхронно, с fallback на prop и `Router.current()`.
+- `Link` и `RouterView` получают роутер из DI-контекста или явного `router` prop синхронно; на клиенте есть fallback на `Router.current()`, в серверном рендере без prop/контейнера бросается `RouterMissingError`.
 - `RouterView` монтирует route-компоненты через core `component(...)`, поэтому ViewModel/DI работают; при смене `params`/`query` view переиспользуется и сохраняет DOM/focus.
 - При гидрации `RouterView` адоптирует серверный маркер, удаляет старую разметку маршрута и рендерит matched-компонент заново.
 - `BrowserHistory` (`pushState`, `popstate`, `hashchange`) и `MemoryHistory` для тестов и SSR.
@@ -157,7 +157,7 @@ router.provide(container);
 
 1. явный `router` prop;
 2. если передан или найден контейнер: `container.peek(Router)`; если `container.hasExplicit(Router)`, но значения ещё нет — `RouterMissingError`; если контейнер есть, а биндинга нет — `RouterMissingError`;
-3. `Router.current()` только когда контейнера нет вообще.
+3. `Router.current()` — только на клиенте и только когда контейнера нет вообще; в серверном рендере в этом случае бросается `RouterMissingError`.
 
 `Link` не использует асинхронный `resolve`.
 

@@ -173,6 +173,19 @@ describe("RouterView", () => {
     expect(() => RouterView({})).toThrow(RouterMissingError);
   });
 
+  it("в серверном рендере не откатывается к Router.current", async () => {
+    const router = createRouter("/");
+    await router.start();
+    expect(Router.current()).toBe(router);
+    setServerMode(true);
+    try {
+      expect(() => RouterView({})).toThrow(RouterMissingError);
+      expect(() => RouterView({})).toThrow(/Router\.current\(\) на сервере не используется/);
+    } finally {
+      setServerMode(false);
+    }
+  });
+
   it("не откатывается к текущему Router при контейнере без Router", () => {
     createRouter("/");
     const container = new Container("no-router");

@@ -177,7 +177,7 @@ export class UserVM extends ViewModel<{ params: { id: string } }> {
 }
 ```
 
-Порядок поиска роутера в `Link`/`RouterView`: явный `router` prop → `getRuntimeOptions().container.peek(Router)` → `Router.current()`.
+Порядок поиска роутера в `Link`/`RouterView`: явный `router` prop → `getRuntimeOptions().container.peek(Router)` → `Router.current()` только на клиенте и без контейнера. В серверном рендере без `router` prop и контейнера бросается `RouterMissingError`.
 
 `RouterView` монтирует matched-компонент по `depth` и передаёт `RouteViewProps`: `route`, `params`, `query`, `hash`, `router`. При смене `params`/`query`/`hash` в рамках того же компонента view **не пересоздаётся**: props остаются живыми, DOM, введённый текст и focus сохраняются. У ViewModel вызывается `updated()`, light-компоненты обновляются через `update()`. Пересоздание — только при смене route-компонента.
 
@@ -200,6 +200,8 @@ await router.start();
 
 const { html, head } = await renderToString(App, { container });
 ```
+
+В серверном рендере `Link` и `RouterView` не используют глобальный реестр `Router.current()`: передайте им `router` prop или зарегистрируйте роутер в контейнере (`new Router({ container })`/`router.provide(container)`), иначе бросается `RouterMissingError`.
 
 На клиенте — `BrowserHistory` и `hydrate`:
 

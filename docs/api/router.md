@@ -94,7 +94,7 @@ interface RouterOptions {
 - `route`, `params`, `query`, `hash`, `meta`, `matched`, `state()` — реактивные accessor'ы.
 - `push`, `replace`, `back`, `forward` — навигация; `resolve`/`href` — построение URL; `start`/`stop`/`dispose` — жизненный цикл. Повторный `push`/`replace` на текущий `fullPath` (с учётом query и hash) не создаёт запись в истории и не перезапускает guards/loaders.
 - Объектная цель `resolve({ name, params, query, hash })` без `query`/`hash` наследует их у текущего маршрута; явные поля объекта имеют приоритет. Query и hash внутри `path` (`{ path: "/search?q=a#top" }`) разбираются так же, как в строковой цели, но уступают явным `query`/`hash`.
-- `Router.current()` возвращает последний запущенный роутер (`start()`); `stop()` и `dispose()` снимают его из реестра. Это fallback для компонентов без DI и `router` prop.
+- `Router.current()` возвращает последний запущенный роутер (`start()`); `stop()` и `dispose()` снимают его из реестра. Это клиентский fallback для компонентов без DI и `router` prop; в серверном рендере `Link`/`RouterView` его не используют и требуют `router` prop или контейнер с биндингом.
 - При отменённой popstate-навигации (guard вернул `false`) URL восстанавливается через `history.replace` на текущий маршрут, чтобы адресная строка не расходилась с `RouterView`.
 - `load` и `resolveComponent` — алиасы глобального загрузчика страниц; `record.load` имеет приоритет.
 
@@ -131,7 +131,7 @@ router.provide(container);
 
 1. явный `router` prop;
 2. `getRuntimeOptions().container.peek(Router)` из DI-контекста; если `container.hasExplicit(Router)`, но значения ещё нет — `RouterMissingError`; если контейнера нет биндинга — `RouterMissingError`;
-3. `Router.current()` только когда контейнера нет вообще.
+3. `Router.current()` — только на клиенте и только когда контейнера нет вообще; в серверном рендере в этом случае бросается `RouterMissingError`.
 
 Асинхронный `resolve` для `Link` не используется.
 
@@ -351,7 +351,7 @@ interface RouterViewProps {
 
 `RouterView` берёт matched-компонент по глубине и монтирует его через core `component(...)`, поэтому route-компоненты с ViewModel и DI работают штатно. Компонент получает `RouteViewProps`: `route`, `params`, `query`, `hash`, `meta`, `router`. Старый `RouterViewComponentProps` — alias на `RouteViewProps`.
 
-Разрешение роутера: явный `router` prop → `container.peek(Router)` (container из props или runtime options; ошибка, если binding явный, но значения ещё нет; ошибка, если контейнер есть, а биндинга нет) → `Router.current()` только без контейнера.
+Разрешение роутера: явный `router` prop → `container.peek(Router)` (container из props или runtime options; ошибка, если binding явный, но значения ещё нет; ошибка, если контейнер есть, а биндинга нет) → `Router.current()` только на клиенте и без контейнера. В серверном рендере без `router` prop и контейнера бросается `RouterMissingError`.
 
 При смене `params`/`query`/`hash` в рамках того же route-компонента view не пересоздаётся: props остаются живыми, DOM, введённый текст и focus сохраняются. При этом у ViewModel вызывается `updated()`, а light-компоненты без ViewModel обновляются через `update()` с восстановлением focus. Пересоздание происходит только при смене компонента маршрута или при смене `key`.
 
@@ -385,7 +385,7 @@ try {
 }
 ```
 
-`MemoryHistory` детерминирован на сервере; `Link` отдаёт обычные `href`, `RouterView` рендерит matched-компонент, включая view-компоненты с ViewModel, получающие `IRouter` из DI. На клиенте создайте `BrowserHistory` и тот же набор route-классов. Роутер попадает в глобальный реестр `Router.current()` только после `start()`, поэтому в SSR его нужно освобождать в `finally` через `router.dispose()` — иначе реестр будет расти от запроса к запросу.
+`MemoryHistory` детерминирован на сервере; `Link` отдаёт обычные `href`, `RouterView` рендерит matched-компонент, включая view-компоненты с ViewModel, получающие `IRouter` из DI. На клиенте создайте `BrowserHistory` и тот же набор route-классов. В серверном рендере `Link` и `RouterView` не используют реестр `Router.current()`: передайте `router` prop или зарегистрируйте роутер в контейнере (`new Router({ container })`/`router.provide(container)`), иначе бросается `RouterMissingError`. Для изоляции запросов всё равно освобождайте роутер в `finally` через `router.dispose()` — это снимает подписки, отменяет навигацию и освобождает собственную историю.
 
 `RouterView` можно гидрировать: на клиенте он находит свой серверный маркер `silent-router-view`, удаляет прежнюю серверную разметку маршрута и рендерит matched-компонент заново в это место. Это сохраняет корректность DOM, но не адоптирует узлы маршрута; для SSR-приложений это компромисс между простотой и точным сохранением узлов.
 

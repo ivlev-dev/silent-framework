@@ -253,7 +253,7 @@ describe("Link", () => {
     const prefetch = vi.spyOn(router, "prefetch");
     setServerMode(true);
     try {
-      mount(() => Link({ to: "/lazy-server", prefetch: "visible", children: "lazy" }));
+      mount(() => Link({ to: "/lazy-server", router, prefetch: "visible", children: "lazy" }));
       await tick();
     } finally {
       setServerMode(false);
@@ -406,6 +406,26 @@ describe("Link", () => {
     expect(() => Link({ to: "/", children: "x" })).toThrow(RouterMissingError);
   });
 
+  it("в серверном рендере не откатывается к Router.current", async () => {
+    const { router } = setup();
+    await router.start();
+    expect(Router.current()).toBe(router);
+    setServerMode(true);
+    try {
+      let error: unknown;
+      try {
+        mount(() => Link({ to: "/about", children: "О нас" }));
+      } catch (caught) {
+        error = caught;
+      }
+      expect(error).toBeInstanceOf(RouterMissingError);
+      expect((error as Error).message).toMatch(/серверном рендере/);
+      expect((error as Error).message).toMatch(/Router\.current\(\) на сервере не используется/);
+    } finally {
+      setServerMode(false);
+    }
+  });
+
   it.each([
     "javascript:alert(1)",
     "JavaScript:alert(1)",
@@ -551,6 +571,42 @@ describe("Link", () => {
       );
       expect(host.querySelector("a")?.getAttribute("href")).toBe("/one/about");
     } finally {
+      container.dispose();
+    }
+  });
+
+  it("в серверном рендере использует router из контейнера, а не Router.current", async () => {
+    const routes: readonly RouteRecord[] = [
+      { path: "/", name: "home", component: leaf("home") },
+      { path: "/about", name: "about", component: leaf("about") },
+    ];
+    const fromContainer = track(new Router({
+      routes,
+      base: "/one",
+      history: createMemoryHistory("/about"),
+    }));
+    await fromContainer.start();
+    const current = track(new Router({
+      routes,
+      base: "/two",
+      history: createMemoryHistory("/about"),
+    }));
+    await current.start();
+    expect(Router.current()).toBe(current);
+
+    const container = new Container();
+    container.bindValue(Router, fromContainer);
+    setServerMode(true);
+    try {
+      const { host } = mount(
+        () => Link({ to: "/about", children: "О нас" }),
+        { container },
+      );
+      const anchor = host.querySelector("a");
+      expect(anchor?.getAttribute("href")).toBe("/one/about");
+      expect(anchor?.getAttribute("aria-current")).toBe("page");
+    } finally {
+      setServerMode(false);
       container.dispose();
     }
   });

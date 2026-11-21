@@ -122,8 +122,8 @@ export function getDefaultPreloader(): Preloader | null {
 export function withRuntimeOptions<T>(options: RuntimeOptions, fn: () => T): T {
   const previous = currentRuntimeOptions;
   // Stale-инстансы light-компонентов могут хранить уже освобождённый view-
-  // контейнер. Не устанавливаем его как амбиентный: владелец/роутер сам
-  // передаст актуальный контейнер или использует Router.current() в SSR.
+  // контейнер. Освобождённый контейнер не устанавливается амбиентным:
+  // актуальный контейнер передаёт владелец/роутер.
   const effective: RuntimeOptions = isDisposedContainer(options.container)
     ? { ...options, container: undefined }
     : options;

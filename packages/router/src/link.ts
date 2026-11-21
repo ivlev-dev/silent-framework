@@ -52,6 +52,11 @@ function resolveRouter(router: IRouter | undefined): IRouter {
       "Link не нашёл Router в контейнере: передайте router или зарегистрируйте Router",
     );
   }
+  if (isServerMode()) {
+    throw new RouterMissingError(
+      "Link требует Router в серверном рендере: передайте router или зарегистрируйте Router в контейнере; Router.current() на сервере не используется",
+    );
+  }
   const resolved = Router.current();
   if (resolved === null) {
     throw new RouterMissingError("Link требует Router: передайте router или создайте экземпляр");
