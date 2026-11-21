@@ -18,6 +18,8 @@ export interface ArrayStateHost {
   clearExternal(name: string): void;
   invalidateProps(name: string): void;
   ensureCanBind(item: Form, name: string, index: number): void;
+  createItem(name: string): Form | undefined;
+  hasFactory(name: string): boolean;
 }
 
 export function arrayItems(
@@ -124,27 +126,46 @@ export function setArrayValues(
   entries: readonly unknown[],
 ): void {
   const items = requireArrayItems(host, name);
-  const limit = Math.min(items.length, entries.length);
-  const next = [...items];
+  const canResize = host.hasFactory(name);
+  const desired = canResize ? entries.length : items.length;
+  const next: Form[] = items.slice(0, desired);
   const removed: Form[] = [];
-  let replaced = false;
+  let structural = entries.length !== items.length && canResize;
   let changed = false;
-  for (let index = 0; index < limit; index += 1) {
+  for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index];
-    const current = items[index]!;
+    if (index >= desired) {
+      break;
+    }
+    const current = index < items.length ? items[index]! : undefined;
     if (isNestedForm(entry)) {
       if (entry === current) {
         continue;
       }
       host.ensureCanBind(entry, name, index);
+      if (current !== undefined) {
+        removed.push(current);
+      }
       next[index] = entry;
-      removed.push(current);
-      replaced = true;
+      structural = true;
       changed = true;
       continue;
     }
     if (isPlainObject(entry)) {
-      current.setValues(entry);
+      if (current !== undefined) {
+        current.setValues(entry);
+        changed = true;
+        continue;
+      }
+      const created = host.createItem(name);
+      if (created === undefined) {
+        throw new TypeError(
+          `Нельзя создать элемент "${name}[${index}]" без фабрики массива`,
+        );
+      }
+      created.setValues(entry);
+      next[index] = created;
+      structural = true;
       changed = true;
       continue;
     }
@@ -152,8 +173,18 @@ export function setArrayValues(
       `Элемент "${name}[${index}]" должен быть Form или plain-объектом`,
     );
   }
-  if (replaced) {
+  if (canResize) {
+    for (let index = desired; index < items.length; index += 1) {
+      removed.push(items[index]!);
+    }
+  }
+  if (structural) {
     commitArray(host, name, next, removed);
+    for (const item of removed) {
+      if (!isBaselineArrayItem(host, item)) {
+        item.dispose();
+      }
+    }
   } else if (changed) {
     host.invalidateValidation();
     host.markDirty(name);

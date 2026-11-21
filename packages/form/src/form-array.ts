@@ -9,6 +9,7 @@ export interface FormArrayHost {
   arrayErrors(name: string): Readonly<Record<string, readonly string[]>>;
   isTouched(name: string): boolean;
   isDirtyField(name: string): boolean;
+  createItem(name: string): Form | undefined;
   ensureCanBind(item: Form, name: string, index: number): void;
   commit(name: string, next: Form[], removed: Form[]): void;
   isBaseline(item: Form): boolean;
@@ -19,8 +20,12 @@ export function createFieldArray<T extends Form>(
   name: string,
 ): FormArray<T> {
   const requireItems = (): Form[] => host.requireItems(name);
-  const arrayErrors = (): Readonly<Record<string, readonly string[]>> =>
-    host.arrayErrors(name);
+  const arrayErrors = (): Readonly<Record<string, readonly string[]>> => {
+    const own = host.directErrors(name);
+    const children = host.arrayErrors(name);
+    return own.length > 0 ? { [name]: own, ...children } : children;
+  };
+  const ownErrors = (): readonly string[] => host.directErrors(name);
   return {
     get items() {
       return requireItems() as unknown as readonly T[];
@@ -30,6 +35,9 @@ export function createFieldArray<T extends Form>(
     },
     get errors() {
       return arrayErrors();
+    },
+    get ownErrors() {
+      return ownErrors();
     },
     get isReady() {
       return (
@@ -47,10 +55,22 @@ export function createFieldArray<T extends Form>(
       return requireItems()[index] as T | undefined;
     },
     add(item) {
-      return insert(host, name, requireItems().length, item) as T;
+      const created = item ?? host.createItem(name);
+      if (created === undefined) {
+        throw new Error(
+          `Нет фабрики элементов для массива "${name}": передайте item или @Field({ array: () => new ItemForm() })`,
+        );
+      }
+      return insert(host, name, requireItems().length, created) as T;
     },
     insert(index, item) {
-      return insert(host, name, index, item) as T;
+      const created = item ?? host.createItem(name);
+      if (created === undefined) {
+        throw new Error(
+          `Нет фабрики элементов для массива "${name}": передайте item или @Field({ array: () => new ItemForm() })`,
+        );
+      }
+      return insert(host, name, index, created) as T;
     },
     remove(index) {
       const items = requireItems();

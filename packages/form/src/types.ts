@@ -155,18 +155,20 @@ export interface FormArray<T extends Form> {
   readonly items: readonly T[];
   /** Количество элементов. */
   readonly length: number;
-  /** Ошибки элементов по плоским путям (`items[0].name`). */
+  /** Ошибки элементов по плоским путям (`items[0].name`) и самого поля `items`. */
   readonly errors: Readonly<Record<string, readonly string[]>>;
+  /** Ошибки уровня поля `items` (правила массива). */
+  readonly ownErrors: readonly string[];
   /** Все элементы готовы к отправке. */
   readonly isReady: boolean;
   /** Хотя бы один элемент изменён. */
   readonly isDirty: boolean;
   /** Элемент по индексу. */
   at(index: number): T | undefined;
-  /** Добавить элемент в конец. */
-  add(item: T): T;
-  /** Вставить элемент по индексу. */
-  insert(index: number, item: T): T;
+  /** Добавить элемент в конец (без аргумента — из фабрики). */
+  add(item?: T): T;
+  /** Вставить элемент по индексу (без аргумента — из фабрики). */
+  insert(index: number, item?: T): T;
   /** Удалить и освободить элемент. */
   remove(index: number): void;
   /** Переместить элемент. */

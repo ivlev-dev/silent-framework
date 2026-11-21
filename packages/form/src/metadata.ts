@@ -7,6 +7,13 @@ import {
 } from "@ivlev-dev/silent-validation";
 import type { RuleDecorator, RuleOptions } from "@ivlev-dev/silent-validation";
 import type { ValidateOnMode } from "./types.js";
+import type { Form } from "./form.js";
+
+/** Опции `@Field()`/`@FormField()`. */
+export interface FieldOptions {
+  /** Фабрика элементов для поля-массива форм. */
+  readonly array?: (() => Form) | undefined;
+}
 
 /**
  * Предикат условия поля. Двухвариантная сигнатура позволяет передавать
@@ -26,6 +33,8 @@ export interface FieldMetadata {
   readonly optional?: boolean | undefined;
   readonly when?: FormPredicate | undefined;
   readonly validateOn?: readonly ValidateOnMode[] | undefined;
+  /** Фабрика элементов поля-массива. */
+  readonly arrayFactory?: (() => Form) | undefined;
   /** Поле объявлено через `@Field()`/`@FormField()`. */
   readonly reactive?: boolean | undefined;
 }
@@ -126,6 +135,7 @@ function installMetadata(
     optional: patch.optional ?? previous?.optional,
     when: patch.when ?? previous?.when,
     validateOn: patch.validateOn ?? previous?.validateOn,
+    arrayFactory: patch.arrayFactory ?? previous?.arrayFactory,
     reactive: patch.reactive ?? previous?.reactive,
   };
   fields.set(name, next);
@@ -158,11 +168,14 @@ type FieldDecorator = <C extends object, V>(
  * Реактивное поле формы: семантика `@reactive` из core плюс регистрация
  * поля в метаданных формы.
  */
-export function Field(): FieldDecorator {
+export function Field(options?: FieldOptions): FieldDecorator {
   return ((target: ClassAccessorDecoratorTarget<object, unknown>, context: ClassAccessorDecoratorContext<object, unknown>) => {
     const name = accessorName(context, "Field");
     context.addInitializer(function (this: object): void {
-      initializeField(this, name, { reactive: true });
+      initializeField(this, name, {
+        reactive: true,
+        ...(options?.array === undefined ? {} : { arrayFactory: options.array }),
+      });
     });
     const base = reactive(target, context);
     return {
@@ -182,8 +195,8 @@ export function Field(): FieldDecorator {
 }
 
 /** Синоним `@Field()` для вложенной формы. */
-export function FormField(): FieldDecorator {
-  return Field();
+export function FormField(options?: FieldOptions): FieldDecorator {
+  return Field(options);
 }
 
 /** Подпись поля: используется в UI и в сообщениях валидатора. */

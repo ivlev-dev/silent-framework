@@ -20,6 +20,14 @@
 - Эталон для `reset()` снимается после завершения конструкции (микрозадача + fallback), клонируется глубоко; `reset()` каждый раз пишет свежую копию (`Map`/`Set`/`Date`, массивы, plain-объекты). `values` — такой же снимок-копия.
 - Ошибки с bracket-путями (`tags[0]`) принадлежат полю `tags` в `getFieldProps` и корректно снимаются после исправления.
 
+### Форма: продуктовые возможности
+
+- Массивы v2: `@Field({ array: () => new ItemForm() })`/`@FormField(...)`, `getFieldArray(path, factory?)`, `add()/insert()` без аргумента через фабрику, `setValues` согласует длину при наличии фабрики, `FormArray.ownErrors` и ошибки корня в `errors`.
+- `FormWizard` (`validateStep`, `next/back/goTo`, `validateAll`, `values`); wizard не владеет шагами.
+- Dirty-guard: `onDirtyChange`, `createDirtyGuard` (router), `beforeUnloadGuard` (SSR-safe, `beforeunload` только пока dirty).
+- `uploadField` — file-helper с `setReady`, `AbortSignal` и `progress`.
+- Документация: массивы v2, wizard, guards, upload; undo/redo/drag&drop API не добавлены (паттерн через `move`).
+
 ### Форма: декомпозиция
 
 - Внутренние обязанности вынесены из `form.ts`: `errors.ts` (карты ошибок, индекс по корню, замена ошибок поля), `field-props.ts` (фабрики `FieldProps` для direct/nested/array), `form-array.ts` (`FormArray` и операции), `array-state.ts` (baseline/commit/restore/lookup массивов), `state.ts` (агрегаты и флаги touched/dirty/ready/validating), `validation.ts` (оркестрация проверок и опции), `nested.ts` (владение, привязка, `syncChildren`, id-контекст), `utils.ts` (чистые утилиты). Публичный API не менялся.

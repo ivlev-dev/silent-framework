@@ -12,7 +12,8 @@
 - Метаданные для UI: `@Label`, `@Placeholder`, `@Hint`, `@Required`, `@Optional`, `@ValidateIf`, `@ValidateOn`.
 - Все правила `@ivlev-dev/silent-validation` доступны без дополнительной настройки.
 - Вложенные формы (`@FormField()`) связываются автоматически: значения, ошибки и `isReady` агрегируются; `validateOnSubmit: false` рекурсивно проверяет `@ValidateOn("submit")` на любой глубине; `dispose()` рекурсивно освобождает детей.
-- Массивы повторяемых форм: `getFieldArray("items")` (`add/insert/remove/move/clear`, `values`/`errors`/`isReady`/`isDirty`), плоские пути `items[0].city`.
+- Массивы повторяемых форм: `getFieldArray("items")`, фабрика `@Field({ array })`, `add()/insert()` без аргумента, resize через `setValues`, `ownErrors`; плоские пути `items[0].city`.
+- `FormWizard`, dirty-guard (`onDirtyChange`/`createDirtyGuard`/`beforeUnloadGuard`) и `uploadField`.
 - `Form extends ValidationModel`: схемная проверка типов из плагина `validation()`, `validate({types:false})` её отключает.
 - Режимы проверки: `change`, `input`, `blur`, `submit`, `none`, для поля и для формы; параллельные `validate()`/`validateField()` дедуплицируются, изменение значения инвалидирует устаревший прогон.
 - `validate(options?)`/`validateField(field, options?)` принимают `ValidationOptions` (`groups`, `cascade`, `stopAtFirst`, `types`, `locale`, `labels`).
@@ -159,7 +160,7 @@ class OrderForm extends Form {
 
 const form = new OrderForm();
 const items = form.getFieldArray("items");
-const item = items.add(new ItemForm());
+const item = items.add(); // фабрика @Field({ array: () => new ItemForm() })
 items.insert(0, new ItemForm());
 items.move(0, 1);
 items.remove(0);
@@ -168,7 +169,7 @@ form.values.items;  // [{ name: "", city: "" }]
 item.getFieldProps("city").id; // "OrderForm-items[0].city"
 ```
 
-Элементы — экземпляры `Form`, один экземпляр — один родитель/путь. `remove`/`clear` освобождают добавленные элементы; эталонные остаются живыми до `dispose()` и восстанавливаются `reset()`. `setValues({ items: [...] })` обновляет только существующие элементы и не расширяет массив.
+Элементы — экземпляры `Form`, один экземпляр — один родитель/путь. `@Field({ array })` задаёт фабрику для `add()/insert()` и resize через `setValues` (создаёт недостающие, удаляет лишние); `ownErrors` — ошибки самого поля `items`. `remove`/`clear` освобождают добавленные элементы; эталонные остаются живыми до `dispose()` и восстанавливаются `reset()`.
 
 ## `setErrors`
 
@@ -192,6 +193,33 @@ stop();
 ```
 
 Обработчик вызывается после изменений с debounce, только для `isDirty` и валидной формы; `validate:true` сначала запускает `validate()`.
+
+## Wizard и guards
+
+```ts
+const wizard = new FormWizard([step1, step2], { validateStep: true });
+await wizard.next();
+wizard.back();
+await wizard.goTo(1);
+wizard.dispose(); // шаги не освобождаются
+
+const stop = onDirtyChange(form, (dirty) => console.log(dirty));
+const guard = createDirtyGuard(form);
+const stopUnload = beforeUnloadGuard(form);
+```
+
+`next()` валидирует текущий шаг и не переходит при ошибках; `goTo` валидирует только при движении вперёд. `beforeUnloadGuard` слушает `beforeunload` только пока dirty и SSR-safe.
+
+## Загрузка файла
+
+```ts
+await uploadField(form, "avatar", file, async (file, { signal, onProgress }) => {
+  onProgress(50);
+  return api.upload(file, { signal });
+});
+```
+
+Поле помечается неготовым на время загрузки, результат пишется в `setValue`.
 
 ## Серверные ошибки
 
@@ -242,7 +270,7 @@ await form.onSubmit(async (submitted) => {
 - `reset()` восстанавливает эталон, снятый после создания экземпляра; прямые присваивания до первого обращения/микрозадачи считаются частью конструкции.
 - `@ValidateOn("none")` отключает автоматическую проверку по событиям; явные `validate()`/`validateField()` работают всегда.
 - Вложенность определяется по `instanceof Form`; при конфликте владения `setValues`/`reset` не меняют текущее значение.
-- Массив форм — массив экземпляров `Form`; `setValues` не создаёт новые элементы и не расширяет массив; `remove`/`clear` не освобождают эталонные элементы (они живут до `dispose()` и возвращаются `reset()`).
+- Массив форм — массив экземпляров `Form`; без фабрики `setValues` не создаёт новые элементы и не расширяет массив; `remove`/`clear` не освобождают эталонные элементы (они живут до `dispose()` и возвращаются `reset()`).
 - Схемная проверка работает только при наследовании `ValidationModel` и наличии схемы от плагина `validation()`; `types:false` её отключает.
 - `FieldPath` видит все публичные не-методы класса (включая `@computed`-геттеры), но `getFieldProps` работает только для полей, отмеченных декоратором формы; nullable/union-поля дают только верхний ключ без вложенных путей.
 - `@ValidateIf` с async-предикатом: `isReady` оптимистичен (thenable считается неактивным), окончательное решение — за `validate()`/submit.

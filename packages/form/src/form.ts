@@ -205,6 +205,7 @@ export abstract class Form extends ValidationModel {
   private readonly initialValues = new Map<string, unknown>();
   private readonly children = new Map<string, FormInstance>();
   private readonly arrayChildren = new Map<string, FormInstance[]>();
+  private readonly arrayFactories = new Map<string, () => FormInstance>();
   private readonly propsCache = new Map<string, FieldProps<unknown>>();
   private readonly validationTokens = new Map<string, number>();
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -303,6 +304,10 @@ export abstract class Form extends ValidationModel {
         this.commitArray(name, next, removed);
       },
       isBaseline: (item) => this.isBaselineArrayItem(item),
+      createItem: (name) => {
+        const factory = this.arrayFactories.get(name) ?? this.metadata.get(name)?.arrayFactory;
+        return factory?.() as FormInstance | undefined;
+      },
     };
     this.validationHost = {
       instance: this,
@@ -454,6 +459,12 @@ export abstract class Form extends ValidationModel {
       ensureCanBind: (item, name, index) => {
         item.ensureCanBind(asInstance(self), `${name}[${index}]`);
       },
+      createItem: (name) => {
+        const factory = self.arrayFactories.get(name) ?? self.metadata.get(name)?.arrayFactory;
+        return factory?.() as FormInstance | undefined;
+      },
+      hasFactory: (name) =>
+        self.arrayFactories.has(name) || self.metadata.get(name)?.arrayFactory !== undefined,
     };
     registerValidationInvalidator(this, () => this.invalidateValidation());
     registerFieldBinder(this, (name, value) => this.bindInitialField(name, value));
@@ -533,9 +544,13 @@ export abstract class Form extends ValidationModel {
    */
   getFieldArray<K extends ArrayFieldPath<this>>(
     field: K,
+    factory?: () => ArrayItemOf<this, K>,
   ): FormArray<ArrayItemOf<this, K>> {
     const name = field as string;
     this.ensureInitialized();
+    if (factory !== undefined) {
+      this.arrayFactories.set(name, factory as () => FormInstance);
+    }
     this.ensureArrayItems(name);
     return createFieldArray<Form>(this.arrayHost, name) as unknown as FormArray<
       ArrayItemOf<this, K>
@@ -828,7 +843,12 @@ export abstract class Form extends ValidationModel {
         throw this.unknownFieldError(name);
       }
       const current = this.readOwnValue(name);
-      if (Array.isArray(value) && this.arrayChildren.has(name)) {
+      if (
+        Array.isArray(value) &&
+        (this.arrayChildren.has(name) ||
+          this.metadata.get(name)?.arrayFactory !== undefined)
+      ) {
+        this.ensureArrayItems(name);
         this.setArrayValues(name, value);
         continue;
       }

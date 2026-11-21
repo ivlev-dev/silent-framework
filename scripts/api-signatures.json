@@ -1012,10 +1012,28 @@
         "kind": "type",
         "signature": "export type ArrayFieldPath<T> = [T] extends [never] ? never : { [K in keyof T & string]: K extends FormMemberKey ? never : T[K] extends (...args: never[]) => unknown ? never : T[K] extends readonly (infer U)[] ? NonNullable<U> extends Form ? K : never : never; }[keyof T & string];"
       },
+      "beforeUnloadGuard": {
+        "kind": "function",
+        "type": "(form: Form, options?: { readonly message?: string; }) => () => void",
+        "signature": "export declare function beforeUnloadGuard(form: Form, options?: { readonly message?: string; }): () => void;"
+      },
+      "createDirtyGuard": {
+        "kind": "function",
+        "type": "(form: Form, options?: { readonly message?: string; }) => DirtyGuard",
+        "signature": "export declare function createDirtyGuard(form: Form, options?: { readonly message?: string; }): DirtyGuard;"
+      },
+      "DirtyGuard": {
+        "kind": "interface",
+        "signature": "export interface DirtyGuard { readonly isDirty: boolean; canLeave(): boolean; dispose(): void; }"
+      },
       "Field": {
         "kind": "function",
-        "type": "() => <C extends object, V>(target: ClassAccessorDecoratorTarget<C, V>, context: ClassAccessorDecoratorContext<C, V>) => ClassAccessorDecoratorResult<C, V>",
-        "signature": "export declare function Field(): FieldDecorator;"
+        "type": "(options?: FieldOptions) => <C extends object, V>(target: ClassAccessorDecoratorTarget<C, V>, context: ClassAccessorDecoratorContext<C, V>) => ClassAccessorDecoratorResult<C, V>",
+        "signature": "export declare function Field(options?: FieldOptions): FieldDecorator;"
+      },
+      "FieldOptions": {
+        "kind": "interface",
+        "signature": "export interface FieldOptions { /** Фабрика элементов для поля-массива форм. */ readonly array?: (() => Form) | undefined; }"
       },
       "FieldPath": {
         "kind": "type",
@@ -1027,20 +1045,24 @@
       },
       "Form": {
         "kind": "class",
-        "signature": "export declare abstract class Form extends ValidationModel { constructor(options?: FormOptions); get isReady(): boolean; get isValid(): boolean; get isDirty(): boolean; get isSubmitting(): boolean; get errors(): Readonly<Record<string, readonly string[]>>; get values(): Record<string, unknown>; getFieldArray<K extends ArrayFieldPath<this>>(field: K): FormArray<ArrayItemOf<this, K>>; getFieldProps<K extends FieldPath<this>>(field: K): FieldProps<FieldValue<this, K>>; validateField(field: FieldPath<this>, options?: ValidationOptions): Promise<boolean>; validate(options?: ValidationOptions): Promise<boolean>; onSubmit(callback: (form: this) => unknown | Promise<unknown>): (event?: { preventDefault?: () => void; }) => Promise<void>; setFieldErrors(field: FieldPath<this>, errors: string | readonly (string | { readonly message: string; })[]): void; setErrors(errors: Readonly<Record<string, string | readonly string[]>>): void; clearFieldErrors(field?: FieldPath<this>): void; autoSave(handler: (form: this) => unknown | Promise<unknown>, options?: { readonly debounceMs?: number; readonly validate?: boolean; }): () => void; setValues(values: SetValuesInput<this>): void; reset(): void; dispose(): void; }"
+        "signature": "export declare abstract class Form extends ValidationModel { constructor(options?: FormOptions); get isReady(): boolean; get isValid(): boolean; get isDirty(): boolean; get isSubmitting(): boolean; get errors(): Readonly<Record<string, readonly string[]>>; get values(): Record<string, unknown>; getFieldArray<K extends ArrayFieldPath<this>>(field: K, factory?: () => ArrayItemOf<this, K>): FormArray<ArrayItemOf<this, K>>; getFieldProps<K extends FieldPath<this>>(field: K): FieldProps<FieldValue<this, K>>; validateField(field: FieldPath<this>, options?: ValidationOptions): Promise<boolean>; validate(options?: ValidationOptions): Promise<boolean>; onSubmit(callback: (form: this) => unknown | Promise<unknown>): (event?: { preventDefault?: () => void; }) => Promise<void>; setFieldErrors(field: FieldPath<this>, errors: string | readonly (string | { readonly message: string; })[]): void; setErrors(errors: Readonly<Record<string, string | readonly string[]>>): void; clearFieldErrors(field?: FieldPath<this>): void; autoSave(handler: (form: this) => unknown | Promise<unknown>, options?: { readonly debounceMs?: number; readonly validate?: boolean; }): () => void; setValues(values: SetValuesInput<this>): void; reset(): void; dispose(): void; }"
       },
       "FormArray": {
         "kind": "interface",
-        "signature": "export interface FormArray<T extends Form> { /** Текущие элементы. */ readonly items: readonly T[]; /** Количество элементов. */ readonly length: number; /** Ошибки элементов по плоским путям (`items[0].name`). */ readonly errors: Readonly<Record<string, readonly string[]>>; /** Все элементы готовы к отправке. */ readonly isReady: boolean; /** Хотя бы один элемент изменён. */ readonly isDirty: boolean; /** Элемент по индексу. */ at(index: number): T | undefined; /** Добавить элемент в конец. */ add(item: T): T; /** Вставить элемент по индексу. */ insert(index: number, item: T): T; /** Удалить и освободить элемент. */ remove(index: number): void; /** Переместить элемент. */ move(from: number, to: number): void; /** Удалить и освободить все элементы. */ clear(): void; }"
+        "signature": "export interface FormArray<T extends Form> { /** Текущие элементы. */ readonly items: readonly T[]; /** Количество элементов. */ readonly length: number; /** Ошибки элементов по плоским путям (`items[0].name`) и самого поля `items`. */ readonly errors: Readonly<Record<string, readonly string[]>>; /** Ошибки уровня поля `items` (правила массива). */ readonly ownErrors: readonly string[]; /** Все элементы готовы к отправке. */ readonly isReady: boolean; /** Хотя бы один элемент изменён. */ readonly isDirty: boolean; /** Элемент по индексу. */ at(index: number): T | undefined; /** Добавить элемент в конец (без аргумента — из фабрики). */ add(item?: T): T; /** Вставить элемент по индексу (без аргумента — из фабрики). */ insert(index: number, item?: T): T; /** Удалить и освободить элемент. */ remove(index: number): void; /** Переместить элемент. */ move(from: number, to: number): void; /** Удалить и освободить все элементы. */ clear(): void; }"
       },
       "FormField": {
         "kind": "function",
-        "type": "() => <C extends object, V>(target: ClassAccessorDecoratorTarget<C, V>, context: ClassAccessorDecoratorContext<C, V>) => ClassAccessorDecoratorResult<C, V>",
-        "signature": "export declare function FormField(): FieldDecorator;"
+        "type": "(options?: FieldOptions) => <C extends object, V>(target: ClassAccessorDecoratorTarget<C, V>, context: ClassAccessorDecoratorContext<C, V>) => ClassAccessorDecoratorResult<C, V>",
+        "signature": "export declare function FormField(options?: FieldOptions): FieldDecorator;"
       },
       "FormOptions": {
         "kind": "interface",
         "signature": "export interface FormOptions { /** Валидировать поле при событии `change`. По умолчанию `true`. */ readonly validateOnChange?: boolean; /** Валидировать поле при событии `blur`. По умолчанию `true`. */ readonly validateOnBlur?: boolean; /** Валидировать поле при событии `input`. По умолчанию `false`. */ readonly validateOnInput?: boolean; /** Валидировать форму при отправке. По умолчанию `true`. */ readonly validateOnSubmit?: boolean; /** Валидировать форму при инициализации. По умолчанию `false`. */ readonly validateOnInit?: boolean; /** Валидировать вложенные формы при полной проверке. По умолчанию `true`. */ readonly validateNested?: boolean; /** Задержка автоматической валидации поля в миллисекундах. По умолчанию `0`. */ readonly debounceMs?: number; /** Очищать внешние (серверные) ошибки поля при изменении значения. По умолчанию `true`. */ readonly clearExternalErrorsOnChange?: boolean; /** Префикс для DOM-идентификаторов полей. */ readonly formId?: string; /** Ярлыки полей: `имя поля или путь → подпись`. */ readonly labels?: Readonly<Record<string, string>>; /** Обработчик ошибок валидации, отправки и пользовательского колбэка. */ readonly onError?: (error: unknown) => void; }"
+      },
+      "FormWizard": {
+        "kind": "class",
+        "signature": "export declare class FormWizard { constructor(stepList: readonly Form[], options?: WizardOptions); get steps(): readonly Form[]; get index(): number; get current(): Form; get isFirst(): boolean; get isLast(): boolean; get isReady(): boolean; get isDirty(): boolean; get errors(): Readonly<Record<string, readonly string[]>>; validateStep(index?: number): Promise<boolean>; validateAll(): Promise<boolean>; next(): Promise<boolean>; back(): void; goTo(index: number): Promise<boolean>; values(): Record<string, unknown>; dispose(): void; }"
       },
       "Hint": {
         "kind": "function",
@@ -1051,6 +1073,11 @@
         "kind": "function",
         "type": "(label: string) => RuleDecorator",
         "signature": "export declare function Label(label: string): RuleDecorator;"
+      },
+      "onDirtyChange": {
+        "kind": "function",
+        "type": "(form: Form, listener: (dirty: boolean) => void) => () => void",
+        "signature": "export declare function onDirtyChange(form: Form, listener: (dirty: boolean) => void): () => void;"
       },
       "Optional": {
         "kind": "function",
@@ -1067,6 +1094,19 @@
         "type": "(options?: RuleOptions) => RuleDecorator",
         "signature": "export declare function Required(options?: RuleOptions): RuleDecorator;"
       },
+      "UploadContext": {
+        "kind": "interface",
+        "signature": "export interface UploadContext { readonly signal: AbortSignal | undefined; readonly onProgress: (progress: number) => void; }"
+      },
+      "uploadField": {
+        "kind": "function",
+        "type": "<T>(form: Form, path: string, file: File, uploader: (file: File, context: UploadContext) => Promise<T>, options?: UploadOptions) => Promise<T>",
+        "signature": "export declare function uploadField<T>(form: Form, path: string, file: File, uploader: (file: File, context: UploadContext) => Promise<T>, options?: UploadOptions): Promise<T>;"
+      },
+      "UploadOptions": {
+        "kind": "interface",
+        "signature": "export interface UploadOptions { readonly signal?: AbortSignal | undefined; readonly onProgress?: ((progress: number) => void) | undefined; }"
+      },
       "ValidateIf": {
         "kind": "function",
         "type": "(predicate: FormPredicate) => RuleDecorator",
@@ -1080,6 +1120,10 @@
       "ValidateOnMode": {
         "kind": "type",
         "signature": "export type ValidateOnMode = \"change\" | \"input\" | \"blur\" | \"submit\" | \"none\";"
+      },
+      "WizardOptions": {
+        "kind": "interface",
+        "signature": "export interface WizardOptions { /** Валидировать текущий шаг перед движением вперёд. По умолчанию `true`. */ readonly validateStep?: boolean; }"
       }
     },
     "@ivlev-dev/silent-reactivity": {

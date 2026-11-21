@@ -100,28 +100,31 @@ class ItemForm extends Form {
 }
 
 class OrderForm extends Form {
-  @Field() public accessor items: ItemForm[] = [];
+  @Field({ array: () => new ItemForm() })
+  public accessor items: ItemForm[] = [];
 }
 
 const form = new OrderForm();
 const items = form.getFieldArray("items");
 
+items.add();          // создать через фабрику @Field({ array })
+items.insert(0);      // вставить через фабрику
 items.add(new ItemForm());
-items.insert(0, new ItemForm());
 items.move(0, 1);
 items.remove(0);
 items.clear();
 
 items.length;  // количество
 items.at(0);   // ItemForm | undefined
-items.errors;  // { "items[0].name": [...] }
-items.isReady; // все элементы готовы
+items.errors;    // { items: [...], "items[0].name": [...] }
+items.ownErrors; // ошибки правил самого поля items
+items.isReady;   // все элементы готовы
 items.isDirty; // хотя бы один элемент изменён
 ```
 
 Каждый элемент — экземпляр `Form`, один экземпляр может принадлежать только одному родителю/пути. `add`/`insert` принимают готовый экземпляр; `remove`/`clear` освобождают только добавленные элементы, а эталонные из `initialValues` оставляют живыми (без parent context), чтобы `reset()` мог их вернуть; окончательно эталонные освобождаются в `dispose()` формы. `values` отдаёт массив `child.values`, ошибки — плоские (`items[0].name`), `validate()`/`onSubmit` проверяют элементы параллельно. `id` элемента — `<prefix>-items[0].city`, одинаковый при доступе через родителя и через элемент. `reset()` восстанавливает длину/эталонные ссылки и сбрасывает эталонные элементы; `dispose()` освобождает все элементы.
 
-Ограничение `setValues`: массив обновляет только существующие элементы (Form-экземпляры или plain-объекты для `child.setValues`) и не расширяет решётку.
+`getFieldArray(path, factory?)` запоминает фабрику; `add()`/`insert(index)` без аргумента создают элемент через неё, без фабрики — понятная ошибка. `setValues({ items: [...] })` при наличии фабрики согласует длину: обновляет существующие, создаёт недостающие (Form или partial-объекты), удаляет лишние (эталонные не освобождаются). Без фабрики длина не меняется — обновляются только существующие элементы. Undo/redo и drag&drop API нет; для перестановки используйте `move` (сохраните порядок в своём store для отмены).
 
 ### `Form.setErrors`
 
@@ -146,6 +149,45 @@ stop();
 ```
 
 Вызывает обработчик после изменений с debounce, только если `isDirty` и форма валидна; `validate: true` дополнительно запускает `validate()` перед вызовом. Для `beforeunload` подпишитесь на `isDirty` и `window.addEventListener("beforeunload", ...)` вручную.
+
+### `FormWizard`
+
+```ts
+const wizard = new FormWizard([step1, step2, step3], { validateStep: true });
+await wizard.next();      // валидирует текущий шаг и переходит вперёд
+wizard.back();
+await wizard.goTo(2);     // вперёд — с валидацией текущего шага, назад — без
+await wizard.validateAll();
+wizard.current; wizard.isFirst; wizard.isLast;
+wizard.isReady; wizard.isDirty; wizard.errors; wizard.values();
+wizard.dispose();         // wizard не владеет шагами, формы не освобождаются
+```
+
+Опции `WizardOptions` (`validateStep`, по умолчанию `true`); `next()` не переходит при ошибках. `isReady` — готовность текущего шага, `isDirty` — изменён хотя бы один шаг, `values()` — объект по строковым индексам шагов.
+
+### `onDirtyChange` / `createDirtyGuard` / `beforeUnloadGuard`
+
+```ts
+const stop = onDirtyChange(form, (dirty) => console.log(dirty));
+
+const guard = createDirtyGuard(form);
+router.beforeEach(() => guard.canLeave() || "Есть несохранённые изменения");
+
+const stopUnload = beforeUnloadGuard(form, { message: "Не сохранять?" });
+```
+
+`onDirtyChange` реактивен и возвращает stop. `DirtyGuard` / `canLeave()` — `!isDirty` (без DOM, `message` зарезервирован). `beforeUnloadGuard` добавляет `beforeunload` только пока dirty, SSR-safe (без `window` — no-op).
+
+### `uploadField`
+
+```ts
+await uploadField(form, "avatar", file, async (file, { signal, onProgress }) => {
+  onProgress(50);
+  return api.upload(file, { signal });
+}, { signal, onProgress: (p) => console.log(p) });
+```
+
+Типы `UploadContext` и `UploadOptions`; helper помечает поле неготовым на время загрузки, пишет результат загрузчика в `setValue`, снова помечает готовым; `signal`/`onProgress` прокидываются.
 
 ### `FieldProps`
 
@@ -204,7 +246,7 @@ type ValidateOnMode = "change" | "input" | "blur" | "submit" | "none";
 public accessor email = "";
 ```
 
-Делает accessor реактивным (семантика `@reactive` из core) и регистрирует поле в метаданных формы. Работает вместе с `@computed` и `@watch` из `@ivlev-dev/silent-core`. Поддерживаются только stage-3 `accessor`-поля с публичным строковым именем.
+Делает accessor реактивным (семантика `@reactive` из core) и регистрирует поле в метаданных формы. Опции `FieldOptions` (`array` — фабрика элементов массива) передаются в `@Field()`/`@FormField()`. Работает вместе с `@computed` и `@watch` из `@ivlev-dev/silent-core`. Поддерживаются только stage-3 `accessor`-поля с публичным строковым именем.
 
 **Любое поле формы обязано иметь `@Field()` или `@FormField()`.** Если у поля есть только `@Required`/`@Label`/`@ValidateOn` и т. п., при первом обращении к форме будет брошен `TypeError`. Правила валидатора, навешенные на поле без `@Field`, всё равно проверяются: их ошибки попадают в `errors`/`isValid`, а про отсутствие `@Field` один раз сообщается через `onError` (или `console.warn`).
 
