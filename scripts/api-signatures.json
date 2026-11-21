@@ -626,6 +626,11 @@
         "type": "() => void",
         "signature": "export declare function resetIds(): void;"
       },
+      "resetRuntimeOptions": {
+        "kind": "function",
+        "type": "() => void",
+        "signature": "export declare function resetRuntimeOptions(): void;"
+      },
       "Resource": {
         "kind": "interface",
         "signature": "export interface Resource<T> { readonly data: Accessor<T | undefined>; readonly error: Accessor<unknown>; readonly pending: Accessor<boolean>; readonly status: Accessor<ResourceStatus>; readonly ready: Promise<void>; readonly key: Accessor<unknown>; read(): T | undefined; refetch(): Promise<T | undefined>; set(value: T): void; mutate(updater: (previous: T | undefined) => T): void; abort(reason?: unknown): void; dispose(): void; }"

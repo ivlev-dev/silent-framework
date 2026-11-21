@@ -2,6 +2,7 @@ import { container as rootContainer } from "@ivlev-dev/silent-di";
 import {
   createComponent,
   resetIds,
+  resetRuntimeOptions,
   setMetadataCollector,
   setServerBackend,
   setServerMode,
@@ -58,6 +59,7 @@ export function beginRenderSession(
 ): RenderSession {
   const baseContainer = options.container ?? rootContainer;
   requestSeq += 1;
+  resetRuntimeOptions();
   resetIds();
   const requestScope = baseContainer.createScope(`request:${requestSeq}`);
 
@@ -147,6 +149,7 @@ export function beginRenderSession(
     } finally {
       restore();
       setServerMode(false);
+      resetRuntimeOptions();
     }
 
     if (disposalFailed) {

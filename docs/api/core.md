@@ -296,7 +296,7 @@ interface RuntimeOptions {
 function getRuntimeOptions(): RuntimeOptions;
 ```
 
-Возвращает текущие амбиентные runtime-опции. Используется компилированным кодом (`component`, `lazy`, `Suspense`) и интеграции (`@ivlev-dev/silent-vite`, `@ivlev-dev/silent-server`); в прикладном коде прямое применение не требуется. Если привязанный `container` уже освобождён, он не возвращается: опции считаются пустыми, чтобы компонент не упал с `ContainerDisposedError`.
+Возвращает текущие амбиентные runtime-опции. Используется компилированным кодом (`component`, `lazy`, `Suspense`) и интеграции (`@ivlev-dev/silent-vite`, `@ivlev-dev/silent-server`); в прикладном коде прямое применение не требуется. Если привязанный `container` уже освобождён, он не возвращается и удаляется из owner-опций; в dev-режиме выводится однократное предупреждение, чтобы такие утечки было видно. Owner-опции очищаются при dispose владельца, поэтому освобождённые view-контейнеры не остаются достижимыми между SSR-рендерами. Если привязанный `container` уже освобождён, он не возвращается: опции считаются пустыми, чтобы компонент не упал с `ContainerDisposedError`.
 
 ### `withRuntimeOptions`
 
@@ -307,6 +307,16 @@ function withRuntimeOptions<T>(options: RuntimeOptions, fn: () => T): T;
 ```
 
 Выполняет `fn` с временно установленными амбиентными опциями, не влияя на внешний код; прежние опции восстанавливаются после. Если `options.boundary` задан, `fn` оборачивается границей через `runWithBoundary`.
+
+### `resetRuntimeOptions`
+
+*Стабильность: internal.*
+
+```ts
+function resetRuntimeOptions(): void;
+```
+
+Сбрасывает амбиентные runtime-опции в пустой объект. SSR-сервер вызывает её до и после каждого рендера, поэтому `container`/`onError` одного запроса не влияют на следующий.
 
 ### `getDefaultPreloader`
 

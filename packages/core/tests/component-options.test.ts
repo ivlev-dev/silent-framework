@@ -7,6 +7,7 @@ import {
   withRuntimeOptions,
   type AnyComponent,
 } from "../src/component";
+import { createRoot, getOwner, runWithOwner } from "@ivlev-dev/silent-reactivity";
 import { disposeNode } from "../src/dom";
 import { Container, DI_CREATE } from "@ivlev-dev/silent-di";
 
@@ -184,5 +185,40 @@ describe("component options", () => {
     await flush();
 
     expect(onError).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("runtime options: disposed container", () => {
+  it("не отдаёт освобождённый контейнер как амбиентный", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const disposed = new Container("disposed");
+      disposed.dispose();
+      withRuntimeOptions({ container: disposed }, () => {
+        expect(getRuntimeOptions().container).toBeUndefined();
+      });
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("выбрасывает освобождённый контейнер из owner-опций", () => {
+    const disposed = new Container("disposed-owner");
+    disposed.dispose();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      let result: ReturnType<typeof getRuntimeOptions> | undefined;
+      createRoot(() => {
+        const owner = getOwner();
+        withRuntimeOptions({ container: disposed }, () => {});
+        runWithOwner(owner, () => {
+          result = getRuntimeOptions();
+        });
+      });
+      expect(result?.container).toBeUndefined();
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

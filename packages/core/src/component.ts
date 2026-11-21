@@ -14,6 +14,7 @@ export {
   getReady,
   getRuntimeOptions,
   hasPendingWork,
+  resetRuntimeOptions,
   setDefaultPreloader,
   setErrorHandler,
   setReady,

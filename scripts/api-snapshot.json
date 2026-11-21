@@ -139,6 +139,7 @@
       "ref",
       "registerPropsUpdater",
       "resetIds",
+      "resetRuntimeOptions",
       "Resource",
       "ResourceCache",
       "ResourceFetchContext",

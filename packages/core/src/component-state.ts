@@ -55,13 +55,8 @@ export class ViewRuntimeUnavailableError extends Error {
 let componentCreator: ComponentCreator | null = null;
 let currentRuntimeOptions: RuntimeOptions = {};
 
-export function setComponentCreator(creator: ComponentCreator | null): void {
-  componentCreator = creator;
-}
-
-export function getComponentCreator(): ComponentCreator | null {
-  return componentCreator;
-}
+declare const __SILENT_DEV__: boolean | undefined;
+const DEV = typeof __SILENT_DEV__ === "undefined" || __SILENT_DEV__;
 
 function isDisposedContainer(container: unknown): boolean {
   return (
@@ -71,12 +66,35 @@ function isDisposedContainer(container: unknown): boolean {
   );
 }
 
+export function setComponentCreator(creator: ComponentCreator | null): void {
+  componentCreator = creator;
+}
+
+export function getComponentCreator(): ComponentCreator | null {
+  return componentCreator;
+}
+
 export function getRuntimeOptions(): RuntimeOptions {
   const scoped = findScopedRuntimeOptions();
   const result = scoped ?? currentRuntimeOptions;
-  // Освобождённый контейнер не должен становиться амбиентным: иначе
-  // следующий компонент/рендер упадёт ContainerDisposedError.
-  return isDisposedContainer(result.container) ? {} : result;
+  if (isDisposedContainer(result.container)) {
+    if (DEV) {
+      const name = (result.container as { name?: unknown }).name;
+      console.warn(
+        `[silent] runtime options: освобождённый контейнер "${typeof name === "string" ? name : "?"}" не используется`,
+      );
+    }
+    if (result === currentRuntimeOptions) {
+      currentRuntimeOptions = {};
+    }
+    return {};
+  }
+  return result;
+}
+
+/** Сбрасывает амбиентные runtime-опции (SSR-изоляция). @internal */
+export function resetRuntimeOptions(): void {
+  currentRuntimeOptions = {};
 }
 
 function findScopedRuntimeOptions(): RuntimeOptions | undefined {
