@@ -536,11 +536,16 @@ export class Container {
     }
     this.disposed = true;
 
-    const disposeError = new ContainerDisposedError(this);
+    // Снимаем стек ошибки только когда есть кого прерывать. Error.captureStackTrace
+    // дорог на каждом dispose (заметно в SSR-горячем пути), а сам объект нужен
+    // исключительно для отклонения in-flight промисов.
     const pendingRejectors = [...this.inFlight];
     this.inFlight.clear();
-    for (const reject of pendingRejectors) {
-      reject(disposeError);
+    if (pendingRejectors.length > 0) {
+      const disposeError = new ContainerDisposedError(this);
+      for (const reject of pendingRejectors) {
+        reject(disposeError);
+      }
     }
 
     const errors: unknown[] = [];

@@ -6,10 +6,15 @@ import {
   type ComponentResult,
   type Preloader,
 } from "@ivlev-dev/silent-core";
+import {
+  getRuntimeContextStore,
+  hasRuntimeContextProvider,
+} from "@ivlev-dev/silent-core/runtime-context-provider";
 import type { Container } from "@ivlev-dev/silent-di";
 import { flushSync } from "@ivlev-dev/silent-reactivity";
 import { serializeNode } from "./dom/serializer.js";
 import type { DomNode } from "./dom/types.js";
+import { ensureRuntimeContext } from "./runtime-context.js";
 import { beginRenderSession } from "./session.js";
 
 export interface RenderOptions {
@@ -55,6 +60,24 @@ function abortFailure(): DOMException {
 
 function timeoutFailure(timeoutMs: number): DOMException {
   return new DOMException(`Рендер превысил таймаут ${timeoutMs} мс`, "TimeoutError");
+}
+
+/** Ошибка вложенного рендера. Не экспортируется из пакета: ловится по `name`. */
+export class RenderReentrancyError extends Error {
+  constructor() {
+    super(
+      "Вложенный рендер: renderToString/renderToStream вызван внутри активного рендера; дождитесь завершения внешнего рендера",
+    );
+    this.name = "RenderReentrancyError";
+  }
+}
+
+/**
+ * Рендер внутри уже активного store означал бы ожидание задачи в очереди,
+ * которую держит текущий рендер, то есть deadlock. Возвращает ошибку заранее.
+ */
+export function activeRenderError(): RenderReentrancyError | null {
+  return getRuntimeContextStore() === null ? null : new RenderReentrancyError();
 }
 
 interface SettleControl {
@@ -133,7 +156,18 @@ export function renderToString(
   if (options.signal?.aborted === true) {
     return Promise.reject(abortFailure());
   }
-  return enqueueRenderTask(() => renderOnce(app, options));
+  const nested = activeRenderError();
+  if (nested !== null) {
+    return Promise.reject(nested);
+  }
+  return enqueueRenderTask(async () => {
+    // После первой инициализации провайдер уже зарегистрирован: лишний await
+    // на каждом рендере не нужен (в fallback остаётся прежний путь).
+    if (!hasRuntimeContextProvider()) {
+      await ensureRuntimeContext();
+    }
+    return renderOnce(app, options);
+  });
 }
 
 export async function settleRender(
@@ -189,17 +223,19 @@ async function renderOnce(
   let renderFailed = false;
 
   try {
-    await settleRender(session.result, {
-      signal: options.signal,
-      timeoutMs: options.timeoutMs,
+    await session.run(async () => {
+      await settleRender(session.result, {
+        signal: options.signal,
+        timeoutMs: options.timeoutMs,
+      });
+      session.throwIfFailed();
+      const head = session.serializeHead();
+      const html = serializeNode(
+        session.result.node as unknown as DomNode,
+        options.markers !== false,
+      );
+      rendered = { html, head };
     });
-    session.throwIfFailed();
-    const head = session.serializeHead();
-    const html = serializeNode(
-      session.result.node as unknown as DomNode,
-      options.markers !== false,
-    );
-    rendered = { html, head };
   } catch (error) {
     renderFailed = true;
     renderError = error;

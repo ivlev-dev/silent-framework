@@ -5,6 +5,7 @@
     "rootDir": "src",
     "composite": true,
     "incremental": true,
+    "types": ["node"],
     "tsBuildInfoFile": "./.tsbuildinfo"
   },
   "include": ["src"],

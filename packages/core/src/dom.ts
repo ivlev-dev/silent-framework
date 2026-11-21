@@ -44,6 +44,7 @@ import {
   settleWindow,
 } from "./hydration-cursor.js";
 import { resolvePath } from "./plan-paths.js";
+import { getRuntimeContextStore } from "./runtime-context-provider.js";
 
 
 declare const __SILENT_HYDRATE__: boolean | undefined;
@@ -296,7 +297,13 @@ export function setServerMode(enabled: boolean): void {
 }
 
 export function isServerMode(): boolean {
-  return serverMode;
+  // serverMode выставляется на весь сериализованный рендер (begin/cleanup),
+  // поэтому в SSR это первая и единственная проверка: без похода в async-контекст.
+  if (serverMode) {
+    return true;
+  }
+  const store = getRuntimeContextStore();
+  return store !== null && store.server;
 }
 
 export const propertyNames = new Set<string>(["value", "checked", "selected", "disabled", "indeterminate"]);

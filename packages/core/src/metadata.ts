@@ -1,4 +1,5 @@
 import { onCleanup } from "@ivlev-dev/silent-reactivity";
+import { getRuntimeContextStore } from "./runtime-context-provider.js";
 
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 
@@ -28,18 +29,25 @@ let foreignTitles: Element[] | null = null;
 export function setMetadataCollector(
   next: ((node: Element) => void) | null,
 ): void {
+  const store = getRuntimeContextStore();
+  if (store !== null) {
+    store.metadata = next;
+    return;
+  }
   collector = next;
 }
 
 export function getMetadataCollector(): ((node: Element) => void) | null {
-  return collector;
+  const store = getRuntimeContextStore();
+  return store !== null ? store.metadata : collector;
 }
 
 export function hoistNode(node: Element): () => void {
   node.parentNode?.removeChild(node);
   stripMarkers(node);
-  if (collector !== null) {
-    collector(node);
+  const target = getMetadataCollector();
+  if (target !== null) {
+    target(node);
     return () => {};
   }
   if (node.tagName === "TITLE") {
@@ -117,8 +125,9 @@ function stripMarkers(node: Element): void {
 }
 
 function hoist(node: Element): void {
+  const target = getMetadataCollector();
   const dispose = hoistNode(node);
-  if (collector === null) {
+  if (target === null) {
     onCleanup(dispose);
   }
 }

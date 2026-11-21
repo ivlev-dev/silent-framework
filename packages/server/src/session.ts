@@ -6,10 +6,19 @@ import {
   setMetadataCollector,
   setServerBackend,
   setServerMode,
+  setServerStreamCollector,
   type AnyComponent,
   type ComponentResult,
   type RuntimeOptions,
+  type ServerStreamCollector,
 } from "@ivlev-dev/silent-core";
+import {
+  createRuntimeContextStore,
+  getRuntimeContextProvider,
+  getRuntimeContextStore,
+  hasRuntimeContextProvider,
+  type RuntimeContextStore,
+} from "@ivlev-dev/silent-core/runtime-context-provider";
 import { createRoot } from "@ivlev-dev/silent-reactivity";
 import { createDocument, installDomGlobals } from "./dom/document.js";
 import { acquireParts, pushNode, releaseParts } from "./dom/serializer.js";
@@ -23,6 +32,18 @@ const SERVER_BACKEND = createServerBackend();
 let requestSeq = 0;
 
 function noop(): void {}
+
+function closeRuntimeStore(store: RuntimeContextStore | null): void {
+  if (store === null) {
+    return;
+  }
+  store.active = false;
+  store.options = {};
+  store.metadata = null;
+  store.stream = null;
+  store.pending.clear();
+  store.idCount = 0;
+}
 
 function serializeHead(nodes: readonly Element[], markers: boolean): string {
   if (nodes.length === 0) {
@@ -48,33 +69,44 @@ function serializeHead(nodes: readonly Element[], markers: boolean): string {
 
 export interface RenderSession {
   readonly result: ComponentResult;
+  /** Выполняет `fn` в async-контексте этого рендера (store виден во всех await). */
+  run<T>(fn: () => T): T;
   serializeHead(): string;
   throwIfFailed(): void;
   dispose(): void;
 }
 
+/** Внутренние зависимости сессии (streaming-коллектор и т.п.). */
+export interface RenderSessionInit {
+  readonly stream?: ServerStreamCollector | null | undefined;
+}
+
 export function beginRenderSession(
   app: AnyComponent,
   options: RenderOptions = {},
+  init: RenderSessionInit = {},
 ): RenderSession {
   const baseContainer = options.container ?? rootContainer;
   requestSeq += 1;
-  resetRuntimeOptions();
-  resetIds();
   const requestScope = baseContainer.createScope(`request:${requestSeq}`);
 
-  const restore = installDomGlobals(SERVER_DOCUMENT, { keepShape: true });
-  setServerMode(true);
-  setServerBackend(SERVER_BACKEND);
+  const provider = hasRuntimeContextProvider() ? getRuntimeContextProvider() : null;
+  const store =
+    provider === null
+      ? null
+      : createRuntimeContextStore({ server: true });
+  const run: <T>(fn: () => T) => T =
+    provider === null || store === null
+      ? (fn) => fn()
+      : (fn) => provider.run(store, fn);
 
+  let restore: () => void = noop;
   let disposeRoot: () => void = noop;
   let failure: unknown = null;
   let failed = false;
+  let closed = false;
+  const ownsStream = init.stream !== undefined;
   const headNodes: Element[] = [];
-
-  setMetadataCollector((node) => {
-    headNodes.push(node);
-  });
 
   const handleError = (error: unknown, component: AnyComponent): void => {
     if (options.onError !== undefined) {
@@ -95,9 +127,28 @@ export function beginRenderSession(
 
   let result: ComponentResult | null = null;
   try {
-    result = createRoot((dispose) => {
-      disposeRoot = dispose;
-      return createComponent(app, options.props ?? {}, runtimeOptions);
+    result = run(() => {
+      resetRuntimeOptions();
+      resetIds();
+      if (store !== null) {
+        // resetRuntimeOptions очищает и store.options, поэтому опции рендера
+        // назначаются уже внутри контекста store.
+        store.options = runtimeOptions;
+      }
+      restore = installDomGlobals(SERVER_DOCUMENT, { keepShape: true });
+      setServerMode(true);
+      setServerBackend(SERVER_BACKEND);
+      if (ownsStream) {
+        setServerStreamCollector(init.stream ?? null);
+      }
+      setMetadataCollector((node) => {
+        headNodes.push(node);
+      });
+
+      return createRoot((dispose) => {
+        disposeRoot = dispose;
+        return createComponent(app, options.props ?? {}, runtimeOptions);
+      });
     });
   } catch (error) {
     cleanup(null);
@@ -112,7 +163,16 @@ export function beginRenderSession(
 
   const session: RenderSession = {
     result,
-    serializeHead: () => serializeHead(headNodes, options.markers !== false),
+    run,
+    serializeHead: () => {
+      // В renderToString/renderToStream head сериализуется уже внутри run этого
+      // же store; повторный storage.run — лишняя стоимость на горячем пути.
+      const serialize = (): string =>
+        serializeHead(headNodes, options.markers !== false);
+      return getRuntimeContextStore() === store && store !== null
+        ? serialize()
+        : run(serialize);
+    },
     throwIfFailed: () => {
       if (failed) {
         throw failure;
@@ -124,36 +184,55 @@ export function beginRenderSession(
   return session;
 
   function cleanup(created: ComponentResult | null): void {
-    setMetadataCollector(null);
-    setServerBackend(null);
+    if (closed) {
+      return;
+    }
+    closed = true;
 
-    let disposalError: unknown = null;
-    let disposalFailed = false;
-    const capture = (task: () => void): void => {
+    run(() => {
+      setMetadataCollector(null);
+      if (ownsStream) {
+        setServerStreamCollector(null);
+      }
+      setServerBackend(null);
+
+      let disposalError: unknown = null;
+      let disposalFailed = false;
+      const capture = (task: () => void): void => {
+        try {
+          task();
+        } catch (error) {
+          if (!disposalFailed) {
+            disposalFailed = true;
+            disposalError = error;
+          }
+        }
+      };
+
       try {
-        task();
-      } catch (error) {
-        if (!disposalFailed) {
-          disposalFailed = true;
-          disposalError = error;
+        if (created !== null) {
+          capture(() => created.dispose());
+        }
+        capture(disposeRoot);
+        capture(() => requestScope.dispose());
+      } finally {
+        try {
+          restore();
+        } finally {
+          try {
+            setServerMode(false);
+            resetRuntimeOptions();
+          } finally {
+            // Store закрывается последним: очистка ресурсов должна видеть
+            // опции, metadata-коллектор и pending своего рендера.
+            closeRuntimeStore(store);
+          }
         }
       }
-    };
 
-    try {
-      if (created !== null) {
-        capture(() => created.dispose());
+      if (disposalFailed) {
+        throw disposalError;
       }
-      capture(disposeRoot);
-      capture(() => requestScope.dispose());
-    } finally {
-      restore();
-      setServerMode(false);
-      resetRuntimeOptions();
-    }
-
-    if (disposalFailed) {
-      throw disposalError;
-    }
+    });
   }
 }

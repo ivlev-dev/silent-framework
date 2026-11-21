@@ -2,14 +2,15 @@ import type { AnyComponent } from "@ivlev-dev/silent-core";
 import {
   STREAM_REGION_END,
   STREAM_REGION_START,
-  setServerStreamCollector,
   type ServerStreamCollector,
   type ServerStreamRegion,
 } from "@ivlev-dev/silent-core/server-stream";
 import { flushSync } from "@ivlev-dev/silent-reactivity";
+import { hasRuntimeContextProvider } from "@ivlev-dev/silent-core/runtime-context-provider";
 import { forEachChunk } from "./chunk.js";
 import type { RenderOptions } from "./render.js";
-import { enqueueRenderTask, settleRender } from "./render.js";
+import { activeRenderError, enqueueRenderTask, settleRender } from "./render.js";
+import { ensureRuntimeContext } from "./runtime-context.js";
 import { beginRenderSession, type RenderSession } from "./session.js";
 import { serializeBetween, serializeNode, serializeNodeChunks } from "./dom/serializer.js";
 import type { DomNode } from "./dom/types.js";
@@ -43,6 +44,10 @@ export function renderToStream(
   app: AnyComponent,
   options: StreamOptions = {},
 ): ReadableStream<string> {
+  const nested = activeRenderError();
+  if (nested !== null) {
+    throw nested;
+  }
   const chunkSize =
     options.chunkSize !== undefined && options.chunkSize > 0
       ? options.chunkSize
@@ -52,17 +57,20 @@ export function renderToStream(
   return new ReadableStream<string>({
     start(controller): void {
       state.controller = controller;
-      void enqueueRenderTask(() => runStream(app, options, chunkSize, state)).catch(
-        (error: unknown) => {
-          if (!state.cancelled) {
-            try {
-              controller.error(error);
-            } catch {
-              void error;
-            }
+      void enqueueRenderTask(async () => {
+        if (!hasRuntimeContextProvider()) {
+          await ensureRuntimeContext();
+        }
+        await runStream(app, options, chunkSize, state);
+      }).catch((error: unknown) => {
+        if (!state.cancelled) {
+          try {
+            controller.error(error);
+          } catch {
+            void error;
           }
-        },
-      );
+        }
+      });
     },
     cancel(): void {
       state.cancelled = true;
@@ -198,54 +206,57 @@ async function runStream(
     },
   };
 
-  setServerStreamCollector(markers ? collector : null);
   let session: RenderSession | null = null;
   let streamFailed = false;
   let streamError: unknown = null;
 
   try {
-    session = beginRenderSession(app, options);
-    flushSync();
-    const trackHead = options.onHead !== undefined;
-    const shellHead = trackHead ? session.serializeHead() : "";
-    if (trackHead) {
-      options.onHead?.(shellHead, { final: false });
-    }
-    const node = session.result.node as unknown as DomNode;
-    if (options.onShell === undefined) {
-      serializeNodeChunks(node, chunkSize, enqueue, markers);
-    } else {
-      const shell = serializeNode(node, markers);
-      options.onShell(shell);
-      emit(shell);
-    }
-    shellEmitted = true;
-
-    await settleRender(session.result, {
-      signal: options.signal,
-      timeoutMs: options.timeoutMs,
+    const active = beginRenderSession(app, options, {
+      stream: markers ? collector : null,
     });
-    await drainSettles();
-    flushSync();
-    await drainSettles();
-    session.throwIfFailed();
-
-    if (patchFailed) {
-      throw patchError;
-    }
-
-    if (trackHead) {
-      const finalHead = session.serializeHead();
-      if (finalHead !== shellHead) {
-        options.onHead?.(finalHead, { final: true });
+    session = active;
+    await active.run(async () => {
+      flushSync();
+      const trackHead = options.onHead !== undefined;
+      const shellHead = trackHead ? active.serializeHead() : "";
+      if (trackHead) {
+        options.onHead?.(shellHead, { final: false });
       }
-    }
+      const node = active.result.node as unknown as DomNode;
+      if (options.onShell === undefined) {
+        serializeNodeChunks(node, chunkSize, enqueue, markers);
+      } else {
+        const shell = serializeNode(node, markers);
+        options.onShell(shell);
+        emit(shell);
+      }
+      shellEmitted = true;
+
+      await settleRender(active.result, {
+        signal: options.signal,
+        timeoutMs: options.timeoutMs,
+      });
+      await drainSettles();
+      flushSync();
+      await drainSettles();
+      active.throwIfFailed();
+
+      if (patchFailed) {
+        throw patchError;
+      }
+
+      if (trackHead) {
+        const finalHead = active.serializeHead();
+        if (finalHead !== shellHead) {
+          options.onHead?.(finalHead, { final: true });
+        }
+      }
+    });
   } catch (error) {
     streamFailed = true;
     streamError = error;
   } finally {
     options.signal?.removeEventListener("abort", abortStream);
-    setServerStreamCollector(null);
     try {
       session?.dispose();
     } catch (error) {

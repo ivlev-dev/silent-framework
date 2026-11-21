@@ -1,3 +1,5 @@
+import { getRuntimeContextStore } from "./runtime-context-provider.js";
+
 const ID_STATE = Symbol.for("silent.id.state");
 
 interface IdState {
@@ -29,6 +31,11 @@ function format(prefix: string, value: number): string {
 }
 
 export function createId(prefix = "silent"): string {
+  const store = getRuntimeContextStore();
+  if (store !== null) {
+    store.idCount += 1;
+    return format(prefix, store.idCount);
+  }
   const state = idState();
   state.count += 1;
   return format(prefix, state.count);
@@ -39,14 +46,30 @@ export function useId(prefix = "silent"): string {
 }
 
 export function resetIds(): void {
+  const store = getRuntimeContextStore();
+  if (store !== null) {
+    store.idCount = 0;
+    return;
+  }
   idState().count = 0;
 }
 
 export function currentIdCount(): number {
-  return idState().count;
+  const store = getRuntimeContextStore();
+  return store !== null ? store.idCount : idState().count;
 }
 
 export function withIdScope<T>(fn: () => T): T {
+  const store = getRuntimeContextStore();
+  if (store !== null) {
+    const previous = store.idCount;
+    store.idCount = 0;
+    try {
+      return fn();
+    } finally {
+      store.idCount = previous;
+    }
+  }
   const state = idState();
   const previous = state.count;
   state.count = 0;

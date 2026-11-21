@@ -22,6 +22,10 @@
       "types": "./dist/devtools.d.ts",
       "import": "./dist/devtools.js"
     },
+    "./runtime-context-provider": {
+      "types": "./dist/runtime-context-provider.d.ts",
+      "import": "./dist/runtime-context-provider.js"
+    },
     "./server-stream": {
       "types": "./dist/server-stream.d.ts",
       "import": "./dist/server-stream.js"

@@ -3,6 +3,7 @@ import { getOwner, onCleanup } from "@ivlev-dev/silent-reactivity";
 import { runWithBoundary, type AsyncBoundary } from "./boundary.js";
 import { VIEW_END, VIEW_START } from "./hydration-state.js";
 import { bindOwnerRuntimeOptions, findOwnerRuntimeOptions } from "./runtime-context.js";
+import { getRuntimeContextStore } from "./runtime-context-provider.js";
 import type { AnyComponent, Preloader } from "./types.js";
 
 export const VIEW_META = Symbol.for("silent.view");
@@ -91,11 +92,14 @@ export function getComponentCreator(): ComponentCreator | null {
 
 export function getRuntimeOptions(): RuntimeOptions {
   const scoped = findScopedRuntimeOptions();
-  const result = scoped ?? currentRuntimeOptions;
+  const store = scoped === undefined ? getRuntimeContextStore() : null;
+  const result = scoped ?? store?.options ?? currentRuntimeOptions;
   if (isDisposedContainer(result.container)) {
     warnAmbient(result.container as object);
     if (result === currentRuntimeOptions) {
       currentRuntimeOptions = {};
+    } else if (store !== null && result === store.options) {
+      store.options = {};
     }
     return {};
   }
@@ -105,6 +109,10 @@ export function getRuntimeOptions(): RuntimeOptions {
 /** Сбрасывает амбиентные runtime-опции (SSR-изоляция). @internal */
 export function resetRuntimeOptions(): void {
   currentRuntimeOptions = {};
+  const store = getRuntimeContextStore();
+  if (store !== null) {
+    store.options = {};
+  }
 }
 
 function findScopedRuntimeOptions(): RuntimeOptions | undefined {
@@ -120,7 +128,6 @@ export function getDefaultPreloader(): Preloader | null {
 }
 
 export function withRuntimeOptions<T>(options: RuntimeOptions, fn: () => T): T {
-  const previous = currentRuntimeOptions;
   // Stale-инстансы light-компонентов могут хранить уже освобождённый view-
   // контейнер. Освобождённый контейнер не устанавливается амбиентным:
   // актуальный контейнер передаёт владелец/роутер.
@@ -130,8 +137,19 @@ export function withRuntimeOptions<T>(options: RuntimeOptions, fn: () => T): T {
   if (isDisposedContainer(options.container)) {
     warnAmbient(options.container as object);
   }
-  currentRuntimeOptions = effective;
   bindOwnerRuntimeOptions(getOwner(), effective);
+  const store = getRuntimeContextStore();
+  if (store !== null) {
+    const previous = store.options;
+    store.options = effective;
+    try {
+      return effective.boundary === undefined ? fn() : runWithBoundary(effective.boundary, fn);
+    } finally {
+      store.options = previous;
+    }
+  }
+  const previous = currentRuntimeOptions;
+  currentRuntimeOptions = effective;
   try {
     return effective.boundary === undefined ? fn() : runWithBoundary(effective.boundary, fn);
   } finally {
@@ -178,6 +196,11 @@ export function getErrorHandler(): (error: unknown, component: AnyComponent) => 
   return defaultErrorHandler;
 }
 
+function pendingTarget(): Set<Promise<unknown>> {
+  const store = getRuntimeContextStore();
+  return store === null ? pending : store.pending;
+}
+
 export function trackPending<T>(
   promise: Promise<T>,
   signal?: AbortSignal | null,
@@ -185,9 +208,10 @@ export function trackPending<T>(
   if (signal !== undefined && signal !== null && signal.aborted) {
     return promise;
   }
-  pending.add(promise);
+  const target = pendingTarget();
+  target.add(promise);
   const remove = (): void => {
-    pending.delete(promise);
+    target.delete(promise);
     signal?.removeEventListener("abort", remove);
   };
   void promise.then(remove, remove);
@@ -203,13 +227,15 @@ export function trackAsyncWork<T>(
 }
 
 export async function whenIdle(): Promise<void> {
-  while (pending.size > 0) {
-    await Promise.allSettled([...pending]);
+  // Ждём набор текущей async-цепочки (store) либо общий (legacy).
+  const target = pendingTarget();
+  while (target.size > 0) {
+    await Promise.allSettled([...target]);
   }
 }
 
 export function hasPendingWork(): boolean {
-  return pending.size > 0;
+  return pendingTarget().size > 0;
 }
 
 export function callHook(target: object, name: string, ...args: unknown[]): void {
