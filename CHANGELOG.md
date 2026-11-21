@@ -12,13 +12,22 @@
 
 ### Форма: исправления аудита
 
-- `isReady` учитывает `@ValidateIf`/`@Optional`: неактивное условие и `undefined`/`null` для необязательного поля не требуют значения; асинхронное условие считается активным. Обёртки `ValidateIf`/`Optional` экспортируются из `@ivlev-dev/silent-form` и пишут метаданные; импорт из `silent-validation` форма не видит.
+- `isReady` учитывает `@ValidateIf`/`@Optional`: неактивное условие и `undefined`/`null` для необязательного поля не требуют значения; async-условие для `isReady` оптимистично неактивно, окончательно выполняется в `validate()`. Обёртки `ValidateIf`/`Optional` экспортируются из `@ivlev-dev/silent-form` и пишут метаданные; импорт из `silent-validation` форма не видит.
 - `validate()` больше не глотает ошибки полей без `@Field`: они попадают в `errors`/`isValid`/`isReady`, диагностика один раз уходит в `onError` (или `console.warn`), возврат — `result.valid && isValid`. Поле с `@Required`/`@Label` без `@Field` бросает `TypeError` при инициализации; `@Field` ставит маркер `reactive: true`.
 - Поколения валидации: `reset()`/`dispose()` отменяют незавершённые `validate()`/`validateField()`, поздние результаты не перезаписывают ошибки и не снимают флаги; `validate()` снимает debounce-таймеры; `onSubmit` не вызывает колбэк после сброса/освобождения.
 - Дедупликация проверок: параллельные `validate()` и `validateField()` для одного пути возвращают один и тот же промис; изменение значения (`setValue`, события, `setValues`, прямое присваивание `@Field`-поля) отцепляет текущий промис и инвалидирует его запись, следующий вызов запускает новый прогон; изменение во вложенной форме инвалидирует промисы родителя по цепочке; мутации внутри массивов/plain-объектов не отслеживаются. `validate()` больше не увеличивает поколение при старте.
 - `validateSubmitFields()` рекурсивно обходит вложенные формы, поэтому `@ValidateOn("submit")` работает при `validateOnSubmit: false` на любой глубине.
 - Эталон для `reset()` снимается после завершения конструкции (микрозадача + fallback), клонируется глубоко; `reset()` каждый раз пишет свежую копию (`Map`/`Set`/`Date`, массивы, plain-объекты). `values` — такой же снимок-копия.
 - Ошибки с bracket-путями (`tags[0]`) принадлежат полю `tags` в `getFieldProps` и корректно снимаются после исправления.
+
+### Форма: функциональные расширения
+
+- `Form extends ValidationModel`: `validateAsync` применяет сгенерированную плагином `validation()` схему типов; `rule:"type"` попадает в `errors`/`getFieldProps`, `validate({types:false})` отключает схемную проверку.
+- `setErrors(errors)` полностью заменяет внешние ошибки по плоским путям (`email`, `address.city`, `items[0].name`).
+- Массивы повторяемых форм: `getFieldArray("items")` с `items/length/errors/isReady/isDirty/at/add/insert/remove/move/clear`; `values`/`errors`/`id`/`isReady` агрегируют элементы, `remove`/`clear` освобождают только добавленные элементы (эталонные живут до `dispose()` и возвращаются `reset()`), `dispose()` освобождает все. `setValues` обновляет только существующие элементы. Типы: `ArrayFieldPath`, `FieldPath` с `items[0].city`, `FormArray`.
+- Async `@ValidateIf`: `isReady` оптимистично считает thenable-условие неактивным; окончательно условие выполняют `validate()`/`validateField()`/submit.
+- `autoSave(handler, { debounceMs, validate })` — debounce-автосохранение для dirty/valid формы со stop-функцией; для `beforeunload` документирован ручной паттерн.
+- Документация: схемы, массивы, `setErrors`, `autoSave` и ограничения (`setValues` не расширяет массив, элементы — `Form`).
 
 ### Форма: исправления аудита (P1)
 

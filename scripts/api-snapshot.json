@@ -227,10 +227,12 @@
       "Token"
     ],
     "@ivlev-dev/silent-form": [
+      "ArrayFieldPath",
       "Field",
       "FieldPath",
       "FieldProps",
       "Form",
+      "FormArray",
       "FormField",
       "FormOptions",
       "Hint",
@@ -360,6 +362,7 @@
     "@ivlev-dev/silent-swc": [
       "NativeTransformResult",
       "scan",
+      "scanFiles",
       "transform",
       "version"
     ],
