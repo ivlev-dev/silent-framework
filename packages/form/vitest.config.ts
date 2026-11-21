@@ -8,5 +8,19 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     include: ["tests/**/*.test.ts"],
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.ts"],
+      exclude: ["src/**/*.d.ts"],
+      reporter: ["text", "html"],
+      // Пороги на 1–2% ниже фактического покрытия: ловят падение, но не
+      // ломают CI из-за незначительных правок. Пересматривать при росте.
+      thresholds: {
+        lines: 78,
+        statements: 77,
+        branches: 71,
+        functions: 68,
+      },
+    },
   },
 });

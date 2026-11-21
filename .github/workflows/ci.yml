@@ -36,6 +36,7 @@ jobs:
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm coverage
       - run: pnpm api:check
       - run: pnpm api:check:self
       - run: pnpm install:check
