@@ -57,6 +57,21 @@ let currentRuntimeOptions: RuntimeOptions = {};
 
 declare const __SILENT_DEV__: boolean | undefined;
 const DEV = typeof __SILENT_DEV__ === "undefined" || __SILENT_DEV__;
+const warnedAmbient = new WeakSet<object>();
+
+function diagnosticsEnabled(): boolean {
+  if (!DEV) {
+    return false;
+  }
+  const host = globalThis as { __SILENT_DEBUG_RUNTIME__?: unknown };
+  if (host.__SILENT_DEBUG_RUNTIME__ === true) {
+    return true;
+  }
+  const env = (globalThis as {
+    process?: { env?: Readonly<Record<string, string | undefined>> };
+  }).process?.env;
+  return env?.SILENT_DEBUG_RUNTIME === "1";
+}
 
 function isDisposedContainer(container: unknown): boolean {
   return (
@@ -78,12 +93,7 @@ export function getRuntimeOptions(): RuntimeOptions {
   const scoped = findScopedRuntimeOptions();
   const result = scoped ?? currentRuntimeOptions;
   if (isDisposedContainer(result.container)) {
-    if (DEV) {
-      const name = (result.container as { name?: unknown }).name;
-      console.warn(
-        `[silent] runtime options: освобождённый контейнер "${typeof name === "string" ? name : "?"}" не используется`,
-      );
-    }
+    warnAmbient(result.container as object);
     if (result === currentRuntimeOptions) {
       currentRuntimeOptions = {};
     }
@@ -111,13 +121,33 @@ export function getDefaultPreloader(): Preloader | null {
 
 export function withRuntimeOptions<T>(options: RuntimeOptions, fn: () => T): T {
   const previous = currentRuntimeOptions;
-  currentRuntimeOptions = options;
-  bindOwnerRuntimeOptions(getOwner(), options);
+  // Stale-инстансы light-компонентов могут хранить уже освобождённый view-
+  // контейнер. Не устанавливаем его как амбиентный: владелец/роутер сам
+  // передаст актуальный контейнер или использует Router.current() в SSR.
+  const effective: RuntimeOptions = isDisposedContainer(options.container)
+    ? { ...options, container: undefined }
+    : options;
+  if (isDisposedContainer(options.container)) {
+    warnAmbient(options.container as object);
+  }
+  currentRuntimeOptions = effective;
+  bindOwnerRuntimeOptions(getOwner(), effective);
   try {
-    return options.boundary === undefined ? fn() : runWithBoundary(options.boundary, fn);
+    return effective.boundary === undefined ? fn() : runWithBoundary(effective.boundary, fn);
   } finally {
     currentRuntimeOptions = previous;
   }
+}
+
+function warnAmbient(container: object): void {
+  if (!diagnosticsEnabled() || warnedAmbient.has(container)) {
+    return;
+  }
+  warnedAmbient.add(container);
+  const name = (container as { name?: unknown }).name;
+  console.warn(
+    `[silent] runtime options: освобождённый контейнер "${typeof name === "string" ? name : "?"}" не используется`,
+  );
 }
 
 export function hasRuntimeOptions(options: RuntimeOptions): boolean {

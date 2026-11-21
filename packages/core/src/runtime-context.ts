@@ -7,11 +7,26 @@ interface OwnerNodeLink {
 
 const ownerOptions = new WeakMap<object, RuntimeOptions>();
 const trackedOwners = new WeakSet<object>();
+const trackedContainers = new WeakMap<object, WeakSet<object>>();
 const warnedDisposed = new WeakSet<object>();
 let hasBoundOptions = false;
 
 declare const __SILENT_DEV__: boolean | undefined;
 const DEV = typeof __SILENT_DEV__ === "undefined" || __SILENT_DEV__;
+
+function diagnosticsEnabled(): boolean {
+  if (!DEV) {
+    return false;
+  }
+  const host = globalThis as { __SILENT_DEBUG_RUNTIME__?: unknown };
+  if (host.__SILENT_DEBUG_RUNTIME__ === true) {
+    return true;
+  }
+  const env = (globalThis as {
+    process?: { env?: Readonly<Record<string, string | undefined>> };
+  }).process?.env;
+  return env?.SILENT_DEBUG_RUNTIME === "1";
+}
 
 function isDisposedContainer(container: unknown): boolean {
   return (
@@ -22,7 +37,7 @@ function isDisposedContainer(container: unknown): boolean {
 }
 
 function warnDisposedContainer(container: object): void {
-  if (!DEV || warnedDisposed.has(container)) {
+  if (!diagnosticsEnabled() || warnedDisposed.has(container)) {
     return;
   }
   warnedDisposed.add(container);
@@ -69,18 +84,38 @@ export function bindOwnerRuntimeOptions(
   if (node !== null) {
     ownerOptions.set(node, options);
   }
-  if (!trackedOwners.has(owner) && !owner.disposed) {
-    trackedOwners.add(owner);
-    // Удаляем owner-опции вместе с владельцем, иначе освобождённый
-    // container остаётся достижимым и «протекает» в следующий рендер.
-    runWithOwner(owner, () => {
-      onCleanup(() => {
-        ownerOptions.delete(owner);
-        if (node !== null) {
-          ownerOptions.delete(node);
+  if (!owner.disposed) {
+    const boundContainer = options.container;
+    const forget = (): void => {
+      if (boundContainer !== undefined) {
+        const current = ownerOptions.get(owner);
+        if (current !== undefined && current.container !== boundContainer) {
+          return;
         }
+      }
+      ownerOptions.delete(owner);
+      if (node !== null) {
+        ownerOptions.delete(node);
+      }
+    };
+    // Освобождённый container не должен оставлять достижимые owner-опции:
+    // чистим их и при dispose владельца, и при dispose самого контейнера.
+    if (options.container !== undefined) {
+      let containers = trackedContainers.get(owner);
+      if (containers === undefined) {
+        containers = new WeakSet<object>();
+        trackedContainers.set(owner, containers);
+      }
+      if (!containers.has(options.container)) {
+        containers.add(options.container);
+        options.container.onDispose(forget);
+      }
+    } else if (!trackedOwners.has(owner)) {
+      trackedOwners.add(owner);
+      runWithOwner(owner, () => {
+        onCleanup(forget);
       });
-    });
+    }
   }
 }
 

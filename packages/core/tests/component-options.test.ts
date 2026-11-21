@@ -191,6 +191,8 @@ describe("component options", () => {
 describe("runtime options: disposed container", () => {
   it("не отдаёт освобождённый контейнер как амбиентный", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const previous = process.env.SILENT_DEBUG_RUNTIME;
+    process.env.SILENT_DEBUG_RUNTIME = "1";
     try {
       const disposed = new Container("disposed");
       disposed.dispose();
@@ -200,6 +202,11 @@ describe("runtime options: disposed container", () => {
       expect(warn).toHaveBeenCalledTimes(1);
     } finally {
       warn.mockRestore();
+      if (previous === undefined) {
+        delete process.env.SILENT_DEBUG_RUNTIME;
+      } else {
+        process.env.SILENT_DEBUG_RUNTIME = previous;
+      }
     }
   });
 
