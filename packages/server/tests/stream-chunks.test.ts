@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type AnyComponent } from "@ivlev-dev/silent-core";
+import { forEachChunk } from "../src/chunk.js";
 import { serializeNodeChunks } from "../src/dom/serializer.js";
 import { ElementImpl, TextImpl } from "../src/dom/node.js";
 import { renderToStream } from "../src/stream.js";
@@ -32,6 +33,29 @@ function textPage(): AnyComponent {
     return paragraph;
   } as unknown as AnyComponent;
 }
+
+describe("forEachChunk", () => {
+  it("отдаёт чанки через callback без промежуточного массива", () => {
+    for (const chunkSize of CHUNK_SIZES) {
+      const chunks: string[] = [];
+      forEachChunk(EXPECTED, chunkSize, (chunk) => {
+        chunks.push(chunk);
+      });
+
+      expect(decodeChunks(chunks)).toBe(EXPECTED);
+      expectWholeCodePoints(chunks, chunkSize);
+    }
+  });
+
+  it("ничего не отдаёт для пустой строки", () => {
+    const chunks: string[] = [];
+    forEachChunk("", 4, (chunk) => {
+      chunks.push(chunk);
+    });
+
+    expect(chunks).toEqual([]);
+  });
+});
 
 describe("splitChunks через serializeNodeChunks", () => {
   for (const chunkSize of CHUNK_SIZES) {

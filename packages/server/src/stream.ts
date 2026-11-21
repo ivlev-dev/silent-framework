@@ -7,7 +7,7 @@ import {
   type ServerStreamRegion,
 } from "@ivlev-dev/silent-core/server-stream";
 import { flushSync } from "@ivlev-dev/silent-reactivity";
-import { splitChunks } from "./chunk.js";
+import { forEachChunk } from "./chunk.js";
 import type { RenderOptions } from "./render.js";
 import { enqueueRenderTask, settleRender } from "./render.js";
 import { beginRenderSession, type RenderSession } from "./session.js";
@@ -97,20 +97,24 @@ async function runStream(
   let patchError: unknown = null;
   let shellEmitted = false;
 
-  const emit = (html: string): void => {
+  const enqueue = (chunk: string): void => {
     const controller = state.controller;
-    if (state.cancelled || controller === null || html.length === 0) {
+    if (state.cancelled || controller === null || chunk.length === 0) {
+      return;
+    }
+    controller.enqueue(chunk);
+    options.onChunk?.(chunk);
+  };
+
+  const emit = (html: string): void => {
+    if (state.cancelled || html.length === 0) {
       return;
     }
     if (html.length <= chunkSize) {
-      controller.enqueue(html);
-      options.onChunk?.(html);
+      enqueue(html);
       return;
     }
-    for (const chunk of splitChunks(html, chunkSize)) {
-      controller.enqueue(chunk);
-      options.onChunk?.(chunk);
-    }
+    forEachChunk(html, chunkSize, enqueue);
   };
 
   const emitPatch = (id: number, html: string): void => {
@@ -209,7 +213,7 @@ async function runStream(
     }
     const node = session.result.node as unknown as DomNode;
     if (options.onShell === undefined) {
-      serializeNodeChunks(node, chunkSize, emit, markers);
+      serializeNodeChunks(node, chunkSize, enqueue, markers);
     } else {
       const shell = serializeNode(node, markers);
       options.onShell(shell);

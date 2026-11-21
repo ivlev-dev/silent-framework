@@ -1,5 +1,81 @@
 import type { DomStyle } from "./types.js";
 
+function splitDeclarations(value: string): string[] {
+  const entries: string[] = [];
+  let start = 0;
+  let quote: string | null = null;
+  let depth = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index] ?? "";
+    if (char === "\\") {
+      index += 1;
+      continue;
+    }
+    if (quote !== null) {
+      if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === "\"" || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (char === "(") {
+      depth += 1;
+      continue;
+    }
+    if (char === ")") {
+      if (depth > 0) {
+        depth -= 1;
+      }
+      continue;
+    }
+    if (char === ";" && depth === 0) {
+      entries.push(value.slice(start, index));
+      start = index + 1;
+    }
+  }
+  entries.push(value.slice(start));
+  return entries;
+}
+
+function findSeparator(entry: string): number {
+  let quote: string | null = null;
+  let depth = 0;
+  for (let index = 0; index < entry.length; index += 1) {
+    const char = entry[index] ?? "";
+    if (char === "\\") {
+      index += 1;
+      continue;
+    }
+    if (quote !== null) {
+      if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === "\"" || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (char === "(") {
+      depth += 1;
+      continue;
+    }
+    if (char === ")") {
+      if (depth > 0) {
+        depth -= 1;
+      }
+      continue;
+    }
+    if (char === ":" && depth === 0) {
+      return index;
+    }
+  }
+  return -1;
+}
+
 export class StyleImpl implements DomStyle {
   private readonly properties = new Map<string, string>();
   private readonly onChange: (() => void) | null;
@@ -24,8 +100,8 @@ export class StyleImpl implements DomStyle {
 
   set cssText(value: string) {
     this.properties.clear();
-    for (const entry of value.split(";")) {
-      const separator = entry.indexOf(":");
+    for (const entry of splitDeclarations(value)) {
+      const separator = findSeparator(entry);
       const name = (separator === -1 ? entry : entry.slice(0, separator)).trim();
       if (name === "") {
         continue;

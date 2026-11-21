@@ -1,7 +1,7 @@
 import { HTML_NAMESPACE, NODE_COMMENT, NODE_DOCUMENT_FRAGMENT, NODE_ELEMENT, NODE_TEXT } from "./types.js";
 import type { DomNode } from "./types.js";
 import { ElementImpl, TextImpl } from "./node.js";
-import { splitChunks } from "../chunk.js";
+import { forEachChunk } from "../chunk.js";
 
 const VOID_ELEMENTS: ReadonlySet<string> = new Set([
   "area",
@@ -196,9 +196,7 @@ export function serializeNodeChunks(
       emit(text);
       return;
     }
-    for (const chunk of splitChunks(text, chunkSize)) {
-      emit(chunk);
-    }
+    forEachChunk(text, chunkSize, emit);
   };
   const sink: PartSink = {
     stream: true,

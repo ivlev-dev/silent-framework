@@ -27,6 +27,8 @@ export interface SettleOptions {
   readonly timeoutMs?: number | undefined;
 }
 
+const MAX_SETTLE_CYCLES = 1000;
+
 export interface RenderResult {
   readonly html: string;
   readonly head: string;
@@ -151,11 +153,19 @@ export async function settleRender(
     control.throwIfFailed();
     flushSync();
     if (!synchronous || !idleAfterCreate || hasPendingWork()) {
+      let cycles = 0;
       while (hasPendingWork()) {
         control.throwIfFailed();
         await control.wait(whenIdle());
         control.throwIfFailed();
         flushSync();
+        cycles += 1;
+        if (cycles >= MAX_SETTLE_CYCLES && hasPendingWork()) {
+          throw new DOMException(
+            `Рендер не завершился за ${MAX_SETTLE_CYCLES} циклов: асинхронная работа перерегистрируется без прогресса`,
+            "TimeoutError",
+          );
+        }
       }
       await control.wait(Promise.resolve());
       control.throwIfFailed();
