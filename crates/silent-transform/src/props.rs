@@ -62,35 +62,109 @@ impl Visit for VarNames {
     fn visit_class_expr(&mut self, _: &ClassExpr) {}
 }
 
-struct WriteCollector {
-    names: HashSet<String>,
+// Один проход по телу: записи в биндинги, `var`-имена текущей функции и имена
+// JSX-компонентов. Раньше это были три независимых обхода AST.
+struct BodyAnalysis {
+    written: HashSet<String>,
+    var_names: HashSet<String>,
+    jsx_names: HashSet<String>,
+    var_scope: bool,
 }
 
-impl Visit for WriteCollector {
+impl BodyAnalysis {
+    fn new() -> Self {
+        Self {
+            written: HashSet::new(),
+            var_names: HashSet::new(),
+            jsx_names: HashSet::new(),
+            var_scope: true,
+        }
+    }
+
+    fn with_inner_scope(&mut self, run: impl FnOnce(&mut Self)) {
+        let saved = self.var_scope;
+        self.var_scope = false;
+        run(self);
+        self.var_scope = saved;
+    }
+}
+
+impl Visit for BodyAnalysis {
+    fn visit_var_decl(&mut self, decl: &VarDecl) {
+        if self.var_scope && decl.kind == VarDeclKind::Var {
+            for declarator in &decl.decls {
+                collect_pat_names(&declarator.name, &mut self.var_names);
+            }
+        }
+        decl.visit_children_with(self);
+    }
+
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
-        collect_assign_target(&node.left, &mut self.names);
+        collect_assign_target(&node.left, &mut self.written);
         node.visit_children_with(self);
     }
 
     fn visit_update_expr(&mut self, node: &UpdateExpr) {
         if let Expr::Ident(ident) = &*node.arg {
-            self.names.insert(ident.sym.to_string());
+            self.written.insert(ident.sym.to_string());
         }
         node.visit_children_with(self);
     }
 
-    fn visit_for_in_stmt(&mut self, node: &swc_core::ecma::ast::ForInStmt) {
+    fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
         if let ForHead::Pat(pat) = &node.left {
-            collect_pat_names(pat, &mut self.names);
+            collect_pat_names(pat, &mut self.written);
         }
         node.visit_children_with(self);
     }
 
-    fn visit_for_of_stmt(&mut self, node: &swc_core::ecma::ast::ForOfStmt) {
+    fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
         if let ForHead::Pat(pat) = &node.left {
-            collect_pat_names(pat, &mut self.names);
+            collect_pat_names(pat, &mut self.written);
         }
         node.visit_children_with(self);
+    }
+
+    fn visit_jsx_element_name(&mut self, name: &JSXElementName) {
+        match name {
+            JSXElementName::Ident(ident) => {
+                let is_component = ident
+                    .sym
+                    .chars()
+                    .next()
+                    .map(|character| character.is_uppercase())
+                    .unwrap_or(false);
+                if is_component {
+                    self.jsx_names.insert(ident.sym.to_string());
+                }
+            }
+            JSXElementName::JSXMemberExpr(member) => {
+                if let Some(ident) = jsx_object_root(&member.obj) {
+                    self.jsx_names.insert(ident.sym.to_string());
+                }
+            }
+            JSXElementName::JSXNamespacedName(_) => {}
+        }
+    }
+
+    fn visit_fn_decl(&mut self, node: &FnDecl) {
+        self.with_inner_scope(|analysis| node.visit_children_with(analysis));
+    }
+
+    fn visit_fn_expr(&mut self, node: &FnExpr) {
+        self.with_inner_scope(|analysis| node.visit_children_with(analysis));
+    }
+
+    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
+        self.with_inner_scope(|analysis| node.visit_children_with(analysis));
+    }
+
+    fn visit_class_decl(&mut self, node: &ClassDecl) {
+        self.with_inner_scope(|analysis| node.visit_children_with(analysis));
+    }
+
+    fn visit_class_expr(&mut self, node: &ClassExpr) {
+        self.with_inner_scope(|analysis| node.visit_children_with(analysis));
     }
 }
 
@@ -113,34 +187,6 @@ impl Visit for JsxFinder {
 
 struct BindingFinder {
     found: bool,
-}
-
-struct JsxNameCollector {
-    names: HashSet<String>,
-}
-
-impl Visit for JsxNameCollector {
-    fn visit_jsx_element_name(&mut self, name: &JSXElementName) {
-        match name {
-            JSXElementName::Ident(ident) => {
-                let is_component = ident
-                    .sym
-                    .chars()
-                    .next()
-                    .map(|character| character.is_uppercase())
-                    .unwrap_or(false);
-                if is_component {
-                    self.names.insert(ident.sym.to_string());
-                }
-            }
-            JSXElementName::JSXMemberExpr(member) => {
-                if let Some(ident) = jsx_object_root(&member.obj) {
-                    self.names.insert(ident.sym.to_string());
-                }
-            }
-            JSXElementName::JSXNamespacedName(_) => {}
-        }
-    }
 }
 
 fn jsx_object_root(object: &JSXObject) -> Option<&Ident> {
@@ -268,28 +314,22 @@ pub(crate) fn rewrite_function_props(function: &mut Function) {
     else {
         return;
     };
-    let mut written = WriteCollector {
-        names: HashSet::new(),
-    };
-    body.visit_with(&mut written);
-    let mut var_names = VarNames {
-        names: HashSet::new(),
-    };
-    body.visit_with(&mut var_names);
-    let blocked: HashSet<String> = written.names.union(&var_names.names).cloned().collect();
-    let mut jsx_names = JsxNameCollector {
-        names: HashSet::new(),
-    };
-    body.visit_with(&mut jsx_names);
+    let mut analysis = BodyAnalysis::new();
+    body.visit_with(&mut analysis);
+    let blocked: HashSet<String> = analysis
+        .written
+        .union(&analysis.var_names)
+        .cloned()
+        .collect();
 
     let props_name =
         destructured_props_name(&*function, body, matches!(mode, ParamMode::Destructured));
 
     let mut rewriter = PropsDestructure {
         props_name: &props_name,
-        written: &written.names,
+        written: &analysis.written,
         blocked: &blocked,
-        jsx_names: &jsx_names.names,
+        jsx_names: &analysis.jsx_names,
         map: HashMap::new(),
         allow_declarations: true,
     };
@@ -324,26 +364,13 @@ pub(crate) fn rewrite_arrow_props(arrow: &mut ArrowExpr) {
         return;
     };
 
-    let mut written = WriteCollector {
-        names: HashSet::new(),
-    };
-    let mut var_names = VarNames {
-        names: HashSet::new(),
-    };
-    match &*arrow.body {
-        ArrowFunctionBody::FunctionBody(body) => {
-            body.visit_with(&mut written);
-            body.visit_with(&mut var_names);
-        }
-        ArrowFunctionBody::Expr(expr) => {
-            expr.visit_with(&mut written);
-        }
-    }
-    let blocked: HashSet<String> = written.names.union(&var_names.names).cloned().collect();
-    let mut jsx_names = JsxNameCollector {
-        names: HashSet::new(),
-    };
-    arrow.body.visit_with(&mut jsx_names);
+    let mut analysis = BodyAnalysis::new();
+    arrow.body.visit_with(&mut analysis);
+    let blocked: HashSet<String> = analysis
+        .written
+        .union(&analysis.var_names)
+        .cloned()
+        .collect();
 
     let props_name = destructured_props_name(
         &*arrow,
@@ -353,9 +380,9 @@ pub(crate) fn rewrite_arrow_props(arrow: &mut ArrowExpr) {
 
     let mut rewriter = PropsDestructure {
         props_name: &props_name,
-        written: &written.names,
+        written: &analysis.written,
         blocked: &blocked,
-        jsx_names: &jsx_names.names,
+        jsx_names: &analysis.jsx_names,
         map: HashMap::new(),
         allow_declarations: true,
     };

@@ -1,5 +1,7 @@
 use super::transform::{rewrite_this, string_expr, SilentPass};
 use crate::template_plan::TemplatePlan;
+use std::collections::HashSet;
+use std::fmt::Write as _;
 use swc_core::common::{SyntaxContext, DUMMY_SP};
 use swc_core::ecma::ast::{
     ArrayLit, ArrowExpr, ArrowFunctionBody, AssignExpr, AssignOp, AssignTarget, BinExpr, BinaryOp,
@@ -155,7 +157,14 @@ impl SilentPass {
         }
 
         let rcdata = if is_rcdata_tag(&tag) {
-            self.build_rcdata_children(&tag, &element.children, parts)
+            let hoisted_len = self.hoisted_templates.len();
+            let template_counter = self.template_counter;
+            let used_helpers = self.used_helpers.clone();
+            let rcdata = self.build_rcdata_children(&tag, &element.children, parts);
+            if rcdata.is_none() {
+                self.rollback_template_compilation(hoisted_len, template_counter, used_helpers);
+            }
+            rcdata
         } else {
             None
         };
@@ -311,8 +320,12 @@ impl SilentPass {
             DynamicAttrKind::TextContent
         };
         let index = parts.attrs.len();
-        let attrs = format!(" data-silent-a-{index}=\"\" data-silent-text=\"\"");
-        parts.plan.mark_attr(&format!("data-silent-a-{index}"));
+        let marker = attr_marker(index);
+        let mut attrs = String::with_capacity(marker.len() + 26);
+        attrs.push(' ');
+        attrs.push_str(&marker);
+        attrs.push_str("=\"\" data-silent-text=\"\"");
+        parts.plan.mark_attr(&marker);
         parts.plan.mark_attr("data-silent-text");
         parts.attrs.push(DynamicAttr {
             kind,
@@ -394,8 +407,11 @@ impl SilentPass {
         parts: &mut TemplateParts,
     ) {
         let index = parts.attrs.len();
-        parts.html.push_str(&format!(" data-silent-a-{index}=\"\""));
-        parts.plan.mark_attr(&format!("data-silent-a-{index}"));
+        let marker = attr_marker(index);
+        parts.html.push(' ');
+        parts.html.push_str(&marker);
+        parts.html.push_str("=\"\"");
+        parts.plan.mark_attr(&marker);
         if matches!(kind, DynamicAttrKind::InnerHtml) {
             parts.html.push_str(" data-silent-text=\"\"");
             parts.plan.mark_attr("data-silent-text");
@@ -413,8 +429,11 @@ impl SilentPass {
     fn push_bind_attr(&mut self, helper: &str, expr: &Expr, parts: &mut TemplateParts) {
         let (accessor, setter) = self.bind_parts(helper, expr);
         let index = parts.attrs.len();
-        parts.html.push_str(&format!(" data-silent-a-{index}=\"\""));
-        parts.plan.mark_attr(&format!("data-silent-a-{index}"));
+        let marker = attr_marker(index);
+        parts.html.push(' ');
+        parts.html.push_str(&marker);
+        parts.html.push_str("=\"\"");
+        parts.plan.mark_attr(&marker);
         parts.attrs.push(DynamicAttr {
             kind: DynamicAttrKind::Bind(helper.to_string()),
             expr: accessor,
@@ -523,7 +542,7 @@ impl SilentPass {
 
     fn push_hole(&mut self, parts: &mut TemplateParts, expr: Expr) {
         let index = parts.holes.len();
-        parts.html.push_str(&format!("<!--silent-hole-{index}-->"));
+        parts.html.push_str(&hole_marker(index));
         parts.holes.push(expr);
         parts.plan.add_hole(index);
     }
@@ -542,11 +561,7 @@ impl SilentPass {
         } = parts;
         let runtime = Expr::Ident(self.helper("templateHoles"));
         let mount_static = !self.ssr && plan.is_static();
-        let planned = if self.hydrate || self.ssr {
-            plan.finish()
-        } else {
-            None
-        };
+        let planned = if self.hydrate { plan.finish() } else { None };
         let init = match planned {
             Some(plan) => {
                 let mut args = vec![string_expr(&html), plan];
@@ -580,6 +595,10 @@ impl SilentPass {
         };
         let name = self.hoisted_namespaced_template(&html, svg, init);
         let clone_call = call_expr(Expr::Ident(name), Vec::new());
+        if attrs.is_empty() && holes.is_empty() {
+            // Полностью статический шаблон не требует временной переменной и IIFE.
+            return member_expr(clone_call, "node");
+        }
         let result = ident_expr("_r$");
 
         let mut statements = vec![Stmt::Decl(swc_core::ecma::ast::Decl::Var(Box::new(
@@ -712,7 +731,7 @@ impl SilentPass {
         let mut segments: Vec<String> = Vec::with_capacity(count + 1);
         let mut rest = html.as_str();
         for index in 0..count {
-            let marker = format!("<!--silent-hole-{index}-->");
+            let marker = hole_marker(index);
             let Some(position) = rest.find(&marker) else {
                 self.report_error(format!(
                     "внутренняя ошибка: в SSR-шаблоне отсутствует маркер {marker}"
@@ -771,6 +790,25 @@ impl SilentPass {
         } else {
             self.hoisted_template(html, init)
         }
+    }
+
+    // Откатывает побочные эффекты неудавшейся компиляции RCDATA: шаблоны,
+    // счётчик имён и использованные хелперы не должны попадать в модуль.
+    fn rollback_template_compilation(
+        &mut self,
+        hoisted_len: usize,
+        template_counter: usize,
+        used_helpers: HashSet<String>,
+    ) {
+        let kept: HashSet<String> = self.hoisted_templates[..hoisted_len]
+            .iter()
+            .map(|(ident, _)| ident.sym.to_string())
+            .collect();
+        self.hoisted_template_names
+            .retain(|_, ident| kept.contains(ident.sym.as_ref()));
+        self.hoisted_templates.truncate(hoisted_len);
+        self.template_counter = template_counter;
+        self.used_helpers = used_helpers;
     }
 
     fn report_error(&self, message: impl Into<String>) {
@@ -975,7 +1013,7 @@ fn ssr_compatible(parts: &TemplateParts) -> bool {
     }
     let mut rest = parts.html.as_str();
     for index in 0..parts.holes.len() {
-        let marker = format!("<!--silent-hole-{index}-->");
+        let marker = hole_marker(index);
         let Some(position) = rest.find(&marker) else {
             return false;
         };
@@ -1757,45 +1795,114 @@ fn process_text(text: &str) -> String {
     if !text.contains('\n') {
         return text.to_string();
     }
-    let lines: Vec<&str> = text.split('\n').collect();
-    let last_non_empty = lines
-        .iter()
-        .rposition(|line| line.chars().any(|ch| ch != ' ' && ch != '\t' && ch != '\r'));
+    let mut last_non_empty = None;
+    for (index, line) in text.split('\n').enumerate() {
+        if line
+            .chars()
+            .any(|character| character != ' ' && character != '\t' && character != '\r')
+        {
+            last_non_empty = Some(index);
+        }
+    }
     let Some(last_non_empty) = last_non_empty else {
         return String::new();
     };
-    let mut result = String::new();
-    let last_index = lines.len() - 1;
-    for (index, raw) in lines.iter().enumerate() {
-        let mut line = raw.replace('\t', " ");
-        if index > 0 {
-            line = line.trim_start_matches(' ').to_string();
+    let mut result = String::with_capacity(text.len());
+    let mut lines = text.split('\n').peekable();
+    let mut index = 0usize;
+    while let Some(raw) = lines.next() {
+        let is_last = lines.peek().is_none();
+        let start = if index > 0 {
+            raw.find(|character| character != ' ' && character != '\t')
+                .unwrap_or(raw.len())
+        } else {
+            0
+        };
+        let mut end = raw.len();
+        if !is_last {
+            while end > start {
+                let byte = raw.as_bytes()[end - 1];
+                if byte == b' ' || byte == b'\t' {
+                    end -= 1;
+                } else {
+                    break;
+                }
+            }
         }
-        if index < last_index {
-            line = line.trim_end_matches(' ').to_string();
+        while end > start && raw.as_bytes()[end - 1] == b'\r' {
+            end -= 1;
         }
-        let line = line.trim_end_matches('\r');
-        if line.is_empty() {
-            continue;
+        if start < end {
+            push_text_line(&mut result, &raw[start..end]);
+            if index != last_non_empty {
+                result.push(' ');
+            }
         }
-        result.push_str(line);
-        if index != last_non_empty {
-            result.push(' ');
-        }
+        index += 1;
     }
     result
 }
 
+fn push_text_line(result: &mut String, line: &str) {
+    if !line.contains('\t') {
+        result.push_str(line);
+        return;
+    }
+    for character in line.chars() {
+        result.push(if character == '\t' { ' ' } else { character });
+    }
+}
+
 fn escape_html(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
+    escape_text(value, false)
 }
 
 fn escape_attr(value: &str) -> String {
-    escape_html(value).replace('\'', "&#39;")
+    escape_text(value, true)
+}
+
+fn escape_text(value: &str, attribute: bool) -> String {
+    let Some(first) = value.find(|character| match character {
+        '&' | '<' | '>' | '"' => true,
+        '\'' => attribute,
+        _ => false,
+    }) else {
+        return value.to_string();
+    };
+    let mut result = String::with_capacity(value.len() + 8);
+    result.push_str(&value[..first]);
+    let mut start = first;
+    for (offset, character) in value[first..].char_indices() {
+        let replacement = match character {
+            '&' => "&amp;",
+            '<' => "&lt;",
+            '>' => "&gt;",
+            '"' => "&quot;",
+            '\'' if attribute => "&#39;",
+            _ => continue,
+        };
+        let index = first + offset;
+        result.push_str(&value[start..index]);
+        result.push_str(replacement);
+        start = index + 1;
+    }
+    result.push_str(&value[start..]);
+    result
+}
+
+fn attr_marker(index: usize) -> String {
+    let mut marker = String::with_capacity(16);
+    marker.push_str("data-silent-a-");
+    let _ = write!(marker, "{index}");
+    marker
+}
+
+fn hole_marker(index: usize) -> String {
+    let mut marker = String::with_capacity(24);
+    marker.push_str("<!--silent-hole-");
+    let _ = write!(marker, "{index}");
+    marker.push_str("-->");
+    marker
 }
 
 fn format_number(value: f64) -> String {

@@ -106,3 +106,14 @@ fn ssr_is_off_by_default() {
     assert!(code.contains("_$templateHoles("), "{code}");
     assert!(!code.contains("_$ssrRaw("), "{code}");
 }
+
+#[test]
+fn ssr_without_hydration_does_not_emit_hydration_plan() {
+    let code = run(
+        r#"const el = <div class={active ? "a" : "b"}>{label}</div>;"#,
+        json!({ "ssr": true, "hydrate": false }),
+    );
+    assert!(code.contains("_$templateHoles("), "{code}");
+    assert!(!code.contains("roots:"), "{code}");
+    assert!(!code.contains("path: ["), "{code}");
+}

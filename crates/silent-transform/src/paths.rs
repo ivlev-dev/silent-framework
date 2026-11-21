@@ -1,6 +1,30 @@
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 
 const TS_EXTENSIONS: [&str; 8] = ["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"];
+
+thread_local! {
+    // Кэш канонических путей, живёт только внутри одного прохода сканирования.
+    static CANONICAL_CACHE: RefCell<Option<HashMap<PathBuf, PathBuf>>> = const { RefCell::new(None) };
+}
+
+/// Включает кэш `canonicalize` на время прохода: один и тот же файл нормализуется
+/// многократно при построении токенов и относительных спекюляторов.
+pub(crate) fn with_canonical_cache<T>(run: impl FnOnce() -> T) -> T {
+    struct Guard(Option<HashMap<PathBuf, PathBuf>>);
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            CANONICAL_CACHE.with(|cache| *cache.borrow_mut() = self.0.take());
+        }
+    }
+
+    let guard = Guard(CANONICAL_CACHE.with(|cache| cache.borrow_mut().replace(HashMap::new())));
+    let result = run();
+    drop(guard);
+    result
+}
 
 pub fn is_declaration_file(path: &Path) -> bool {
     path.file_name()
@@ -20,6 +44,25 @@ pub fn is_source_file(path: &Path) -> bool {
 }
 
 pub fn normalize_path(path: &Path) -> PathBuf {
+    let cached = CANONICAL_CACHE.with(|cache| {
+        cache
+            .borrow()
+            .as_ref()
+            .and_then(|paths| paths.get(path).cloned())
+    });
+    if let Some(found) = cached {
+        return found;
+    }
+    let normalized = normalize_path_uncached(path);
+    CANONICAL_CACHE.with(|cache| {
+        if let Some(paths) = cache.borrow_mut().as_mut() {
+            paths.insert(path.to_path_buf(), normalized.clone());
+        }
+    });
+    normalized
+}
+
+fn normalize_path_uncached(path: &Path) -> PathBuf {
     if let Ok(canonical) = std::fs::canonicalize(path) {
         return canonical;
     }

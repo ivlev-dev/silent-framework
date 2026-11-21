@@ -30,8 +30,22 @@ struct ImportInfo {
     imported: String,
 }
 
-fn parse_module(path: &Path) -> Option<Module> {
-    let source = fs::read_to_string(path).ok()?;
+fn prefilter_source(source: &str) -> bool {
+    // Файл без этих конструкций не может ни реализовать интерфейс, ни дать
+    // value-экспорт, поэтому парсить его бессмысленно.
+    [
+        "implements",
+        "export",
+        "class",
+        "interface",
+        "type ",
+        "from ",
+    ]
+    .iter()
+    .any(|needle| source.contains(needle))
+}
+
+fn parse_module(path: &Path, source: String) -> Option<Module> {
     let source_map = SourceMap::default();
     let file = source_map.new_source_file(FileName::Real(path.to_path_buf()).into(), source);
     let lexer = Lexer::new(
@@ -307,6 +321,10 @@ pub fn scan(root: &Path) -> Index {
 }
 
 pub fn scan_with_aliases(root: &Path, aliases: &[AliasRule]) -> Index {
+    crate::paths::with_canonical_cache(|| scan_with_aliases_uncached(root, aliases))
+}
+
+fn scan_with_aliases_uncached(root: &Path, aliases: &[AliasRule]) -> Index {
     let root = crate::paths::normalize_path(root);
     let mut files = Vec::new();
     walk(&root, &root, &mut files);
@@ -314,7 +332,13 @@ pub fn scan_with_aliases(root: &Path, aliases: &[AliasRule]) -> Index {
     let mut index = Index::default();
 
     for file in files {
-        let Some(module) = parse_module(&file) else {
+        let Ok(source) = fs::read_to_string(&file) else {
+            continue;
+        };
+        if !prefilter_source(&source) {
+            continue;
+        }
+        let Some(module) = parse_module(&file, source) else {
             continue;
         };
         let imports = collect_imports(&module);

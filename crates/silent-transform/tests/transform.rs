@@ -863,3 +863,14 @@ fn leading_newline_in_textarea_is_preserved() {
     );
     assert!(code.contains(r"<textarea>\n\nabc</textarea>"), "{code}");
 }
+
+#[test]
+fn static_template_skips_iife() {
+    let code = run(
+        "const el = <div class=\"a\"><span>text</span></div>;",
+        "/proj/src/view.tsx",
+        Index::default(),
+    );
+    assert!(code.contains("= _tmpl$0().node"), "{code}");
+    assert!(!code.contains("const _r$"), "{code}");
+}
