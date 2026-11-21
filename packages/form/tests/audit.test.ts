@@ -69,7 +69,7 @@ describe("isReady и условия поля", () => {
     expect(form.isReady).toBe(false);
   });
 
-  it("асинхронное условие считается активным", () => {
+  it("async ValidateIf(false) не блокирует isReady, но проверка его выполняет", async () => {
     const predicate = (() =>
       Promise.resolve(false)) as unknown as (form: object) => boolean;
 
@@ -80,7 +80,31 @@ describe("isReady и условия поля", () => {
       public accessor name = "";
     }
 
-    expect(new AsyncConditionForm().isReady).toBe(false);
+    const form = new AsyncConditionForm();
+    expect(form.isReady).toBe(true);
+    expect(await form.validate()).toBe(true);
+
+    const callback = vi.fn();
+    await form.onSubmit(callback)();
+    expect(callback).toHaveBeenCalledOnce();
+  });
+
+  it("async ValidateIf(true) оптимистично готов, а validate() находит required", async () => {
+    const predicate = (() =>
+      Promise.resolve(true)) as unknown as (form: object) => boolean;
+
+    class AsyncConditionForm extends Form {
+      @Field()
+      @Required()
+      @ValidateIf(predicate)
+      public accessor name = "";
+    }
+
+    const form = new AsyncConditionForm();
+    expect(form.isReady).toBe(true);
+    expect(await form.validate()).toBe(false);
+    expect(form.errors.name?.length).toBeGreaterThan(0);
+    expect(form.isReady).toBe(false);
   });
 
   it("обычный Required с пустым значением не готов", () => {

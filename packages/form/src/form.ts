@@ -1,5 +1,5 @@
-import { createSignal, getComputed, storeFor } from "@ivlev-dev/silent-reactivity";
-import { validateAsync, validatePropertyAsync } from "@ivlev-dev/silent-validation";
+import { createEffect, createRoot, createSignal, getComputed, storeFor } from "@ivlev-dev/silent-reactivity";
+import { validateAsync, validatePropertyAsync, ValidationModel } from "@ivlev-dev/silent-validation";
 import type { ValidationOptions } from "@ivlev-dev/silent-validation";
 import {
   fieldMetadataFor,
@@ -10,9 +10,11 @@ import {
 } from "./metadata.js";
 import type { FieldMetadata } from "./metadata.js";
 import type {
+  ArrayFieldPath,
   FieldEventLike,
   FieldPath,
   FieldProps,
+  FormArray,
   FormOptions,
   ValidateOnMode,
 } from "./types.js";
@@ -34,6 +36,13 @@ const EMPTY_ERRORS_MAP: ReadonlyMap<string, readonly string[]> = new Map();
 
 type FormInstance = Form;
 
+type ArrayItemOf<T, K extends keyof T> =
+  NonNullable<T[K]> extends readonly (infer U)[]
+    ? NonNullable<U> extends Form
+      ? NonNullable<U>
+      : never
+    : never;
+
 type SetValuesInput<T> = {
   [K in keyof T as K extends keyof Form
     ? never
@@ -41,18 +50,36 @@ type SetValuesInput<T> = {
       ? never
       : K]?: T[K] extends Form
     ? T[K] | SetValuesInput<T[K]>
-    : T[K];
+    : T[K] extends readonly (infer U)[]
+      ? U extends Form
+        ? readonly (U | SetValuesInput<U>)[]
+        : T[K]
+      : T[K];
 };
 
-type FieldValue<T, P extends string> = P extends `${infer Head}.${infer Rest}`
+type FieldValue<T, P extends string> = P extends `${infer Head}[${number}].${infer Rest}`
   ? Head extends keyof T
-    ? T[Head] extends Form
-      ? FieldValue<T[Head], Rest>
+    ? NonNullable<T[Head]> extends readonly (infer U)[]
+      ? NonNullable<U> extends Form
+        ? FieldValue<NonNullable<U>, Rest>
+        : never
       : never
     : never
-  : P extends keyof T
-    ? T[P]
-    : never;
+  : P extends `${infer Head}[${number}]`
+    ? Head extends keyof T
+      ? NonNullable<T[Head]> extends readonly (infer U)[]
+        ? NonNullable<U>
+        : never
+      : never
+    : P extends `${infer Head}.${infer Rest}`
+      ? Head extends keyof T
+        ? T[Head] extends Form
+          ? FieldValue<T[Head], Rest>
+          : never
+        : never
+      : P extends keyof T
+        ? T[P]
+        : never;
 
 interface ResolvedFormOptions {
   readonly validateOnChange: boolean;
@@ -274,7 +301,7 @@ function normalizeErrorMessages(
  * Поля объявляются через `@Field()` (или `@FormField()` для вложенной формы).
  * Значения, ошибки и флаги доступны реактивно через `getFieldProps`.
  */
-export abstract class Form {
+export abstract class Form extends ValidationModel {
   private readonly options: ResolvedFormOptions;
   private readonly baseValidationOptions: ValidationOptions | undefined;
 
@@ -292,10 +319,12 @@ export abstract class Form {
   private readonly validatingVersion = createSignal(0);
   private readonly validatingForm = createSignal(0);
   private readonly submittingSignal = createSignal(false);
+  private readonly changeVersion = createSignal(0);
 
   private metadata: ReadonlyMap<string, FieldMetadata> = new Map();
   private readonly initialValues = new Map<string, unknown>();
   private readonly children = new Map<string, FormInstance>();
+  private readonly arrayChildren = new Map<string, FormInstance[]>();
   private readonly propsCache = new Map<string, FieldProps<unknown>>();
   private readonly validationTokens = new Map<string, number>();
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -328,6 +357,7 @@ export abstract class Form {
   private idPath = "";
 
   constructor(options?: FormOptions) {
+    super();
     this.options = {
       validateOnChange: options?.validateOnChange ?? true,
       validateOnBlur: options?.validateOnBlur ?? true,
@@ -391,7 +421,7 @@ export abstract class Form {
           return false;
         }
         const value = this.readOwnValue(name);
-        const active = this.isFieldActive(metadata);
+        const active = this.isConditionActiveForReady(metadata);
         if (
           this.isRequirementActive(metadata, value, active) &&
           isRequiredEmpty(value)
@@ -399,6 +429,14 @@ export abstract class Form {
           return false;
         }
         if (active && value instanceof Form && !asInstance(value).isReady) {
+          return false;
+        }
+        const arrayItems = this.arrayChildren.get(name);
+        if (
+          active &&
+          arrayItems !== undefined &&
+          !arrayItems.every((item) => item.isReady)
+        ) {
           return false;
         }
       }
@@ -422,6 +460,13 @@ export abstract class Form {
           return false;
         }
       }
+      for (const items of this.arrayChildren.values()) {
+        for (const item of items) {
+          if (!item.isValid) {
+            return false;
+          }
+        }
+      }
       return true;
     });
   }
@@ -437,6 +482,13 @@ export abstract class Form {
       for (const child of this.children.values()) {
         if (child.isDirty) {
           return true;
+        }
+      }
+      for (const items of this.arrayChildren.values()) {
+        for (const item of items) {
+          if (item.isDirty) {
+            return true;
+          }
         }
       }
       return false;
@@ -461,12 +513,204 @@ export abstract class Form {
       const result: Record<string, unknown> = {};
       for (const name of this.metadata.keys()) {
         const value = this.readOwnValue(name);
-        result[name] = value instanceof Form
-          ? asInstance(value).values
-          : cloneValue(value);
+        if (value instanceof Form) {
+          result[name] = asInstance(value).values;
+          continue;
+        }
+        if (
+          Array.isArray(value) &&
+          (this.arrayChildren.has(name) ||
+            (value.length > 0 && value.every((item) => item instanceof Form)))
+        ) {
+          result[name] = value.map((item) =>
+            item instanceof Form ? asInstance(item).values : cloneValue(item)
+          );
+          continue;
+        }
+        result[name] = cloneValue(value);
       }
       return result;
     });
+  }
+
+  /**
+   * Массив повторяемых форм: элементы, ошибки, готовность и операции
+   * add/insert/remove/move/clear.
+   */
+  getFieldArray<K extends ArrayFieldPath<this>>(
+    field: K,
+  ): FormArray<ArrayItemOf<this, K>> {
+    const name = field as string;
+    this.ensureInitialized();
+    this.ensureArrayItems(name);
+    const self = this;
+    const itemsOf = (): FormInstance[] => self.requireArrayItems(name);
+    const arrayErrors = (): Readonly<Record<string, readonly string[]>> => {
+      const prefix = `${name}[`;
+      const result: Record<string, readonly string[]> = {};
+      for (const [key, messages] of Object.entries(self.errors)) {
+        if (key.startsWith(prefix)) {
+          result[key] = messages;
+        }
+      }
+      return result;
+    };
+    const array: FormArray<Form> = {
+      get items() {
+        return itemsOf();
+      },
+      get length() {
+        return itemsOf().length;
+      },
+      get errors() {
+        return arrayErrors();
+      },
+      get isReady() {
+        return (
+          self.directErrors(name).length === 0 &&
+          itemsOf().every((item) => item.isReady)
+        );
+      },
+      get isDirty() {
+        return (
+          self.dirtyFields[0]().has(name) ||
+          itemsOf().some((item) => item.isDirty)
+        );
+      },
+      at(index: number) {
+        return itemsOf()[index];
+      },
+      add(item) {
+        return self.insertArrayItem(name, itemsOf().length, item);
+      },
+      insert(index, item) {
+        return self.insertArrayItem(name, index, item);
+      },
+      remove(index) {
+        const items = itemsOf();
+        if (!Number.isInteger(index) || index < 0 || index >= items.length) {
+          throw new RangeError(`Индекс ${index} вне массива "${name}"`);
+        }
+        const removed = items[index]!;
+        const next = [...items];
+        next.splice(index, 1);
+        self.commitArray(name, next, [removed]);
+        if (!self.isBaselineArrayItem(removed)) {
+          removed.dispose();
+        }
+      },
+      move(from, to) {
+        const items = itemsOf();
+        if (
+          !Number.isInteger(from) ||
+          !Number.isInteger(to) ||
+          from < 0 ||
+          to < 0 ||
+          from >= items.length ||
+          to >= items.length
+        ) {
+          throw new RangeError(`Индекс вне массива "${name}"`);
+        }
+        if (from === to) {
+          return;
+        }
+        const next = [...items];
+        const [moved] = next.splice(from, 1);
+        next.splice(to, 0, moved!);
+        self.commitArray(name, next, []);
+      },
+      clear() {
+        const items = [...itemsOf()];
+        if (items.length === 0) {
+          return;
+        }
+        self.commitArray(name, [], items);
+        for (const item of items) {
+          if (!self.isBaselineArrayItem(item)) {
+            item.dispose();
+          }
+        }
+      },
+    };
+    return array as unknown as FormArray<ArrayItemOf<this, K>>;
+  }
+
+  private insertArrayItem(
+    name: string,
+    index: number,
+    item: FormInstance,
+  ): FormInstance {
+    const items = this.requireArrayItems(name);
+    if (!Number.isInteger(index) || index < 0 || index > items.length) {
+      throw new RangeError(`Индекс ${index} вне массива "${name}"`);
+    }
+    item.ensureCanBind(asInstance(this), `${name}[${index}]`);
+    const next = [...items];
+    next.splice(index, 0, item);
+    this.commitArray(name, next, []);
+    return item;
+  }
+
+  /** Записывает новый массив, перепривязывает элементы и пути/id. */
+  private commitArray(
+    name: string,
+    next: FormInstance[],
+    removed: FormInstance[],
+  ): void {
+    this.setDirectValue(name, next);
+    this.arrayChildren.set(name, next);
+    for (const item of removed) {
+      if (item.parentForm === asInstance(this)) {
+        item.parentForm = undefined;
+        item.parentField = undefined;
+        item.refreshIdContext(item.ownIdPrefix, "");
+      }
+    }
+    for (let index = 0; index < next.length; index += 1) {
+      this.assignArrayItem(next[index]!, name, index);
+    }
+    this.invalidateProps(name);
+  }
+
+  private setArrayValues(name: string, entries: readonly unknown[]): void {
+    const items = this.requireArrayItems(name);
+    const limit = Math.min(items.length, entries.length);
+    const next = [...items];
+    const removed: FormInstance[] = [];
+    let replaced = false;
+    let changed = false;
+    for (let index = 0; index < limit; index += 1) {
+      const entry = entries[index];
+      const current = items[index]!;
+      if (entry instanceof Form) {
+        if (entry === current) {
+          continue;
+        }
+        entry.ensureCanBind(asInstance(this), `${name}[${index}]`);
+        next[index] = asInstance(entry);
+        removed.push(current);
+        replaced = true;
+        changed = true;
+        continue;
+      }
+      if (isPlainObject(entry)) {
+        current.setValues(entry);
+        changed = true;
+        continue;
+      }
+      throw new TypeError(
+        `Элемент "${name}[${index}]" должен быть Form или plain-объектом`,
+      );
+    }
+    if (replaced) {
+      this.commitArray(name, next, removed);
+    } else if (changed) {
+      this.invalidateValidation();
+      this.markDirty(name);
+      if (this.options.clearExternalErrorsOnChange) {
+        this.removeExternalErrors(name);
+      }
+    }
   }
 
   /**
@@ -550,7 +794,20 @@ export abstract class Form {
     options?: ValidationOptions,
     onSettled?: () => void,
   ): Promise<boolean> {
-    const { root, rest } = this.locate(path);
+    const { root, index, rest } = this.locate(path);
+    if (index !== undefined) {
+      const item = this.requireArrayItem(root, index);
+      if (rest !== undefined) {
+        return this.settleNested(
+          item.validateAt(
+            rest,
+            this.nestedValidationOptions(`${root}[${index}]`, options),
+          ),
+          onSettled,
+        );
+      }
+      return this.settleNested(item.validate(options), onSettled);
+    }
     if (rest !== undefined) {
       return this.settleNested(
         this.requireChild(root).validateAt(
@@ -563,7 +820,37 @@ export abstract class Form {
     if (this.childFor(root) !== undefined) {
       return this.runFormFieldValidation(root, options, onSettled);
     }
+    if (this.arrayItems(root) !== undefined) {
+      return this.runFormArrayValidation(root, options, onSettled);
+    }
     return this.runFieldValidation(root, options, onSettled);
+  }
+
+  /** Правила поля-массива, затем проверка всех элементов. */
+  private async runFormArrayValidation(
+    root: string,
+    options?: ValidationOptions,
+    onSettled?: () => void,
+  ): Promise<boolean> {
+    const metadata = this.metadata.get(root);
+    const active = metadata === undefined || this.isFieldActiveForValidation(metadata);
+    try {
+      const rootValid = await this.runFieldValidation(root, options);
+      if (!active) {
+        return rootValid;
+      }
+      const items = this.arrayItems(root) ?? [];
+      const results = await Promise.all(
+        items.map((item, index) =>
+          item.validate(
+            this.nestedValidationOptions(`${root}[${index}]`, options),
+          ),
+        ),
+      );
+      return rootValid && results.every(Boolean);
+    } finally {
+      onSettled?.();
+    }
   }
 
   /** Правила самого поля-формы, затем проверка ребёнка (если условие активно). */
@@ -574,7 +861,7 @@ export abstract class Form {
   ): Promise<boolean> {
     const child = this.requireChild(root);
     const metadata = this.metadata.get(root);
-    const active = metadata === undefined || this.isFieldActive(metadata);
+    const active = metadata === undefined || this.isFieldActiveForValidation(metadata);
     try {
       const rootValid = await this.runFieldValidation(root, options);
       if (!active) {
@@ -646,6 +933,12 @@ export abstract class Form {
         ) {
           continue;
         }
+        if (
+          this.arrayItems(root) !== undefined &&
+          key.startsWith(`${root}[`)
+        ) {
+          continue;
+        }
         if (!this.metadata.has(root)) {
           this.reportUnregisteredField(root, key);
         }
@@ -663,12 +956,27 @@ export abstract class Form {
         const pending: Promise<boolean>[] = [];
         for (const [name, metadata] of this.metadata) {
           const child = this.childFor(name);
-          if (child === undefined || !this.isFieldActive(metadata)) {
+          if (child !== undefined) {
+            if (!this.isFieldActiveForValidation(metadata)) {
+              continue;
+            }
+            pending.push(
+              child.validate(this.childValidationOptions(name, options)),
+            );
             continue;
           }
-          pending.push(
-            child.validate(this.childValidationOptions(name, options)),
-          );
+          const items = this.arrayItems(name);
+          if (items === undefined || !this.isFieldActiveForValidation(metadata)) {
+            continue;
+          }
+          for (let index = 0; index < items.length; index += 1) {
+            const item = items[index]!;
+            pending.push(
+              item.validate(
+                this.nestedValidationOptions(`${name}[${index}]`, options),
+              ),
+            );
+          }
         }
         const results = await Promise.all(pending);
         if (this.disposed || generation !== this.validationGeneration) {
@@ -732,13 +1040,36 @@ export abstract class Form {
     errors: string | readonly (string | { readonly message: string })[],
   ): void {
     const path = String(field);
-    const { root, rest } = this.locate(path);
+    const { root, index, rest } = this.locate(path);
     const messages = normalizeErrorMessages(errors);
+    if (index !== undefined) {
+      const item = this.requireArrayItem(root, index);
+      if (rest !== undefined) {
+        item.setErrorsAt(rest, messages);
+      } else {
+        this.setExternalErrors(path, messages);
+      }
+      return;
+    }
     if (rest !== undefined) {
       this.requireChild(root).setErrorsAt(rest, messages);
       return;
     }
     this.setExternalErrors(root, messages);
+  }
+
+  /**
+   * Полностью заменить внешние (серверные) ошибки формы.
+   * Принимает плоские пути: `email`, `address.city`, `items[0].name`.
+   * Ошибки, отсутствующие в новом наборе, удаляются.
+   */
+  setErrors(
+    errors: Readonly<Record<string, string | readonly string[]>>,
+  ): void {
+    this.clearFieldErrors();
+    for (const [field, messages] of Object.entries(errors)) {
+      this.setFieldErrors(field as never, messages);
+    }
   }
 
   /**
@@ -755,10 +1086,25 @@ export abstract class Form {
       for (const child of this.children.values()) {
         child.clearFieldErrors();
       }
+      for (const items of this.arrayChildren.values()) {
+        for (const item of items) {
+          item.clearFieldErrors();
+        }
+      }
       return;
     }
     const path = String(field);
-    const { root, rest } = this.locate(path);
+    const { root, index, rest } = this.locate(path);
+    if (index !== undefined) {
+      const item = this.requireArrayItem(root, index);
+      if (rest !== undefined) {
+        item.clearErrorsAt(rest);
+      } else {
+        this.removeExternalErrors(path);
+        item.clearFieldErrors();
+      }
+      return;
+    }
     if (rest !== undefined) {
       this.requireChild(root).clearErrorsAt(rest);
       return;
@@ -768,7 +1114,71 @@ export abstract class Form {
       this.requireChild(root).clearFieldErrors();
       return;
     }
+    if (this.arrayItems(root) !== undefined) {
+      this.removeExternalErrors(root);
+      for (const item of this.requireArrayItems(root)) {
+        item.clearFieldErrors();
+      }
+      return;
+    }
     this.removeExternalErrors(root);
+  }
+
+  /**
+   * Автосохранение: вызывает обработчик после изменений с debounce.
+   * По умолчанию — только для dirty и валидной формы; `validate:true`
+   * дополнительно запускает async-проверку перед вызовом.
+   */
+  autoSave(
+    handler: (form: this) => unknown | Promise<unknown>,
+    options?: { readonly debounceMs?: number; readonly validate?: boolean },
+  ): () => void {
+    const debounceMs = options?.debounceMs ?? 300;
+    const runValidation = options?.validate === true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stopped = false;
+    const dispose = createRoot((disposeRoot) => {
+      createEffect(() => {
+        this.changeVersion[0]();
+        const dirty = this.isDirty;
+        const valid = this.isValid;
+        if (stopped || !dirty || !valid) {
+          return;
+        }
+        if (timer !== undefined) {
+          clearTimeout(timer);
+        }
+        timer = setTimeout(() => {
+          timer = undefined;
+          if (stopped) {
+            return;
+          }
+          const run = async (): Promise<void> => {
+            try {
+              if (runValidation && !(await this.validate())) {
+                return;
+              }
+              if (stopped || !this.isDirty || !this.isValid) {
+                return;
+              }
+              await handler(this);
+            } catch (error) {
+              this.reportError(error);
+            }
+          };
+          void run();
+        }, debounceMs);
+      });
+      return disposeRoot;
+    });
+    return () => {
+      stopped = true;
+      if (timer !== undefined) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+      dispose();
+    };
   }
 
   /** Установить несколько значений. Вложенным формам можно передать объект. */
@@ -779,6 +1189,10 @@ export abstract class Form {
         throw this.unknownFieldError(name);
       }
       const current = this.readOwnValue(name);
+      if (Array.isArray(value) && this.arrayChildren.has(name)) {
+        this.setArrayValues(name, value);
+        continue;
+      }
       if (value instanceof Form) {
         this.setDirectValue(name, value);
         continue;
@@ -812,6 +1226,13 @@ export abstract class Form {
       const current = this.readOwnValue(name);
       if (restored instanceof Form && current !== restored) {
         asInstance(restored).ensureCanBind(asInstance(this), name);
+      } else if (Array.isArray(restored)) {
+        for (let index = 0; index < restored.length; index += 1) {
+          const item = restored[index];
+          if (item instanceof Form && item.parentForm !== asInstance(this)) {
+            item.ensureCanBind(asInstance(this), `${name}[${index}]`);
+          }
+        }
       }
       restorations.push({ name, current, restored });
     }
@@ -834,6 +1255,10 @@ export abstract class Form {
       if (current instanceof Form && current !== restored) {
         this.detachChild(name, asInstance(current));
       }
+      if (Array.isArray(restored)) {
+        this.restoreArray(name, restored, current);
+        continue;
+      }
       this.writeOwnValue(name, restored);
       if (restored instanceof Form) {
         asInstance(restored).bindParent(asInstance(this), name);
@@ -844,6 +1269,61 @@ export abstract class Form {
     for (const child of this.children.values()) {
       child.reset();
     }
+    for (const items of this.arrayChildren.values()) {
+      for (const item of items) {
+        item.reset();
+      }
+    }
+  }
+
+  /** Элемент входит в эталонный массив из `initialValues`. */
+  private isBaselineArrayItem(item: FormInstance): boolean {
+    for (const value of this.initialValues.values()) {
+      if (Array.isArray(value) && value.includes(item)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private restoreArray(name: string, restored: readonly unknown[], current: unknown): void {
+    const tracked = this.arrayChildren.get(name);
+    const previous = tracked ?? (Array.isArray(current)
+      ? current.filter((item): item is Form => item instanceof Form).map((item) => asInstance(item))
+      : []);
+    const isFormArray = tracked !== undefined ||
+      (restored.length > 0 && restored.every((item) => item instanceof Form));
+    if (!isFormArray) {
+      this.writeOwnValue(name, restored);
+      this.invalidateProps(name);
+      return;
+    }
+    const items: FormInstance[] = [];
+    for (const item of restored) {
+      if (!(item instanceof Form)) {
+        throw new TypeError(`Массив "${name}" должен содержать только Form`);
+      }
+      items.push(asInstance(item));
+    }
+    const nextSet = new Set<object>(items);
+    for (const item of previous) {
+      if (!nextSet.has(item)) {
+        if (item.parentForm === asInstance(this)) {
+          item.parentForm = undefined;
+          item.parentField = undefined;
+          item.refreshIdContext(item.ownIdPrefix, "");
+        }
+        if (!this.isBaselineArrayItem(item)) {
+          item.dispose();
+        }
+      }
+    }
+    this.writeOwnValue(name, [...items]);
+    this.arrayChildren.set(name, items);
+    for (let index = 0; index < items.length; index += 1) {
+      this.assignArrayItem(items[index]!, name, index);
+    }
+    this.invalidateProps(name);
   }
 
   /** Освободить реактивное хранилище и таймеры. Повторный вызов безопасен. */
@@ -860,11 +1340,40 @@ export abstract class Form {
       this.detachChild(name, child);
       child.dispose();
     }
+    const ownedArrays = [...this.arrayChildren.entries()];
+    this.arrayChildren.clear();
+    for (const [name, items] of ownedArrays) {
+      for (const item of items) {
+        if (item.parentForm === asInstance(this)) {
+          item.parentForm = undefined;
+          item.parentField = undefined;
+          item.refreshIdContext(item.ownIdPrefix, "");
+        }
+        item.dispose();
+      }
+      this.invalidateProps(name);
+    }
     if (this.parentForm !== undefined && this.parentField !== undefined) {
       this.parentForm.detachChild(this.parentField, asInstance(this));
     }
     this.parentForm = undefined;
     this.parentField = undefined;
+    const baselineItems = new Set<FormInstance>();
+    for (const value of this.initialValues.values()) {
+      if (!Array.isArray(value)) {
+        continue;
+      }
+      for (const item of value) {
+        if (item instanceof Form) {
+          baselineItems.add(asInstance(item));
+        }
+      }
+    }
+    for (const item of baselineItems) {
+      if (item.parentForm === undefined || item.parentForm === asInstance(this)) {
+        item.dispose();
+      }
+    }
     this.initialValues.clear();
     this.propsCache.clear();
     unregisterFieldBinder(this);
@@ -906,21 +1415,96 @@ export abstract class Form {
     this.syncChildren();
   }
 
-  /** Синхронизирует карту вложенных форм с текущими значениями полей. */
+  /** Синхронизирует карты вложенных форм/массивов с текущими значениями. */
   private syncChildren(): void {
     for (const name of this.metadata.keys()) {
       const value = this.readOwnValue(name);
       const current = this.children.get(name);
       if (value instanceof Form) {
+        this.detachArray(name);
         if (current !== value) {
           this.attachChild(name, asInstance(value));
         }
         continue;
       }
+      const tracked = this.arrayChildren.get(name);
+      if (Array.isArray(value)) {
+        const items: FormInstance[] = [];
+        let isFormArray = tracked !== undefined;
+        for (const item of value) {
+          if (item instanceof Form) {
+            items.push(asInstance(item));
+            isFormArray = true;
+          } else {
+            isFormArray = false;
+            break;
+          }
+        }
+        if (isFormArray) {
+          if (current !== undefined) {
+            this.detachChild(name, current);
+          }
+          this.bindArrayChildren(name, items);
+          continue;
+        }
+      }
       if (current !== undefined) {
         this.detachChild(name, current);
       }
+      this.detachArray(name);
     }
+  }
+
+  /** Перепривязывает элементы массива, проверяя владение; старые элементы отцепляет. */
+  private bindArrayChildren(name: string, items: FormInstance[]): void {
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index]!;
+      if (item.parentForm === asInstance(this)) {
+        continue;
+      }
+      item.ensureCanBind(asInstance(this), `${name}[${index}]`);
+    }
+    const previous = this.arrayChildren.get(name);
+    if (previous !== undefined) {
+      for (const item of previous) {
+        if (!items.includes(item) && item.parentForm === asInstance(this)) {
+          item.parentForm = undefined;
+          item.parentField = undefined;
+          item.refreshIdContext(item.ownIdPrefix, "");
+        }
+      }
+    }
+    this.arrayChildren.set(name, items);
+    for (let index = 0; index < items.length; index += 1) {
+      this.assignArrayItem(items[index]!, name, index);
+    }
+    this.invalidateProps(name);
+  }
+
+  private assignArrayItem(item: FormInstance, name: string, index: number): void {
+    item.parentForm = asInstance(this);
+    item.parentField = `${name}[${index}]`;
+    const local = `${name}[${index}]`;
+    item.refreshIdContext(
+      this.idPrefix,
+      this.idPath === "" ? local : `${this.idPath}.${local}`,
+    );
+  }
+
+  private detachArray(name: string): void {
+    const items = this.arrayChildren.get(name);
+    if (items === undefined) {
+      return;
+    }
+    this.arrayChildren.delete(name);
+    for (const item of items) {
+      if (item.parentForm === asInstance(this)) {
+        item.parentForm = undefined;
+        item.parentField = undefined;
+        item.refreshIdContext(item.ownIdPrefix, "");
+      }
+    }
+    this.invalidateProps(name);
   }
 
   private readOwnValue(name: string): unknown {
@@ -934,6 +1518,62 @@ export abstract class Form {
   private childFor(name: string): FormInstance | undefined {
     const value = this.readOwnValue(name);
     return value instanceof Form ? asInstance(value) : undefined;
+  }
+
+  private arrayItems(name: string): FormInstance[] | undefined {
+    const tracked = this.arrayChildren.get(name);
+    if (tracked !== undefined) {
+      return tracked;
+    }
+    const value = this.readOwnValue(name);
+    if (!Array.isArray(value) || value.length === 0) {
+      return undefined;
+    }
+    const items: FormInstance[] = [];
+    for (const item of value) {
+      if (!(item instanceof Form)) {
+        return undefined;
+      }
+      items.push(asInstance(item));
+    }
+    this.arrayChildren.set(name, items);
+    return items;
+  }
+
+  private requireArrayItem(root: string, index: number): FormInstance {
+    const item = this.arrayItems(root)?.[index];
+    if (item === undefined) {
+      throw new Error(`Элемент массива "${root}[${index}]" не найден`);
+    }
+    return item;
+  }
+
+  private requireArrayItems(name: string): FormInstance[] {
+    const items = this.arrayItems(name);
+    if (items === undefined) {
+      throw new TypeError(`Поле "${name}" не является массивом форм`);
+    }
+    return items;
+  }
+
+  private ensureArrayItems(name: string): FormInstance[] {
+    const tracked = this.arrayChildren.get(name);
+    if (tracked !== undefined) {
+      return tracked;
+    }
+    const value = this.readOwnValue(name);
+    if (!Array.isArray(value)) {
+      throw new TypeError(`Поле "${name}" не является массивом`);
+    }
+    const items: FormInstance[] = [];
+    for (const item of value) {
+      if (!(item instanceof Form)) {
+        throw new TypeError(`Поле "${name}" не является массивом форм`);
+      }
+      items.push(asInstance(item));
+    }
+    this.arrayChildren.set(name, items);
+    return items;
   }
 
   private requireChild(name: string): FormInstance {
@@ -974,6 +1614,36 @@ export abstract class Form {
    * Конфликты владения разрешаются позже в `syncChildren`.
    */
   private bindInitialField(name: string, value: unknown): void {
+    if (Array.isArray(value)) {
+      if (value.length === 0) {
+        return;
+      }
+      const items: FormInstance[] = [];
+      for (const item of value) {
+        if (!(item instanceof Form)) {
+          return;
+        }
+        items.push(asInstance(item));
+      }
+      for (let index = 0; index < items.length; index += 1) {
+        const item = items[index]!;
+        if (item.parentForm === undefined) {
+          item.bindParent(asInstance(this), `${name}[${index}]`);
+        } else if (item.parentForm !== asInstance(this)) {
+          return;
+        }
+      }
+      const current = this.children.get(name);
+      if (current !== undefined) {
+        this.detachChild(name, current);
+      }
+      this.arrayChildren.set(name, items);
+      for (let index = 0; index < items.length; index += 1) {
+        this.assignArrayItem(items[index]!, name, index);
+      }
+      this.invalidateProps(name);
+      return;
+    }
     if (!(value instanceof Form)) {
       return;
     }
@@ -1042,31 +1712,76 @@ export abstract class Form {
   /** Удаляет из кэша props записи поля и всех его вложенных путей. */
   private invalidateProps(name: string): void {
     this.propsCache.delete(name);
-    const prefix = `${name}.`;
+    const dotPrefix = `${name}.`;
+    const bracketPrefix = `${name}[`;
     for (const key of [...this.propsCache.keys()]) {
-      if (key.startsWith(prefix)) {
+      if (key.startsWith(dotPrefix) || key.startsWith(bracketPrefix)) {
         this.propsCache.delete(key);
       }
     }
   }
 
-  private locate(path: string): { root: string; rest: string | undefined } {
+  private locate(path: string): {
+    root: string;
+    index: number | undefined;
+    rest: string | undefined;
+  } {
     this.ensureInitialized();
     if (path === "") {
       throw new Error("Путь поля не может быть пустым");
     }
+    const bracket = path.indexOf("[");
     const dot = path.indexOf(".");
+    if (bracket !== -1 && (dot === -1 || bracket < dot)) {
+      const root = path.slice(0, bracket);
+      if (!this.metadata.has(root)) {
+        throw this.unknownFieldError(path);
+      }
+      const close = path.indexOf("]", bracket + 1);
+      if (close === -1) {
+        throw new Error(`Неверный путь поля "${path}": не закрыт индекс`);
+      }
+      const token = path.slice(bracket + 1, close);
+      if (!/^\d+$/.test(token)) {
+        throw new Error(`Неверный индекс в пути поля "${path}"`);
+      }
+      const index = Number(token);
+      const after = path.slice(close + 1);
+      let rest: string | undefined;
+      if (after !== "") {
+        if (!after.startsWith(".")) {
+          throw new Error(`Неверный путь поля "${path}"`);
+        }
+        rest = after.slice(1);
+        if (rest === "") {
+          throw new Error(`Неверный путь поля "${path}"`);
+        }
+      }
+      const items = this.arrayItems(root);
+      if (items === undefined || items[index] === undefined) {
+        throw this.unknownFieldError(path);
+      }
+      return { root, index, rest };
+    }
     const root = dot === -1 ? path : path.slice(0, dot);
     const rest = dot === -1 ? undefined : path.slice(dot + 1);
     if (!this.metadata.has(root)) {
       throw this.unknownFieldError(path);
     }
-    if (rest !== undefined && this.childFor(root) === undefined) {
-      throw new Error(
-        `Поле "${root}" не является вложенной формой, поэтому путь "${path}" недоступен`,
-      );
+    if (rest !== undefined) {
+      if (this.childFor(root) !== undefined) {
+        // обычная вложенная форма
+      } else if (this.arrayItems(root) !== undefined) {
+        throw new Error(
+          `Для массива форм "${root}" нужен индекс: "${root}[0].${rest}"`,
+        );
+      } else {
+        throw new Error(
+          `Поле "${root}" не является вложенной формой или массивом форм, поэтому путь "${path}" недоступен`,
+        );
+      }
     }
-    return { root, rest };
+    return { root, index: undefined, rest };
   }
 
   private unknownFieldError(path: string): Error {
@@ -1097,6 +1812,16 @@ export abstract class Form {
       if (child !== undefined) {
         for (const nested of child.availablePaths(visited)) {
           result.push(`${name}.${nested}`);
+        }
+        continue;
+      }
+      const items = this.arrayChildren.get(name);
+      if (items !== undefined) {
+        for (let index = 0; index < items.length; index += 1) {
+          const item = items[index]!;
+          for (const nested of item.availablePaths(visited)) {
+            result.push(`${name}[${index}].${nested}`);
+          }
         }
       }
     }
@@ -1137,6 +1862,7 @@ export abstract class Form {
   }
 
   private invalidateValidation(): void {
+    this.changeVersion[1]((version) => version + 1);
     const hasLocalWork =
       this.validatePromise !== undefined ||
       this.fieldValidationPromises.size > 0 ||
@@ -1158,16 +1884,34 @@ export abstract class Form {
     }
   }
 
-  /** Активно ли поле с учётом `@ValidateIf` (независимо от `@Required`). */
-  private isFieldActive(metadata: FieldMetadata): boolean {
+  /**
+   * Активно ли поле для проверки. Thenable-условие не пропускаем:
+   * окончательное решение принимает валидатор.
+   */
+  private isFieldActiveForValidation(metadata: FieldMetadata): boolean {
     if (metadata.when === undefined) {
       return true;
     }
     const result: unknown = metadata.when(this);
     if (isThenable(result)) {
-      // Асинхронное условие считается активным, как в валидаторе.
       void Promise.resolve(result).catch(() => {});
       return true;
+    }
+    return result === true;
+  }
+
+  /**
+   * Активно ли условие для синхронной готовности. Thenable считается
+   * оптимистично неактивным: `isReady` не блокируется до `validate()`.
+   */
+  private isConditionActiveForReady(metadata: FieldMetadata): boolean {
+    if (metadata.when === undefined) {
+      return true;
+    }
+    const result: unknown = metadata.when(this);
+    if (isThenable(result)) {
+      void Promise.resolve(result).catch(() => {});
+      return false;
     }
     return result === true;
   }
@@ -1176,7 +1920,7 @@ export abstract class Form {
   private isRequirementActive(
     metadata: FieldMetadata,
     value: unknown,
-    active = this.isFieldActive(metadata),
+    active = this.isConditionActiveForReady(metadata),
   ): boolean {
     if (metadata.required !== true) {
       return false;
@@ -1231,14 +1975,330 @@ export abstract class Form {
   }
 
   private createProps(path: string): FieldProps<unknown> {
-    const { root, rest } = this.locate(path);
+    const { root, index, rest } = this.locate(path);
+    if (index !== undefined) {
+      const item = this.requireArrayItem(root, index);
+      if (rest !== undefined) {
+        return this.createArrayItemFieldProps(path, root, index, rest, item);
+      }
+      return this.createArrayItemProps(path, root, index, item);
+    }
     if (rest !== undefined) {
       return this.createNestedFieldProps(path, root, rest);
     }
     if (this.childFor(root) !== undefined) {
       return this.createNestedFormProps(root);
     }
+    if (this.arrayItems(root) !== undefined) {
+      return this.createFormArrayProps(root);
+    }
     return this.createDirectProps(root);
+  }
+
+  private arrayErrors(name: string): Readonly<Record<string, readonly string[]>> {
+    const prefix = `${name}[`;
+    const result: Record<string, readonly string[]> = {};
+    for (const [key, messages] of Object.entries(this.errors)) {
+      if (key.startsWith(prefix)) {
+        result[key] = messages;
+      }
+    }
+    return result;
+  }
+
+  private createFormArrayProps(name: string): FieldProps<unknown> {
+    const metadata = this.metadata.get(name);
+    const id = this.idFor(name);
+    const self = this;
+    const items = (): FormInstance[] => self.requireArrayItems(name);
+    const allErrors = (): readonly string[] => {
+      const result: string[] = [...self.directErrors(name)];
+      for (const [, messages] of Object.entries(self.arrayErrors(name))) {
+        result.push(...messages);
+      }
+      return result;
+    };
+    return {
+      get value() {
+        return items();
+      },
+      get label() {
+        return self.labelFor(name);
+      },
+      get placeholder() {
+        return metadata?.placeholder;
+      },
+      get hint() {
+        return metadata?.hint;
+      },
+      get error() {
+        return allErrors()[0];
+      },
+      get errors() {
+        return allErrors();
+      },
+      get isRequired() {
+        return metadata?.required === true;
+      },
+      get isReady() {
+        return (
+          self.directErrors(name).length === 0 &&
+          items().every((item) => item.isReady)
+        );
+      },
+      get isValidating() {
+        return items().some((item) => item.hasValidating());
+      },
+      get touched() {
+        return (
+          self.touchedFields[0]().has(name) ||
+          items().some((item) => item.hasAnyTouched())
+        );
+      },
+      get dirty() {
+        return (
+          self.dirtyFields[0]().has(name) ||
+          items().some((item) => item.isDirty)
+        );
+      },
+      get isValid() {
+        return (
+          self.directErrors(name).length === 0 &&
+          items().every((item) => item.isValid)
+        );
+      },
+      get name() {
+        return name;
+      },
+      get id() {
+        return id;
+      },
+      setValue(value) {
+        self.replaceArray(name, value);
+      },
+      setReady(ready) {
+        self.setReadyFor(name, ready);
+      },
+      onChange(_event) {
+        self.nestedBindingError(name, "onChange");
+      },
+      onInput(_event) {
+        self.nestedBindingError(name, "onInput");
+      },
+      onFocus(_event) {
+        self.nestedBindingError(name, "onFocus");
+      },
+      onBlur(_event) {
+        self.nestedBindingError(name, "onBlur");
+      },
+      validate() {
+        return self.runFormArrayValidation(name);
+      },
+    };
+  }
+
+  private replaceArray(name: string, value: unknown): void {
+    if (!Array.isArray(value) || !value.every((item) => item instanceof Form)) {
+      throw new TypeError(`Поле "${name}" — массив форм: ожидался массив Form`);
+    }
+    const items = value.map((item) => asInstance(item as object));
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index]!;
+      if (item.parentForm !== asInstance(this)) {
+        item.ensureCanBind(asInstance(this), `${name}[${index}]`);
+      }
+    }
+    const previous = this.requireArrayItems(name);
+    const nextSet = new Set<object>(items);
+    const removed = previous.filter((item) => !nextSet.has(item));
+    this.commitArray(name, items, removed);
+  }
+
+  private createArrayItemProps(
+    path: string,
+    root: string,
+    index: number,
+    item: FormInstance,
+  ): FieldProps<unknown> {
+    const self = this;
+    const id = this.idFor(path);
+    const fieldPath = `${root}[${index}]`;
+    const itemErrors = (): readonly string[] => {
+      const result: string[] = [];
+      for (const messages of Object.values(item.errors)) {
+        result.push(...messages);
+      }
+      const external = self.externalErrors[0]().get(fieldPath);
+      if (external !== undefined) {
+        result.push(...external);
+      }
+      return result;
+    };
+    return {
+      get value() {
+        return self.requireArrayItem(root, index);
+      },
+      get label() {
+        return self.labelFor(root);
+      },
+      get placeholder() {
+        return undefined;
+      },
+      get hint() {
+        return undefined;
+      },
+      get error() {
+        return itemErrors()[0];
+      },
+      get errors() {
+        return itemErrors();
+      },
+      get isRequired() {
+        return false;
+      },
+      get isReady() {
+        return self.requireArrayItem(root, index).isReady;
+      },
+      get isValidating() {
+        return self.requireArrayItem(root, index).hasValidating();
+      },
+      get touched() {
+        return (
+          self.touchedFields[0]().has(fieldPath) ||
+          self.requireArrayItem(root, index).hasAnyTouched()
+        );
+      },
+      get dirty() {
+        return (
+          self.dirtyFields[0]().has(fieldPath) ||
+          self.requireArrayItem(root, index).isDirty
+        );
+      },
+      get isValid() {
+        return self.requireArrayItem(root, index).isValid;
+      },
+      get name() {
+        return path;
+      },
+      get id() {
+        return id;
+      },
+      setValue(value) {
+        if (!(value instanceof Form)) {
+          throw new TypeError(`Поле "${path}" — элемент массива: ожидался Form`);
+        }
+        const items = [...self.requireArrayItems(root)];
+        const previous = items[index];
+        if (previous === undefined) {
+          throw new Error(`Элемент "${path}" больше не существует`);
+        }
+        const next = asInstance(value);
+        next.ensureCanBind(asInstance(self), fieldPath);
+        items[index] = next;
+        self.commitArray(root, items, [previous]);
+      },
+      setReady(ready) {
+        self.setReadyFor(fieldPath, ready);
+      },
+      onChange(_event) {
+        self.nestedBindingError(path, "onChange");
+      },
+      onInput(_event) {
+        self.nestedBindingError(path, "onInput");
+      },
+      onFocus(_event) {
+        self.nestedBindingError(path, "onFocus");
+      },
+      onBlur(_event) {
+        self.nestedBindingError(path, "onBlur");
+      },
+      validate() {
+        return self.requireArrayItem(root, index).validate();
+      },
+    };
+  }
+
+  private createArrayItemFieldProps(
+    path: string,
+    root: string,
+    index: number,
+    rest: string,
+    _item: FormInstance,
+  ): FieldProps<unknown> {
+    const self = this;
+    const id = this.idFor(path);
+    const childProps = (): FieldProps<unknown> =>
+      self.requireArrayItem(root, index).propsAt(rest);
+    return {
+      get value() {
+        return childProps().value;
+      },
+      get label() {
+        return (
+          self.metadataLabelFor(path) ??
+          self.options.labels[path] ??
+          self.options.labels[lastSegment(path)] ??
+          childProps().label
+        );
+      },
+      get placeholder() {
+        return childProps().placeholder;
+      },
+      get hint() {
+        return childProps().hint;
+      },
+      get error() {
+        return childProps().error;
+      },
+      get errors() {
+        return childProps().errors;
+      },
+      get isRequired() {
+        return childProps().isRequired;
+      },
+      get isReady() {
+        return childProps().isReady;
+      },
+      get isValidating() {
+        return childProps().isValidating;
+      },
+      get touched() {
+        return childProps().touched;
+      },
+      get dirty() {
+        return childProps().dirty;
+      },
+      get isValid() {
+        return childProps().isValid;
+      },
+      get name() {
+        return path;
+      },
+      get id() {
+        return id;
+      },
+      setValue(value) {
+        childProps().setValue(value);
+      },
+      setReady(ready) {
+        childProps().setReady(ready);
+      },
+      onChange(event) {
+        childProps().onChange(event);
+      },
+      onInput(event) {
+        childProps().onInput(event);
+      },
+      onFocus(event) {
+        childProps().onFocus(event);
+      },
+      onBlur(event) {
+        childProps().onBlur(event);
+      },
+      validate() {
+        return childProps().validate();
+      },
+    };
   }
 
   private createDirectProps(name: string): FieldProps<unknown> {
@@ -1546,11 +2606,21 @@ export abstract class Form {
     merge(this.externalErrors[0]());
     for (const name of this.metadata.keys()) {
       const child = this.childFor(name);
-      if (child === undefined) {
+      if (child !== undefined) {
+        for (const [key, messages] of Object.entries(child.errors)) {
+          result[`${name}.${key}`] = messages;
+        }
         continue;
       }
-      for (const [key, messages] of Object.entries(child.errors)) {
-        result[`${name}.${key}`] = messages;
+      const items = this.arrayChildren.get(name);
+      if (items === undefined) {
+        continue;
+      }
+      for (let index = 0; index < items.length; index += 1) {
+        const item = items[index]!;
+        for (const [key, messages] of Object.entries(item.errors)) {
+          result[`${name}[${index}].${key}`] = messages;
+        }
       }
     }
     return result;
@@ -1775,11 +2845,20 @@ export abstract class Form {
       }
       const child = this.childFor(name);
       if (child !== undefined) {
-        if (!this.isFieldActive(metadata)) {
+        if (!this.isFieldActiveForValidation(metadata)) {
           continue;
         }
         this.markTouched(name);
         await child.validateSubmitFields();
+        continue;
+      }
+      const items = this.arrayChildren.get(name);
+      if (items !== undefined) {
+        if (!this.isFieldActiveForValidation(metadata)) {
+          continue;
+        }
+        this.markTouched(name);
+        await Promise.all(items.map((item) => item.validateSubmitFields()));
         continue;
       }
       if (metadata.validateOn?.includes("submit") !== true) {
@@ -1831,6 +2910,13 @@ export abstract class Form {
       const child = this.childFor(name);
       if (child !== undefined) {
         child.markAllTouched();
+        continue;
+      }
+      const items = this.arrayChildren.get(name);
+      if (items !== undefined) {
+        for (const item of items) {
+          item.markAllTouched();
+        }
       }
     }
   }
@@ -1989,12 +3075,19 @@ export abstract class Form {
     root: string,
     options?: ValidationOptions,
   ): ValidationOptions | undefined {
+    return this.nestedValidationOptions(root, options);
+  }
+
+  private nestedValidationOptions(
+    prefixPath: string,
+    options?: ValidationOptions,
+  ): ValidationOptions | undefined {
     const merged = {
       ...this.options.labels,
       ...(options?.labels ?? {}),
     };
     const labels: Record<string, string> = {};
-    const prefix = `${root}.`;
+    const prefix = `${prefixPath}.`;
     for (const [key, value] of Object.entries(merged)) {
       if (key.startsWith(prefix)) {
         labels[key.slice(prefix.length)] = value;

@@ -93,12 +93,15 @@ type FormMemberKey =
   | "errors"
   | "values"
   | "getFieldProps"
+  | "getFieldArray"
   | "validateField"
   | "validate"
   | "onSubmit"
   | "setFieldErrors"
+  | "setErrors"
   | "clearFieldErrors"
   | "setValues"
+  | "autoSave"
   | "reset"
   | "dispose";
 
@@ -117,7 +120,57 @@ export type FieldPath<T> = [T] extends [never]
         ? never
         : T[K] extends (...args: never[]) => unknown
           ? never
-          : T[K] extends Form
-            ? K | `${K}.${FieldPath<T[K]>}`
-            : K;
+          : T[K] extends readonly (infer U)[]
+            ? NonNullable<U> extends Form
+              ? | K
+                | `${K}[${number}]`
+                | `${K}[${number}].${FieldPath<NonNullable<U>>}`
+              : K
+            : T[K] extends Form
+              ? K | `${K}.${FieldPath<T[K]>}`
+              : K;
     }[keyof T & string];
+
+/**
+ * Пути полей-массивов повторяемых форм:
+ * `items: ItemForm[]` → `"items"`.
+ */
+export type ArrayFieldPath<T> = [T] extends [never]
+  ? never
+  : {
+      [K in keyof T & string]: K extends FormMemberKey
+        ? never
+        : T[K] extends (...args: never[]) => unknown
+          ? never
+          : T[K] extends readonly (infer U)[]
+            ? NonNullable<U> extends Form
+              ? K
+              : never
+            : never;
+    }[keyof T & string];
+
+/** Массив повторяемых форм с реактивными агрегатами. */
+export interface FormArray<T extends Form> {
+  /** Текущие элементы. */
+  readonly items: readonly T[];
+  /** Количество элементов. */
+  readonly length: number;
+  /** Ошибки элементов по плоским путям (`items[0].name`). */
+  readonly errors: Readonly<Record<string, readonly string[]>>;
+  /** Все элементы готовы к отправке. */
+  readonly isReady: boolean;
+  /** Хотя бы один элемент изменён. */
+  readonly isDirty: boolean;
+  /** Элемент по индексу. */
+  at(index: number): T | undefined;
+  /** Добавить элемент в конец. */
+  add(item: T): T;
+  /** Вставить элемент по индексу. */
+  insert(index: number, item: T): T;
+  /** Удалить и освободить элемент. */
+  remove(index: number): void;
+  /** Переместить элемент. */
+  move(from: number, to: number): void;
+  /** Удалить и освободить все элементы. */
+  clear(): void;
+}

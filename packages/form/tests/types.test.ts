@@ -39,6 +39,11 @@ class NullableForm extends Form {
   public accessor address: AddressForm | null = null;
 }
 
+class ListForm extends Form {
+  @Field()
+  public accessor items: AddressForm[] = [];
+}
+
 describe("типизация путей", () => {
   it("автодополняет простые и вложенные пути", async () => {
     const form = new ProfileForm();
@@ -101,6 +106,26 @@ describe("типизация путей", () => {
     }
 
     expect(form).toBeInstanceOf(Form);
+  });
+
+  it("типизирует элементы массива форм", () => {
+    const form = new ListForm();
+    const array = form.getFieldArray("items");
+    const item: AddressForm | undefined = array.at(0);
+    expect(item).toBeUndefined();
+
+    array.add(new AddressForm());
+    const city: string = form.getFieldProps("items[0].city").value;
+    expect(city).toBe("");
+
+    if (false) {
+      // @ts-expect-error у AddressForm нет поля zip
+      form.getFieldProps("items[0].zip");
+      // @ts-expect-error массив не является обычным вложенным путём
+      form.getFieldProps("items.city");
+      // @ts-expect-error не массив форм
+      form.getFieldArray("items[0]");
+    }
   });
 
   it("не предлагает вложенные пути для nullable-формы", () => {

@@ -12,8 +12,10 @@ export {
   ValidateOn,
 } from "./metadata.js";
 export type {
+  ArrayFieldPath,
   FieldPath,
   FieldProps,
+  FormArray,
   FormOptions,
   ValidateOnMode,
 } from "./types.js";

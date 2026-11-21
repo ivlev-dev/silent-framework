@@ -34,7 +34,7 @@ await form.onSubmit(() => console.log(form.values))();
 abstract class Form {}
 ```
 
-Базовый класс формы. Поля объявляются через `@Field()` (или `@FormField()` для вложенной формы). Экземпляр создаётся с необязательными `FormOptions`; generic не нужен — пути полей выводятся из accessor-полей самого класса.
+Базовый класс формы (`extends ValidationModel` из `@ivlev-dev/silent-validation`). Поля объявляются через `@Field()` (или `@FormField()` для вложенной формы). Экземпляр создаётся с необязательными `FormOptions`; generic не нужен — пути полей выводятся из accessor-полей самого класса. Наследование от `ValidationModel` включает схемную проверку типов: Vite-плагин `validation()` из `@ivlev-dev/silent-validation-vite` генерирует схему по аннотациям accessor-полей, а `validateAsync(this)` применяет её вместе с декораторными правилами. `validate({ types: false })` отключает схемную проверку.
 
 ### `FormOptions`
 
@@ -61,11 +61,13 @@ abstract class Form {}
 - `errors` — `Readonly<Record<string, readonly string[]>>` по плоским путям, включая вложенные (`address.city`) и элементы коллекций (`tags[0]`). Сначала идут ошибки правил, затем внешние.
 - `values` — реактивный снимок значений-копий: массивы и plain-объекты клонируются рекурсивно, `Map`/`Set`/`Date` копируются, экземпляры классов возвращаются как есть; вложенные формы представлены вложенными объектами.
 - `getFieldProps(field)` — стабильный (кэшированный) объект `FieldProps` для пути.
-- `validateField(field, options?)` — проверить одно поле, включая путь вложенной формы; правила самого поля-формы выполняются до проверки ребёнка. Параллельные вызовы для одного пути возвращают тот же промис. Поле не помечается `touched`.
-- `validate(options?)` — полная проверка: снимает debounce-таймеры, помечает все поля `touched`, собирает ошибки по путям, проверяет вложенные формы при `validateNested`. Возвращает `true`, только если и валидатор, и форма (включая вложенные формы и внешние ошибки) валидны. Повторный вызов во время идущей проверки возвращает тот же промис.
+- `getFieldArray(field)` — массив повторяемых форм (`FormArray`): `items/length/errors/isReady/isDirty`, `at/add/insert/remove/move/clear`.
+- `validateField(field, options?)` — проверить одно поле, включая путь вложенной формы или элемент массива. Параллельные вызовы для одного пути возвращают тот же промис. Поле не помечается `touched`.
+- `validate(options?)` — полная проверка: снимает debounce-таймеры, помечает все поля `touched`, собирает ошибки по путям, проверяет вложенные формы и элементы массивов при `validateNested`. Возвращает `true`, только если и валидатор, и форма (включая вложенные формы и внешние ошибки) валидны. Повторный вызов во время идущей проверки возвращает тот же промис.
 - `onSubmit(callback)` — каррированный обработчик отправки.
-- `setFieldErrors(field, errors)` / `clearFieldErrors(field?)` — внешние (серверные) ошибки.
+- `setFieldErrors(field, errors)` / `setErrors(errors)` / `clearFieldErrors(field?)` — внешние (серверные) ошибки; `setErrors` полностью заменяет набор и принимает плоские пути `email`, `address.city`, `items[0].name`.
 - `setValues(values)` / `reset()` / `dispose()`.
+- `autoSave(handler, options?)` — debounce-обработчик изменений; возвращает функцию остановки.
 
 `validate()` и `validateField()` возвращают `Promise<boolean>`; `await` работает как обычно. Оба принимают необязательные `ValidationOptions` (`groups`, `cascade`, `stopAtFirst`, `types`, `locale`, `labels`): настройки уходят в валидатор, `labels` мержатся с локальными и для вложенных форм пересчитываются с префиксом (`address.city` → `city`). Внутренние мемо `isReady`/`isValid`/`isDirty`/`errors`/`values` используют `Symbol`, поэтому `@computed override get isReady() { return super.isReady && ... }` не даёт циклического мемо. Параллельные `validate()` и параллельные `validateField()` для одного и того же пути возвращают один и тот же промис и не запускают второй проход (вложенный путь дедуплицируется у формы-ребёнка). Изменение значения через API (`setValue`, события, `setValues`), `reset()` или `dispose()` увеличивает поколение и отцепляет текущие промисы: старый прогон завершится, но не запишет ошибки, а следующий `validate()`/`validateField()` запустит новый. Инвалидация распространяется вверх: изменение поля вложенной формы отцепляет и `validate()` родителя. Прямое присваивание `@Field`-поля (`form.name = "x"`) отслеживается сеттером; мутации внутри массивов/plain-объектов (`form.list.push(...)`, `form.config.x = ...`) — нет. `dispose()` идемпотентен, освобождает реактивное хранилище, таймеры `debounceMs`, кэш `props` и **рекурсивно освобождает owned-вложенные формы**; `onSubmit` после `dispose()` колбэк не вызывает.
 
@@ -73,17 +75,77 @@ abstract class Form {}
 
 ```ts
 type FieldPath<T> = {
-  [K in keyof T & string]: K extends keyof Form
+  [K in keyof T & string]: K extends FormMemberKey
     ? never
     : T[K] extends (...args: never[]) => unknown
       ? never
-      : T[K] extends Form
-        ? K | `${K}.${FieldPath<T[K]>}`
-        : K;
+      : T[K] extends readonly (infer U)[]
+        ? NonNullable<U> extends Form
+          ? K | `${K}[${number}]` | `${K}[${number}].${FieldPath<NonNullable<U>>}`
+          : K
+        : T[K] extends Form
+          ? K | `${K}.${FieldPath<T[K]>}`
+          : K;
 }[keyof T & string];
 ```
 
-Пути полей строятся по accessor-полям класса формы. Для класса с полями `name`, `age` и вложенной формой `address` тип `FieldPath<ProfileForm>` содержит `"name"`, `"age"`, `"address"`, `"address.city"` и `"address.state"`. Методы и служебные члены `Form` (`validate`, `values`, `setValues` и т. п.) в пути не попадают, поэтому невалидный путь — ошибка компиляции, а автодополнение предлагает только поля. Если поле объявлено как `AddressForm | null`/`| undefined`, вложенные пути (`address.city`) не предлагаются: проверяйте `null` и используйте не-nullable поле для вложенной формы. В сигнатурах `Form` используется `FieldPath<this>`, так что отдельный generic-интерфейс полей не нужен.
+Пути полей строятся по accessor-полям класса формы. Для класса с полями `name`, `age`, вложенной формой `address` и массивом `items` тип содержит `"name"`, `"age"`, `"address"`, `"address.city"`, `"items"`, `"items[0]"`, `"items[0].city"` и остальные поля; `ArrayFieldPath<T>` — только ключи массивов форм (`"items"`). Методы и служебные члены `Form` в пути не попадают, поэтому невалидный путь — ошибка компиляции, а автодополнение предлагает только поля. Если поле объявлено как `AddressForm | null`/`| undefined`, вложенные пути не предлагаются: проверяйте `null` и используйте не-nullable поле. В сигнатурах `Form` используется `FieldPath<this>`, отдельный generic-интерфейс не нужен.
+
+### Массивы повторяемых форм (`FormArray`, `ArrayFieldPath`)
+
+```ts
+class ItemForm extends Form {
+  @Field() @Required() public accessor name = "";
+  @Field() public accessor city = "";
+}
+
+class OrderForm extends Form {
+  @Field() public accessor items: ItemForm[] = [];
+}
+
+const form = new OrderForm();
+const items = form.getFieldArray("items");
+
+items.add(new ItemForm());
+items.insert(0, new ItemForm());
+items.move(0, 1);
+items.remove(0);
+items.clear();
+
+items.length;  // количество
+items.at(0);   // ItemForm | undefined
+items.errors;  // { "items[0].name": [...] }
+items.isReady; // все элементы готовы
+items.isDirty; // хотя бы один элемент изменён
+```
+
+Каждый элемент — экземпляр `Form`, один экземпляр может принадлежать только одному родителю/пути. `add`/`insert` принимают готовый экземпляр; `remove`/`clear` освобождают только добавленные элементы, а эталонные из `initialValues` оставляют живыми (без parent context), чтобы `reset()` мог их вернуть; окончательно эталонные освобождаются в `dispose()` формы. `values` отдаёт массив `child.values`, ошибки — плоские (`items[0].name`), `validate()`/`onSubmit` проверяют элементы параллельно. `id` элемента — `<prefix>-items[0].city`, одинаковый при доступе через родителя и через элемент. `reset()` восстанавливает длину/эталонные ссылки и сбрасывает эталонные элементы; `dispose()` освобождает все элементы.
+
+Ограничение `setValues`: массив обновляет только существующие элементы (Form-экземпляры или plain-объекты для `child.setValues`) и не расширяет решётку.
+
+### `Form.setErrors`
+
+```ts
+form.setErrors({
+  email: "Занято",
+  "address.city": ["Не обслуживаем"],
+  "items[0].name": "Укажите имя",
+});
+```
+
+Полностью заменяет внешние ошибки формы: пути, отсутствующие в объекте, очищаются (включая вложенные формы и элементы массивов).
+
+### `Form.autoSave`
+
+```ts
+const stop = form.autoSave(
+  async (submitted) => api.save(submitted.values),
+  { debounceMs: 500, validate: true },
+);
+stop();
+```
+
+Вызывает обработчик после изменений с debounce, только если `isDirty` и форма валидна; `validate: true` дополнительно запускает `validate()` перед вызовом. Для `beforeunload` подпишитесь на `isDirty` и `window.addEventListener("beforeunload", ...)` вручную.
 
 ### `FieldProps`
 
@@ -198,7 +260,7 @@ import { Field, Form, Required, ValidateIf } from "@ivlev-dev/silent-form";
 public accessor customValue = "";
 ```
 
-Обёртка над `ValidateIf` валидатора: применяет условие и сохраняет предикат в метаданных поля. `isReady` не требует значение, если синхронный предикат вернул не `true`. Асинхронное (thenable) условие считается активным, как в валидаторе. **Импортируйте `ValidateIf` из `@ivlev-dev/silent-form`**, иначе форма не увидит условие.
+Обёртка над `ValidateIf` валидатора: применяет условие и сохраняет предикат в метаданных поля. `isReady` не требует значение, если синхронный предикат вернул не `true`. Async (thenable) условие для синхронной готовности считается **оптимистично неактивным**, поэтому `isReady` не блокируется; `validate()`/`validateField()`/submit выполняют условие и дают окончательный результат. **Импортируйте `ValidateIf` из `@ivlev-dev/silent-form`**, иначе форма не увидит условие.
 
 ### `Optional`
 
@@ -318,11 +380,13 @@ await form.onSubmit(async (submitted) => {
 - Только stage-3 `accessor`-поля (`public accessor email = ""`), без `experimentalDecorators`. Приватные, статические и символьные имена полей бросают `TypeError`.
 - `FieldPath` строится по публичным не-методам класса: nullable/union-поля (`string | AddressForm`) дают только верхний ключ без вложенных путей, а `@computed`-геттеры тоже попадают в автодополнение (декораторы на уровне типов не видны).
 - Внутри методов самой формы полиморфный `this` не раскрывает `FieldPath<this>`: TypeScript откладывает условные типы. Привяжите `this` к типу класса (`const self: ProfileForm = this`) или вызывайте `getFieldProps` на экземпляре формы.
-- `@ValidateIf` с async-предикатом валидатор отклоняет через `AsyncRuleError`; `isReady` считает thenable-условие активным. Используйте синхронный флаг/поле формы, а async-условие проверяйте в `@Custom`.
+- `@ValidateIf` с async-предикатом: `isReady` оптимистичен (thenable считается неактивным), окончательное решение принимают `validate()`/`validateField()`/submit. Для строгой синхронной готовности используйте синхронный предикат.
 - Поле, которое не отмечено ни одним декоратором формы, в метаданные не попадает: `getFieldProps` бросит ошибку с перечнем доступных путей. Если у поля есть только правила валидатора, его ошибки всё равно попадают в `errors`, а про отсутствие `@Field` сообщается один раз.
 - Внешние ошибки очищаются при изменении значения только при `clearExternalErrorsOnChange` (по умолчанию `true`); ошибки правил остаются до повторной проверки.
 - Вложенная форма — только значение `instanceof Form`. Один экземпляр не может быть полем двух форм; повторная привязка даёт ошибку. Привязка атомарна: при конфликте значение и старый ребёнок не меняются. Присвоение новой вложенной формы подхватывается при следующем обращении к метаданным, `values` или проверке.
 - Любое поле формы обязано иметь `@Field()`/`@FormField()`; иначе при инициализации бросается `TypeError`.
+- Массив форм — массив экземпляров `Form`; один экземпляр — один родитель и один путь. `add`/`insert` принимают готовый элемент; `remove`/`clear` освобождают только добавленные элементы, эталонные остаются живыми до `dispose()` и возвращаются `reset()`; `setValues` не создаёт новые элементы и не меняет длину массива.
+- Схемная проверка включается только при наследовании `ValidationModel` и наличии сгенерированной плагином `validation()` схемы; без плагина проверяются только декораторные правила. `types:false` отключает схемную часть.
 - `reset()` возвращает эталон, снятый после завершения конструкции экземпляра (микрозадача из конструктора или первый `ensureInitialized`). Каждый вызов пишет свежую копию: массивы/plain-объекты клонируются, `Map`/`Set`/`Date` копируются, вложенные формы сохраняются как экземпляры и сбрасываются через `child.reset()`.
 - `values` — снимок-копия, а не ссылки на внутренние значения; мутация результата не меняет форму. `getFieldProps(...).value` для массивов/объектов остаётся живым значением модели — меняйте его через `setValue`/события, а не мутацией.
 - Самоссылочная форма (`child: NodeForm | undefined` как поле `NodeForm`) не выводится в `FieldPath` — TypeScript выдаёт `TS2615`. Древовидные формы описывайте отдельным не-рекурсивным типом полей или документируйте каст.

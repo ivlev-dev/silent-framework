@@ -12,6 +12,8 @@
 - Метаданные для UI: `@Label`, `@Placeholder`, `@Hint`, `@Required`, `@Optional`, `@ValidateIf`, `@ValidateOn`.
 - Все правила `@ivlev-dev/silent-validation` доступны без дополнительной настройки.
 - Вложенные формы (`@FormField()`) связываются автоматически: значения, ошибки и `isReady` агрегируются; `validateOnSubmit: false` рекурсивно проверяет `@ValidateOn("submit")` на любой глубине; `dispose()` рекурсивно освобождает детей.
+- Массивы повторяемых форм: `getFieldArray("items")` (`add/insert/remove/move/clear`, `values`/`errors`/`isReady`/`isDirty`), плоские пути `items[0].city`.
+- `Form extends ValidationModel`: схемная проверка типов из плагина `validation()`, `validate({types:false})` её отключает.
 - Режимы проверки: `change`, `input`, `blur`, `submit`, `none`, для поля и для формы; параллельные `validate()`/`validateField()` дедуплицируются, изменение значения инвалидирует устаревший прогон.
 - `validate(options?)`/`validateField(field, options?)` принимают `ValidationOptions` (`groups`, `cascade`, `stopAtFirst`, `types`, `locale`, `labels`).
 - Серверные ошибки через `setFieldErrors` с автоочисткой при изменении; ошибка уровня поля-формы снимается при изменении ребёнка.
@@ -143,6 +145,54 @@ form.isReady; // учитывает готовность вложенной фо
 
 Один экземпляр вложенной формы нельзя использовать в двух родителях — будет понятная ошибка. Привязка атомарна: при конфликте значение и старый ребёнок не меняются. Ярлык вложенного поля: `@Label` ребёнка → `labels["address.city"]` → `labels["city"]` → имя; id одинаков через родителя и ребёнка (`form.getFieldProps("address.city").id === form.address.getFieldProps("city").id`).
 
+## Массивы повторяемых форм
+
+```ts
+class ItemForm extends Form {
+  @Field() @Required() public accessor name = "";
+  @Field() public accessor city = "";
+}
+
+class OrderForm extends Form {
+  @Field() public accessor items: ItemForm[] = [];
+}
+
+const form = new OrderForm();
+const items = form.getFieldArray("items");
+const item = items.add(new ItemForm());
+items.insert(0, new ItemForm());
+items.move(0, 1);
+items.remove(0);
+
+form.values.items;  // [{ name: "", city: "" }]
+item.getFieldProps("city").id; // "OrderForm-items[0].city"
+```
+
+Элементы — экземпляры `Form`, один экземпляр — один родитель/путь. `remove`/`clear` освобождают добавленные элементы; эталонные остаются живыми до `dispose()` и восстанавливаются `reset()`. `setValues({ items: [...] })` обновляет только существующие элементы и не расширяет массив.
+
+## `setErrors`
+
+```ts
+form.setErrors({
+  email: "Занято",
+  "items[0].name": ["Укажите имя"],
+});
+```
+
+Полностью заменяет внешние ошибки; отсутствующие пути очищаются.
+
+## `autoSave`
+
+```ts
+const stop = form.autoSave((f) => api.save(f.values), {
+  debounceMs: 500,
+  validate: true,
+});
+stop();
+```
+
+Обработчик вызывается после изменений с debounce, только для `isDirty` и валидной формы; `validate:true` сначала запускает `validate()`.
+
 ## Серверные ошибки
 
 ```ts
@@ -192,8 +242,10 @@ await form.onSubmit(async (submitted) => {
 - `reset()` восстанавливает эталон, снятый после создания экземпляра; прямые присваивания до первого обращения/микрозадачи считаются частью конструкции.
 - `@ValidateOn("none")` отключает автоматическую проверку по событиям; явные `validate()`/`validateField()` работают всегда.
 - Вложенность определяется по `instanceof Form`; при конфликте владения `setValues`/`reset` не меняют текущее значение.
+- Массив форм — массив экземпляров `Form`; `setValues` не создаёт новые элементы и не расширяет массив; `remove`/`clear` не освобождают эталонные элементы (они живут до `dispose()` и возвращаются `reset()`).
+- Схемная проверка работает только при наследовании `ValidationModel` и наличии схемы от плагина `validation()`; `types:false` её отключает.
 - `FieldPath` видит все публичные не-методы класса (включая `@computed`-геттеры), но `getFieldProps` работает только для полей, отмеченных декоратором формы; nullable/union-поля дают только верхний ключ без вложенных путей.
-- `@ValidateIf` с async-предикатом отклоняется валидатором (`AsyncRuleError`); `isReady` считает thenable активным — используйте синхронный флаг.
+- `@ValidateIf` с async-предикатом: `isReady` оптимистичен (thenable считается неактивным), окончательное решение — за `validate()`/submit.
 - DOM-`id` по умолчанию строится из имени класса; минификатор может его переименовать, а два экземпляра без `formId` получают одинаковые id. Для списков/SSR задайте уникальный `formId`.
 
 ## Ссылки
