@@ -15,11 +15,15 @@ import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-const packageNames = ["validation", "validation-vite"];
-const packedNames = [...packageNames, "vite", "swc"];
+const packageNames = ["validation", "validation-vite", "form"];
+const packedNames = [...packageNames, "core", "di", "reactivity", "vite", "swc"];
 const entryFiles = {
   validation: join("dist", "index.js"),
   "validation-vite": join("dist", "index.js"),
+  form: join("dist", "index.js"),
+  core: join("dist", "index.js"),
+  di: join("dist", "index.js"),
+  reactivity: join("dist", "index.js"),
   vite: join("dist", "index.js"),
   swc: "index.js",
 };
@@ -130,9 +134,18 @@ function writeProject() {
     join(project, "src", "main.ts"),
     [
       'import { ValidationModel } from "@ivlev-dev/silent-validation";',
+      'import { Field, Form, IsEmail, Label, Required } from "@ivlev-dev/silent-form";',
       "",
       "export class User extends ValidationModel {",
       '  public accessor email: string = "";',
+      "}",
+      "",
+      "export class LoginForm extends Form<{ email: string }> {",
+      "  @Field()",
+      "  @Required()",
+      "  @IsEmail()",
+      '  @Label("Email")',
+      '  public accessor email = "";',
       "}",
       "",
     ].join("\n"),
@@ -141,7 +154,7 @@ function writeProject() {
     join(project, "check.mjs"),
     [
       'import { validate } from "@ivlev-dev/silent-validation";',
-      'import { User } from "./dist/index.js";',
+      'import { LoginForm, User } from "./dist/index.js";',
       "",
       "const valid = new User();",
       'valid.email = "user@example.com";',
@@ -154,6 +167,15 @@ function writeProject() {
       'if (invalidResult.valid) throw new Error("неверный тип поля email не обнаружен");',
       'const typeError = invalidResult.errors.find((error) => error.field === "email" && error.rule === "type");',
       'if (typeError === undefined) throw new Error("нет ошибки rule=type для email: " + JSON.stringify(invalidResult.errors));',
+      "",
+      "const login = new LoginForm();",
+      'login.getFieldProps("email").onChange({ currentTarget: { value: "не-email" } });',
+      "await login.validate();",
+      'if (login.isValid) throw new Error("форма: неверный email прошёл проверку");',
+      'login.email = "user@example.com";',
+      "await login.validate();",
+      'if (!login.isValid) throw new Error("форма: валидный email отклонён: " + JSON.stringify(login.errors));',
+      'if (login.getFieldProps("email").label !== "Email") throw new Error("форма: метаданные @Label потеряны");',
       "",
       'console.log("consumer: runtime ok");',
       "",

@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const names = ["reactivity", "di", "core", "swc", "vite", "server", "router", "validation", "validation-vite", "silent"];
+const names = ["reactivity", "di", "core", "swc", "vite", "server", "router", "validation", "validation-vite", "form", "silent"];
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const output = mkdtempSync(join(tmpdir(), "silent-install-"));
 const packs = join(output, "packs");
@@ -75,6 +75,7 @@ import { container } from "@ivlev-dev/silent-di";
 import { hydrate, mount } from "@ivlev-dev/silent-core";
 import { renderToString } from "@ivlev-dev/silent-server";
 import { validate } from "@ivlev-dev/silent-validation";
+import { Form, Field, Label, Required } from "@ivlev-dev/silent-form";
 import silent from "@ivlev-dev/silent-vite";
 import { transform, version } from "@ivlev-dev/silent-swc";
 import { mount as metaMount, Router as metaRouter, silent as metaSilent } from "@ivlev-dev/silent";
@@ -88,6 +89,10 @@ if (typeof mount !== "function" || typeof hydrate !== "function") {
 }
 if (typeof renderToString !== "function") throw new Error("server: renderToString");
 if (typeof validate !== "function") throw new Error("validation: validate missing");
+if (typeof Form !== "function") throw new Error("form: Form class missing");
+if (typeof Field !== "function" || typeof Label !== "function" || typeof Required !== "function") {
+  throw new Error("form: decorators missing");
+}
 if (typeof silent !== "function") throw new Error("vite: plugin export");
 if (typeof metaMount !== "function") throw new Error("silent: mount re-export");
 if (typeof metaSilent !== "function") throw new Error("silent: plugin re-export");

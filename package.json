@@ -8,13 +8,15 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "pnpm build:native && tsc -b packages/reactivity/tsconfig.json packages/di/tsconfig.json packages/validation/tsconfig.json packages/validation-vite/tsconfig.json packages/core/tsconfig.json packages/vite/tsconfig.json packages/server/tsconfig.json packages/router/tsconfig.json",
+    "build": "pnpm build:native && tsc -b packages/reactivity/tsconfig.json packages/di/tsconfig.json packages/validation/tsconfig.json packages/validation-vite/tsconfig.json packages/core/tsconfig.json packages/vite/tsconfig.json packages/server/tsconfig.json packages/router/tsconfig.json packages/form/tsconfig.json",
     "build:native": "pnpm --filter @ivlev-dev/silent-swc build",
     "test": "cargo test -p silent-transform && pnpm -r --filter \"./packages/**\" --if-present test",
-    "typecheck": "pnpm -r --filter \"./packages/**\" --if-present typecheck && tsc -p packages/core/tsconfig.typecheck.json && pnpm --filter @ivlev-dev/silent-example-counter typecheck && pnpm --filter @ivlev-dev/silent-example-ssr-counter typecheck && pnpm --filter @ivlev-dev/silent-example-todo typecheck && pnpm --filter @ivlev-dev/silent-example-router typecheck && pnpm --filter @ivlev-dev/silent-bench exec tsc --noEmit -p tsconfig.json",
+    "typecheck": "pnpm -r --filter \"./packages/**\" --if-present typecheck && tsc -p packages/core/tsconfig.typecheck.json && pnpm --filter @ivlev-dev/silent-example-counter typecheck && pnpm --filter @ivlev-dev/silent-example-ssr-counter typecheck && pnpm --filter @ivlev-dev/silent-example-todo typecheck && pnpm --filter @ivlev-dev/silent-example-router typecheck && pnpm --filter @ivlev-dev/silent-example-forms typecheck && pnpm --filter @ivlev-dev/silent-bench exec tsc --noEmit -p tsconfig.json",
     "dev": "pnpm --filter @ivlev-dev/silent-example-counter dev",
     "dev:todo": "pnpm --filter @ivlev-dev/silent-example-todo dev",
+    "dev:forms": "pnpm --filter @ivlev-dev/silent-example-forms dev",
     "build:example": "pnpm --filter @ivlev-dev/silent-example-counter build",
+    "build:forms": "pnpm --filter @ivlev-dev/silent-example-forms build",
     "bench": "pnpm --filter @ivlev-dev/silent-bench bench",
     "bench:ssr": "node scripts/bench-cpus.mjs pnpm --filter @ivlev-dev/silent-bench bench:ssr",
     "bench:build": "node scripts/bench-cpus.mjs pnpm --filter @ivlev-dev/silent-bench exec tsx src/build-bench.ts",

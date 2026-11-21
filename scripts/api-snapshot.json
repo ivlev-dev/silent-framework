@@ -226,6 +226,20 @@
       "setContainerResolutionInspector",
       "Token"
     ],
+    "@ivlev-dev/silent-form": [
+      "Field",
+      "FieldPath",
+      "FieldProps",
+      "Form",
+      "FormField",
+      "FormOptions",
+      "Hint",
+      "Label",
+      "Placeholder",
+      "Required",
+      "ValidateOn",
+      "ValidateOnMode"
+    ],
     "@ivlev-dev/silent-reactivity": [
       "Accessor",
       "batch",

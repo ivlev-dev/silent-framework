@@ -20,6 +20,7 @@
 - `<title>`, `<meta>` и `<link>` из любого компонента выносятся в `<head>` — как в React 19, с SSR-поддержкой.
 - Опциональный `@ivlev-dev/silent-router`: класс `Router`, компоненты `Link`/`RouterView`, guards/loaders и memory history для SSR.
 - Опциональный `@ivlev-dev/silent-validation`: декораторы + валидация из TS-типов через Vite-плагин `@ivlev-dev/silent-validation-vite` (`@Required`, `@IsEmail`, `@Min` — всего 51 правило, `accessor`-поля без дублирования типов), кастомные сообщения, встроенные ru/en и интеграция с i18n.
+- Опциональный `@ivlev-dev/silent-form`: реактивные формы на тех же `accessor`-декораторах — метаданные полей (`@Label`, `@Placeholder`, `@Hint`, `@Required`), вложенные формы, серверные ошибки и асинхронная готовность полей.
 - Справочник API с автопроверкой полноты (`pnpm api:check`).
 
 ## Установка
@@ -44,6 +45,8 @@ pnpm add @ivlev-dev/silent-server
 pnpm add @ivlev-dev/silent-validation
 # для валидации из TS-типов:
 pnpm add -D @ivlev-dev/silent-validation-vite
+# для форм:
+pnpm add @ivlev-dev/silent-form
 ```
 
 ```ts
@@ -82,6 +85,30 @@ if (!result.valid) {
 ```
 
 Пакет не зависит от core: декораторы вешаются на поля, валидация вызывается явно (`validate`/`validateAsync`), сообщения настраиваются через `configureValidation` с резолвером i18n. Типы `accessor`-полей можно не дублировать декораторами — плагин `validation()` из `@ivlev-dev/silent-validation-vite` читает TS-аннотации на сборке и проверяет их в рантайме. Для валидации из типов класс наследуется от `ValidationModel`: плагин генерирует схему только для потомков (наследование может быть многоуровневым). В 0.12.0 добавлены `safeParse`/`safeParseAsync` (результат без исключения), `validatePartial`/`validateProperty` с async-вариантами и декоратор `@ValidateOnSet` для проверки при присваивании. Сообщения поддерживают плюрализацию через `Intl.PluralRules` и асинхронный резолвер (только в async-проверках). Подробнее — [`docs/api/validation.md`](./docs/api/validation.md).
+
+## Формы
+
+`@ivlev-dev/silent-form` строит реактивные формы на тех же stage-3 `accessor`-декораторах и правилах валидатора:
+
+```ts
+import { Field, Form, IsEmail, Label, Required } from "@ivlev-dev/silent-form";
+
+class LoginForm extends Form<{ email: string }> {
+  @Field()
+  @Label("Email")
+  @Required()
+  @IsEmail()
+  public accessor email = "";
+}
+
+const form = new LoginForm({ formId: "login" });
+const email = form.getFieldProps("email");
+
+email.onChange({ currentTarget: { value: "user@example.com" } });
+await form.onSubmit((submitted) => api.login(submitted.values))();
+```
+
+`getFieldProps` отдаёт реактивные `value`, `label`, `placeholder`, `hint`, `error`, `isReady`, `isValid`, `isValidating` и обработчики `onInput`/`onChange`/`onBlur`. Вложенные формы подключаются через `@FormField()` — значения, ошибки и готовность агрегируются, пути типизированы (`address.city`); серверные ошибки ставятся `setFieldErrors` и снимаются при изменении значения. Подробнее — [`docs/api/form.md`](./docs/api/form.md), полный пример — [`examples/forms`](./examples/forms).
 
 ## Компонент и ViewModel
 
@@ -353,7 +380,7 @@ silent({
 - [Роутер](./docs/guides/router.md)
 - [Миграция с SolidJS](./docs/guides/migration-from-solid.md)
 - [Справочник API](./docs/api/index.md)
-- Примеры: [`examples/counter`](./examples/counter) (счётчик, ViewModel, DI, списки и HMR), [`examples/todo`](./examples/todo) (задачи: VM + DI-хранилище, keyed-список, фильтры, localStorage), [`examples/router`](./examples/router) (роутер: route-классы, typed query, lazy-маршруты, prefetch и DI) и [`examples/ssr-counter`](./examples/ssr-counter) (SSR и гидрация)
+- Примеры: [`examples/counter`](./examples/counter) (счётчик, ViewModel, DI, списки и HMR), [`examples/todo`](./examples/todo) (задачи: VM + DI-хранилище, keyed-список, фильтры, localStorage), [`examples/router`](./examples/router) (роутер: route-классы, typed query, lazy-маршруты, prefetch и DI), [`examples/forms`](./examples/forms) (формы: вложенная форма адреса, метаданные полей, серверная ошибка и асинхронная готовность) и [`examples/ssr-counter`](./examples/ssr-counter) (SSR и гидрация)
 
 ## Разработка
 

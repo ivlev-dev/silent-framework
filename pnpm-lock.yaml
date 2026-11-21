@@ -274,6 +274,34 @@ importers:
         specifier: ^8.3.6
         version: 8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)
 
+  examples/forms:
+    dependencies:
+      '@ivlev-dev/silent-core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@ivlev-dev/silent-di':
+        specifier: workspace:*
+        version: link:../../packages/di
+      '@ivlev-dev/silent-form':
+        specifier: workspace:*
+        version: link:../../packages/form
+      '@ivlev-dev/silent-reactivity':
+        specifier: workspace:*
+        version: link:../../packages/reactivity
+      '@ivlev-dev/silent-validation':
+        specifier: workspace:*
+        version: link:../../packages/validation
+    devDependencies:
+      '@ivlev-dev/silent-vite':
+        specifier: workspace:*
+        version: link:../../packages/vite
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vite:
+        specifier: 8.3.6
+        version: 8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)
+
   examples/router:
     dependencies:
       '@ivlev-dev/silent-core':
@@ -366,6 +394,33 @@ importers:
 
   packages/di:
     devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^5.1.0
+        version: 5.1.0(@types/node@26.6.6)(jsdom@31.0.0)(vite@8.3.7(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15))
+
+  packages/form:
+    devDependencies:
+      '@ivlev-dev/silent-core':
+        specifier: workspace:*
+        version: link:../core
+      '@ivlev-dev/silent-reactivity':
+        specifier: workspace:*
+        version: link:../reactivity
+      '@ivlev-dev/silent-swc':
+        specifier: workspace:*
+        version: link:../swc
+      '@ivlev-dev/silent-validation':
+        specifier: workspace:*
+        version: link:../validation
+      '@ivlev-dev/silent-vite':
+        specifier: workspace:*
+        version: link:../vite
+      jsdom:
+        specifier: ^31.0.0
+        version: 31.0.0
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
