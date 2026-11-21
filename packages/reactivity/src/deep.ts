@@ -38,6 +38,7 @@ interface ReadonlyRecord {
 type ReactiveMethod = (...args: unknown[]) => unknown;
 
 const MAX_ARRAY_INDEX = 4294967295;
+const SPLICE_INSERT_CHUNK = 8192;
 
 const ARRAY_MUTATORS: ReadonlySet<string> = new Set<string>([
   "push",
@@ -317,6 +318,13 @@ function arrayUnshift(record: ReactiveRecord, items: unknown[]): number {
   return length;
 }
 
+function toSpliceIndex(value: unknown): number {
+  if (typeof value === "bigint") {
+    throw new TypeError("Cannot convert a BigInt value to a number");
+  }
+  return toIntegerOrInfinity(value);
+}
+
 function arraySplice(record: ReactiveRecord, args: unknown[]): unknown {
   const array = record.raw as unknown[];
   const previousLength = array.length;
@@ -325,16 +333,37 @@ function arraySplice(record: ReactiveRecord, args: unknown[]): unknown {
   for (let index = 0; index < previousLength; index += 1) {
     previousOwn[index] = hasOwn(array, index);
   }
-  const start = args[0];
-  const deleteCount = args[1];
   const inserted = args.length > 2 ? args.slice(2).map(unwrapValue) : [];
-  let removed: unknown[];
-  if (args.length === 0) {
-    removed = [];
-  } else if (args.length === 1) {
-    removed = array.splice(start as number);
-  } else {
-    removed = array.splice(start as number, deleteCount as number, ...inserted);
+  let startIndex = 0;
+  let deleteCount = 0;
+  if (args.length > 0) {
+    startIndex = normalizeRelativeIndex(
+      toSpliceIndex(args[0]),
+      previousLength,
+    );
+    if (args.length === 1) {
+      deleteCount = previousLength - startIndex;
+    } else {
+      deleteCount = Math.min(
+        Math.max(toSpliceIndex(args[1]), 0),
+        previousLength - startIndex,
+      );
+    }
+  }
+  const removed = array.slice(startIndex, startIndex + deleteCount);
+  // Вставка чанками: array.splice(start, 0, ...inserted) переполняет стек
+  // вызовов на больших наборах. После вставки удаляем исходные элементы,
+  // которые сдвинулись вправо на inserted.length.
+  for (
+    let offset = 0;
+    offset < inserted.length;
+    offset += SPLICE_INSERT_CHUNK
+  ) {
+    const chunk = inserted.slice(offset, offset + SPLICE_INSERT_CHUNK);
+    array.splice(startIndex + offset, 0, ...chunk);
+  }
+  if (deleteCount > 0) {
+    array.splice(startIndex + inserted.length, deleteCount);
   }
   const length = array.length;
   const limit = Math.max(previousLength, length);
