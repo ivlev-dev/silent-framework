@@ -5,8 +5,12 @@ import {
   flushSync,
   isReactive,
   isReactiveClass,
+  isReadonly,
   markReactiveClass,
+  readField,
+  readonly,
   unwrap,
+  writeField,
 } from "../src/index";
 
 describe("deepReactive", () => {
@@ -295,26 +299,111 @@ describe("deepReactive", () => {
     expect(isReactiveClass(PlainModel)).toBe(false);
     const reactive = new ReactiveModel();
     expect(deepReactive(reactive)).toBe(reactive);
+    expect(isReactive(reactive)).toBe(false);
     const plain = new PlainModel();
-    expect(isReactive(deepReactive(plain))).toBe(true);
-    const nested = deepReactive([reactive, new PlainModel()]);
+    expect(deepReactive(plain)).toBe(plain);
+    expect(isReactive(plain)).toBe(false);
+    const nested = deepReactive([reactive, new PlainModel(), { value: 2 }]);
     expect(nested[0]).toBe(reactive);
-    expect(isReactive(nested[1])).toBe(true);
+    expect(nested[1]).toBeInstanceOf(PlainModel);
+    expect(isReactive(nested[1])).toBe(false);
+    expect(isReactive(nested[2])).toBe(true);
   });
 
-  it("keeps class instances deeply reactive until marked", () => {
-    class Model {
-      value = 1;
+  it("does not wrap class instances with #private fields or accessors", () => {
+    class Row {
+      #sku = "";
+
+      get sku(): string {
+        return this.#sku;
+      }
+
+      set sku(value: string) {
+        this.#sku = value;
+      }
     }
-    const model = deepReactive(new Model());
+
+    const row = new Row();
+    row.sku = "A-1";
+    expect(deepReactive(row)).toBe(row);
+    expect(isReactive(row)).toBe(false);
+    expect(unwrap(deepReactive(row))).toBe(row);
+
+    const rows = deepReactive<Row[]>([row]);
+    expect(isReactive(rows)).toBe(true);
+    expect(rows[0]).toBe(row);
+    expect(rows[0]?.sku).toBe("A-1");
+    if (rows[0] !== undefined) {
+      rows[0].sku = "B-2";
+    }
+    expect(row.sku).toBe("B-2");
+  });
+
+  it("keeps marked classes reactive through their own store", () => {
+    class MarkedModel {
+      #value = 0;
+
+      get value(): number {
+        return readField(this, "value", () => this.#value);
+      }
+
+      set value(next: number) {
+        writeField(this, "value", next, (raw) => {
+          this.#value = raw;
+        });
+      }
+    }
+    markReactiveClass(MarkedModel);
+
+    const model = new MarkedModel();
+    expect(deepReactive(model)).toBe(model);
+    expect(isReactive(model)).toBe(false);
+
+    class DerivedModel extends MarkedModel {}
+    const derived = new DerivedModel();
+    expect(deepReactive(derived)).toBe(derived);
+    expect(isReactive(derived)).toBe(false);
+
+    let runs = 0;
+    let seen = -1;
+    createRenderEffect(() => {
+      seen = model.value;
+      runs += 1;
+    });
+    expect(seen).toBe(0);
+    model.value = 5;
+    flushSync();
+    expect(seen).toBe(5);
+    expect(runs).toBe(2);
+  });
+
+  it("keeps plain objects nested in a reactive array reactive", () => {
+    const list = deepReactive([{ count: 0 }]);
+    expect(isReactive(list[0])).toBe(true);
     let runs = 0;
     createRenderEffect(() => {
-      model.value;
+      list[0]?.count;
       runs += 1;
     });
     expect(runs).toBe(1);
-    model.value = 2;
+    if (list[0] !== undefined) {
+      list[0].count = 1;
+    }
     flushSync();
     expect(runs).toBe(2);
+  });
+
+  it("readonly does not wrap class instances", () => {
+    class Row {
+      #value = 1;
+
+      get value(): number {
+        return this.#value;
+      }
+    }
+    const row = new Row();
+    expect(readonly(row)).toBe(row);
+    expect(isReadonly(readonly(row))).toBe(false);
+    expect(isReadonly(readonly({ value: 1 }))).toBe(true);
   });
 });

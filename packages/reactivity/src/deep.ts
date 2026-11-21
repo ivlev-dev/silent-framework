@@ -900,6 +900,22 @@ function isRawMarked(value: object): boolean {
   return hasRawPrototype(value);
 }
 
+function hasClassPrototype(value: object): boolean {
+  let current = Object.getPrototypeOf(value) as object | null;
+  while (current !== null) {
+    const descriptor = Reflect.getOwnPropertyDescriptor(current, "constructor");
+    if (
+      descriptor !== undefined &&
+      typeof descriptor.value === "function" &&
+      descriptor.value !== Object
+    ) {
+      return true;
+    }
+    current = Object.getPrototypeOf(current) as object | null;
+  }
+  return false;
+}
+
 function shouldWrap(value: object): boolean {
   if (isRawMarked(value)) {
     return false;
@@ -920,7 +936,11 @@ function shouldWrap(value: object): boolean {
   if (isNonReactiveTag(tag)) {
     return false;
   }
-  return tag === "[object Object]";
+  // Авто-обёртка только для plain-объектов (Object.prototype/null и объекты
+  // с литеральным прототипом). Экземпляры пользовательских классов не
+  // оборачиваются: прокси ломает `#private`-поля и accessor-декораторы
+  // (`@reactive`/`@Field` сами управляют реактивностью через store).
+  return tag === "[object Object]" && !hasClassPrototype(value);
 }
 
 function objectGet(record: ReactiveRecord, key: PropertyKey): unknown {
