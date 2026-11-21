@@ -54,20 +54,20 @@ abstract class Form {}
 
 Свойства формы:
 
-- `isReady` — вычисляемое: все поля `setReady(true)`, вложенные формы готовы, ошибок нет, обязательные поля непусты, нет идущих проверок. Посещённость (`touched`) не учитывается.
-- `isValid` — ошибок нет.
+- `isReady` — вычисляемое: все поля `setReady(true)`, вложенные формы готовы, ошибок нет, нет идущих проверок. Обязательное поле (`@Required`) должно быть непустым, но `@Optional` с `undefined`/`null` и `@ValidateIf` с неактивным условием требование снимают. Посещённость (`touched`) не учитывается.
+- `isValid` — ошибок нет, включая ошибки правил у полей без `@Field`.
 - `isDirty` — хотя бы одно поле менялось через `setValue`, событие, `setValues` или вложенную форму.
 - `isSubmitting` — идёт `onSubmit`.
-- `errors` — `Readonly<Record<string, readonly string[]>>` по плоским путям, включая вложенные (`address.city`). Сначала идут ошибки правил, затем внешние.
-- `values` — реактивный снимок значений; вложенные формы представлены вложенными объектами.
+- `errors` — `Readonly<Record<string, readonly string[]>>` по плоским путям, включая вложенные (`address.city`) и элементы коллекций (`tags[0]`). Сначала идут ошибки правил, затем внешние.
+- `values` — реактивный снимок значений-копий: массивы и plain-объекты клонируются рекурсивно, `Map`/`Set`/`Date` копируются, экземпляры классов возвращаются как есть; вложенные формы представлены вложенными объектами.
 - `getFieldProps(field)` — стабильный (кэшированный) объект `FieldProps` для пути.
 - `validateField(field)` — проверить одно поле, включая путь вложенной формы.
-- `validate()` — полная проверка: помечает все поля `touched`, собирает ошибки по путям, проверяет вложенные формы при `validateNested`.
+- `validate()` — полная проверка: снимает debounce-таймеры, помечает все поля `touched`, собирает ошибки по путям, проверяет вложенные формы при `validateNested`. Возвращает `true`, только если и валидатор, и форма (включая вложенные формы и внешние ошибки) валидны.
 - `onSubmit(callback)` — каррированный обработчик отправки.
 - `setFieldErrors(field, errors)` / `clearFieldErrors(field?)` — внешние (серверные) ошибки.
 - `setValues(values)` / `reset()` / `dispose()`.
 
-`validate()` и `validateField()` асинхронны и возвращают `Promise<boolean>`. `dispose()` идемпотентен, освобождает реактивное хранилище и снимает таймеры `debounceMs`.
+`validate()` и `validateField()` асинхронны и возвращают `Promise<boolean>`. Каждый вызов получает монотонное поколение: `reset()`/`dispose()` отменяют незавершённые проверки, а поздний результат не перезаписывает свежие ошибки. `dispose()` идемпотентен, освобождает реактивное хранилище и снимает таймеры `debounceMs`; `onSubmit` после `dispose()` колбэк не вызывает.
 
 ### `FieldPath`
 
@@ -140,6 +140,8 @@ public accessor email = "";
 
 Делает accessor реактивным (семантика `@reactive` из core) и регистрирует поле в метаданных формы. Работает вместе с `@computed` и `@watch` из `@ivlev-dev/silent-core`. Поддерживаются только stage-3 `accessor`-поля с публичным строковым именем.
 
+**Любое поле формы обязано иметь `@Field()` или `@FormField()`.** Если у поля есть только `@Required`/`@Label`/`@ValidateOn` и т. п., при первом обращении к форме будет брошен `TypeError`. Правила валидатора, навешенные на поле без `@Field`, всё равно проверяются: их ошибки попадают в `errors`/`isValid`, а про отсутствие `@Field` один раз сообщается через `onError` (или `console.warn`).
+
 ### `FormField`
 
 Синоним `@Field()` для вложенной формы. Вложенность определяется по значению поля: `instanceof Form`.
@@ -179,7 +181,33 @@ public accessor name = "";
 public accessor name = "";
 ```
 
-Обёртка над `Required` из валидатора: применяет правило `required` и помечает поле обязательным (`isRequired` → звёздочка в UI). Принимает `RuleOptions`.
+Обёртка над `Required` из валидатора: применяет правило `required` и помечает поле обязательным (`isRequired` → звёздочка в UI). Принимает `RuleOptions`. `isReady` требует непустое значение только при активном требовании — см. `@Optional` и `@ValidateIf`.
+
+### `ValidateIf`
+
+```ts
+import { Field, Form, Required, ValidateIf } from "@ivlev-dev/silent-form";
+
+@Field()
+@Required()
+@ValidateIf((form: MyForm) => form.mode === "custom")
+public accessor customValue = "";
+```
+
+Обёртка над `ValidateIf` валидатора: применяет условие и сохраняет предикат в метаданных поля. `isReady` не требует значение, если синхронный предикат вернул не `true`. Асинхронное (thenable) условие считается активным, как в валидаторе. **Импортируйте `ValidateIf` из `@ivlev-dev/silent-form`**, иначе форма не увидит условие.
+
+### `Optional`
+
+```ts
+import { Field, Optional, Required } from "@ivlev-dev/silent-form";
+
+@Field()
+@Required()
+@Optional()
+public accessor nickname: string | undefined = undefined;
+```
+
+Обёртка над `Optional` валидатора: `undefined`/`null` не требуются в `isReady`. Пустая строка остаётся непустым требованием `@Required`. **Импортируйте `Optional` из `@ivlev-dev/silent-form`**, иначе форма не увидит флаг.
 
 ### `ValidateOn`
 
@@ -191,14 +219,14 @@ public accessor email = "";
 public accessor nickname = "";
 ```
 
-Режим автоматической проверки конкретного поля. Переопределяет настройки формы целиком.
+Режим автоматической проверки конкретного поля. Переопределяет настройки формы целиком. При `validateOnSubmit: false` `onSubmit` рекурсивно вызывает `validateSubmitFields()` у вложенных форм, поэтому поля с `@ValidateOn("submit")` проверяются на любой глубине.
 
 ## Реэкспорт валидатора
 
 Из `@ivlev-dev/silent-validation` реэкспортируются без изменений:
 
 - Проверка: `validate`, `validateAsync`, `validateOrThrow`, `validateOrThrowAsync`, `validateProperty`, `validatePropertyAsync`, `validatePartial`, `validatePartialAsync`, `safeParse`, `safeParseAsync`.
-- Модификаторы: `Groups`, `Optional`, `ValidateIf`, `ValidateOnSet`.
+- Модификаторы: `Groups`, `ValidateOnSet`; `Optional` и `ValidateIf` реэкспортируются из `@ivlev-dev/silent-form` как обёртки с метаданными формы.
 - Наличие: `NotNull`, `NotUndefined`, `NotEmpty`, `IsDefined`.
 - Типы значений: `IsString`, `IsBoolean`, `IsInt`, `IsFloat`, `IsNumber`, `IsArray`, `IsDate`, `IsEnum`, `IsInstanceOf`, `IsObject`, `IsFunction`.
 - Числа: `Min`, `Max`, `Between`, `Positive`, `Negative`, `NonNegative`, `NonPositive`, `MultipleOf`.
@@ -210,7 +238,7 @@ public accessor nickname = "";
 - Исключения и модель: `AsyncRuleError`, `ValidationException`, `ValidationModel`.
 - Типы: `I18nextLike`, `MessageContext`, `MessageFactory`, `MessageResolver`, `RuleDecorator`, `RuleOptions`, `SafeParseFailure`, `SafeParseResult`, `SafeParseSuccess`, `ValidationConfig`, `ValidationError`, `ValidationOptions`, `ValidationResult`.
 
-`Label` и `Required` дополнительно заполняют метаданные формы, но совместимы по сигнатурам с валидатором.
+`Label`, `Required`, `Optional` и `ValidateIf` дополнительно заполняют метаданные формы, но совместимы по сигнатурам с валидатором.
 
 ## Пример формы
 
@@ -285,10 +313,13 @@ await form.onSubmit(async (submitted) => {
 
 - Только stage-3 `accessor`-поля (`public accessor email = ""`), без `experimentalDecorators`. Приватные, статические и символьные имена полей бросают `TypeError`.
 - Внутри методов самой формы полиморфный `this` не раскрывает `FieldPath<this>`: TypeScript откладывает условные типы. Привяжите `this` к типу класса (`const self: ProfileForm = this`) или вызывайте `getFieldProps` на экземпляре формы.
-- Поле, которое не отмечено ни одним декоратором формы, в метаданные не попадает: `getFieldProps` бросит ошибку с перечнем доступных путей.
+- Поле, которое не отмечено ни одним декоратором формы, в метаданные не попадает: `getFieldProps` бросит ошибку с перечнем доступных путей. Если у поля есть только правила валидатора, его ошибки всё равно попадают в `errors`, а про отсутствие `@Field` сообщается один раз.
 - Внешние ошибки очищаются при изменении значения только при `clearExternalErrorsOnChange` (по умолчанию `true`); ошибки правил остаются до повторной проверки.
 - Вложенная форма — только значение `instanceof Form`. Один экземпляр не может быть полем двух форм; повторная привязка даёт ошибку. Присвоение новой вложенной формы подхватывается при следующем обращении к метаданным, `values` или проверке.
-- `reset()` возвращает значения, зафиксированные `@Field` при инициализации экземпляра. Для полей без `@Field` исходное значение фиксируется при первом обращении к форме.
+- Любое поле формы обязано иметь `@Field()`/`@FormField()`; иначе при инициализации бросается `TypeError`.
+- `reset()` возвращает эталон, снятый после завершения конструкции экземпляра (микрозадача из конструктора или первый `ensureInitialized`). Каждый вызов пишет свежую копию: массивы/plain-объекты клонируются, `Map`/`Set`/`Date` копируются, вложенные формы сохраняются как экземпляры и сбрасываются через `child.reset()`.
+- `values` — снимок-копия, а не ссылки на внутренние значения; мутация результата не меняет форму.
+- `reset()`/`dispose()` увеличивают поколение валидации: незавершённые `validate()`/`validateField()` не пишут ошибки и не вызывают колбэк отправки после сброса/освобождения.
 - `isReady` не зависит от `touched`: пустая обязательная форма не готова сразу после создания.
 - `@ValidateOn("none")` отключает автоматическую проверку по событиям; явные `validate()`/`validateField()` работают всегда, а `onSubmit` при `validateOnSubmit: true` проверяет форму целиком.
 - ESM-only, Node.js >= 22.

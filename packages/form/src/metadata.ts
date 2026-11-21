@@ -1,10 +1,20 @@
 import { reactive } from "@ivlev-dev/silent-core";
 import {
   Label as ValidationLabel,
+  Optional as ValidationOptional,
   Required as ValidationRequired,
+  ValidateIf as ValidationValidateIf,
 } from "@ivlev-dev/silent-validation";
 import type { RuleDecorator, RuleOptions } from "@ivlev-dev/silent-validation";
 import type { ValidateOnMode } from "./types.js";
+
+/**
+ * Предикат условия поля. Двухвариантная сигнатура позволяет передавать
+ * `(form: ProfileForm) => boolean`, как в `RuleOptions.when` валидатора.
+ */
+export type FormPredicate = {
+  bivarianceHack(form: object): boolean;
+}["bivarianceHack"];
 
 /** Метаданные поля формы. */
 export interface FieldMetadata {
@@ -13,36 +23,16 @@ export interface FieldMetadata {
   readonly placeholder?: string | undefined;
   readonly hint?: string | undefined;
   readonly required?: boolean | undefined;
+  readonly optional?: boolean | undefined;
+  readonly when?: FormPredicate | undefined;
   readonly validateOn?: readonly ValidateOnMode[] | undefined;
+  /** Поле объявлено через `@Field()`/`@FormField()`. */
+  readonly reactive?: boolean | undefined;
 }
 
 type MetadataPatch = Omit<FieldMetadata, "name">;
 
 const metadataByClass = new WeakMap<Function, Map<string, FieldMetadata>>();
-const initialValuesByInstance = new WeakMap<object, Map<string, unknown>>();
-
-function recordInitialValue(instance: object, name: string, value: unknown): void {
-  let values = initialValuesByInstance.get(instance);
-  if (values === undefined) {
-    values = new Map<string, unknown>();
-    initialValuesByInstance.set(instance, values);
-  }
-  if (!values.has(name)) {
-    values.set(name, value);
-  }
-}
-
-/** Исходное значение поля, зафиксированное при инициализации экземпляра. */
-export function recordedInitialValue(
-  instance: object,
-  name: string,
-): { readonly found: boolean; readonly value: unknown } {
-  const values = initialValuesByInstance.get(instance);
-  if (values === undefined || !values.has(name)) {
-    return { found: false, value: undefined };
-  }
-  return { found: true, value: values.get(name) };
-}
 
 function initializeField(
   instance: object,
@@ -97,7 +87,10 @@ function installMetadata(
     placeholder: patch.placeholder ?? previous?.placeholder,
     hint: patch.hint ?? previous?.hint,
     required: patch.required ?? previous?.required,
+    optional: patch.optional ?? previous?.optional,
+    when: patch.when ?? previous?.when,
     validateOn: patch.validateOn ?? previous?.validateOn,
+    reactive: patch.reactive ?? previous?.reactive,
   };
   fields.set(name, next);
 }
@@ -133,7 +126,7 @@ export function Field(): FieldDecorator {
   return ((target: ClassAccessorDecoratorTarget<object, unknown>, context: ClassAccessorDecoratorContext<object, unknown>) => {
     const name = accessorName(context, "Field");
     context.addInitializer(function (this: object): void {
-      initializeField(this, name, {});
+      initializeField(this, name, { reactive: true });
     });
     const base = reactive(target, context);
     return {
@@ -144,7 +137,6 @@ export function Field(): FieldDecorator {
         base.set?.call(this, value);
       },
       init(this: object, value: unknown): unknown {
-        recordInitialValue(this, name, value);
         return base.init === undefined ? value : base.init.call(this, value);
       },
     };
@@ -199,6 +191,36 @@ export function Required(options?: RuleOptions): RuleDecorator {
     validation(target, context);
     context.addInitializer(function (this: object): void {
       initializeField(this, name, { required: true });
+    });
+  };
+}
+
+/**
+ * Условная проверка поля: правило валидатора плюс метаданные для `isReady`.
+ * Импортируйте из `@ivlev-dev/silent-form`, иначе форма не увидит условие.
+ */
+export function ValidateIf(predicate: FormPredicate): RuleDecorator {
+  const validation = ValidationValidateIf(predicate);
+  return (target, context) => {
+    const name = accessorName(context, "ValidateIf");
+    validation(target, context);
+    context.addInitializer(function (this: object): void {
+      initializeField(this, name, { when: predicate });
+    });
+  };
+}
+
+/**
+ * Необязательное поле: правило валидатора плюс метаданные для `isReady`.
+ * Импортируйте из `@ivlev-dev/silent-form`, иначе форма не увидит флаг.
+ */
+export function Optional(): RuleDecorator {
+  const validation = ValidationOptional();
+  return (target, context) => {
+    const name = accessorName(context, "Optional");
+    validation(target, context);
+    context.addInitializer(function (this: object): void {
+      initializeField(this, name, { optional: true });
     });
   };
 }

@@ -235,8 +235,10 @@
       "FormOptions",
       "Hint",
       "Label",
+      "Optional",
       "Placeholder",
       "Required",
+      "ValidateIf",
       "ValidateOn",
       "ValidateOnMode"
     ],

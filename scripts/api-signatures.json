@@ -1044,6 +1044,11 @@
         "type": "(label: string) => RuleDecorator",
         "signature": "export declare function Label(label: string): RuleDecorator;"
       },
+      "Optional": {
+        "kind": "function",
+        "type": "() => RuleDecorator",
+        "signature": "export declare function Optional(): RuleDecorator;"
+      },
       "Placeholder": {
         "kind": "function",
         "type": "(placeholder: string) => RuleDecorator",
@@ -1053,6 +1058,11 @@
         "kind": "function",
         "type": "(options?: RuleOptions) => RuleDecorator",
         "signature": "export declare function Required(options?: RuleOptions): RuleDecorator;"
+      },
+      "ValidateIf": {
+        "kind": "function",
+        "type": "(predicate: FormPredicate) => RuleDecorator",
+        "signature": "export declare function ValidateIf(predicate: FormPredicate): RuleDecorator;"
       },
       "ValidateOn": {
         "kind": "function",

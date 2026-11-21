@@ -154,6 +154,8 @@ describe("вложенные формы", () => {
 
   it("сбрасывает вложенную форму через reset", async () => {
     const form = new ProfileForm();
+    // Эталон снимается микрозадачей после завершения конструкции.
+    await Promise.resolve();
     form.name = "Иван";
     form.address.city = "Москва";
     await form.validate();

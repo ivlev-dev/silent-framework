@@ -1,7 +1,7 @@
 import { createSignal, getComputed, storeFor } from "@ivlev-dev/silent-reactivity";
 import { validateAsync, validatePropertyAsync } from "@ivlev-dev/silent-validation";
 import type { ValidationOptions } from "@ivlev-dev/silent-validation";
-import { fieldMetadataFor, recordedInitialValue } from "./metadata.js";
+import { fieldMetadataFor } from "./metadata.js";
 import type { FieldMetadata } from "./metadata.js";
 import type {
   FieldEventLike,
@@ -67,12 +67,52 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
-function snapshotValue(value: unknown): unknown {
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return (
+    (typeof value === "object" || typeof value === "function") &&
+    value !== null &&
+    typeof (value as { readonly then?: unknown }).then === "function"
+  );
+}
+
+/**
+ * Глубокая копия снимка значения: массивы и plain-объекты клонируются
+ * рекурсивно, `Map`/`Set`/`Date` — копируются, экземпляры классов
+ * (включая вложенные формы) возвращаются как есть.
+ */
+function cloneValue(value: unknown, seen = new WeakMap<object, unknown>()): unknown {
   if (Array.isArray(value)) {
-    return [...value];
+    const cached = seen.get(value);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const copy: unknown[] = [];
+    seen.set(value, copy);
+    for (const item of value) {
+      copy.push(cloneValue(item, seen));
+    }
+    return copy;
+  }
+  if (value instanceof Date) {
+    return new Date(value.getTime());
+  }
+  if (value instanceof Map) {
+    return new Map(value);
+  }
+  if (value instanceof Set) {
+    return new Set(value);
   }
   if (isPlainObject(value)) {
-    return { ...value };
+    const cached = seen.get(value);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const copy: Record<string, unknown> = {};
+    seen.set(value, copy);
+    for (const [key, item] of Object.entries(value)) {
+      copy[key] = cloneValue(item, seen);
+    }
+    return copy;
   }
   return value;
 }
@@ -169,9 +209,12 @@ export abstract class Form {
   private readonly propsCache = new Map<string, FieldProps<unknown>>();
   private readonly validationTokens = new Map<string, number>();
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly reportedUnregisteredRoots = new Set<string>();
 
   private initialized = false;
+  private initialCaptured = false;
   private disposed = false;
+  private validationGeneration = 0;
   private parentForm: FormInstance | undefined;
   private parentField: string | undefined;
 
@@ -189,9 +232,21 @@ export abstract class Form {
       labels: options?.labels ?? {},
       onError: options?.onError,
     };
+    queueMicrotask(() => {
+      if (this.disposed || this.initialCaptured) {
+        return;
+      }
+      try {
+        this.ensureInitialized();
+        this.captureInitialValues();
+      } catch {
+        // Ошибка метаданных проявится при первом обращении к форме.
+      }
+    });
     if (this.options.validateOnInit) {
+      const generation = this.validationGeneration;
       queueMicrotask(() => {
-        if (this.disposed) {
+        if (this.disposed || generation !== this.validationGeneration) {
           return;
         }
         void this.validate().catch((error: unknown) => this.reportError(error));
@@ -213,10 +268,14 @@ export abstract class Form {
           return false;
         }
         const metadata = this.metadata.get(name);
-        if (metadata?.required === true && isRequiredEmpty(this.readOwnValue(name))) {
+        const value = this.readOwnValue(name);
+        if (
+          metadata !== undefined &&
+          this.isRequirementActive(metadata, value) &&
+          isRequiredEmpty(value)
+        ) {
           return false;
         }
-        const value = this.readOwnValue(name);
         if (value instanceof Form && !asInstance(value).isReady) {
           return false;
         }
@@ -265,7 +324,9 @@ export abstract class Form {
       const result: Record<string, unknown> = {};
       for (const name of this.metadata.keys()) {
         const value = this.readOwnValue(name);
-        result[name] = value instanceof Form ? asInstance(value).values : value;
+        result[name] = value instanceof Form
+          ? asInstance(value).values
+          : cloneValue(value);
       }
       return result;
     });
@@ -310,8 +371,9 @@ export abstract class Form {
   async validate(): Promise<boolean> {
     this.ensureInitialized();
     this.syncChildren();
-    this.markAllTouched();
-    this.validatingForm[1]((count) => count + 1);
+    this.clearTimers();
+    const generation = this.nextGeneration();
+    this.validatingForm[1](1);
     for (const name of this.metadata.keys()) {
       this.validationTokens.set(name, (this.validationTokens.get(name) ?? 0) + 1);
     }
@@ -319,15 +381,18 @@ export abstract class Form {
 
     try {
       const result = await validateAsync(this, this.validationOptions());
+      if (this.disposed || generation !== this.validationGeneration) {
+        return this.isValid;
+      }
       const map: Record<string, readonly string[]> = {};
       for (const error of result.errors) {
         const key = error.path === "" ? error.field : error.path;
         const root = rootSegment(key);
-        if (!this.metadata.has(root)) {
-          continue;
-        }
         if (this.childFor(root) !== undefined) {
           continue;
+        }
+        if (!this.metadata.has(root)) {
+          this.reportUnregisteredField(root, key);
         }
         const existing = map[key];
         map[key] = existing === undefined
@@ -335,6 +400,7 @@ export abstract class Form {
           : [...existing, error.message];
       }
       this.validationErrors[1](freezeMap(map));
+      this.markAllTouched();
 
       if (this.options.validateNested) {
         for (const name of this.metadata.keys()) {
@@ -343,10 +409,15 @@ export abstract class Form {
             await child.validate();
           }
         }
+        if (this.disposed || generation !== this.validationGeneration) {
+          return this.isValid;
+        }
       }
-      return this.isValid;
+      return result.valid && this.isValid;
     } finally {
-      this.validatingForm[1]((count) => Math.max(0, count - 1));
+      if (!this.disposed && generation === this.validationGeneration) {
+        this.validatingForm[1](0);
+      }
     }
   }
 
@@ -364,10 +435,16 @@ export abstract class Form {
       }
       this.submittingSignal[1](true);
       try {
+        let generation = this.validationGeneration;
         if (this.options.validateOnSubmit) {
-          await this.validate();
+          const pending = this.validate();
+          generation = this.validationGeneration;
+          await pending;
         } else {
           await this.validateSubmitFields();
+        }
+        if (this.disposed || generation !== this.validationGeneration) {
+          return;
         }
         if (!this.isReady) {
           return;
@@ -458,23 +535,26 @@ export abstract class Form {
   reset(): void {
     this.ensureInitialized();
     this.syncChildren();
+    this.nextGeneration();
     this.clearTimers();
     this.validationErrors[1]({});
     this.externalErrors[1]({});
     this.touchedFields[1](new Set());
     this.dirtyFields[1](new Set());
     this.validatingFields[1](new Set());
+    this.validatingForm[1](0);
     this.readyFields[1]({});
 
     for (const name of this.metadata.keys()) {
       const initial = this.initialValues.get(name);
+      const restored = initial instanceof Form ? initial : cloneValue(initial);
       const current = this.readOwnValue(name);
-      if (current instanceof Form && current !== initial) {
+      if (current instanceof Form && current !== restored) {
         this.detachChild(name, asInstance(current));
       }
-      this.writeOwnValue(name, initial);
-      if (initial instanceof Form) {
-        this.attachChild(name, asInstance(initial));
+      this.writeOwnValue(name, restored);
+      if (restored instanceof Form) {
+        this.attachChild(name, asInstance(restored));
       }
     }
     for (const child of this.children.values()) {
@@ -487,8 +567,11 @@ export abstract class Form {
     if (this.disposed) {
       return;
     }
+    this.nextGeneration();
     this.disposed = true;
     this.clearTimers();
+    this.validatingFields[1](new Set());
+    this.validatingForm[1](0);
     for (const [name, child] of [...this.children]) {
       this.detachChild(name, child);
     }
@@ -501,21 +584,35 @@ export abstract class Form {
   }
 
   private ensureInitialized(): void {
-    if (this.initialized) {
+    if (!this.initialized) {
+      const fields = fieldMetadataFor(this.constructor);
+      for (const [name, metadata] of fields) {
+        if (metadata.reactive !== true) {
+          throw new TypeError(
+            `Поле "${name}" должно быть помечено @Field() (или @FormField() для вложенной формы)`,
+          );
+        }
+      }
+      this.initialized = true;
+      for (const [name, metadata] of fields) {
+        this.metadata.set(name, metadata);
+      }
+      this.linkNested();
+    }
+    if (!this.initialCaptured) {
+      this.captureInitialValues();
+    }
+  }
+
+  /** Снимает эталон значений после завершения конструкции экземпляра. */
+  private captureInitialValues(): void {
+    if (this.initialCaptured) {
       return;
     }
-    this.initialized = true;
-    for (const [name, metadata] of fieldMetadataFor(this.constructor)) {
-      this.metadata.set(name, metadata);
-      if (!this.initialValues.has(name)) {
-        const recorded = recordedInitialValue(this, name);
-        this.initialValues.set(
-          name,
-          snapshotValue(recorded.found ? recorded.value : this.readOwnValue(name)),
-        );
-      }
+    this.initialCaptured = true;
+    for (const name of this.metadata.keys()) {
+      this.initialValues.set(name, cloneValue(this.readOwnValue(name)));
     }
-    this.linkNested();
   }
 
   private linkNested(): void {
@@ -673,6 +770,56 @@ export abstract class Form {
         ? this.constructor.name
         : "form";
     return `${prefix}-${path}`;
+  }
+
+  private nextGeneration(): number {
+    this.validationGeneration += 1;
+    return this.validationGeneration;
+  }
+
+  /** Активно ли требование непустого значения с учётом `@Optional`/`@ValidateIf`. */
+  private isRequirementActive(
+    metadata: FieldMetadata,
+    value: unknown,
+  ): boolean {
+    if (metadata.required !== true) {
+      return false;
+    }
+    if (metadata.optional === true && (value === undefined || value === null)) {
+      return false;
+    }
+    if (metadata.when !== undefined) {
+      const result: unknown = metadata.when(this);
+      if (isThenable(result)) {
+        // Асинхронное условие считается активным, как в валидаторе.
+        void Promise.resolve(result).catch(() => {});
+        return true;
+      }
+      if (result !== true) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** Однократная диагностика правила без зарегистрированного `@Field`. */
+  private reportUnregisteredField(root: string, path: string): void {
+    if (this.reportedUnregisteredRoots.has(root)) {
+      return;
+    }
+    this.reportedUnregisteredRoots.add(root);
+    const message =
+      `Поле "${root}" (путь "${path}") имеет правила валидации, но не объявлено через @Field()`;
+    const handler = this.options.onError;
+    if (handler === undefined) {
+      console.warn(message);
+      return;
+    }
+    try {
+      handler(new Error(message));
+    } catch (handlerError) {
+      console.error(handlerError);
+    }
   }
 
   /** Внутренний доступ по строковому пути: сужает публичный `FieldPath`. */
@@ -937,12 +1084,20 @@ export abstract class Form {
   private directErrors(name: string): readonly string[] {
     const result: string[] = [];
     for (const [key, messages] of Object.entries(this.validationErrors[0]())) {
-      if (key === name || key.startsWith(`${name}.`)) {
+      if (
+        key === name ||
+        key.startsWith(`${name}.`) ||
+        key.startsWith(`${name}[`)
+      ) {
         result.push(...messages);
       }
     }
     for (const [key, messages] of Object.entries(this.externalErrors[0]())) {
-      if (key === name || key.startsWith(`${name}.`)) {
+      if (
+        key === name ||
+        key.startsWith(`${name}.`) ||
+        key.startsWith(`${name}[`)
+      ) {
         result.push(...messages);
       }
     }
@@ -990,6 +1145,7 @@ export abstract class Form {
   }
 
   private runFieldValidation(name: string): Promise<boolean> {
+    const generation = this.validationGeneration;
     const token = (this.validationTokens.get(name) ?? 0) + 1;
     this.validationTokens.set(name, token);
     this.addValidating(name);
@@ -1000,13 +1156,21 @@ export abstract class Form {
           name,
           this.validationOptions(),
         );
-        if (this.validationTokens.get(name) !== token) {
+        if (
+          this.disposed ||
+          generation !== this.validationGeneration ||
+          this.validationTokens.get(name) !== token
+        ) {
           return result.valid;
         }
         this.replaceValidationErrors(name, result.errors);
         return result.valid;
       } finally {
-        if (this.validationTokens.get(name) === token) {
+        if (
+          !this.disposed &&
+          generation === this.validationGeneration &&
+          this.validationTokens.get(name) === token
+        ) {
           this.removeValidating(name);
         }
       }
@@ -1021,7 +1185,11 @@ export abstract class Form {
       ...this.validationErrors[0](),
     };
     for (const key of Object.keys(next)) {
-      if (key === name || key.startsWith(`${name}.`)) {
+      if (
+        key === name ||
+        key.startsWith(`${name}.`) ||
+        key.startsWith(`${name}[`)
+      ) {
         delete next[key];
       }
     }
@@ -1133,16 +1301,22 @@ export abstract class Form {
   private async validateSubmitFields(): Promise<void> {
     this.ensureInitialized();
     this.syncChildren();
+    const generation = this.validationGeneration;
     for (const [name, metadata] of this.metadata) {
+      if (this.disposed || generation !== this.validationGeneration) {
+        return;
+      }
+      const child = this.childFor(name);
+      if (child !== undefined) {
+        this.markTouched(name);
+        await child.validateSubmitFields();
+        continue;
+      }
       if (metadata.validateOn?.includes("submit") !== true) {
         continue;
       }
       this.markTouched(name);
-      if (this.childFor(name) !== undefined) {
-        await this.requireChild(name).validate();
-      } else {
-        await this.runFieldValidation(name);
-      }
+      await this.runFieldValidation(name);
     }
   }
 
@@ -1254,7 +1428,11 @@ export abstract class Form {
     let changed = false;
     const next: Record<string, readonly string[]> = {};
     for (const [key, messages] of Object.entries(current)) {
-      if (key === name || key.startsWith(`${name}.`)) {
+      if (
+        key === name ||
+        key.startsWith(`${name}.`) ||
+        key.startsWith(`${name}[`)
+      ) {
         changed = true;
         continue;
       }
