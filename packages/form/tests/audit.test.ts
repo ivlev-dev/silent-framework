@@ -150,14 +150,107 @@ class SlowForm extends Form {
   public accessor code = "";
 }
 
+describe("дедупликация проверок", () => {
+  it("параллельные validate() возвращают один промис и один проход", async () => {
+    const calls = vi.fn();
+    class CountingForm extends Form {
+      @Field()
+      @Custom(async () => {
+        calls();
+        await delay(10);
+        return true;
+      })
+      public accessor name = "ok";
+    }
+
+    const form = new CountingForm();
+    const first = form.validate();
+    const second = form.validate();
+
+    expect(second).toBe(first);
+    await first;
+    expect(calls).toHaveBeenCalledOnce();
+  });
+
+  it("параллельные validateField() для одного пути возвращают один промис", async () => {
+    const calls = vi.fn();
+    class CountingForm extends Form {
+      @Field()
+      @Custom(async () => {
+        calls();
+        await delay(10);
+        return true;
+      })
+      public accessor name = "ok";
+    }
+
+    const form = new CountingForm();
+    const first = form.validateField("name");
+    const second = form.validateField("name");
+
+    expect(second).toBe(first);
+    await first;
+    expect(calls).toHaveBeenCalledOnce();
+
+    const other = form.validateField("name");
+    expect(other).not.toBe(first);
+    await other;
+    expect(calls).toHaveBeenCalledTimes(2);
+  });
+
+  it("вложенная форма не проверяется дважды", async () => {
+    const childCalls = vi.fn();
+    class ChildForm extends Form {
+      @Field()
+      @Custom(async () => {
+        childCalls();
+        await delay(15);
+        return true;
+      })
+      public accessor email = "ok";
+    }
+
+    class ParentForm extends Form {
+      @FormField()
+      public accessor child = new ChildForm();
+    }
+
+    const form = new ParentForm();
+    const first = form.validate();
+    await delay(1);
+    const second = form.validate();
+
+    expect(second).toBe(first);
+    await first;
+    expect(childCalls).toHaveBeenCalledOnce();
+  });
+});
+
 describe("поколения валидации", () => {
-  it("устаревшая полная проверка не перезаписывает свежую", async () => {
+  it("изменение значения отцепляет старый прогон и запускает новый", async () => {
     const form = new SlowForm();
+    await Promise.resolve();
     form.code = "bad";
     const first = form.validate();
     form.code = "good";
     const second = form.validate();
 
+    expect(second).not.toBe(first);
+    await Promise.all([first, second]);
+
+    expect(form.isValid).toBe(true);
+    expect(form.errors).toEqual({});
+  });
+
+  it("изменение значения во время validateField запускает новый прогон", async () => {
+    const form = new SlowForm();
+    await Promise.resolve();
+    form.code = "bad";
+    const first = form.validateField("code");
+    form.getFieldProps("code").setValue("good");
+    const second = form.validateField("code");
+
+    expect(second).not.toBe(first);
     await Promise.all([first, second]);
 
     expect(form.isValid).toBe(true);
@@ -166,24 +259,34 @@ describe("поколения валидации", () => {
 
   it("reset во время validateField не оставляет ошибок", async () => {
     const form = new SlowForm();
-    form.code = "bad";
+    await Promise.resolve();
+    form.getFieldProps("code").setValue("bad");
     const pending = form.validateField("code");
     form.reset();
     await pending;
 
     expect(form.errors).toEqual({});
     expect(form.isValid).toBe(true);
+
+    const fresh = form.validateField("code");
+    expect(fresh).not.toBe(pending);
+    expect(await fresh).toBe(true);
   });
 
   it("reset во время validate не оставляет ошибок", async () => {
     const form = new SlowForm();
-    form.code = "bad";
+    await Promise.resolve();
+    form.getFieldProps("code").setValue("bad");
     const pending = form.validate();
     form.reset();
     await pending;
 
     expect(form.errors).toEqual({});
     expect(form.isValid).toBe(true);
+
+    const fresh = form.validate();
+    expect(fresh).not.toBe(pending);
+    expect(await fresh).toBe(true);
   });
 
   it("dispose во время validate не пишет ошибки", async () => {
@@ -387,6 +490,64 @@ describe("bracket-пути", () => {
     expect(await form.validateField("tags")).toBe(true);
     expect(form.getFieldProps("tags").errors).toEqual([]);
     expect(form.errors["tags[0]"]).toBeUndefined();
+  });
+});
+
+describe("инвалидация вложенной формы", () => {
+  class SlowChildForm extends Form {
+    @Field()
+    @Custom(async (value: unknown) => {
+      const text = typeof value === "string" ? value : "";
+      await delay(text === "bad" ? 30 : 5);
+      return text === "ok";
+    })
+    public accessor code = "bad";
+  }
+
+  class SlowParentForm extends Form {
+    @FormField()
+    public accessor child = new SlowChildForm();
+  }
+
+  it("изменение поля ребёнка инвалидирует validate() родителя", async () => {
+    const form = new SlowParentForm();
+    await Promise.resolve();
+
+    const first = form.validate();
+    form.child.getFieldProps("code").setValue("ok");
+    const second = form.validate();
+
+    expect(second).not.toBe(first);
+    await Promise.all([first, second]);
+    expect(form.isValid).toBe(true);
+    expect(form.errors).toEqual({});
+  });
+
+  it("изменение поля ребёнка инвалидирует validateField('child.code')", async () => {
+    const form = new SlowParentForm();
+    await Promise.resolve();
+
+    const first = form.validateField("child.code");
+    form.child.getFieldProps("code").setValue("ok");
+    const second = form.validateField("child.code");
+
+    expect(second).not.toBe(first);
+    await Promise.all([first, second]);
+    expect(form.isValid).toBe(true);
+    expect(form.errors).toEqual({});
+  });
+
+  it("изменение поля ребёнка во время parent.validate() не оставляет ошибок", async () => {
+    const form = new SlowParentForm();
+    await Promise.resolve();
+
+    const pending = form.validate();
+    await delay(1);
+    form.child.getFieldProps("code").setValue("ok");
+    await pending;
+
+    expect(form.errors).toEqual({});
+    expect(form.isValid).toBe(true);
   });
 });
 

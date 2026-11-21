@@ -33,6 +33,24 @@ export interface FieldMetadata {
 type MetadataPatch = Omit<FieldMetadata, "name">;
 
 const metadataByClass = new WeakMap<Function, Map<string, FieldMetadata>>();
+const validationInvalidators = new WeakMap<object, () => void>();
+
+/** @internal Регистрирует инвалидатор проверки для экземпляра формы. */
+export function registerValidationInvalidator(
+  instance: object,
+  invalidate: () => void,
+): void {
+  validationInvalidators.set(instance, invalidate);
+}
+
+/** @internal Снимает регистрацию инвалидатора. */
+export function unregisterValidationInvalidator(instance: object): void {
+  validationInvalidators.delete(instance);
+}
+
+function notifyValidationInvalidator(instance: object): void {
+  validationInvalidators.get(instance)?.();
+}
 
 function initializeField(
   instance: object,
@@ -134,6 +152,7 @@ export function Field(): FieldDecorator {
         return base.get?.call(this);
       },
       set(this: object, value: unknown): void {
+        notifyValidationInvalidator(this);
         base.set?.call(this, value);
       },
       init(this: object, value: unknown): unknown {

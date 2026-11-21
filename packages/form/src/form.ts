@@ -1,7 +1,11 @@
 import { createSignal, getComputed, storeFor } from "@ivlev-dev/silent-reactivity";
 import { validateAsync, validatePropertyAsync } from "@ivlev-dev/silent-validation";
 import type { ValidationOptions } from "@ivlev-dev/silent-validation";
-import { fieldMetadataFor } from "./metadata.js";
+import {
+  fieldMetadataFor,
+  registerValidationInvalidator,
+  unregisterValidationInvalidator,
+} from "./metadata.js";
 import type { FieldMetadata } from "./metadata.js";
 import type {
   FieldEventLike,
@@ -210,11 +214,14 @@ export abstract class Form {
   private readonly validationTokens = new Map<string, number>();
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly reportedUnregisteredRoots = new Set<string>();
+  private readonly fieldValidationPromises = new Map<string, Promise<boolean>>();
 
   private initialized = false;
   private initialCaptured = false;
   private disposed = false;
   private validationGeneration = 0;
+  private validationRunCount = 0;
+  private validatePromise: Promise<boolean> | undefined;
   private parentForm: FormInstance | undefined;
   private parentField: string | undefined;
 
@@ -232,6 +239,7 @@ export abstract class Form {
       labels: options?.labels ?? {},
       onError: options?.onError,
     };
+    registerValidationInvalidator(this, () => this.invalidateValidation());
     queueMicrotask(() => {
       if (this.disposed || this.initialCaptured) {
         return;
@@ -351,9 +359,38 @@ export abstract class Form {
     return created as unknown as FieldProps<FieldValue<this, K>>;
   }
 
-  /** Проверить одно поле (включая путь вложенной формы). */
-  async validateField(field: FieldPath<this>): Promise<boolean> {
+  /**
+   * Проверить одно поле (включая путь вложенной формы).
+   * Параллельные вызовы для одного пути возвращают один и тот же промис.
+   */
+  validateField(field: FieldPath<this>): Promise<boolean> {
     const path = String(field);
+    const running = this.fieldValidationPromises.get(path);
+    if (running !== undefined) {
+      return running;
+    }
+    let resolve!: (value: boolean) => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<boolean>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    this.fieldValidationPromises.set(path, promise);
+    const release = (): void => {
+      if (this.fieldValidationPromises.get(path) === promise) {
+        this.fieldValidationPromises.delete(path);
+      }
+    };
+    promise.then(release, release);
+    try {
+      this.runFieldPath(path).then(resolve, reject);
+    } catch (error) {
+      reject(error);
+    }
+    return promise;
+  }
+
+  private runFieldPath(path: string): Promise<boolean> {
     const { root, rest } = this.locate(path);
     if (rest !== undefined) {
       return this.requireChild(root).validateAt(rest);
@@ -367,12 +404,36 @@ export abstract class Form {
   /**
    * Полная проверка формы: помечает все поля посещёнными, собирает ошибки
    * по путям и проверяет вложенные формы.
+   * Повторный вызов во время идущей проверки возвращает тот же промис.
    */
-  async validate(): Promise<boolean> {
+  validate(): Promise<boolean> {
+    const running = this.validatePromise;
+    if (running !== undefined) {
+      return running;
+    }
+    let resolve!: (value: boolean) => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<boolean>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    this.validatePromise = promise;
+    const release = (): void => {
+      if (this.validatePromise === promise) {
+        this.validatePromise = undefined;
+      }
+    };
+    promise.then(release, release);
+    this.runValidation().then(resolve, reject);
+    return promise;
+  }
+
+  private async runValidation(): Promise<boolean> {
     this.ensureInitialized();
     this.syncChildren();
     this.clearTimers();
-    const generation = this.nextGeneration();
+    const generation = this.validationGeneration;
+    this.validationRunCount += 1;
     this.validatingForm[1](1);
     for (const name of this.metadata.keys()) {
       this.validationTokens.set(name, (this.validationTokens.get(name) ?? 0) + 1);
@@ -416,6 +477,7 @@ export abstract class Form {
       return result.valid && this.isValid;
     } finally {
       if (!this.disposed && generation === this.validationGeneration) {
+        this.validationRunCount = Math.max(0, this.validationRunCount - 1);
         this.validatingForm[1](0);
       }
     }
@@ -435,11 +497,9 @@ export abstract class Form {
       }
       this.submittingSignal[1](true);
       try {
-        let generation = this.validationGeneration;
+        const generation = this.validationGeneration;
         if (this.options.validateOnSubmit) {
-          const pending = this.validate();
-          generation = this.validationGeneration;
-          await pending;
+          await this.validate();
         } else {
           await this.validateSubmitFields();
         }
@@ -519,6 +579,7 @@ export abstract class Form {
         continue;
       }
       if (current instanceof Form && isPlainObject(value)) {
+        this.invalidateValidation();
         const child = asInstance(current);
         child.setValues(value);
         this.markDirty(name);
@@ -535,14 +596,12 @@ export abstract class Form {
   reset(): void {
     this.ensureInitialized();
     this.syncChildren();
-    this.nextGeneration();
+    this.invalidateValidation();
     this.clearTimers();
     this.validationErrors[1]({});
     this.externalErrors[1]({});
     this.touchedFields[1](new Set());
     this.dirtyFields[1](new Set());
-    this.validatingFields[1](new Set());
-    this.validatingForm[1](0);
     this.readyFields[1]({});
 
     for (const name of this.metadata.keys()) {
@@ -567,11 +626,9 @@ export abstract class Form {
     if (this.disposed) {
       return;
     }
-    this.nextGeneration();
+    this.invalidateValidation();
     this.disposed = true;
     this.clearTimers();
-    this.validatingFields[1](new Set());
-    this.validatingForm[1](0);
     for (const [name, child] of [...this.children]) {
       this.detachChild(name, child);
     }
@@ -580,6 +637,7 @@ export abstract class Form {
     }
     this.parentForm = undefined;
     this.parentField = undefined;
+    unregisterValidationInvalidator(this);
     storeFor(this).dispose();
   }
 
@@ -772,9 +830,20 @@ export abstract class Form {
     return `${prefix}-${path}`;
   }
 
-  private nextGeneration(): number {
-    this.validationGeneration += 1;
-    return this.validationGeneration;
+  private invalidateValidation(): void {
+    const hasLocalWork =
+      this.validatePromise !== undefined ||
+      this.fieldValidationPromises.size > 0 ||
+      this.validationRunCount > 0;
+    if (hasLocalWork) {
+      this.validationGeneration += 1;
+      this.validatePromise = undefined;
+      this.fieldValidationPromises.clear();
+      this.validationRunCount = 0;
+      this.validatingFields[1](new Set());
+      this.validatingForm[1](0);
+    }
+    this.parentForm?.invalidateValidation();
   }
 
   /** Активно ли требование непустого значения с учётом `@Optional`/`@ValidateIf`. */
@@ -1148,6 +1217,7 @@ export abstract class Form {
     const generation = this.validationGeneration;
     const token = (this.validationTokens.get(name) ?? 0) + 1;
     this.validationTokens.set(name, token);
+    this.validationRunCount += 1;
     this.addValidating(name);
     return (async () => {
       try {
@@ -1166,12 +1236,11 @@ export abstract class Form {
         this.replaceValidationErrors(name, result.errors);
         return result.valid;
       } finally {
-        if (
-          !this.disposed &&
-          generation === this.validationGeneration &&
-          this.validationTokens.get(name) === token
-        ) {
-          this.removeValidating(name);
+        if (!this.disposed && generation === this.validationGeneration) {
+          this.validationRunCount = Math.max(0, this.validationRunCount - 1);
+          if (this.validationTokens.get(name) === token) {
+            this.removeValidating(name);
+          }
         }
       }
     })();
@@ -1205,6 +1274,9 @@ export abstract class Form {
 
   private setDirectValue(name: string, value: unknown): void {
     const previous = this.readOwnValue(name);
+    if (!Object.is(previous, value)) {
+      this.invalidateValidation();
+    }
     if (previous instanceof Form && previous !== value) {
       this.detachChild(name, asInstance(previous));
     }
