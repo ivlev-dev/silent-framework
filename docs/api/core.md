@@ -36,6 +36,8 @@ import {
 
 Прикладному коду сабпуть `@ivlev-dev/silent-core/jsx-runtime` не нужен: всё перечисленное доступно и из `@ivlev-dev/silent-core`.
 
+Серверный рантайм использует ещё один внутренний сабпуть — `@ivlev-dev/silent-core/runtime-context-provider`. Он описывает контракт per-render контекста: `RuntimeContextStore` (опции, серверный флаг, коллекторы metadata/stream, счётчик id, pending) и `RuntimeContextProvider` с `getStore`/`run`. Сабпуть помечен `@internal`, не экспортируется из `@ivlev-dev/silent-core` и не входит в снимок публичного API; прикладному коду он не нужен. Публичный API пакета не менялся.
+
 ## Архитектура рантайма
 
 ### Метаданные view-компонента
@@ -366,7 +368,7 @@ function getErrorHandler(): (error: unknown, component: AnyComponent) => void;
 async function whenIdle(): Promise<void>;
 ```
 
-Ждёт завершения всех промисов, отслеживаемых рантаймом (разрешения ViewModel всех созданных view). Если во время ожидания появятся новые pending-промисы (например, вложенные async view), ожидание продолжится. Полезно после вставки узлов вне `mount`:
+Ждёт завершения всех промисов, отслеживаемых рантаймом (разрешения ViewModel всех созданных view). Если во время ожидания появятся новые pending-промисы (например, вложенные async view), ожидание продолжится. В серверном рендере набор pending принадлежит контексту рендера, поэтому `whenIdle()` ждёт только работу текущего рендера, а вне рендера — общий набор. Полезно после вставки узлов вне `mount`:
 
 ```ts
 const result = createComponent(Child, {});
@@ -942,6 +944,10 @@ import { renderToString } from "@ivlev-dev/silent-server";
 const { html } = await renderToString(App, { props: { title: "Hi" } });
 ```
 
+При доступном `node:async_hooks` каждый вызов создаёт отдельный контекст рендера в `AsyncLocalStorage`: runtime-опции, серверный режим, коллектор `head`, stream-коллектор (при стриминге), счётчик id и pending принадлежат этому рендеру и видны после `await` внутри ViewModel и `resource`. Без ALS серверный пакет один раз выводит предупреждение и работает через прежние модульные переменные.
+
+Рендеры по-прежнему сериализуются очередью, и ALS не включает параллельные рендеры: DOM-шимы общие на процесс. Вложенный `renderToString` внутри активного рендера не ждёт очередь, а сразу возвращает отклонённый промис с `name === "RenderReentrancyError"`; `renderToStream` в той же ситуации бросает такую ошибку синхронно. Класс не экспортируется из пакета — проверяйте `name`. Новых публичных экспортов нет; провайдер контекста доступен только через внутренний сабпуть `@ivlev-dev/silent-core/runtime-context-provider`.
+
 ### `RenderOptions`
 
 *Стабильность: public.*
@@ -953,6 +959,8 @@ interface RenderOptions {
   readonly preloader?: Preloader | undefined;
   readonly onError?: ((error: unknown, component: AnyComponent) => void) | undefined;
   readonly markers?: boolean | undefined;
+  readonly signal?: AbortSignal | undefined;
+  readonly timeoutMs?: number | undefined;
 }
 ```
 
@@ -960,7 +968,9 @@ interface RenderOptions {
 - `container` — корневой DI-контейнер; дочерние view наследуют scope.
 - `preloader` — глобальный прелоадер (используется, если у компонента нет своего).
 - `onError` — если не задан, первая ошибка резолва/загрузки пробрасывается из `renderToString`; если задан — вызывается обработчик, а рендер завершается.
-- `markers` — по умолчанию `true`. При `false` из `html` и `head` удаляются комментарии `silent-*` и атрибуты `data-silent-*`; разметка не предназначена для `hydrate`. HTML уменьшается (1 230 → 369 B, gzip 187 → 134 B), но рендер замедляется на ~20–25% из-за финальной очистки. Для `renderToStream` опция не применяется.
+- `markers` — по умолчанию `true`. При `false` из `html` и `head` удаляются комментарии `silent-*` и атрибуты `data-silent-*`; разметка не предназначена для `hydrate`. HTML уменьшается (1 230 → 369 B, gzip 187 → 134 B), но рендер замедляется на ~20–25% из-за финальной очистки. В `renderToStream` при `false` дополнительно отключаются патчи `Suspense` и inline-runtime: поток отдаёт только негидрируемый shell.
+- `signal` — отмена ожидания асинхронной части; уже aborted-сигнал отклоняет вызов до создания сессии, отмена во время рендера освобождает сессию и DOM-глобалы.
+- `timeoutMs` — предельное время ожидания асинхронной части; по истечении рендер отклоняется `DOMException` с `name: "TimeoutError"`.
 
 ### `RenderResult`
 
