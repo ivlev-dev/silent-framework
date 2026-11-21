@@ -51,16 +51,15 @@ interface ProcessLike {
 }
 
 declare const process: ProcessLike;
+declare const __SILENT_DEV__: boolean | undefined;
 
-function isDevelopment(): boolean {
-  try {
-    // В production-сборках bundler подменяет process.env.NODE_ENV на
-    // "production". Если process недоступен, считаем окружение dev.
-    return process.env.NODE_ENV !== "production";
-  } catch {
-    return true;
-  }
-}
+// Vite-плагин подменяет __SILENT_DEV__ на true/false, поэтому в production
+// ветки предупреждений вырезаются вместе со строками. В тестах define нет —
+// работает fallback на process.env.NODE_ENV.
+const DEV: boolean =
+  typeof __SILENT_DEV__ !== "undefined"
+    ? __SILENT_DEV__
+    : typeof process !== "undefined" && process.env?.NODE_ENV !== "production";
 
 function isThenable(value: unknown): boolean {
   if (
@@ -81,7 +80,7 @@ function warnAsyncEffect(node: EffectNode): void {
     return;
   }
   node.warnedAsync = true;
-  if (isDevelopment()) {
+  if (DEV) {
     console.warn(
       "[silent-reactivity] async-эффект: чтения и onCleanup после await не отслеживаются; используйте createResource/runWithOwner",
     );
@@ -93,7 +92,7 @@ function warnDisposedMemo(node: MemoNode): void {
     return;
   }
   node.warnedDisposed = true;
-  if (isDevelopment()) {
+  if (DEV) {
     console.warn(`[silent-reactivity] чтение мемо "${node.name}" после dispose`);
   }
 }
@@ -157,6 +156,8 @@ interface MemoNode {
   readonly observers: Set<ComputationNode>;
   deps: SourceNode[] | null;
   depVersions: number[] | null;
+  depsScratch: SourceNode[];
+  versionsScratch: number[];
   nextDepMap: Map<SourceNode, number> | null;
   readonly owner: OwnerNode;
 }
@@ -172,6 +173,8 @@ interface EffectNode {
   warnedAsync: boolean;
   deps: SourceNode[] | null;
   depVersions: number[] | null;
+  depsScratch: SourceNode[];
+  versionsScratch: number[];
   nextDepMap: Map<SourceNode, number> | null;
   readonly owner: OwnerNode;
 }
@@ -208,6 +211,7 @@ let flushScheduled = false;
 let flushing = false;
 let initialFlushing = false;
 let batchDepth = 0;
+let emptyFlushRuns = 0;
 
 function createSignalNode<T>(value: T, equals: EqualityFn<unknown>): SignalNode {
   signalsCreated += 1;
@@ -441,20 +445,32 @@ function reconcileDependencies(node: ComputationNode): void {
     node.depVersions = null;
     return;
   }
-  if (nextMap.size === 1 && previousDeps !== null && previousDeps.length === 1) {
-    const iterator = nextMap.keys();
-    const firstEntry = iterator.next();
-    const dep = firstEntry.done === true ? undefined : firstEntry.value;
-    if (dep !== undefined && dep === previousDeps[0]) {
-      if (previousVersions !== null) {
-        previousVersions[0] = nextMap.get(dep) ?? 0;
+  // Стабильный набор зависимостей: обновляем версии в существующих
+  // массивах, не строя scratch-копии и не трогая observers.
+  if (
+    previousDeps !== null &&
+    previousVersions !== null &&
+    previousDeps.length === nextMap.size
+  ) {
+    let index = 0;
+    let sameOrder = true;
+    for (const [dep, version] of nextMap) {
+      if (previousDeps[index] !== dep) {
+        sameOrder = false;
+        break;
       }
+      previousVersions[index] = version;
+      index += 1;
+    }
+    if (sameOrder) {
       nextMap.clear();
       return;
     }
   }
-  const nextDeps: SourceNode[] = [];
-  const nextVersions: number[] = [];
+  const nextDeps = node.depsScratch;
+  const nextVersions = node.versionsScratch;
+  nextDeps.length = 0;
+  nextVersions.length = 0;
   for (const [dep, version] of nextMap) {
     nextDeps.push(dep);
     nextVersions.push(version);
@@ -490,6 +506,8 @@ function reconcileDependencies(node: ComputationNode): void {
   }
   node.deps = nextDeps;
   node.depVersions = nextVersions;
+  node.depsScratch = previousDeps ?? [];
+  node.versionsScratch = previousVersions ?? [];
 }
 
 function recomputeMemo(node: MemoNode): void {
@@ -561,8 +579,15 @@ function scheduleFlush(): void {
   flushScheduled = true;
   queueMicrotask(() => {
     flushScheduled = false;
+    // Синхронный flushSync/batch мог уже опустошить очереди: не делаем
+    // пустой проход по эффектам из микротаски.
+    if (pendingInitial.size === 0 && effectQueue.size === 0) {
+      return;
+    }
     flushInitialEffects();
-    flushEffects();
+    if (effectQueue.size > 0) {
+      flushEffects();
+    }
   });
 }
 
@@ -652,6 +677,10 @@ function flushInitialEffects(): void {
 
 function flushEffects(): void {
   if (flushing || initialFlushing) {
+    return;
+  }
+  if (effectQueue.size === 0) {
+    emptyFlushRuns += 1;
     return;
   }
   flushing = true;
@@ -761,6 +790,8 @@ function disposeComputation(node: ComputationNode): void {
   if (depVersions !== null) {
     depVersions.length = 0;
   }
+  node.depsScratch.length = 0;
+  node.versionsScratch.length = 0;
   node.deps = null;
   node.depVersions = null;
   node.nextDepMap?.clear();
@@ -809,6 +840,8 @@ function createEffectNode(type: "effect" | "renderEffect", fn: () => void): Effe
     warnedAsync: false,
     deps: null,
     depVersions: null,
+    depsScratch: [],
+    versionsScratch: [],
     nextDepMap: null,
     owner,
   };
@@ -897,6 +930,8 @@ export function createMemo<T>(fn: () => T, options?: MemoOptions<T>): Accessor<T
     observers: new Set<ComputationNode>(),
     deps: null,
     depVersions: null,
+    depsScratch: [],
+    versionsScratch: [],
     nextDepMap: null,
     owner,
   };
@@ -1120,3 +1155,16 @@ export function flushSync(): void {
 
 const UNLESS_STATIC_EFFECT = Symbol.for("silent.effectUnlessStatic");
 (createRoot as unknown as Record<symbol, unknown>)[UNLESS_STATIC_EFFECT] = createEffectUnlessStatic;
+
+const FLUSH_DEBUG = Symbol.for("silent.reactivity.flushDebug");
+interface FlushDebugInfo {
+  readonly emptyFlushes: () => number;
+  readonly reset: () => void;
+}
+const flushDebugInfo: FlushDebugInfo = {
+  emptyFlushes: () => emptyFlushRuns,
+  reset: () => {
+    emptyFlushRuns = 0;
+  },
+};
+(createRoot as unknown as Record<symbol, unknown>)[FLUSH_DEBUG] = flushDebugInfo;

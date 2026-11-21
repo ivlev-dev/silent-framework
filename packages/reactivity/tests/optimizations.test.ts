@@ -1,11 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
+  batch,
   createMemo,
   createRenderEffect,
+  createRoot,
   createSignal,
   deepReactive,
   flushSync,
 } from "../src/index";
+
+const FLUSH_DEBUG = Symbol.for("silent.reactivity.flushDebug");
+interface FlushDebugInfo {
+  emptyFlushes(): number;
+  reset(): void;
+}
+const flushDebug = (
+  createRoot as unknown as Record<symbol, FlushDebugInfo>
+)[FLUSH_DEBUG];
 
 describe("dependency reconciliation", () => {
   it("keeps dynamic dependencies correct across many reruns", () => {
@@ -144,5 +155,31 @@ describe("deep proxy fast paths", () => {
       state.fixed = 2;
     }).toThrow(TypeError);
     expect(state.fixed).toBe(1);
+  });
+});
+
+describe("flush без пустых микротаск", () => {
+  it("синхронный flush внутри batch не оставляет пустой проход микротаски", async () => {
+    const [value, setValue] = createSignal(0);
+    let runs = 0;
+    createRenderEffect(() => {
+      value();
+      runs += 1;
+    });
+    expect(runs).toBe(1);
+
+    batch(() => {
+      setValue(1);
+      flushSync();
+    });
+
+    expect(runs).toBe(2);
+
+    flushDebug.reset();
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    expect(runs).toBe(2);
+    expect(flushDebug.emptyFlushes()).toBe(0);
   });
 });

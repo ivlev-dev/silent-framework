@@ -32,7 +32,7 @@ describe("dev-предупреждения", () => {
     }
   });
 
-  it("не предупреждает в production", () => {
+  it("не предупреждает в production", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const nodeProcess = (
       globalThis as {
@@ -41,9 +41,11 @@ describe("dev-предупреждения", () => {
     ).process;
     const previous = nodeProcess.env["NODE_ENV"];
     nodeProcess.env["NODE_ENV"] = "production";
+    vi.resetModules();
     try {
-      createEffect(async () => {});
-      flushSync();
+      const production = await import("../src/index");
+      production.createEffect(async () => {});
+      production.flushSync();
       expect(warn).not.toHaveBeenCalled();
     } finally {
       if (previous === undefined) {
@@ -51,6 +53,7 @@ describe("dev-предупреждения", () => {
       } else {
         nodeProcess.env["NODE_ENV"] = previous;
       }
+      vi.resetModules();
       warn.mockRestore();
     }
   });

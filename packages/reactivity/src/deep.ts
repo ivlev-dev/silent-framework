@@ -91,6 +91,30 @@ function toArrayIndex(key: string): number | null {
   return index;
 }
 
+function toIntegerOrInfinity(value: unknown): number {
+  const numeric = Number(value);
+  if (Number.isNaN(numeric) || numeric === 0) {
+    return 0;
+  }
+  if (!Number.isFinite(numeric)) {
+    return numeric;
+  }
+  return Math.trunc(numeric);
+}
+
+function normalizeRelativeIndex(relative: number, length: number): number {
+  if (relative === Infinity) {
+    return length;
+  }
+  if (relative === -Infinity) {
+    return 0;
+  }
+  if (relative < 0) {
+    return Math.max(length + relative, 0);
+  }
+  return Math.min(relative, length);
+}
+
 function collectionKindOf(value: object): CollectionKind | null {
   const tag = Object.prototype.toString.call(value);
   if (tag === "[object Map]") {
@@ -349,33 +373,40 @@ function arraySort(record: ReactiveRecord, args: unknown[]): unknown {
 
 function arrayReverse(record: ReactiveRecord): unknown {
   const array = record.raw as unknown[];
-  const previous = array.slice();
+  const length = array.length;
   array.reverse();
-  notifyChangedIndices(record, previous);
+  // После reverse значение на позиции index — это прежнее значение
+  // на позиции length - 1 - index. Снимок массива не нужен.
+  for (let index = 0; index < length; index += 1) {
+    const before = array[length - 1 - index];
+    const after = array[index];
+    if (!Object.is(before, after)) {
+      writeIndex(record, index, before, after);
+    }
+  }
   return record.proxy;
 }
 
 function arrayFill(record: ReactiveRecord, args: unknown[]): unknown {
   const array = record.raw as unknown[];
-  const previous = array.slice();
-  const wasOwn: boolean[] = [];
-  for (let index = 0; index < previous.length; index += 1) {
-    wasOwn[index] = hasOwn(array, index);
-  }
+  const length = array.length;
   const value = unwrapValue(args[0]);
-  if (args.length > 2) {
-    array.fill(value, args[1] as number, args[2] as number);
-  } else if (args.length > 1) {
-    array.fill(value, args[1] as number);
-  } else {
-    array.fill(value);
-  }
-  notifyChangedIndices(record, previous);
+  const start = args.length > 1
+    ? normalizeRelativeIndex(toIntegerOrInfinity(args[1]), length)
+    : 0;
+  const end = args.length > 2
+    ? normalizeRelativeIndex(toIntegerOrInfinity(args[2]), length)
+    : length;
   let keysChanged = false;
-  for (let index = 0; index < array.length; index += 1) {
-    if (wasOwn[index] === false && hasOwn(array, index)) {
+  for (let index = start; index < end; index += 1) {
+    const wasOwn = hasOwn(array, index);
+    const before = array[index];
+    array[index] = value;
+    if (!wasOwn && hasOwn(array, index)) {
       keysChanged = true;
-      break;
+    }
+    if (!Object.is(before, value)) {
+      writeIndex(record, index, before, value);
     }
   }
   if (keysChanged) {
@@ -386,24 +417,36 @@ function arrayFill(record: ReactiveRecord, args: unknown[]): unknown {
 
 function arrayCopyWithin(record: ReactiveRecord, args: unknown[]): unknown {
   const array = record.raw as unknown[];
-  const previous = array.slice();
-  const wasOwn: boolean[] = [];
-  for (let index = 0; index < previous.length; index += 1) {
-    wasOwn[index] = hasOwn(array, index);
+  const length = array.length;
+  const to = normalizeRelativeIndex(toIntegerOrInfinity(args[0]), length);
+  const from = args.length > 1
+    ? normalizeRelativeIndex(toIntegerOrInfinity(args[1]), length)
+    : 0;
+  const final = args.length > 2
+    ? normalizeRelativeIndex(toIntegerOrInfinity(args[2]), length)
+    : length;
+  const count = Math.min(final - from, length - to);
+  if (count <= 0 || to === from) {
+    return record.proxy;
   }
-  if (args.length > 2) {
-    array.copyWithin(args[0] as number, args[1] as number, args[2] as number);
-  } else if (args.length > 1) {
-    array.copyWithin(args[0] as number, args[1] as number);
-  } else {
-    array.copyWithin(args[0] as number, 0);
-  }
-  notifyChangedIndices(record, previous);
+  // Снимок нужен только для диапазона-источника: дырки сохраняются slice.
+  const source = array.slice(from, from + count);
   let keysChanged = false;
-  for (let index = 0; index < array.length; index += 1) {
-    if (wasOwn[index] === false && hasOwn(array, index)) {
+  for (let offset = 0; offset < count; offset += 1) {
+    const index = to + offset;
+    const wasOwn = hasOwn(array, index);
+    const before = array[index];
+    if (hasOwn(source, offset)) {
+      array[index] = source[offset];
+    } else if (wasOwn) {
+      delete array[index];
+    }
+    if (!wasOwn && hasOwn(array, index)) {
       keysChanged = true;
-      break;
+    }
+    const after = array[index];
+    if (!Object.is(before, after)) {
+      writeIndex(record, index, before, after);
     }
   }
   if (keysChanged) {
@@ -879,6 +922,16 @@ function objectGet(record: ReactiveRecord, key: PropertyKey): unknown {
     ) {
       return inherited.value;
     }
+    // Методы прототипа (map/filter/toString/Symbol.iterator и т.п.) —
+    // неизменяемые функции: не создаём на них сигналы.
+    if (typeof inherited.value === "function" || typeof key === "symbol") {
+      return Reflect.get(raw, key, record.proxy);
+    }
+  }
+  if (typeof key === "symbol") {
+    // Отсутствующие/унаследованные символы не трекаем: сигналы нужны
+    // только для собственных данных и строковых полей.
+    return Reflect.get(raw, key, record.proxy);
   }
   return deepReactive(getField(record, key).read());
 }
