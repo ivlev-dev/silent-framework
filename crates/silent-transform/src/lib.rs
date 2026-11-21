@@ -10,7 +10,7 @@ mod template_plan;
 pub mod transform;
 
 pub use index::Index;
-pub use scan::{scan, scan_with_aliases};
+pub use scan::{scan, scan_paths, scan_with_aliases};
 pub use transform::{transform, SilentOptions};
 
 pub fn version() -> &'static str {

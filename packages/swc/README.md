@@ -10,7 +10,8 @@
 
 - Компиляция TS/TSX и JSX-преобразование Silent Framework через `swc_core`.
 - DI-сканирование каталога: `scan` возвращает JSON-индекс интерфейсов и значений.
-- Синхронный API из трёх функций: `transform`, `scan`, `version`.
+- Инкрементальное сканирование набора файлов: `scanFiles` возвращает индекс только для переданных путей.
+- Синхронный API из четырёх функций: `transform`, `scan`, `scanFiles`, `version`.
 - Возврат source map и диагностик SWC в результате `transform`.
 - Загрузка подходящего нативного бинарника по `process.platform`/`process.arch`.
 
@@ -55,6 +56,7 @@ console.log(result.code);
 | --- | --- | --- |
 | `transform` | `source: string`, `filename: string`, `optionsJson: string`, `indexJson: string` | `string` — JSON `NativeTransformResult` (`{ code, map, diagnostics }`) |
 | `scan` | `root: string`, `optionsJson: string` | `string` — JSON `SilentIndex` (`{ interfaces, values }`) |
+| `scanFiles` | `root: string`, `filesJson: string`, `optionsJson: string` | `string` — JSON `SilentIndex` только для файлов из `filesJson` |
 | `version` | нет | `string` — версия нативного аддона |
 
 ## Платформы

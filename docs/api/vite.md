@@ -38,8 +38,8 @@ export default defineConfig({
     map: string | null;
     warnings: string[];
   } | null>;
-  watchChange(id: string): void;
-  handleHotUpdate(context: { file: string }): void;
+  watchChange(id: string, change: { event: "create" | "update" | "delete" }): Promise<void>;
+  handleHotUpdate(context: { file: string }): Promise<void>;
 }
 ```
 
@@ -126,10 +126,10 @@ interface ResolvedOptions {
    - получает индекс через `ensureIndex()`;
    - вызывает `nativeTransform(swc, code, moduleId, optionsJson, indexJson)`, добавляя в `optionsJson` флаг `ssr` из `options?.ssr`;
    - применяет политику `di` к `diagnostics` и возвращает `{ code, map, warnings }` (`warnings` всегда пуст: `warn`-режим выводит сообщения через `this.warn`, `error`-режим бросает ошибку).
-5. `watchChange(id)` — при изменении исходного модуля (но не виртуального) сбрасывает кеш индекса; изменение любого `tsconfig*.json` в `root` (`tsconfig.json`, `tsconfig.app.json`, `tsconfig.node.json`, …) перечитывает `paths` и пересобирает правила алиасов, сохраняя снимок алиасов Vite. Уже запущенный scan, завершившийся после инвалидации, не попадает в кеш индекса (счётчик поколений).
-6. `handleHotUpdate({ file })` — то же для HMR-обновлений исходных модулей.
+5. `watchChange(id, change)` — инкрементально обновляет индекс для изменённого исходного модуля (но не виртуального): удаляет записи, которые модуль внёс сам (`values[module]` и его реализации во всех токенах интерфейсов), вызывает `scanFiles([id])` и сливает дельту. Токены `module#…`, объявленные изменённым файлом, не удаляются целиком: реализации в них принадлежат другим файлам, которые не сканировались; токен исчезает, когда обновляется последняя реализация. Для `event: "delete"` записи только удаляются, без вызова `scanFiles`. При `event: "create"` выполняется то же добавление, что и для `update`. Изменение любого `tsconfig*.json` в `root` (`tsconfig.json`, `tsconfig.app.json`, `tsconfig.node.json`, …) перечитывает `paths`, пересобирает правила алиасов и инвалидирует индекс — следующий `ensureIndex` делает полный `scan`. Полный `scan` также выполняется при старте и после `configResolved`.
+6. `handleHotUpdate({ file })` — то же инкрементальное обновление для HMR-обновлений исходных модулей.
 
-Индекс кешируется в памяти плагина: несколько `transform` не вызывают повторный scan.
+Индекс кешируется в памяти плагина: несколько `transform` не вызывают повторный `scan`. Все операции с индексом сериализованы очередью промисов и защищены счётчиком поколений (`indexGeneration`): устаревший полный индекс не может перезаписать результат инкрементального обновления. Хеш индекса считается по детерминированному представлению (порядок ключей и элементов не важен), поэтому если содержимое индекса не изменилось, персистентный кеш трансформаций не инвалидируется.
 
 ### Ограничение: входящая sourcemap
 
@@ -144,6 +144,7 @@ interface ResolvedOptions {
 - `loadSwc()` динамически импортирует `@ivlev-dev/silent-swc` и кеширует модуль.
 - `nativeTransform()` вызывает `swc.transform(source, filename, optionsJson, indexJson)` и проверяет, что ответ — валидный JSON структуры `{ code, map, diagnostics }`.
 - `nativeScan()` вызывает `swc.scan(root, optionsJson)` с JSON правил алиасов и проверяет структуру индекса `{ interfaces, values }`.
+- `nativeScanFiles()` вызывает `swc.scanFiles(root, filesJson, optionsJson)` для инкрементального обновления и возвращает `null`, если addon не экспортирует `scanFiles` (тогда плагин откатывается на полный `scan`).
 
 Ошибки addon оборачиваются в `Error` с указанием имени файла или корня.
 
@@ -158,7 +159,7 @@ interface SilentIndex {
 }
 ```
 
-Индекс сериализуется в `indexJson` и передаётся в компилятор, который подставляет найденные реализации интерфейсов при компиляции конструкторов. Если `index: false`, используется `EMPTY_INDEX_JSON` (`{ interfaces: {}, values: {} }`), scan не вызывается.
+Индекс сериализуется в `indexJson` и передаётся в компилятор, который подставляет найденные реализации интерфейсов при компиляции конструкторов. Если `index: false`, используется `EMPTY_INDEX_JSON` (`{ interfaces: {}, values: {} }`), scan не вызывается. При изменении исходного файла полный обход не выполняется: обновляются только записи этого модуля через `scanFiles`.
 
 ### Политика DI-диагностик
 

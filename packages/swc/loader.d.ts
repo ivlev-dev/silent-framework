@@ -1,6 +1,8 @@
 export interface NativeModule {
   transform(source: string, filename: string, optionsJson: string, indexJson: string): string;
   scan(root: string, optionsJson: string): string;
+  // Необязательный экспорт: addon без него поддерживается (полный scan).
+  scanFiles?(root: string, filesJson: string, optionsJson: string): string;
   version(): string;
 }
 

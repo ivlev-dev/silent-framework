@@ -71,18 +71,48 @@ export function nativeScan(swc: SwcModule, root: string, optionsJson: string): S
     );
   }
 
+  return parseIndex(raw, "scan", `для root ${root}`);
+}
+
+/**
+ * Инкрементальный скан перечисленных файлов. `null` означает, что нативный
+ * addon не экспортирует `scanFiles` — вызывающий код обязан откатиться на
+ * полный `scan`.
+ */
+export function nativeScanFiles(
+  swc: SwcModule,
+  root: string,
+  files: readonly string[],
+  optionsJson: string,
+): SilentIndex | null {
+  const scanFiles = swc.scanFiles;
+  if (typeof scanFiles !== "function") return null;
+
+  let raw: string;
+  try {
+    raw = scanFiles(root, JSON.stringify(files), optionsJson);
+  } catch (error) {
+    throw new Error(
+      `@ivlev-dev/silent-vite: scanFiles упал для ${files.join(", ")}:\n${describeError(error)}`,
+    );
+  }
+
+  return parseIndex(raw, "scanFiles", `для ${files.join(", ")}`);
+}
+
+function parseIndex(raw: string, operation: string, target: string): SilentIndex {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
     throw new Error(
-      `@ivlev-dev/silent-vite: @ivlev-dev/silent-swc scan вернул невалидный JSON для root ${root}: ${describeError(error)}`,
+      `@ivlev-dev/silent-vite: @ivlev-dev/silent-swc ${operation} вернул невалидный JSON ${target}: ${describeError(error)}`,
     );
   }
 
   if (!isSilentIndex(parsed)) {
     throw new Error(
-      `@ivlev-dev/silent-vite: @ivlev-dev/silent-swc scan вернул неожиданную структуру для root ${root}`,
+      `@ivlev-dev/silent-vite: @ivlev-dev/silent-swc ${operation} вернул неожиданную структуру ${target}`,
     );
   }
 

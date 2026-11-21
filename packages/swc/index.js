@@ -21,4 +21,5 @@ const native = loadNative({
 
 export const transform = native.transform;
 export const scan = native.scan;
+export const scanFiles = native.scanFiles;
 export const version = native.version;

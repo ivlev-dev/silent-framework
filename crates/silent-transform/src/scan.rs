@@ -1,7 +1,7 @@
 use crate::alias::AliasRule;
 use crate::index::Index;
 use crate::paths::{is_source_file, module_token, resolve_module};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use swc_core::common::{FileName, SourceMap};
@@ -316,6 +316,36 @@ fn walk(directory: &Path, root: &Path, files: &mut Vec<PathBuf>) {
     }
 }
 
+fn collect_into_index(file: &Path, aliases: &[AliasRule], index: &mut Index) {
+    let Ok(source) = fs::read_to_string(file) else {
+        return;
+    };
+    if !prefilter_source(&source) {
+        return;
+    }
+    let Some(module) = parse_module(file, source) else {
+        return;
+    };
+    let imports = collect_imports(&module);
+    collect_implements(file, &module, &imports, aliases, index);
+
+    let names = collect_exported_names(&module);
+    if !names.is_empty() {
+        let module_path = crate::paths::module_path_without_extension(file);
+        index.values.insert(module_path, names);
+    }
+}
+
+/// Повторяет фильтры полного обхода: скрытые и служебные каталоги не индексируются.
+fn is_ignored_relative(relative: &Path) -> bool {
+    relative.components().any(|component| {
+        let Some(name) = component.as_os_str().to_str() else {
+            return true;
+        };
+        name.starts_with('.') || SKIPPED_DIRECTORIES.contains(&name)
+    })
+}
+
 pub fn scan(root: &Path) -> Index {
     scan_with_aliases(root, &[])
 }
@@ -330,25 +360,39 @@ fn scan_with_aliases_uncached(root: &Path, aliases: &[AliasRule]) -> Index {
     walk(&root, &root, &mut files);
 
     let mut index = Index::default();
+    for file in files {
+        collect_into_index(&file, aliases, &mut index);
+    }
+    index
+}
+
+/// Сканирует только перечисленные файлы. Пути нормализуются так же, как при
+/// полном обходе; файлы вне `root`, не-исходники, скрытые и служебные каталоги
+/// игнорируются. Используется для инкрементального обновления DI-индекса.
+pub fn scan_paths(root: &Path, files: &[PathBuf], aliases: &[AliasRule]) -> Index {
+    crate::paths::with_canonical_cache(|| scan_paths_uncached(root, files, aliases))
+}
+
+fn scan_paths_uncached(root: &Path, files: &[PathBuf], aliases: &[AliasRule]) -> Index {
+    let root = crate::paths::normalize_path(root);
+    let mut index = Index::default();
+    let mut seen = HashSet::with_capacity(files.len());
 
     for file in files {
-        let Ok(source) = fs::read_to_string(&file) else {
-            continue;
-        };
-        if !prefilter_source(&source) {
+        let file = crate::paths::normalize_path(file);
+        if !seen.insert(file.clone()) {
             continue;
         }
-        let Some(module) = parse_module(&file, source) else {
+        if !file.starts_with(&root) || !is_source_file(&file) {
+            continue;
+        }
+        let Ok(relative) = file.strip_prefix(&root) else {
             continue;
         };
-        let imports = collect_imports(&module);
-        collect_implements(&file, &module, &imports, aliases, &mut index);
-
-        let names = collect_exported_names(&module);
-        if !names.is_empty() {
-            let module_path = crate::paths::module_path_without_extension(&file);
-            index.values.insert(module_path, names);
+        if is_ignored_relative(relative) {
+            continue;
         }
+        collect_into_index(&file, aliases, &mut index);
     }
 
     index

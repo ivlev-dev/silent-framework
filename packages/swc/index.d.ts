@@ -13,4 +13,10 @@ export function transform(
 
 export function scan(root: string, optionsJson: string): string;
 
+export function scanFiles(
+  root: string,
+  filesJson: string,
+  optionsJson: string,
+): string;
+
 export function version(): string;

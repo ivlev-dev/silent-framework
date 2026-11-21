@@ -2,7 +2,7 @@
 
 Нативный Node-API addon на `swc_core`: компиляция TS/TSX, JSX-преобразование Silent Framework и сканирование DI-индекса.
 
-Addon синхронно экспортирует три функции — `transform`, `scan`, `version`. Загрузка бинарника выполняется модулем-обёрткой `packages/swc/index.js`: сначала выполняется попытка загрузить пакет `@ivlev-dev/silent-swc-<triple>` (сейчас такие платформенные пакеты не публикуются), затем — локальный `*.node` из каталога `native`.
+Addon синхронно экспортирует четыре функции — `transform`, `scan`, `scanFiles`, `version`. Загрузка бинарника выполняется модулем-обёрткой `packages/swc/index.js`: сначала выполняется попытка загрузить пакет `@ivlev-dev/silent-swc-<triple>` (сейчас такие платформенные пакеты не публикуются), затем — локальный `*.node` из каталога `native`.
 
 #### `NativeTransformResult`
 
@@ -114,6 +114,33 @@ const index = JSON.parse(scan("/project", "")) as {
 
 Индекс используется Vite-плагином для разрешения реализаций интерфейсов в конструкторах и для различения value-токенов и `import type`.
 
+## `scanFiles`
+
+```ts
+function scanFiles(
+  root: string,
+  filesJson: string,
+  optionsJson: string,
+): string;
+```
+
+Инкрементальный вариант `scan`: сканирует только файлы из `filesJson` (JSON-массив абсолютных путей) и возвращает JSON-строку с `SilentIndex` для этих файлов. `optionsJson` — те же правила алиасов, что у `scan`.
+
+Пути нормализуются так же, как при полном обходе (`canonicalize` с лексическим fallback). Файлы вне `root`, не-исходники, а также файлы из скрытых и служебных каталогов (`node_modules`, `dist`, `target`, …) пропускаются; дубликаты путей схлопываются.
+
+```ts
+import { scanFiles } from "@ivlev-dev/silent-swc";
+
+const delta = JSON.parse(
+  scanFiles("/project", JSON.stringify(["/project/src/memory.ts"]), ""),
+) as {
+  interfaces: Record<string, string[]>;
+  values: Record<string, string[]>;
+};
+```
+
+`@ivlev-dev/silent-vite` удаляет из полного индекса записи изменённого модуля, затем сливает с ним результат `scanFiles`. Если addon старой версии не экспортирует `scanFiles`, плагин откатывается на полный `scan`.
+
 ## `version`
 
 ```ts
@@ -159,6 +186,7 @@ Release-workflow собирает пребилды только для `linux-x6
 - Отсутствие нативного бинарника: `packages/swc/index.js` бросает `Error` с сообщением `@ivlev-dev/silent-swc: native addon is not built...`; `@ivlev-dev/silent-vite` оборачивает её и предлагает `pnpm --filter @ivlev-dev/silent-swc build`.
 - `diagnostics` в успешном результате содержат сообщения SWC и читаются как обычные строки; они не прерывают возврат `code`/`map`.
 - `scan` не возвращает диагностики; при недоступном каталоге возвращает пустой или частичный индекс.
+- `scanFiles` не возвращает диагностики; нечитаемые и отсутствующие файлы пропускаются.
 
 ## Версии
 
@@ -177,3 +205,4 @@ Release-workflow собирает пребилды только для `linux-x6
 - Source maps по умолчанию включены; `map` может быть `null`, если опциями SWC они отключены.
 - Декораторы по умолчанию принудительно переводятся в версию `2023-11`, если `transformConfig.decoratorVersion` не задана явно.
 - `scan` учитывает только поддерживаемые расширения и пропускает указанные служебные каталоги и ссылки.
+- `scanFiles` применяет те же фильтры к переданным путям; несуществующие файлы дают пустые записи.

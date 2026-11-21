@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
@@ -6,16 +6,22 @@ import type { Plugin, ResolvedConfig } from "vite";
 import { silent } from "../src/index.js";
 import type { SilentOptions } from "../src/index.js";
 import { matchesPattern } from "../src/options.js";
-import { transform as nativeTransform, scan as nativeScan } from "@ivlev-dev/silent-swc";
+import {
+  transform as nativeTransform,
+  scan as nativeScan,
+  scanFiles as nativeScanFiles,
+} from "@ivlev-dev/silent-swc";
 
 const transformMock = vi.mocked(nativeTransform);
 const scanMock = vi.mocked(nativeScan);
+const scanFilesMock = vi.mocked(nativeScanFiles);
 
 vi.mock("@ivlev-dev/silent-swc", () => ({
   transform: vi.fn(() =>
     JSON.stringify({ code: "empty", map: null, diagnostics: [] }),
   ),
   scan: vi.fn(() => JSON.stringify({ interfaces: {}, values: {} })),
+  scanFiles: vi.fn(() => JSON.stringify({ interfaces: {}, values: {} })),
   version: vi.fn(() => "test"),
 }));
 
@@ -28,8 +34,8 @@ interface CallableHooks {
     id: string,
     options?: { ssr?: boolean; inMap?: unknown },
   ) => Promise<unknown> | unknown;
-  watchChange?: (id: string, change: { event: string }) => void;
-  handleHotUpdate?: (context: { file: string }) => void;
+  watchChange?: (id: string, change: { event: string }) => void | Promise<void>;
+  handleHotUpdate?: (context: { file: string }) => void | Promise<void>;
 }
 
 const createPlugin = (options?: SilentOptions): CallableHooks =>
@@ -55,6 +61,7 @@ type TransformOutput = {
 beforeEach(() => {
   transformMock.mockReset();
   scanMock.mockReset();
+  scanFilesMock.mockReset();
   transformMock.mockImplementation((source: string) =>
     JSON.stringify({
       code: `${source} /* compiled */`,
@@ -70,6 +77,9 @@ beforeEach(() => {
         },
         values: { [`${root}/types.ts`]: ["Store", "createStore"] },
       }),
+  );
+  scanFilesMock.mockImplementation(
+    () => JSON.stringify({ interfaces: {}, values: {} }),
   );
 });
 
@@ -339,38 +349,67 @@ describe("silent()", () => {
     );
   });
 
-  it("не кеширует индекс, завершившийся после инвалидации", async () => {
-    const indexA = {
-      interfaces: { "a.ts#A": ["a-impl.ts#A"] },
-      values: { "a.ts": ["A"] },
-    };
-    const indexB = {
-      interfaces: { "b.ts#B": ["b-impl.ts#B"] },
-      values: { "b.ts": ["B"] },
-    };
+  it("инкрементальный апдейт не перезаписывается полным сканом", async () => {
     const plugin = createPlugin();
-    const file = fileFor("src", "race.ts");
+    const file = fileFor("src", "other.ts");
+    const root = process.cwd();
 
-    // Первый scan прогревает загрузку swc и заполняет кеш индекса.
-    await plugin.transform?.("warm", file);
-    plugin.handleHotUpdate?.({ file });
+    scanMock.mockImplementation(() => JSON.stringify({ interfaces: {}, values: {} }));
+    scanFilesMock.mockImplementation(
+      () =>
+        JSON.stringify({
+          interfaces: {},
+          values: { [`${root}/src/other`]: ["Late"] },
+        }),
+    );
+
+    // Полный scan встаёт в очередь первым, инкрементальный — за ним.
+    const full = plugin.buildStart?.();
+    const incremental = plugin.watchChange?.(file, { event: "update" });
+    await Promise.all([full, incremental]);
+
+    await plugin.transform?.("code", fileFor("src", "app.ts"));
+
+    const usedIndex = JSON.parse(transformMock.mock.calls.at(-1)?.[3] ?? "{}");
+    expect(usedIndex.values[`${root}/src/other`]).toEqual(["Late"]);
+    expect(scanMock).toHaveBeenCalledTimes(1);
+    expect(scanFilesMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("смена tsconfig вызывает полный scan, а не инкрементальный", async () => {
+    const project = mkdtempSync(path.join(tmpdir(), "silent-vite-tsconfig-scan-"));
+    const cacheDir = mkdtempSync(path.join(tmpdir(), "silent-vite-cache-"));
+    cacheDirectories.push(project, cacheDir);
+    const tsconfig = path.join(project, "tsconfig.json");
+    writeFileSync(
+      tsconfig,
+      JSON.stringify({
+        compilerOptions: { baseUrl: ".", paths: { "@/*": ["src/*"] } },
+      }),
+    );
+
+    const plugin = createPlugin({ root: project });
+    plugin.configResolved?.({ cacheDir } as ResolvedConfig);
+    await plugin.buildStart?.();
     expect(scanMock).toHaveBeenCalledTimes(1);
 
-    scanMock
-      .mockImplementationOnce(() => JSON.stringify(indexA))
-      .mockImplementationOnce(() => JSON.stringify(indexB));
+    writeFileSync(
+      tsconfig,
+      JSON.stringify({
+        compilerOptions: { baseUrl: ".", paths: { "@/*": ["app/*"] } },
+      }),
+    );
+    await plugin.watchChange?.(tsconfig, { event: "update" });
+    await plugin.transform?.("code", path.join(project, "src", "app.ts"));
 
-    const inFlight = plugin.transform?.("one", file);
-    // transform дошёл до ensureIndex, scan ещё не выполнился.
-    await Promise.resolve();
-    plugin.handleHotUpdate?.({ file });
-
-    await inFlight;
-    await plugin.transform?.("two", file);
-
-    expect(scanMock).toHaveBeenCalledTimes(3);
-    const usedIndex = JSON.parse(transformMock.mock.calls.at(-1)?.[3] ?? "{}");
-    expect(usedIndex).toEqual(indexB);
+    expect(scanMock).toHaveBeenCalledTimes(2);
+    expect(scanFilesMock).not.toHaveBeenCalled();
+    const aliases = JSON.parse(scanMock.mock.calls[1]?.[1] ?? "{}").aliases;
+    expect(aliases).toEqual(
+      expect.arrayContaining([
+        { find: "@/*", replacement: path.join(project, "app/*") },
+      ]),
+    );
   });
 
   it("options JSON содержит swc, requirePreloader, runtime, hmr", async () => {
@@ -547,22 +586,92 @@ describe("silent()", () => {
     expect(transformMock).toHaveBeenCalledTimes(4);
   });
 
-  it("инвалидирует индекс на watchChange для TS/JS и для .css не делает этого", async () => {
+  it("инкрементально обновляет индекс на watchChange для TS/JS и игнорирует .css", async () => {
     const plugin = createPlugin();
     await plugin.buildStart?.();
     await plugin.transform?.("one", fileFor("src", "a.ts"));
+    expect(scanMock).toHaveBeenCalledTimes(1);
 
-    plugin.watchChange?.(fileFor("src", "types.ts"), { event: "update" });
+    const typesFile = fileFor("src", "types.ts");
+    await plugin.watchChange?.(typesFile, { event: "update" });
     await plugin.transform?.("two", fileFor("src", "a.ts"));
-    expect(scanMock).toHaveBeenCalledTimes(2);
+    expect(scanMock).toHaveBeenCalledTimes(1);
+    expect(scanFilesMock).toHaveBeenCalledTimes(1);
+    expect(scanFilesMock).toHaveBeenCalledWith(
+      process.cwd(),
+      JSON.stringify([typesFile]),
+      expect.any(String),
+    );
 
-    plugin.watchChange?.(fileFor("src", "styles.css"), { event: "update" });
+    await plugin.watchChange?.(fileFor("src", "styles.css"), { event: "update" });
     await plugin.transform?.("three", fileFor("src", "a.ts"));
-    expect(scanMock).toHaveBeenCalledTimes(2);
+    expect(scanFilesMock).toHaveBeenCalledTimes(1);
 
-    plugin.watchChange?.(fileFor("src", "app.js"), { event: "update" });
+    await plugin.watchChange?.(fileFor("src", "app.js"), { event: "update" });
     await plugin.transform?.("four", fileFor("src", "a.ts"));
-    expect(scanMock).toHaveBeenCalledTimes(3);
+    expect(scanFilesMock).toHaveBeenCalledTimes(2);
+    expect(scanMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("удаляет записи модуля при unlink без вызова scanFiles", async () => {
+    const root = process.cwd();
+    scanMock.mockImplementation(
+      () =>
+        JSON.stringify({
+          interfaces: {
+            [`${root}/src/types#Store`]: [`${root}/src/memory-store#MemoryStore`],
+          },
+          values: {
+            [`${root}/src/types`]: ["Store"],
+            [`${root}/src/memory-store`]: ["MemoryStore"],
+          },
+        }),
+    );
+    const plugin = createPlugin();
+    await plugin.buildStart?.();
+
+    await plugin.watchChange?.(fileFor("src", "types.ts"), { event: "delete" });
+    await plugin.transform?.("code", fileFor("src", "app.ts"));
+
+    expect(scanFilesMock).not.toHaveBeenCalled();
+    const index = JSON.parse(transformMock.mock.calls.at(-1)?.[3] ?? "{}");
+    expect(index.values[`${root}/src/types`]).toBeUndefined();
+    // Реализация из другого модуля остаётся нетронутой: правка файла с
+    // интерфейсом не должна обнулять чужие реализации.
+    expect(index.interfaces[`${root}/src/types#Store`]).toEqual([
+      `${root}/src/memory-store#MemoryStore`,
+    ]);
+    expect(index.values[`${root}/src/memory-store`]).toEqual(["MemoryStore"]);
+  });
+
+  it("добавляет записи модуля на событие create", async () => {
+    const root = process.cwd();
+    scanFilesMock.mockImplementation(
+      () =>
+        JSON.stringify({
+          interfaces: {
+            [`${root}/src/logger#Logger`]: [`${root}/src/console-logger#ConsoleLogger`],
+          },
+          values: { [`${root}/src/console-logger`]: ["ConsoleLogger"] },
+        }),
+    );
+    const plugin = createPlugin();
+    await plugin.buildStart?.();
+
+    const file = fileFor("src", "console-logger.ts");
+    await plugin.watchChange?.(file, { event: "create" });
+    await plugin.transform?.("code", fileFor("src", "app.ts"));
+
+    expect(scanFilesMock).toHaveBeenCalledWith(
+      root,
+      JSON.stringify([file]),
+      expect.any(String),
+    );
+    const index = JSON.parse(transformMock.mock.calls.at(-1)?.[3] ?? "{}");
+    expect(index.values[`${root}/src/console-logger`]).toEqual(["ConsoleLogger"]);
+    expect(index.interfaces[`${root}/src/logger#Logger`]).toEqual([
+      `${root}/src/console-logger#ConsoleLogger`,
+    ]);
   });
 
   it("не инвалидирует индекс на watchChange для виртуальных модулей", async () => {
@@ -570,20 +679,61 @@ describe("silent()", () => {
     await plugin.buildStart?.();
     await plugin.transform?.("one", fileFor("src", "a.ts"));
 
-    plugin.watchChange?.("\0virtual:module", { event: "update" });
+    await plugin.watchChange?.("\0virtual:module", { event: "update" });
     await plugin.transform?.("two", fileFor("src", "a.ts"));
     expect(scanMock).toHaveBeenCalledTimes(1);
+    expect(scanFilesMock).not.toHaveBeenCalled();
   });
 
-  it("инвалидирует индекс на handleHotUpdate", async () => {
+  it("инкрементально обновляет индекс на handleHotUpdate", async () => {
     const plugin = createPlugin();
     await plugin.buildStart?.();
     await plugin.transform?.("one", fileFor("src", "a.ts"));
 
-    plugin.handleHotUpdate?.({ file: fileFor("src", "vm.ts") });
+    const file = fileFor("src", "vm.ts");
+    await plugin.handleHotUpdate?.({ file });
     await plugin.transform?.("two", fileFor("src", "a.ts"));
 
-    expect(scanMock).toHaveBeenCalledTimes(2);
+    expect(scanMock).toHaveBeenCalledTimes(1);
+    expect(scanFilesMock).toHaveBeenCalledWith(
+      process.cwd(),
+      JSON.stringify([file]),
+      expect.any(String),
+    );
+  });
+
+  it("не инвалидирует кеш трансформаций, если индекс не изменился", async () => {
+    const cacheDir = mkdtempSync(path.join(tmpdir(), "silent-vite-stable-index-"));
+    cacheDirectories.push(cacheDir);
+    const root = realpathSync.native(process.cwd());
+    scanMock.mockImplementation(
+      () =>
+        JSON.stringify({
+          interfaces: {},
+          values: { [`${root}/src/types`]: ["Store"] },
+        }),
+    );
+    scanFilesMock.mockImplementation(
+      () =>
+        JSON.stringify({
+          interfaces: {},
+          values: { [`${root}/src/types`]: ["Store"] },
+        }),
+    );
+    const plugin = createPlugin();
+    plugin.configResolved?.({ cacheDir } as ResolvedConfig);
+    await plugin.buildStart?.();
+
+    const file = fileFor("src", "types.ts");
+    const code = "export type Store = { get(): string };";
+    await plugin.transform?.(code, file);
+    expect(transformMock).toHaveBeenCalledTimes(1);
+
+    await plugin.watchChange?.(file, { event: "update" });
+    await plugin.transform?.(code, file);
+
+    expect(scanFilesMock).toHaveBeenCalledTimes(1);
+    expect(transformMock).toHaveBeenCalledTimes(1);
   });
 
   it("бросает ошибку при невалидном JSON от native transform", async () => {

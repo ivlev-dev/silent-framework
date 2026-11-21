@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { scan, transform } from "../index.js";
+import { scan, scanFiles, transform } from "../index.js";
 
 function parse(code: string) {
   return JSON.parse(code) as {
@@ -47,6 +47,37 @@ describe("@ivlev-dev/silent-swc", () => {
     expect(index.interfaces[key]).toEqual([`${root}/src/memory#MemoryStore`]);
     expect(index.values[`${root}/src/types`]).toBeUndefined();
     expect(index.values[`${root}/src/memory`]).toContain("MemoryStore");
+  });
+
+  it("scanFiles сканирует только переданные файлы", () => {
+    const root = mkdtempSync(join(tmpdir(), "silent-scan-files-"));
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(
+      join(root, "src", "types.ts"),
+      "export interface Store { get(key: string): string }\n",
+    );
+    writeFileSync(
+      join(root, "src", "memory.ts"),
+      "import type { Store } from './types';\nexport class MemoryStore implements Store { get() { return ''; } }\n",
+    );
+    writeFileSync(
+      join(root, "src", "other.ts"),
+      "export class Other { run() {} }\n",
+    );
+
+    const index = JSON.parse(
+      scanFiles(root, JSON.stringify([join(root, "src", "memory.ts")]), ""),
+    ) as {
+      interfaces: Record<string, string[]>;
+      values: Record<string, string[]>;
+    };
+
+    expect(index.values[`${root}/src/memory`]).toContain("MemoryStore");
+    expect(index.values[`${root}/src/types`]).toBeUndefined();
+    expect(index.values[`${root}/src/other`]).toBeUndefined();
+    expect(index.interfaces[`${root}/src/types#Store`]).toEqual([
+      `${root}/src/memory#MemoryStore`,
+    ]);
   });
 
   it("требует preloader при включённой опции", () => {

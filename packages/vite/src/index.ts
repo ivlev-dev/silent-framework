@@ -1,7 +1,7 @@
 import type { ConfigEnv, Plugin, ResolvedConfig, UserConfig } from "vite";
 import { join } from "node:path";
 import type { NativeTransformResult } from "@ivlev-dev/silent-swc";
-import { loadSwc, nativeScan, nativeTransform } from "./native.js";
+import { loadSwc, nativeScan, nativeScanFiles, nativeTransform } from "./native.js";
 import { aliasesJson, mergeAliasRules, viteAliases, type AliasRule } from "./aliases.js";
 import type { SilentIndex } from "./native.js";
 import {
@@ -14,6 +14,12 @@ import {
   resolveOptions,
 } from "./options.js";
 import type { DiMode, SilentOptions } from "./options.js";
+import {
+  mergeIndexDelta,
+  moduleFingerprint,
+  removeModuleFromIndex,
+  stableIndexJson,
+} from "./incremental.js";
 import {
   hashContent,
   pruneTransformCache,
@@ -63,10 +69,15 @@ export function silent(options: SilentOptions = {}): Plugin {
   let aliasOptionsJson = aliasesJson([]);
   let viteAliasSnapshot: AliasRule[] = [];
 
+  let cachedIndex: SilentIndex | null = null;
   let cachedIndexJson: string | null = null;
   let cachedIndexHash: string | null = null;
   let indexPromise: Promise<string> | null = null;
   let indexGeneration = 0;
+  // Операции с индексом сериализованы: инкрементальный апдейт и полный scan
+  // не могут перезаписать результат друг друга.
+  let indexQueue: Promise<void> = Promise.resolve();
+  let queuedIndexTasks = 0;
   let swcPromise: ReturnType<typeof loadSwc> | null = null;
   let cacheDirectory: string | null = null;
   let transformVersion: string | null = null;
@@ -99,18 +110,36 @@ export function silent(options: SilentOptions = {}): Plugin {
     return swcPromise;
   };
 
-  const ensureIndex = (): Promise<string> => {
-    if (!opts.index) return Promise.resolve(EMPTY_INDEX_JSON);
-    if (cachedIndexJson !== null) return Promise.resolve(cachedIndexJson);
+  const enqueueIndexTask = <T>(task: () => Promise<T> | T): Promise<T> => {
+    queuedIndexTasks += 1;
+    const run = indexQueue.then(task, task);
+    const settle = (): void => {
+      queuedIndexTasks -= 1;
+    };
+    indexQueue = run.then(settle, settle);
+    return run;
+  };
+
+  const cacheIndex = (index: SilentIndex): string => {
+    cachedIndex = index;
+    cachedIndexJson = JSON.stringify(index);
+    cachedIndexHash = null;
+    return cachedIndexJson;
+  };
+
+  const startFullScan = (): Promise<string> => {
     if (indexPromise) return indexPromise;
-    const generation = ++indexGeneration;
-    const pending: Promise<string> = getSwc().then((swc) => {
+    const pending = enqueueIndexTask(async () => {
+      const swc = await getSwc();
+      if (cachedIndexJson !== null) return cachedIndexJson;
+      const generation = indexGeneration;
       const index: SilentIndex = nativeScan(swc, opts.root, aliasOptionsJson);
-      const json = JSON.stringify(index);
-      if (generation === indexGeneration) {
-        cachedIndexJson = json;
+      // Скан синхронный, поэтому поколение измениться не может; проверка
+      // оставлена страховкой от будущих асинхронных реализаций сканера.
+      if (generation !== indexGeneration) {
+        return cachedIndexJson ?? JSON.stringify(index);
       }
-      return json;
+      return cacheIndex(index);
     });
     indexPromise = pending;
     const forgetPending = (): void => {
@@ -120,17 +149,83 @@ export function silent(options: SilentOptions = {}): Plugin {
     return pending;
   };
 
+  const ensureIndex = async (): Promise<string> => {
+    if (!opts.index) return EMPTY_INDEX_JSON;
+    if (queuedIndexTasks > 0) {
+      await indexQueue;
+      if (cachedIndexJson !== null) return cachedIndexJson;
+    }
+    if (cachedIndexJson !== null) return cachedIndexJson;
+    return startFullScan();
+  };
+
   const invalidateIndex = (): void => {
     indexGeneration += 1;
+    cachedIndex = null;
     cachedIndexJson = null;
     cachedIndexHash = null;
     indexPromise = null;
   };
 
   const indexHashOf = (indexJson: string): string => {
-    cachedIndexHash ??= hashContent(indexJson);
+    if (cachedIndex === null || cachedIndexJson !== indexJson) {
+      return hashContent(indexJson);
+    }
+    cachedIndexHash ??= hashContent(stableIndexJson(cachedIndex));
     return cachedIndexHash;
   };
+
+  /**
+   * Инкрементальное обновление индекса для одного файла. Если индекс ещё не
+   * построен или уже инвалидирован, обновление пропускается: полный scan
+   * увидит актуальное состояние файловой системы.
+   */
+  const refreshModuleIndex = (
+    id: string,
+    event: "create" | "update" | "delete",
+  ): Promise<void> => {
+    if (!opts.index) return Promise.resolve();
+    const file = cleanModuleId(id);
+    if (
+      isVirtualModule(file)
+      || !isSourceModule(file)
+      || !isInsideRoot(opts.root, file)
+    ) {
+      return Promise.resolve();
+    }
+    return enqueueIndexTask(async () => {
+      const generation = indexGeneration;
+      const swc = await getSwc();
+      if (generation !== indexGeneration) return;
+      if (cachedIndex === null) return;
+      const before = moduleFingerprint(cachedIndex, file);
+      removeModuleFromIndex(cachedIndex, file);
+      if (event !== "delete") {
+        const delta = nativeScanFiles(swc, opts.root, [file], aliasOptionsJson);
+        if (delta === null) {
+          // Addon без scanFiles: безопасный откат на полный scan.
+          invalidateIndex();
+          return;
+        }
+        mergeIndexDelta(cachedIndex, delta);
+      }
+      const after = moduleFingerprint(cachedIndex, file);
+      if (after === before) return;
+      cachedIndexJson = JSON.stringify(cachedIndex);
+      // Хеш пересчитается лениво при следующем transform по детерминированному
+      // представлению; изменившийся индекс инвалидирует кеш как и раньше.
+      cachedIndexHash = null;
+    });
+  };
+
+  const scheduleModuleRefresh = (
+    id: string,
+    event: "create" | "update" | "delete",
+  ): Promise<void> =>
+    refreshModuleIndex(id, event).catch(() => {
+      // Ошибка нативного скана: следующий ensureIndex пересоберёт индекс целиком.
+      invalidateIndex();
+    });
 
   return {
     name: "silent",
@@ -178,19 +273,21 @@ export function silent(options: SilentOptions = {}): Plugin {
       rebuildAliases();
       invalidateIndex();
     },
-    watchChange(id) {
-      if (isSourceModule(id) && !isVirtualModule(id)) {
-        invalidateIndex();
-      }
+    watchChange(id, change) {
       if (isTsconfigFile(opts.root, id)) {
         // tsconfig paths перечитываются, Vite-алиасы берутся из снимка.
         rebuildAliases();
         invalidateIndex();
+        return;
       }
+      if (isSourceModule(id) && !isVirtualModule(id)) {
+        return scheduleModuleRefresh(id, change.event);
+      }
+      return;
     },
     handleHotUpdate({ file }) {
       if (isSourceModule(file) && !isVirtualModule(file)) {
-        invalidateIndex();
+        return scheduleModuleRefresh(file, "update");
       }
     },
     async transform(code, id, transformOptions) {

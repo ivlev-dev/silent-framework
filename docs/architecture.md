@@ -328,6 +328,7 @@ export function App() {
 ```ts
 transform(source: string, filename: string, optionsJson: string, indexJson: string): string;
 scan(root: string, optionsJson: string): string;
+scanFiles(root: string, filesJson: string, optionsJson: string): string;
 version(): string;
 ```
 
