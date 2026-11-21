@@ -1,5 +1,5 @@
 import type { Container } from "@ivlev-dev/silent-di";
-import { getOwner } from "@ivlev-dev/silent-reactivity";
+import { getOwner, onCleanup } from "@ivlev-dev/silent-reactivity";
 import { runWithBoundary, type AsyncBoundary } from "./boundary.js";
 import { VIEW_END, VIEW_START } from "./hydration-state.js";
 import { bindOwnerRuntimeOptions, findOwnerRuntimeOptions } from "./runtime-context.js";
@@ -161,10 +161,38 @@ export function callHook(target: object, name: string, ...args: unknown[]): void
 }
 
 let readyNodes = 0;
+let readyTraversals = 0;
 
 export function setReady(node: Node, ready: Promise<void>): void {
-  (node as ReadyHost)[COMPONENT_READY] = ready;
-  readyNodes += 1;
+  const host = node as ReadyHost;
+  if (host[COMPONENT_READY] === undefined) {
+    readyNodes += 1;
+    const owner = getOwner();
+    if (owner !== null) {
+      onCleanup(() => clearReady(node));
+    }
+  }
+  host[COMPONENT_READY] = ready;
+}
+
+/**
+ * Снимает признак ready с узла: счётчик готовых узлов должен убывать, иначе
+ * fast-path в getReady отключается навсегда после первого ready-компонента.
+ */
+export function clearReady(node: Node): void {
+  const host = node as ReadyHost;
+  if (host[COMPONENT_READY] === undefined) {
+    return;
+  }
+  delete host[COMPONENT_READY];
+  if (readyNodes > 0) {
+    readyNodes -= 1;
+  }
+}
+
+/** Внутренняя диагностика для тестов: размер учёта ready и число обходов. */
+export function getReadyStats(): { readonly nodes: number; readonly traversals: number } {
+  return { nodes: readyNodes, traversals: readyTraversals };
 }
 
 export function getOwnReady(node: Node): Promise<void> {
@@ -207,6 +235,7 @@ export function getReady(node: Node): Promise<void> {
   if (readyNodes === 0) {
     return RESOLVED_READY;
   }
+  readyTraversals += 1;
   const promises: Promise<void>[] = [];
   collectReady(node, promises, new Set<Node>());
   if (promises.length === 0) {

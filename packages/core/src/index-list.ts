@@ -16,7 +16,9 @@ import {
   clearItemDisposer,
   collectNodes,
   createMountPoint,
+  deferDisposeFlush,
   disposeNode,
+  isDisposing,
   isServerMode,
 } from "./dom.js";
 import { getServerBackend, serializeServerValue } from "./server-proxy.js";
@@ -56,6 +58,7 @@ interface IndexState<T> {
   setItem: Setter<T>;
   index: Accessor<number>;
   setIndex: Setter<number>;
+  position: number;
   anchor: Comment | null;
   nodes: Node[];
   cleanup: () => void;
@@ -78,10 +81,10 @@ class IndexedState<T> implements IndexState<T> {
   disposed = false;
   item: Accessor<T>;
   index: Accessor<number>;
+  position: number;
   private itemHandle: [Accessor<T>, Setter<T>] | null = null;
   private indexHandle: [Accessor<number>, Setter<number>] | null = null;
   private currentItem: T;
-  private position: number;
   private remove: (state: IndexState<T>) => void;
 
   constructor(
@@ -136,10 +139,18 @@ class IndexedState<T> implements IndexState<T> {
     this.position = next;
     const handle = this.indexHandle;
     if (handle !== null) {
+      indexWrites += 1;
       handle[1](next);
     }
     return next;
   }
+}
+
+let indexWrites = 0;
+
+/** Внутренняя диагностика для тестов: сколько записей index ушло в сигналы. */
+export function getIndexStats(): { readonly writes: number } {
+  return { writes: indexWrites };
 }
 
 export interface IndexProps<T> {
@@ -276,15 +287,62 @@ export function Index<T>(props: IndexProps<T>): Node {
     }
   };
 
+  let pendingRemovals: Set<IndexState<T>> | null = null;
+  let reindexPending = false;
+  let reindexFrom = 0;
+
+  const flushReindex = (): void => {
+    const removals = pendingRemovals;
+    pendingRemovals = null;
+    if (removals !== null && removals.size > 0) {
+      let write = 0;
+      for (const state of states) {
+        if (!removals.has(state)) {
+          states[write] = state;
+          write += 1;
+        }
+      }
+      states.length = write;
+    }
+    if (!reindexPending) {
+      return;
+    }
+    reindexPending = false;
+    const from = reindexFrom < states.length ? reindexFrom : states.length;
+    reindexFrom = 0;
+    for (let position = from; position < states.length; position += 1) {
+      const state = states[position]!;
+      if (state.position !== position) {
+        state.setIndex(position);
+      }
+    }
+  };
+
+  const scheduleReindex = (position: number): void => {
+    if (position < reindexFrom) {
+      reindexFrom = position;
+    }
+    if (reindexPending) {
+      return;
+    }
+    reindexPending = true;
+    deferDisposeFlush(flushReindex);
+  };
+
   const unlinkState = (state: IndexState<T>): void => {
+    if (isDisposing()) {
+      // Внутри каскада disposeNode копим удаления и переиндексируем один раз:
+      // иначе каждая строка пишет index всем оставшимся (O(N²)).
+      (pendingRemovals ??= new Set()).add(state);
+      scheduleReindex(0);
+      return;
+    }
     const position = states.indexOf(state);
     if (position < 0) {
       return;
     }
     states.splice(position, 1);
-    for (let index = position; index < states.length; index += 1) {
-      states[index]!.setIndex(index);
-    }
+    scheduleReindex(position);
   };
 
   const removeState = (state: IndexState<T>): void => {
@@ -559,6 +617,11 @@ export function Index<T>(props: IndexProps<T>): Node {
 
 
   const renderList = (): void => {
+    if (pendingRemovals !== null || reindexPending) {
+      // Синхронный flush внутри dispose-cleanup мог обновить список до
+      // завершения батча: сначала применяем накопленные удаления.
+      flushReindex();
+    }
     const parent = endAnchor.parentNode;
     if (parent === null) {
       removeAll();

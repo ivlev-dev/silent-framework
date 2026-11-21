@@ -128,6 +128,8 @@ interface ClassState {
 
 interface StyleSlot {
   declarations: Map<string, string>;
+  value: unknown;
+  hasValue: boolean;
 }
 
 interface StyleRegistry {
@@ -250,9 +252,14 @@ export function applyStyle(
   const registry = styleRegistryFor(el);
   let slot = registry.slots.get(token);
   if (slot === undefined) {
-    slot = { declarations: new Map<string, string>() };
+    slot = { declarations: new Map<string, string>(), value: undefined, hasValue: false };
     registry.slots.set(token, slot);
+  } else if (slot.hasValue && Object.is(slot.value, value)) {
+    // Тот же объект стилей: декларации не изменились, пересборка Map не нужна.
+    return;
   }
+  slot.value = value;
+  slot.hasValue = true;
   slot.declarations = styleDeclarations(value as StyleInput);
   recomputeStyle(el, registry);
 }
@@ -443,7 +450,50 @@ export function collectNodes(value: Children | Iterable<Child>): Node[] {
   return nodes;
 }
 
-export function disposeNode(node: Node): void {
+let disposeDepth = 0;
+let disposeFlushers: Array<() => void> = [];
+
+/**
+ * Выполняет отложенную работу сразу вне каскада disposeNode, иначе — один
+ * раз после завершения внешнего вызова. Нужен для батч-переиндексации
+ * списков при массовом удалении строк.
+ */
+export function deferDisposeFlush(flush: () => void): void {
+  if (disposeDepth === 0) {
+    flush();
+    return;
+  }
+  disposeFlushers.push(flush);
+}
+
+export function isDisposing(): boolean {
+  return disposeDepth > 0;
+}
+
+function runDisposeFlushers(): void {
+  if (disposeFlushers.length === 0) {
+    return;
+  }
+  const pending = disposeFlushers;
+  disposeFlushers = [];
+  for (const flush of pending) {
+    flush();
+  }
+}
+
+export function withDisposeBatch<T>(fn: () => T): T {
+  disposeDepth += 1;
+  try {
+    return fn();
+  } finally {
+    disposeDepth -= 1;
+    if (disposeDepth === 0) {
+      runDisposeFlushers();
+    }
+  }
+}
+
+function disposeNodeInner(node: Node): void {
   const state = (node as ItemStateHost)[ITEM_STATE];
   if (state !== undefined) {
     state.dispose();
@@ -470,10 +520,24 @@ export function disposeNode(node: Node): void {
   }
 }
 
-export function disposeTree(nodes: readonly Node[]): void {
-  for (const node of nodes) {
-    disposeNode(node);
+export function disposeNode(node: Node): void {
+  disposeDepth += 1;
+  try {
+    disposeNodeInner(node);
+  } finally {
+    disposeDepth -= 1;
+    if (disposeDepth === 0) {
+      runDisposeFlushers();
+    }
   }
+}
+
+export function disposeTree(nodes: readonly Node[]): void {
+  withDisposeBatch(() => {
+    for (const node of nodes) {
+      disposeNode(node);
+    }
+  });
 }
 
 function detach(node: Node): void {
@@ -502,10 +566,12 @@ export function createMountPoint(
   };
 
   const clear = (): void => {
-    for (const node of nodes) {
-      disposeNode(node);
-      detach(node);
-    }
+    withDisposeBatch(() => {
+      for (const node of nodes) {
+        disposeNode(node);
+        detach(node);
+      }
+    });
     if (textNode !== null) {
       detach(textNode);
       textNode = null;

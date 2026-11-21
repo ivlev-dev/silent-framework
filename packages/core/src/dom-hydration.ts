@@ -395,6 +395,9 @@ function tryAdoptPartsPlanByTrie(
   return { holes: adoptedHoles, attrs: adoptedAttrs };
 }
 
+const pathAdoptionFailed = new WeakSet<TemplatePlan>();
+const trieAdoptionFailed = new WeakSet<TemplatePlan>();
+
 function tryAdoptPartsPlan(
   root: Node,
   plan: TemplatePlan,
@@ -402,11 +405,20 @@ function tryAdoptPartsPlan(
   attrs: (Element | undefined)[],
   stripText: boolean,
 ): boolean {
-  if (tryAdoptPartsPlanByPath(root, plan, holes, attrs, stripText)) {
-    return true;
+  if (!pathAdoptionFailed.has(plan)) {
+    if (tryAdoptPartsPlanByPath(root, plan, holes, attrs, stripText)) {
+      return true;
+    }
+    // Структура плана не совместима с path-адоптацией: для повторных
+    // гидратаций того же шаблона сразу идём в trie.
+    pathAdoptionFailed.add(plan);
+  }
+  if (trieAdoptionFailed.has(plan)) {
+    return false;
   }
   const adopted = tryAdoptPartsPlanByTrie(root, plan);
   if (adopted === null) {
+    trieAdoptionFailed.add(plan);
     return false;
   }
   for (let index = 0; index < adopted.holes.length; index += 1) {

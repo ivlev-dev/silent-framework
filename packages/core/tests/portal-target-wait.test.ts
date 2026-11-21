@@ -116,6 +116,43 @@ describe("Portal: ожидание target", () => {
     handle.dispose();
   });
 
+  it("отключает observer после переноса контента в target", async () => {
+    const disconnect = vi.spyOn(MutationObserver.prototype, "disconnect");
+    let reads = 0;
+    const content = label("portal");
+    const target = host();
+    const handle = await mount(target, asComponent(() => {
+      const root = document.createElement("div");
+      root.appendChild(
+        Portal({
+          target: () => {
+            reads += 1;
+            return document.getElementById("late-target");
+          },
+          children: content,
+        }),
+      );
+      return root;
+    }));
+    disconnect.mockClear();
+
+    const late = document.createElement("section");
+    late.id = "late-target";
+    document.body.appendChild(late);
+    await tick();
+    flushSync();
+
+    expect(late.contains(content)).toBe(true);
+    expect(disconnect).toHaveBeenCalled();
+
+    const afterMove = reads;
+    document.body.appendChild(document.createElement("i"));
+    await tick();
+    flushSync();
+    expect(reads).toBe(afterMove);
+    handle.dispose();
+  });
+
   it("снимает наблюдение при dispose до появления target", async () => {
     const disconnect = vi.spyOn(MutationObserver.prototype, "disconnect");
     const target = host();
