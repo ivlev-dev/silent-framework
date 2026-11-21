@@ -320,139 +320,8 @@ async function main() {
     );
     await streamPage.close();
 
-    const routerDir = join(root, "examples", "router");
-    const routerVite = await createServer({
-      configFile: join(routerDir, "vite.config.ts"),
-      root: routerDir,
-      logLevel: "error",
-      appType: "custom",
-      server: { middlewareMode: true, hmr: false },
-    });
-    let routerHttp = null;
-    try {
-      const routerModule = await routerVite.ssrLoadModule("/src/entry-server.tsx");
-      const routerRendered = await routerModule.render("/users/7", "Silent Router");
-      assert.match(
-        routerRendered.html,
-        /Пользователь/,
-        `SSR роутера не отрендерил маршрут: ${routerRendered.html.slice(0, 240)}`,
-      );
-      assert.match(
-        routerRendered.head,
-        /<title>Silent Router<\/title>/,
-        `SSR роутера не отдал title: ${routerRendered.head}`,
-      );
-      assert.ok(
-        routerRendered.html.includes("silent-router-view"),
-        "SSR роутера не оставил маркер RouterView",
-      );
-      const routerShell = routerRendered.html.replace(
-        '<header class="topbar"',
-        '<header data-ssr="1" class="topbar"',
-      );
-      assert.ok(routerShell.includes('data-ssr="1"'));
-      const routerHtml = await routerVite.transformIndexHtml(
-        "/users/7",
-        pageTemplate(routerShell, routerRendered.head),
-      );
-
-      routerHttp = createHttpServer((request, response) => {
-        if (request.url === "/favicon.ico") {
-          response.statusCode = 204;
-          response.end();
-          return;
-        }
-        if (request.url?.startsWith("/users/7")) {
-          response.setHeader("content-type", "text/html; charset=utf-8");
-          response.end(routerHtml);
-          return;
-        }
-        routerVite.middlewares(request, response, () => {
-          response.statusCode = 404;
-          response.end("not found");
-        });
-      });
-      await new Promise((resolve) => routerHttp.listen(0, "127.0.0.1", resolve));
-      const routerAddress = routerHttp.address();
-      if (routerAddress === null || typeof routerAddress === "string") {
-        throw new Error("Не удалось определить порт SSR-сервера роутера");
-      }
-      const routerUrl = `http://127.0.0.1:${String(routerAddress.port)}/users/7`;
-
-      const routerPage = await browser.newPage();
-      const routerErrors = [];
-      const isDevServerNoise = (text) =>
-        text.includes("WebSocket") || text.includes("[vite] failed to connect");
-      routerPage.on("console", (message) => {
-        if (message.type() === "error" && !isDevServerNoise(message.text())) {
-          routerErrors.push(message.text());
-        }
-      });
-      routerPage.on("pageerror", (error) => {
-        if (!isDevServerNoise(error.message)) {
-          routerErrors.push(error.message);
-        }
-      });
-
-      await routerPage.goto(routerUrl, { waitUntil: "load" });
-      await routerPage.waitForFunction(
-        () => globalThis.__silentReady === true,
-        undefined,
-        { timeout: 10_000 },
-      );
-      await routerPage.waitForFunction(
-        () => !document.body.innerHTML.includes("data-silent-"),
-        undefined,
-        { timeout: 10_000 },
-      );
-
-      const routerState = await routerPage.evaluate(() => ({
-        apps: document.querySelectorAll(".app").length,
-        cards: document.querySelectorAll("section.card").length,
-        heading: document.querySelector(".card h2")?.textContent ?? null,
-        adoptedShell: document.querySelectorAll("[data-ssr]").length,
-      }));
-      assert.equal(routerState.apps, 1, "после гидрации осталось несколько копий приложения");
-      assert.equal(routerState.cards, 1, "RouterView продублировал разметку маршрута");
-      assert.equal(routerState.heading, "Пользователь 7");
-      assert.equal(routerState.adoptedShell, 1, "оболочка приложения не адоптирована");
-
-      const note = routerPage.locator(".demo-form input");
-      await note.fill("draft");
-      await note.evaluate((element) => element.setAttribute("data-marker", "kept"));
-      await routerPage.getByRole("button", { name: /Следующий/ }).click();
-      await routerPage.waitForFunction(
-        () => document.querySelector(".card h2")?.textContent === "Пользователь 8",
-        undefined,
-        { timeout: 5_000 },
-      );
-      assert.equal(await note.inputValue(), "draft");
-      assert.equal(await note.getAttribute("data-marker"), "kept");
-      assert.equal(new URL(routerPage.url()).pathname, "/users/8");
-
-      const aboutLink = routerPage
-        .locator(".nav")
-        .getByRole("link", { name: "О примере", exact: true });
-      await aboutLink.click();
-      await routerPage.waitForFunction(
-        () => document.querySelector(".card h2")?.textContent === "О примере",
-        undefined,
-        { timeout: 5_000 },
-      );
-      assert.equal(await aboutLink.getAttribute("aria-current"), "page");
-      assert.deepEqual(routerErrors, [], `ошибки в консоли роутера: ${routerErrors.join(" | ")}`);
-      await routerPage.close();
-    } finally {
-      if (routerHttp !== null) {
-        await new Promise((resolve) => routerHttp.close(resolve));
-      }
-      await routerVite.close();
-    }
-
-    // Сценарий формы идёт последним: после SSR полной формы последующий
-    // renderToString в том же процессе получает чужой request scope
-    // (форма/вложенная форма оставляют owner), и SSR роутера теряет Router.
-    // Держим проверку изолированной до исправления в рантайме.
+    // Форма идёт перед роутером: проверяем, что SSR-рендер формы
+    // не оставляет амбиентных runtime-опций для следующего рендера.
     const formsDir = join(root, "examples", "forms");
     const formsVite = await createServer({
       configFile: join(formsDir, "vite.config.ts"),
@@ -808,6 +677,136 @@ async function main() {
       }
       await formsVite.close();
     }
+
+    const routerDir = join(root, "examples", "router");
+    const routerVite = await createServer({
+      configFile: join(routerDir, "vite.config.ts"),
+      root: routerDir,
+      logLevel: "error",
+      appType: "custom",
+      server: { middlewareMode: true, hmr: false },
+    });
+    let routerHttp = null;
+    try {
+      const routerModule = await routerVite.ssrLoadModule("/src/entry-server.tsx");
+      const routerRendered = await routerModule.render("/users/7", "Silent Router");
+      assert.match(
+        routerRendered.html,
+        /Пользователь/,
+        `SSR роутера не отрендерил маршрут: ${routerRendered.html.slice(0, 240)}`,
+      );
+      assert.match(
+        routerRendered.head,
+        /<title>Silent Router<\/title>/,
+        `SSR роутера не отдал title: ${routerRendered.head}`,
+      );
+      assert.ok(
+        routerRendered.html.includes("silent-router-view"),
+        "SSR роутера не оставил маркер RouterView",
+      );
+      const routerShell = routerRendered.html.replace(
+        '<header class="topbar"',
+        '<header data-ssr="1" class="topbar"',
+      );
+      assert.ok(routerShell.includes('data-ssr="1"'));
+      const routerHtml = await routerVite.transformIndexHtml(
+        "/users/7",
+        pageTemplate(routerShell, routerRendered.head),
+      );
+
+      routerHttp = createHttpServer((request, response) => {
+        if (request.url === "/favicon.ico") {
+          response.statusCode = 204;
+          response.end();
+          return;
+        }
+        if (request.url?.startsWith("/users/7")) {
+          response.setHeader("content-type", "text/html; charset=utf-8");
+          response.end(routerHtml);
+          return;
+        }
+        routerVite.middlewares(request, response, () => {
+          response.statusCode = 404;
+          response.end("not found");
+        });
+      });
+      await new Promise((resolve) => routerHttp.listen(0, "127.0.0.1", resolve));
+      const routerAddress = routerHttp.address();
+      if (routerAddress === null || typeof routerAddress === "string") {
+        throw new Error("Не удалось определить порт SSR-сервера роутера");
+      }
+      const routerUrl = `http://127.0.0.1:${String(routerAddress.port)}/users/7`;
+
+      const routerPage = await browser.newPage();
+      const routerErrors = [];
+      const isDevServerNoise = (text) =>
+        text.includes("WebSocket") || text.includes("[vite] failed to connect");
+      routerPage.on("console", (message) => {
+        if (message.type() === "error" && !isDevServerNoise(message.text())) {
+          routerErrors.push(message.text());
+        }
+      });
+      routerPage.on("pageerror", (error) => {
+        if (!isDevServerNoise(error.message)) {
+          routerErrors.push(error.message);
+        }
+      });
+
+      await routerPage.goto(routerUrl, { waitUntil: "load" });
+      await routerPage.waitForFunction(
+        () => globalThis.__silentReady === true,
+        undefined,
+        { timeout: 10_000 },
+      );
+      await routerPage.waitForFunction(
+        () => !document.body.innerHTML.includes("data-silent-"),
+        undefined,
+        { timeout: 10_000 },
+      );
+
+      const routerState = await routerPage.evaluate(() => ({
+        apps: document.querySelectorAll(".app").length,
+        cards: document.querySelectorAll("section.card").length,
+        heading: document.querySelector(".card h2")?.textContent ?? null,
+        adoptedShell: document.querySelectorAll("[data-ssr]").length,
+      }));
+      assert.equal(routerState.apps, 1, "после гидрации осталось несколько копий приложения");
+      assert.equal(routerState.cards, 1, "RouterView продублировал разметку маршрута");
+      assert.equal(routerState.heading, "Пользователь 7");
+      assert.equal(routerState.adoptedShell, 1, "оболочка приложения не адоптирована");
+
+      const note = routerPage.locator(".demo-form input");
+      await note.fill("draft");
+      await note.evaluate((element) => element.setAttribute("data-marker", "kept"));
+      await routerPage.getByRole("button", { name: /Следующий/ }).click();
+      await routerPage.waitForFunction(
+        () => document.querySelector(".card h2")?.textContent === "Пользователь 8",
+        undefined,
+        { timeout: 5_000 },
+      );
+      assert.equal(await note.inputValue(), "draft");
+      assert.equal(await note.getAttribute("data-marker"), "kept");
+      assert.equal(new URL(routerPage.url()).pathname, "/users/8");
+
+      const aboutLink = routerPage
+        .locator(".nav")
+        .getByRole("link", { name: "О примере", exact: true });
+      await aboutLink.click();
+      await routerPage.waitForFunction(
+        () => document.querySelector(".card h2")?.textContent === "О примере",
+        undefined,
+        { timeout: 5_000 },
+      );
+      assert.equal(await aboutLink.getAttribute("aria-current"), "page");
+      assert.deepEqual(routerErrors, [], `ошибки в консоли роутера: ${routerErrors.join(" | ")}`);
+      await routerPage.close();
+    } finally {
+      if (routerHttp !== null) {
+        await new Promise((resolve) => routerHttp.close(resolve));
+      }
+      await routerVite.close();
+    }
+
 
     const source = readFileSync(join(example, "src", "main.tsx"), "utf8");
     assert.ok(source.includes("hydrate"), "main.tsx не использует hydrate");

@@ -296,7 +296,7 @@ interface RuntimeOptions {
 function getRuntimeOptions(): RuntimeOptions;
 ```
 
-Возвращает текущие амбиентные runtime-опции. Используется компилированным кодом (`component`, `lazy`, `Suspense`) и интеграции (`@ivlev-dev/silent-vite`, `@ivlev-dev/silent-server`); в прикладном коде прямое применение не требуется.
+Возвращает текущие амбиентные runtime-опции. Используется компилированным кодом (`component`, `lazy`, `Suspense`) и интеграции (`@ivlev-dev/silent-vite`, `@ivlev-dev/silent-server`); в прикладном коде прямое применение не требуется. Если привязанный `container` уже освобождён, он не возвращается: опции считаются пустыми, чтобы компонент не упал с `ContainerDisposedError`.
 
 ### `withRuntimeOptions`
 

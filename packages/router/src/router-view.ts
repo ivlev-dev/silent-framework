@@ -130,10 +130,14 @@ function renderSelection(
     meta: selection.route.meta,
     router,
   };
+  const routerContainer = router instanceof Router ? router.container : undefined;
+  const options = routerContainer === undefined
+    ? viewOptions
+    : { ...viewOptions, container: routerContainer };
   return component(
     routeComponent as AnyComponent,
     viewProps as unknown as Record<string, unknown>,
-    viewOptions,
+    options,
   );
 }
 

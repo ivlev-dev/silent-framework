@@ -63,9 +63,20 @@ export function getComponentCreator(): ComponentCreator | null {
   return componentCreator;
 }
 
+function isDisposedContainer(container: unknown): boolean {
+  return (
+    typeof container === "object"
+    && container !== null
+    && (container as { disposed?: unknown }).disposed === true
+  );
+}
+
 export function getRuntimeOptions(): RuntimeOptions {
   const scoped = findScopedRuntimeOptions();
-  return scoped ?? currentRuntimeOptions;
+  const result = scoped ?? currentRuntimeOptions;
+  // Освобождённый контейнер не должен становиться амбиентным: иначе
+  // следующий компонент/рендер упадёт ContainerDisposedError.
+  return isDisposedContainer(result.container) ? {} : result;
 }
 
 function findScopedRuntimeOptions(): RuntimeOptions | undefined {

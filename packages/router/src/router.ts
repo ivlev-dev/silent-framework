@@ -148,7 +148,7 @@ export class Router implements IRouter {
   private readonly history: RouterHistory;
   private readonly ownsHistory: boolean;
   private readonly scrollBehavior: ScrollBehavior | undefined;
-  private readonly container: Container | undefined;
+  readonly container: Container | undefined;
   private readonly componentLoader: RouterComponentLoader | undefined;
   private readonly onError: ((error: RouterNavigationError, to: RouteTarget) => void) | undefined;
   private readonly stateSignal: readonly [Accessor<RouterState>, Setter<RouterState>];
