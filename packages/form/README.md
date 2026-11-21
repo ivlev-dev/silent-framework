@@ -250,10 +250,12 @@ await form.onSubmit(async (submitted) => {
 
 ## Структура пакета
 
-- `src/form.ts` — жизненный цикл, публичный API, валидация, вложенность и массивы.
+- `src/form.ts` — жизненный цикл, публичный API, делегирование модулям.
 - `src/errors.ts` — карты ошибок, индекс по корню, замена ошибок поля.
 - `src/field-props.ts` — фабрики `FieldProps` (direct/nested/array).
 - `src/form-array.ts` — `FormArray` и операции с элементами.
+- `src/validation.ts` — оркестрация `validate`/`validateField`, прогоны и опции проверки.
+- `src/nested.ts` — владение, циклы, привязка/отвязка, syncChildren и id-контекст.
 - `src/metadata.ts`, `src/types.ts`, `src/utils.ts` — декораторы, публичные типы, чистые утилиты.
 
 ## Ссылки

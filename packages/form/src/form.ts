@@ -1,5 +1,5 @@
 import { createEffect, createRoot, createSignal, getComputed, storeFor } from "@ivlev-dev/silent-reactivity";
-import { validateAsync, validatePropertyAsync, ValidationModel } from "@ivlev-dev/silent-validation";
+import { ValidationModel } from "@ivlev-dev/silent-validation";
 import type { ValidationOptions } from "@ivlev-dev/silent-validation";
 import {
   fieldMetadataFor,
@@ -21,6 +21,28 @@ import {
 import type { FieldPropsHost } from "./field-props.js";
 import { createFieldArray } from "./form-array.js";
 import type { FormArrayHost } from "./form-array.js";
+import {
+  runFieldPath,
+  runFieldValidation,
+  runFormArrayValidation,
+  runFullValidation,
+  validateSubmitFields,
+} from "./validation.js";
+import type { ValidationHost } from "./validation.js";
+import {
+  assignArrayItem,
+  attachChild,
+  bindArrayChildren,
+  bindInitialField,
+  bindParent,
+  detachArray,
+  detachChild,
+  ensureCanBind,
+  refreshIdContext,
+  registerNestedLink,
+  syncChildren,
+} from "./nested.js";
+import type { NestedLink } from "./nested.js";
 import type {
   ArrayFieldPath,
   FieldEventLike,
@@ -134,6 +156,8 @@ export abstract class Form extends ValidationModel {
   private readonly errorStore: ErrorStore;
   private readonly propsHost: FieldPropsHost;
   private readonly arrayHost: FormArrayHost;
+  private readonly validationHost: ValidationHost;
+  private readonly nestedLink: NestedLink;
   private readonly touchedFields = createSignal<ReadonlySet<string>>(new Set());
   private readonly dirtyFields = createSignal<ReadonlySet<string>>(new Set());
   private readonly readyStates = new Map<string, boolean>();
@@ -171,6 +195,7 @@ export abstract class Form extends ValidationModel {
 
   constructor(options?: FormOptions) {
     super();
+    const self = this;
     this.options = {
       validateOnChange: options?.validateOnChange ?? true,
       validateOnBlur: options?.validateOnBlur ?? true,
@@ -212,7 +237,7 @@ export abstract class Form extends ValidationModel {
         this.handleValueEvent(name, event, mode),
       markTouched: (name) => this.markTouched(name),
       validateForEvent: (name, mode) => this.validateForEvent(name, mode),
-      runFieldValidation: (name) => this.runFieldValidation(name),
+      runFieldValidation: (name) => runFieldValidation(this.validationHost, name),
       requireChild: (name) => this.requireChild(name),
       childProps: (child, path) => child.propsAt(path),
       hasAnyTouched: (child) => child.hasAnyTouched(),
@@ -228,7 +253,8 @@ export abstract class Form extends ValidationModel {
       replaceArray: (name, value) => this.replaceArray(name, value),
       commitArray: (name, next, removed) =>
         this.commitArray(name, next, removed),
-      runFormArrayValidation: (name) => this.runFormArrayValidation(name),
+      runFormArrayValidation: (name) =>
+        runFormArrayValidation(this.validationHost, name),
     };
     this.arrayHost = {
       items: (name) => this.arrayItems(name),
@@ -245,6 +271,61 @@ export abstract class Form extends ValidationModel {
       },
       isBaseline: (item) => this.isBaselineArrayItem(item),
     };
+    this.validationHost = {
+      instance: this,
+      get metadata() {
+        return self.metadata;
+      },
+      get options() {
+        return self.options;
+      },
+      get errorStore() {
+        return self.errorStore;
+      },
+      get disposed() {
+        return self.disposed;
+      },
+      get validationGeneration() {
+        return self.validationGeneration;
+      },
+      get isValid() {
+        return self.isValid;
+      },
+      get baseValidationOptions() {
+        return self.baseValidationOptions;
+      },
+      get labels() {
+        return self.options.labels;
+      },
+      validationTokens: this.validationTokens,
+      ensureInitialized: () => self.ensureInitialized(),
+      syncChildren: () => self.syncChildren(),
+      clearTimers: () => self.clearTimers(),
+      clearValidatingFields: () => self.clearValidatingFields(),
+      setValidatingForm: (value) => self.validatingForm[1](value),
+      getValidationRunCount: () => self.validationRunCount,
+      setValidationRunCount: (value) => {
+        self.validationRunCount = value;
+      },
+      childFor: (name) => self.childFor(name),
+      requireChild: (name) => self.requireChild(name),
+      arrayItems: (name) => self.arrayItems(name),
+      requireArrayItem: (root, index) => self.requireArrayItem(root, index),
+      validateChildAt: (child, path, validationOptions) =>
+        child.validateField(path as never, validationOptions),
+      validateChildSubmitFields: (child) => child.validateSubmitFields(),
+      locate: (path) => self.locate(path),
+      reportUnregisteredField: (root, path) =>
+        self.reportUnregisteredField(root, path),
+      markAllTouched: () => self.markAllTouched(),
+      markTouched: (name) => self.markTouched(name),
+      isFieldActiveForValidation: (metadata) =>
+        self.isFieldActiveForValidation(metadata),
+      addValidating: (name) => self.addValidating(name),
+      removeValidating: (name) => self.removeValidating(name),
+      runFieldValidation: (name, validationOptions) =>
+        runFieldValidation(self.validationHost, name, validationOptions),
+    };
     const trimmed = options?.formId?.trim();
     this.ownIdPrefix = trimmed !== undefined && trimmed !== ""
       ? trimmed
@@ -255,6 +336,43 @@ export abstract class Form extends ValidationModel {
     this.baseValidationOptions = Object.keys(this.options.labels).length > 0
       ? { labels: this.options.labels }
       : undefined;
+    this.nestedLink = {
+      form: this,
+      ownIdPrefix: this.ownIdPrefix,
+      children: this.children,
+      arrayChildren: this.arrayChildren,
+      get metadata() {
+        return self.metadata;
+      },
+      get parentForm() {
+        return self.parentForm;
+      },
+      set parentForm(value) {
+        self.parentForm = value;
+      },
+      get parentField() {
+        return self.parentField;
+      },
+      set parentField(value) {
+        self.parentField = value;
+      },
+      get idPrefix() {
+        return self.idPrefix;
+      },
+      set idPrefix(value) {
+        self.idPrefix = value;
+      },
+      get idPath() {
+        return self.idPath;
+      },
+      set idPath(value) {
+        self.idPath = value;
+      },
+      readValue: (name) => self.readOwnValue(name),
+      invalidateProps: (name) => self.invalidateProps(name),
+      clearProps: () => self.propsCache.clear(),
+    };
+    registerNestedLink(this, this.nestedLink);
     registerValidationInvalidator(this, () => this.invalidateValidation());
     registerFieldBinder(this, (name, value) => this.bindInitialField(name, value));
     queueMicrotask(() => {
@@ -531,7 +649,7 @@ export abstract class Form extends ValidationModel {
     };
     let promise: Promise<boolean>;
     try {
-      promise = this.runFieldPath(path, options, onSettled);
+      promise = runFieldPath(this.validationHost, path, options, onSettled);
     } catch (error) {
       entry.active = false;
       promise = Promise.reject(error);
@@ -539,112 +657,6 @@ export abstract class Form extends ValidationModel {
     entry.promise = promise;
     this.fieldValidationPromises.set(path, entry);
     return promise;
-  }
-
-  private settleNested(
-    promise: Promise<boolean>,
-    onSettled: (() => void) | undefined,
-  ): Promise<boolean> {
-    if (onSettled === undefined) {
-      return promise;
-    }
-    return promise.then(
-      (value) => {
-        onSettled();
-        return value;
-      },
-      (error: unknown) => {
-        onSettled();
-        throw error;
-      },
-    );
-  }
-
-  private runFieldPath(
-    path: string,
-    options?: ValidationOptions,
-    onSettled?: () => void,
-  ): Promise<boolean> {
-    const { root, index, rest } = this.locate(path);
-    if (index !== undefined) {
-      const item = this.requireArrayItem(root, index);
-      if (rest !== undefined) {
-        return this.settleNested(
-          item.validateAt(
-            rest,
-            this.nestedValidationOptions(`${root}[${index}]`, options),
-          ),
-          onSettled,
-        );
-      }
-      return this.settleNested(item.validate(options), onSettled);
-    }
-    if (rest !== undefined) {
-      return this.settleNested(
-        this.requireChild(root).validateAt(
-          rest,
-          this.childValidationOptions(root, options),
-        ),
-        onSettled,
-      );
-    }
-    if (this.childFor(root) !== undefined) {
-      return this.runFormFieldValidation(root, options, onSettled);
-    }
-    if (this.arrayItems(root) !== undefined) {
-      return this.runFormArrayValidation(root, options, onSettled);
-    }
-    return this.runFieldValidation(root, options, onSettled);
-  }
-
-  /** Правила поля-массива, затем проверка всех элементов. */
-  private async runFormArrayValidation(
-    root: string,
-    options?: ValidationOptions,
-    onSettled?: () => void,
-  ): Promise<boolean> {
-    const metadata = this.metadata.get(root);
-    const active = metadata === undefined || this.isFieldActiveForValidation(metadata);
-    try {
-      const rootValid = await this.runFieldValidation(root, options);
-      if (!active) {
-        return rootValid;
-      }
-      const items = this.arrayItems(root) ?? [];
-      const results = await Promise.all(
-        items.map((item, index) =>
-          item.validate(
-            this.nestedValidationOptions(`${root}[${index}]`, options),
-          ),
-        ),
-      );
-      return rootValid && results.every(Boolean);
-    } finally {
-      onSettled?.();
-    }
-  }
-
-  /** Правила самого поля-формы, затем проверка ребёнка (если условие активно). */
-  private async runFormFieldValidation(
-    root: string,
-    options?: ValidationOptions,
-    onSettled?: () => void,
-  ): Promise<boolean> {
-    const child = this.requireChild(root);
-    const metadata = this.metadata.get(root);
-    const active = metadata === undefined || this.isFieldActiveForValidation(metadata);
-    try {
-      const rootValid = await this.runFieldValidation(root, options);
-      if (!active) {
-        return rootValid;
-      }
-      const childValid = await child.validate(
-        this.childValidationOptions(root, options),
-      );
-      return rootValid && childValid;
-    } finally {
-      onSettled?.();
-    }
   }
 
   /**
@@ -670,104 +682,8 @@ export abstract class Form extends ValidationModel {
       }
     };
     promise.then(release, release);
-    this.runValidation(options).then(resolve, reject);
+    runFullValidation(this.validationHost, options).then(resolve, reject);
     return promise;
-  }
-
-  private async runValidation(options?: ValidationOptions): Promise<boolean> {
-    this.ensureInitialized();
-    this.syncChildren();
-    this.clearTimers();
-    const generation = this.validationGeneration;
-    const hadFieldRuns = this.validationRunCount > 0;
-    this.validationRunCount += 1;
-    this.validatingForm[1](1);
-    if (hadFieldRuns) {
-      for (const name of this.metadata.keys()) {
-        this.validationTokens.set(name, (this.validationTokens.get(name) ?? 0) + 1);
-      }
-    }
-    this.clearValidatingFields();
-
-    try {
-      const result = await validateAsync(this, this.validationOptions(options));
-      if (this.disposed || generation !== this.validationGeneration) {
-        return this.isValid;
-      }
-      const map = new Map<string, string[]>();
-      for (const error of result.errors) {
-        const key = error.path === "" ? error.field : error.path;
-        const root = rootSegment(key);
-        if (
-          this.childFor(root) !== undefined &&
-          (key.startsWith(`${root}.`) || key.startsWith(`${root}[`))
-        ) {
-          continue;
-        }
-        if (
-          this.arrayItems(root) !== undefined &&
-          key.startsWith(`${root}[`)
-        ) {
-          continue;
-        }
-        if (!this.metadata.has(root)) {
-          this.reportUnregisteredField(root, key);
-        }
-        const existing = map.get(key);
-        if (existing === undefined) {
-          map.set(key, [error.message]);
-        } else {
-          existing.push(error.message);
-        }
-      }
-      this.errorStore.setValidation(map);
-      this.markAllTouched();
-
-      if (this.options.validateNested) {
-        const pending: Promise<boolean>[] = [];
-        for (const [name, metadata] of this.metadata) {
-          const child = this.childFor(name);
-          if (child !== undefined) {
-            if (!this.isFieldActiveForValidation(metadata)) {
-              continue;
-            }
-            pending.push(
-              child.validate(this.childValidationOptions(name, options)),
-            );
-            continue;
-          }
-          const items = this.arrayItems(name);
-          if (items === undefined || !this.isFieldActiveForValidation(metadata)) {
-            continue;
-          }
-          for (let index = 0; index < items.length; index += 1) {
-            const item = items[index]!;
-            pending.push(
-              item.validate(
-                this.nestedValidationOptions(`${name}[${index}]`, options),
-              ),
-            );
-          }
-        }
-        const results = await Promise.all(pending);
-        if (this.disposed || generation !== this.validationGeneration) {
-          return this.isValid;
-        }
-        const ownValid =
-          this.validationMap().size === 0 &&
-          this.externalMap().size === 0;
-        return result.valid && ownValid && results.every(Boolean);
-      }
-      const ownValid =
-        this.validationMap().size === 0 &&
-        this.externalMap().size === 0;
-      return result.valid && ownValid && this.isValid;
-    } finally {
-      if (!this.disposed && generation === this.validationGeneration) {
-        this.validationRunCount = Math.max(0, this.validationRunCount - 1);
-        this.validatingForm[1](0);
-      }
-    }
   }
 
   /**
@@ -788,7 +704,7 @@ export abstract class Form extends ValidationModel {
         if (this.options.validateOnSubmit) {
           await this.validate();
         } else {
-          await this.validateSubmitFields();
+          await validateSubmitFields(this.validationHost);
         }
         if (this.disposed || generation !== this.validationGeneration) {
           return;
@@ -1186,96 +1102,20 @@ export abstract class Form extends ValidationModel {
     this.syncChildren();
   }
 
-  /** Синхронизирует карты вложенных форм/массивов с текущими значениями. */
   private syncChildren(): void {
-    for (const name of this.metadata.keys()) {
-      const value = this.readOwnValue(name);
-      const current = this.children.get(name);
-      if (value instanceof Form) {
-        this.detachArray(name);
-        if (current !== value) {
-          this.attachChild(name, asInstance(value));
-        }
-        continue;
-      }
-      const tracked = this.arrayChildren.get(name);
-      if (Array.isArray(value)) {
-        const items: FormInstance[] = [];
-        let isFormArray = tracked !== undefined;
-        for (const item of value) {
-          if (item instanceof Form) {
-            items.push(asInstance(item));
-            isFormArray = true;
-          } else {
-            isFormArray = false;
-            break;
-          }
-        }
-        if (isFormArray) {
-          if (current !== undefined) {
-            this.detachChild(name, current);
-          }
-          this.bindArrayChildren(name, items);
-          continue;
-        }
-      }
-      if (current !== undefined) {
-        this.detachChild(name, current);
-      }
-      this.detachArray(name);
-    }
+    syncChildren(this.nestedLink);
   }
 
-  /** Перепривязывает элементы массива, проверяя владение; старые элементы отцепляет. */
   private bindArrayChildren(name: string, items: FormInstance[]): void {
-    for (let index = 0; index < items.length; index += 1) {
-      const item = items[index]!;
-      if (item.parentForm === asInstance(this)) {
-        continue;
-      }
-      item.ensureCanBind(asInstance(this), `${name}[${index}]`);
-    }
-    const previous = this.arrayChildren.get(name);
-    if (previous !== undefined) {
-      for (const item of previous) {
-        if (!items.includes(item) && item.parentForm === asInstance(this)) {
-          item.parentForm = undefined;
-          item.parentField = undefined;
-          item.refreshIdContext(item.ownIdPrefix, "");
-        }
-      }
-    }
-    this.arrayChildren.set(name, items);
-    for (let index = 0; index < items.length; index += 1) {
-      this.assignArrayItem(items[index]!, name, index);
-    }
-    this.invalidateProps(name);
+    bindArrayChildren(this.nestedLink, name, items);
   }
 
   private assignArrayItem(item: FormInstance, name: string, index: number): void {
-    item.parentForm = asInstance(this);
-    item.parentField = `${name}[${index}]`;
-    const local = `${name}[${index}]`;
-    item.refreshIdContext(
-      this.idPrefix,
-      this.idPath === "" ? local : `${this.idPath}.${local}`,
-    );
+    assignArrayItem(this.nestedLink, item, name, index);
   }
 
   private detachArray(name: string): void {
-    const items = this.arrayChildren.get(name);
-    if (items === undefined) {
-      return;
-    }
-    this.arrayChildren.delete(name);
-    for (const item of items) {
-      if (item.parentForm === asInstance(this)) {
-        item.parentForm = undefined;
-        item.parentField = undefined;
-        item.refreshIdContext(item.ownIdPrefix, "");
-      }
-    }
-    this.invalidateProps(name);
+    detachArray(this.nestedLink, name);
   }
 
   private readOwnValue(name: string): unknown {
@@ -1360,127 +1200,29 @@ export abstract class Form extends ValidationModel {
    * Бросает, если форму нельзя привязать к `parent.field`.
    */
   private ensureCanBind(parent: FormInstance, field: string): void {
-    let cursor: FormInstance | undefined = parent;
-    while (cursor !== undefined) {
-      if (cursor === asInstance(this)) {
-        throw new Error("Вложенная форма не может образовывать цикл");
-      }
-      cursor = cursor.parentForm;
-    }
-    if (this.parentForm !== undefined) {
-      if (this.parentForm === parent && this.parentField === field) {
-        return;
-      }
-      const owner = this.parentForm.constructor.name;
-      const ownerField = this.parentField ?? "?";
-      throw new Error(
-        `Экземпляр формы ${this.constructor.name} уже используется как поле формы ${owner}.${ownerField}`,
-      );
-    }
+    ensureCanBind(this, parent, field);
   }
 
-  /**
-   * Предварительная привязка ребёнка сразу после инициализатора `@Field`,
-   * чтобы id и пути были доступны без первого обращения к родителю.
-   * Конфликты владения разрешаются позже в `syncChildren`.
-   */
   private bindInitialField(name: string, value: unknown): void {
-    if (Array.isArray(value)) {
-      if (value.length === 0) {
-        return;
-      }
-      const items: FormInstance[] = [];
-      for (const item of value) {
-        if (!(item instanceof Form)) {
-          return;
-        }
-        items.push(asInstance(item));
-      }
-      for (let index = 0; index < items.length; index += 1) {
-        const item = items[index]!;
-        if (item.parentForm === undefined) {
-          item.bindParent(asInstance(this), `${name}[${index}]`);
-        } else if (item.parentForm !== asInstance(this)) {
-          return;
-        }
-      }
-      const current = this.children.get(name);
-      if (current !== undefined) {
-        this.detachChild(name, current);
-      }
-      this.arrayChildren.set(name, items);
-      for (let index = 0; index < items.length; index += 1) {
-        this.assignArrayItem(items[index]!, name, index);
-      }
-      this.invalidateProps(name);
-      return;
-    }
-    if (!(value instanceof Form)) {
-      return;
-    }
-    const child = asInstance(value);
-    if (child.parentForm !== undefined) {
-      return;
-    }
-    const current = this.children.get(name);
-    child.bindParent(asInstance(this), name);
-    if (current !== undefined && current !== child) {
-      this.detachChild(name, current);
-    }
-    this.children.set(name, child);
-    this.invalidateProps(name);
+    bindInitialField(this.nestedLink, name, value);
   }
 
   private bindParent(parent: FormInstance, field: string): void {
-    if (this.parentForm === parent && this.parentField === field) {
-      return;
-    }
-    this.ensureCanBind(parent, field);
-    this.parentForm = parent;
-    this.parentField = field;
-    const path = parent.idPath === "" ? field : `${parent.idPath}.${field}`;
-    this.refreshIdContext(parent.idPrefix, path);
+    bindParent(this, parent, field);
   }
 
-  /** Обновляет префикс/путь DOM-id у формы и всех её детей. */
   private refreshIdContext(prefix: string, path: string): void {
-    this.idPrefix = prefix;
-    this.idPath = path;
-    this.propsCache.clear();
-    for (const [name, child] of this.children) {
-      const childPath = path === "" ? name : `${path}.${name}`;
-      child.refreshIdContext(prefix, childPath);
-    }
+    refreshIdContext(this, prefix, path);
   }
 
   private attachChild(name: string, child: FormInstance): void {
-    const current = this.children.get(name);
-    if (current === child) {
-      child.bindParent(asInstance(this), name);
-      return;
-    }
-    // Сначала проверка/привязка нового ребёнка: при ошибке старый остаётся.
-    child.bindParent(asInstance(this), name);
-    if (current !== undefined) {
-      this.detachChild(name, current);
-    }
-    this.children.set(name, child);
-    this.invalidateProps(name);
+    attachChild(this.nestedLink, name, child);
   }
 
   private detachChild(name: string, child: FormInstance): void {
-    if (this.children.get(name) === child) {
-      this.children.delete(name);
-    }
-    if (child.parentForm === asInstance(this) && child.parentField === name) {
-      child.parentForm = undefined;
-      child.parentField = undefined;
-      child.refreshIdContext(child.ownIdPrefix, "");
-    }
-    this.invalidateProps(name);
+    detachChild(this.nestedLink, name, child);
   }
 
-  /** Удаляет из кэша props записи поля и всех его вложенных путей. */
   private invalidateProps(name: string): void {
     this.propsCache.delete(name);
     const dotPrefix = `${name}.`;
@@ -1869,44 +1611,6 @@ export abstract class Form extends ValidationModel {
     return result;
   }
 
-  private runFieldValidation(
-    name: string,
-    options?: ValidationOptions,
-    onSettled?: () => void,
-  ): Promise<boolean> {
-    const generation = this.validationGeneration;
-    const token = (this.validationTokens.get(name) ?? 0) + 1;
-    this.validationTokens.set(name, token);
-    this.validationRunCount += 1;
-    this.addValidating(name);
-    return (async () => {
-      try {
-        const result = await validatePropertyAsync(
-          this,
-          name,
-          this.validationOptions(options),
-        );
-        if (
-          this.disposed ||
-          generation !== this.validationGeneration ||
-          this.validationTokens.get(name) !== token
-        ) {
-          return result.valid;
-        }
-        this.errorStore.replaceFieldErrors(name, result.errors);
-        return result.valid;
-      } finally {
-        if (!this.disposed && generation === this.validationGeneration) {
-          this.validationRunCount = Math.max(0, this.validationRunCount - 1);
-          if (this.validationTokens.get(name) === token) {
-            this.removeValidating(name);
-          }
-        }
-        onSettled?.();
-      }
-    })();
-  }
-
   private setDirectValue(name: string, value: unknown): void {
     const previous = this.readOwnValue(name);
     if (Object.is(previous, value)) {
@@ -2001,7 +1705,7 @@ export abstract class Form extends ValidationModel {
   private scheduleValidation(name: string): void {
     const delay = this.options.debounceMs;
     if (delay <= 0) {
-      void this.runFieldValidation(name).catch((error: unknown) => {
+      void runFieldValidation(this.validationHost, name).catch((error: unknown) => {
         this.reportError(error);
       });
       return;
@@ -2012,45 +1716,15 @@ export abstract class Form extends ValidationModel {
     }
     const timer = setTimeout(() => {
       this.timers.delete(name);
-      void this.runFieldValidation(name).catch((error: unknown) => {
+      void runFieldValidation(this.validationHost, name).catch((error: unknown) => {
         this.reportError(error);
       });
     }, delay);
     this.timers.set(name, timer);
   }
 
-  private async validateSubmitFields(): Promise<void> {
-    this.ensureInitialized();
-    this.syncChildren();
-    const generation = this.validationGeneration;
-    for (const [name, metadata] of this.metadata) {
-      if (this.disposed || generation !== this.validationGeneration) {
-        return;
-      }
-      const child = this.childFor(name);
-      if (child !== undefined) {
-        if (!this.isFieldActiveForValidation(metadata)) {
-          continue;
-        }
-        this.markTouched(name);
-        await child.validateSubmitFields();
-        continue;
-      }
-      const items = this.arrayChildren.get(name);
-      if (items !== undefined) {
-        if (!this.isFieldActiveForValidation(metadata)) {
-          continue;
-        }
-        this.markTouched(name);
-        await Promise.all(items.map((item) => item.validateSubmitFields()));
-        continue;
-      }
-      if (metadata.validateOn?.includes("submit") !== true) {
-        continue;
-      }
-      this.markTouched(name);
-      await this.runFieldValidation(name);
-    }
+  private validateSubmitFields(): Promise<void> {
+    return validateSubmitFields(this.validationHost);
   }
 
   private markTouched(name: string): void {
@@ -2163,66 +1837,6 @@ export abstract class Form extends ValidationModel {
       }
     }
     return false;
-  }
-
-  /** labels текущей формы + переданные, с приоритетом переданных. */
-  private validationOptions(
-    options?: ValidationOptions,
-  ): ValidationOptions | undefined {
-    if (options === undefined) {
-      return this.baseValidationOptions;
-    }
-    const localLabels = this.options.labels;
-    const extraLabels = options.labels;
-    if (
-      Object.keys(localLabels).length === 0 &&
-      (extraLabels === undefined || Object.keys(extraLabels).length === 0)
-    ) {
-      return options;
-    }
-    const labels = {
-      ...localLabels,
-      ...(extraLabels ?? {}),
-    };
-    return Object.keys(labels).length > 0
-      ? { ...options, labels }
-      : options;
-  }
-
-  /**
-   * Опции для проверки ребёнка: labels родителя с полным путём
-   * (`address.city` → `city`) плюс короткие labels; локальные labels ребёнка
-   * добавит его собственный `validationOptions`.
-   */
-  private childValidationOptions(
-    root: string,
-    options?: ValidationOptions,
-  ): ValidationOptions | undefined {
-    return this.nestedValidationOptions(root, options);
-  }
-
-  private nestedValidationOptions(
-    prefixPath: string,
-    options?: ValidationOptions,
-  ): ValidationOptions | undefined {
-    const merged = {
-      ...this.options.labels,
-      ...(options?.labels ?? {}),
-    };
-    const labels: Record<string, string> = {};
-    const prefix = `${prefixPath}.`;
-    for (const [key, value] of Object.entries(merged)) {
-      if (key.startsWith(prefix)) {
-        labels[key.slice(prefix.length)] = value;
-      } else if (!key.includes(".")) {
-        labels[key] = value;
-      }
-    }
-    const result: ValidationOptions = {
-      ...options,
-      ...(Object.keys(labels).length > 0 ? { labels } : {}),
-    };
-    return Object.keys(result).length === 0 ? undefined : result;
   }
 
   private clearTimers(): void {
