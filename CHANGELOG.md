@@ -22,7 +22,7 @@
 
 ### Форма: декомпозиция
 
-- Внутренние обязанности вынесены из `form.ts`: `errors.ts` (карты ошибок, индекс по корню, замена ошибок поля), `field-props.ts` (фабрики `FieldProps` для direct/nested/array), `form-array.ts` (`FormArray` и операции), `validation.ts` (оркестрация проверок и опции), `nested.ts` (владение, привязка, `syncChildren`, id-контекст), `utils.ts` (чистые утилиты). Публичный API не менялся.
+- Внутренние обязанности вынесены из `form.ts`: `errors.ts` (карты ошибок, индекс по корню, замена ошибок поля), `field-props.ts` (фабрики `FieldProps` для direct/nested/array), `form-array.ts` (`FormArray` и операции), `array-state.ts` (baseline/commit/restore/lookup массивов), `state.ts` (агрегаты и флаги touched/dirty/ready/validating), `validation.ts` (оркестрация проверок и опции), `nested.ts` (владение, привязка, `syncChildren`, id-контекст), `utils.ts` (чистые утилиты). Публичный API не менялся.
 
 ### Форма: техдолг
 

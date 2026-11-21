@@ -254,6 +254,8 @@ await form.onSubmit(async (submitted) => {
 - `src/errors.ts` — карты ошибок, индекс по корню, замена ошибок поля.
 - `src/field-props.ts` — фабрики `FieldProps` (direct/nested/array).
 - `src/form-array.ts` — `FormArray` и операции с элементами.
+- `src/array-state.ts` — состояние массивов: baseline, commit/restore/setValues/lookup.
+- `src/state.ts` — агрегаты `isReady`/`isValid`/`isDirty`/`values`/`errors` и флаги touched/dirty/ready/validating.
 - `src/validation.ts` — оркестрация `validate`/`validateField`, прогоны и опции проверки.
 - `src/nested.ts` — владение, циклы, привязка/отвязка, syncChildren и id-контекст.
 - `src/metadata.ts`, `src/types.ts`, `src/utils.ts` — декораторы, публичные типы, чистые утилиты.

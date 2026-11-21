@@ -199,7 +199,7 @@ export function syncChildren(host: NestedLink): void {
     const value = host.readValue(name);
     const current = host.children.get(name);
     const formValue = value as Form | undefined;
-    if (formValue !== undefined && isForm(formValue)) {
+    if (formValue !== undefined && isNestedForm(formValue)) {
       detachArray(host, name);
       if (current !== formValue) {
         attachChild(host, name, formValue);
@@ -211,7 +211,7 @@ export function syncChildren(host: NestedLink): void {
       const items: Form[] = [];
       let isFormArray = tracked !== undefined;
       for (const item of value) {
-        if (isForm(item)) {
+        if (isNestedForm(item)) {
           items.push(item);
           isFormArray = true;
         } else {
@@ -234,7 +234,7 @@ export function syncChildren(host: NestedLink): void {
   }
 }
 
-function isForm(value: unknown): value is Form {
+export function isNestedForm(value: unknown): value is Form {
   return typeof value === "object" && value !== null && links.has(value);
 }
 
@@ -249,7 +249,7 @@ export function bindInitialField(
     }
     const items: Form[] = [];
     for (const item of value) {
-      if (!isForm(item)) {
+      if (!isNestedForm(item)) {
         return;
       }
       items.push(item);
@@ -274,7 +274,7 @@ export function bindInitialField(
     host.invalidateProps(name);
     return;
   }
-  if (!isForm(value)) {
+  if (!isNestedForm(value)) {
     return;
   }
   const child = value;
@@ -289,4 +289,15 @@ export function bindInitialField(
   }
   host.children.set(name, child);
   host.invalidateProps(name);
+}
+
+/** Отвязывает элемент массива от текущего родителя и сбрасывает id-контекст. */
+export function releaseArrayItem(item: Form): void {
+  const link = linkOf(item);
+  if (link.parentForm === undefined) {
+    return;
+  }
+  link.parentForm = undefined;
+  link.parentField = undefined;
+  refreshIdContext(item, link.ownIdPrefix, "");
 }

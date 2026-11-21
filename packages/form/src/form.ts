@@ -43,6 +43,37 @@ import {
   syncChildren,
 } from "./nested.js";
 import type { NestedLink } from "./nested.js";
+import {
+  arrayErrors,
+  arrayItems,
+  commitArray,
+  ensureArrayItems,
+  isBaselineArrayItem,
+  replaceArray,
+  requireArrayItem,
+  requireArrayItems,
+  restoreArray,
+  setArrayValues,
+} from "./array-state.js";
+import type { ArrayStateHost } from "./array-state.js";
+import {
+  addValidating,
+  clearValidatingFields,
+  computeDirty,
+  computeReady,
+  computeValid,
+  hasAnyTouched,
+  hasValidating,
+  isConditionActiveForReady,
+  isRequirementActive,
+  markAllTouched,
+  markDirty,
+  markTouched,
+  removeValidating,
+  setReadyFor,
+} from "./state.js";
+import type { StateHost } from "./state.js";
+import { computeErrors, computeValues } from "./state.js";
 import type {
   ArrayFieldPath,
   FieldEventLike,
@@ -158,6 +189,8 @@ export abstract class Form extends ValidationModel {
   private readonly arrayHost: FormArrayHost;
   private readonly validationHost: ValidationHost;
   private readonly nestedLink: NestedLink;
+  private readonly arrayStateHost: ArrayStateHost;
+  private readonly stateHost: StateHost;
   private readonly touchedFields = createSignal<ReadonlySet<string>>(new Set());
   private readonly dirtyFields = createSignal<ReadonlySet<string>>(new Set());
   private readonly readyStates = new Map<string, boolean>();
@@ -373,6 +406,55 @@ export abstract class Form extends ValidationModel {
       clearProps: () => self.propsCache.clear(),
     };
     registerNestedLink(this, this.nestedLink);
+    this.stateHost = {
+      get metadata() {
+        return self.metadata;
+      },
+      get errorStore() {
+        return self.errorStore;
+      },
+      touchedFields: this.touchedFields,
+      dirtyFields: this.dirtyFields,
+      readyStates: this.readyStates,
+      readyVersion: this.readyVersion,
+      validatingFieldSet: this.validatingFieldSet,
+      validatingVersion: this.validatingVersion,
+      validatingForm: this.validatingForm,
+      readValue: (name) => self.readOwnValue(name),
+      isForm: (value): value is Form => value instanceof Form,
+      childFor: (name) => self.childFor(name),
+      arrayItems: (name) => self.arrayItems(name),
+      markAllTouchedChild: (child) => child.markAllTouched(),
+      hasAnyTouchedChild: (child) => child.hasAnyTouched(),
+      hasValidatingChild: (child) => child.hasValidating(),
+    };
+    this.arrayStateHost = {
+      get link() {
+        return self.nestedLink;
+      },
+      get metadata() {
+        return self.metadata;
+      },
+      get initialValues() {
+        return self.initialValues;
+      },
+      get arrayChildren() {
+        return self.arrayChildren;
+      },
+      get clearExternalOnChange() {
+        return self.options.clearExternalErrorsOnChange;
+      },
+      readValue: (name) => self.readOwnValue(name),
+      writeValue: (name, value) => self.writeOwnValue(name, value),
+      setDirectValue: (name, value) => self.setDirectValue(name, value),
+      invalidateValidation: () => self.invalidateValidation(),
+      markDirty: (name) => self.markDirty(name),
+      clearExternal: (name) => self.errorStore.removeExternal(name),
+      invalidateProps: (name) => self.invalidateProps(name),
+      ensureCanBind: (item, name, index) => {
+        item.ensureCanBind(asInstance(self), `${name}[${index}]`);
+      },
+    };
     registerValidationInvalidator(this, () => this.invalidateValidation());
     registerFieldBinder(this, (name, value) => this.bindInitialField(name, value));
     queueMicrotask(() => {
@@ -402,40 +484,8 @@ export abstract class Form extends ValidationModel {
     return getComputed(this, MEMO_IS_READY, () => {
       this.ensureInitialized();
       this.syncChildren();
-      this.validatingVersion[0]();
-      if (this.validatingFieldSet.size > 0 || this.validatingForm[0]() > 0) {
-        return false;
-      }
-      this.readyVersion[0]();
-      const ready = this.readyStates;
-      for (const [name, metadata] of this.metadata) {
-        if (ready.get(name) === false) {
-          return false;
-        }
-        const value = this.readOwnValue(name);
-        const active = this.isConditionActiveForReady(metadata);
-        if (
-          this.isRequirementActive(metadata, value, active) &&
-          isRequiredEmpty(value)
-        ) {
-          return false;
-        }
-        if (active && value instanceof Form && !asInstance(value).isReady) {
-          return false;
-        }
-        const arrayItems = this.arrayChildren.get(name);
-        if (
-          active &&
-          arrayItems !== undefined &&
-          !arrayItems.every((item) => item.isReady)
-        ) {
-          return false;
-        }
-      }
-      return (
-        this.validationMap().size === 0 &&
-        this.externalMap().size === 0
-      );
+      this.errorsRevision[0]();
+      return computeReady(this.stateHost);
     });
   }
 
@@ -444,22 +494,8 @@ export abstract class Form extends ValidationModel {
     return getComputed(this, MEMO_IS_VALID, () => {
       this.ensureInitialized();
       this.syncChildren();
-      if (this.validationMap().size > 0 || this.externalMap().size > 0) {
-        return false;
-      }
-      for (const child of this.children.values()) {
-        if (!child.isValid) {
-          return false;
-        }
-      }
-      for (const items of this.arrayChildren.values()) {
-        for (const item of items) {
-          if (!item.isValid) {
-            return false;
-          }
-        }
-      }
-      return true;
+      this.errorsRevision[0]();
+      return computeValid(this.stateHost);
     });
   }
 
@@ -468,22 +504,7 @@ export abstract class Form extends ValidationModel {
     return getComputed(this, MEMO_IS_DIRTY, () => {
       this.ensureInitialized();
       this.syncChildren();
-      if (this.dirtyFields[0]().size > 0) {
-        return true;
-      }
-      for (const child of this.children.values()) {
-        if (child.isDirty) {
-          return true;
-        }
-      }
-      for (const items of this.arrayChildren.values()) {
-        for (const item of items) {
-          if (item.isDirty) {
-            return true;
-          }
-        }
-      }
-      return false;
+      return computeDirty(this.stateHost);
     });
   }
 
@@ -502,26 +523,7 @@ export abstract class Form extends ValidationModel {
     return getComputed(this, MEMO_VALUES, () => {
       this.ensureInitialized();
       this.syncChildren();
-      const result: Record<string, unknown> = {};
-      for (const name of this.metadata.keys()) {
-        const value = this.readOwnValue(name);
-        if (value instanceof Form) {
-          result[name] = asInstance(value).values;
-          continue;
-        }
-        if (
-          Array.isArray(value) &&
-          (this.arrayChildren.has(name) ||
-            (value.length > 0 && value.every((item) => item instanceof Form)))
-        ) {
-          result[name] = value.map((item) =>
-            item instanceof Form ? asInstance(item).values : cloneValue(item)
-          );
-          continue;
-        }
-        result[name] = cloneValue(value);
-      }
-      return result;
+      return computeValues(this.stateHost);
     });
   }
 
@@ -540,66 +542,16 @@ export abstract class Form extends ValidationModel {
     >;
   }
 
-  /** Записывает новый массив, перепривязывает элементы и пути/id. */
   private commitArray(
     name: string,
     next: FormInstance[],
     removed: FormInstance[],
   ): void {
-    this.setDirectValue(name, next);
-    this.arrayChildren.set(name, next);
-    for (const item of removed) {
-      if (item.parentForm === asInstance(this)) {
-        item.parentForm = undefined;
-        item.parentField = undefined;
-        item.refreshIdContext(item.ownIdPrefix, "");
-      }
-    }
-    for (let index = 0; index < next.length; index += 1) {
-      this.assignArrayItem(next[index]!, name, index);
-    }
-    this.invalidateProps(name);
+    commitArray(this.arrayStateHost, name, next, removed);
   }
 
   private setArrayValues(name: string, entries: readonly unknown[]): void {
-    const items = this.requireArrayItems(name);
-    const limit = Math.min(items.length, entries.length);
-    const next = [...items];
-    const removed: FormInstance[] = [];
-    let replaced = false;
-    let changed = false;
-    for (let index = 0; index < limit; index += 1) {
-      const entry = entries[index];
-      const current = items[index]!;
-      if (entry instanceof Form) {
-        if (entry === current) {
-          continue;
-        }
-        entry.ensureCanBind(asInstance(this), `${name}[${index}]`);
-        next[index] = asInstance(entry);
-        removed.push(current);
-        replaced = true;
-        changed = true;
-        continue;
-      }
-      if (isPlainObject(entry)) {
-        current.setValues(entry);
-        changed = true;
-        continue;
-      }
-      throw new TypeError(
-        `Элемент "${name}[${index}]" должен быть Form или plain-объектом`,
-      );
-    }
-    if (replaced) {
-      this.commitArray(name, next, removed);
-    } else if (changed) {
-      this.invalidateValidation();
-      this.markDirty(name);
-      if (this.options.clearExternalErrorsOnChange) {
-        this.errorStore.removeExternal(name);
-      }
-    }
+    setArrayValues(this.arrayStateHost, name, entries);
   }
 
   /**
@@ -963,54 +915,12 @@ export abstract class Form extends ValidationModel {
     }
   }
 
-  /** Элемент входит в эталонный массив из `initialValues`. */
   private isBaselineArrayItem(item: FormInstance): boolean {
-    for (const value of this.initialValues.values()) {
-      if (Array.isArray(value) && value.includes(item)) {
-        return true;
-      }
-    }
-    return false;
+    return isBaselineArrayItem(this.arrayStateHost, item);
   }
 
   private restoreArray(name: string, restored: readonly unknown[], current: unknown): void {
-    const tracked = this.arrayChildren.get(name);
-    const previous = tracked ?? (Array.isArray(current)
-      ? current.filter((item): item is Form => item instanceof Form).map((item) => asInstance(item))
-      : []);
-    const isFormArray = tracked !== undefined ||
-      (restored.length > 0 && restored.every((item) => item instanceof Form));
-    if (!isFormArray) {
-      this.writeOwnValue(name, restored);
-      this.invalidateProps(name);
-      return;
-    }
-    const items: FormInstance[] = [];
-    for (const item of restored) {
-      if (!(item instanceof Form)) {
-        throw new TypeError(`Массив "${name}" должен содержать только Form`);
-      }
-      items.push(asInstance(item));
-    }
-    const nextSet = new Set<object>(items);
-    for (const item of previous) {
-      if (!nextSet.has(item)) {
-        if (item.parentForm === asInstance(this)) {
-          item.parentForm = undefined;
-          item.parentField = undefined;
-          item.refreshIdContext(item.ownIdPrefix, "");
-        }
-        if (!this.isBaselineArrayItem(item)) {
-          item.dispose();
-        }
-      }
-    }
-    this.writeOwnValue(name, [...items]);
-    this.arrayChildren.set(name, items);
-    for (let index = 0; index < items.length; index += 1) {
-      this.assignArrayItem(items[index]!, name, index);
-    }
-    this.invalidateProps(name);
+    restoreArray(this.arrayStateHost, name, restored, current);
   }
 
   /** Освободить реактивное хранилище и таймеры. Повторный вызов безопасен. */
@@ -1132,59 +1042,19 @@ export abstract class Form extends ValidationModel {
   }
 
   private arrayItems(name: string): FormInstance[] | undefined {
-    const tracked = this.arrayChildren.get(name);
-    if (tracked !== undefined) {
-      return tracked;
-    }
-    const value = this.readOwnValue(name);
-    if (!Array.isArray(value) || value.length === 0) {
-      return undefined;
-    }
-    const items: FormInstance[] = [];
-    for (const item of value) {
-      if (!(item instanceof Form)) {
-        return undefined;
-      }
-      items.push(asInstance(item));
-    }
-    this.arrayChildren.set(name, items);
-    return items;
+    return arrayItems(this.arrayStateHost, name);
   }
 
   private requireArrayItem(root: string, index: number): FormInstance {
-    const item = this.arrayItems(root)?.[index];
-    if (item === undefined) {
-      throw new Error(`Элемент массива "${root}[${index}]" не найден`);
-    }
-    return item;
+    return requireArrayItem(this.arrayStateHost, root, index);
   }
 
   private requireArrayItems(name: string): FormInstance[] {
-    const items = this.arrayItems(name);
-    if (items === undefined) {
-      throw new TypeError(`Поле "${name}" не является массивом форм`);
-    }
-    return items;
+    return requireArrayItems(this.arrayStateHost, name);
   }
 
   private ensureArrayItems(name: string): FormInstance[] {
-    const tracked = this.arrayChildren.get(name);
-    if (tracked !== undefined) {
-      return tracked;
-    }
-    const value = this.readOwnValue(name);
-    if (!Array.isArray(value)) {
-      throw new TypeError(`Поле "${name}" не является массивом`);
-    }
-    const items: FormInstance[] = [];
-    for (const item of value) {
-      if (!(item instanceof Form)) {
-        throw new TypeError(`Поле "${name}" не является массивом форм`);
-      }
-      items.push(asInstance(item));
-    }
-    this.arrayChildren.set(name, items);
-    return items;
+    return ensureArrayItems(this.arrayStateHost, name);
   }
 
   private requireChild(name: string): FormInstance {
@@ -1413,35 +1283,16 @@ export abstract class Form extends ValidationModel {
     return result === true;
   }
 
-  /**
-   * Активно ли условие для синхронной готовности. Thenable считается
-   * оптимистично неактивным: `isReady` не блокируется до `validate()`.
-   */
   private isConditionActiveForReady(metadata: FieldMetadata): boolean {
-    if (metadata.when === undefined) {
-      return true;
-    }
-    const result: unknown = metadata.when(this);
-    if (isThenable(result)) {
-      void Promise.resolve(result).catch(() => {});
-      return false;
-    }
-    return result === true;
+    return isConditionActiveForReady(this.stateHost, metadata);
   }
 
-  /** Активно ли требование непустого значения с учётом `@Optional`/`@ValidateIf`. */
   private isRequirementActive(
     metadata: FieldMetadata,
     value: unknown,
     active = this.isConditionActiveForReady(metadata),
   ): boolean {
-    if (metadata.required !== true) {
-      return false;
-    }
-    if (metadata.optional === true && (value === undefined || value === null)) {
-      return false;
-    }
-    return active;
+    return isRequirementActive(this.stateHost, metadata, value, active);
   }
 
   /** Однократная диагностика правила без зарегистрированного `@Field`. */
@@ -1514,31 +1365,11 @@ export abstract class Form extends ValidationModel {
   }
 
   private arrayErrors(name: string): Readonly<Record<string, readonly string[]>> {
-    const prefix = `${name}[`;
-    const result: Record<string, readonly string[]> = {};
-    for (const [key, messages] of Object.entries(this.errors)) {
-      if (key.startsWith(prefix)) {
-        result[key] = messages;
-      }
-    }
-    return result;
+    return arrayErrors(this.arrayStateHost, name, this.errors);
   }
 
   private replaceArray(name: string, value: unknown): void {
-    if (!Array.isArray(value) || !value.every((item) => item instanceof Form)) {
-      throw new TypeError(`Поле "${name}" — массив форм: ожидался массив Form`);
-    }
-    const items = value.map((item) => asInstance(item as object));
-    for (let index = 0; index < items.length; index += 1) {
-      const item = items[index]!;
-      if (item.parentForm !== asInstance(this)) {
-        item.ensureCanBind(asInstance(this), `${name}[${index}]`);
-      }
-    }
-    const previous = this.requireArrayItems(name);
-    const nextSet = new Set<object>(items);
-    const removed = previous.filter((item) => !nextSet.has(item));
-    this.commitArray(name, items, removed);
+    replaceArray(this.arrayStateHost, name, value);
   }
 
   private nestedBindingError(name: string, handler: string): never {
@@ -1573,42 +1404,8 @@ export abstract class Form extends ValidationModel {
   }
 
   private computeErrors(): ErrorsMap {
-    this.ensureInitialized();
-    this.syncChildren();
-    const result: Record<string, readonly string[]> = {};
-    const merge = (map: ReadonlyMap<string, readonly string[]>): void => {
-      for (const [key, messages] of map) {
-        if (messages.length === 0) {
-          continue;
-        }
-        const existing = result[key];
-        result[key] = existing === undefined
-          ? messages
-          : [...existing, ...messages];
-      }
-    };
-    merge(this.validationMap());
-    merge(this.externalMap());
-    for (const name of this.metadata.keys()) {
-      const child = this.childFor(name);
-      if (child !== undefined) {
-        for (const [key, messages] of Object.entries(child.errors)) {
-          result[`${name}.${key}`] = messages;
-        }
-        continue;
-      }
-      const items = this.arrayChildren.get(name);
-      if (items === undefined) {
-        continue;
-      }
-      for (let index = 0; index < items.length; index += 1) {
-        const item = items[index]!;
-        for (const [key, messages] of Object.entries(item.errors)) {
-          result[`${name}[${index}].${key}`] = messages;
-        }
-      }
-    }
-    return result;
+    this.errorsRevision[0]();
+    return computeErrors(this.stateHost);
   }
 
   private setDirectValue(name: string, value: unknown): void {
@@ -1728,115 +1525,43 @@ export abstract class Form extends ValidationModel {
   }
 
   private markTouched(name: string): void {
-    const current = this.touchedFields[0]();
-    if (current.has(name)) {
-      return;
-    }
-    const next = new Set(current);
-    next.add(name);
-    this.touchedFields[1](next);
+    markTouched(this.stateHost, name);
   }
 
   private markDirty(name: string): void {
-    const current = this.dirtyFields[0]();
-    if (current.has(name)) {
-      return;
-    }
-    const next = new Set(current);
-    next.add(name);
-    this.dirtyFields[1](next);
+    markDirty(this.stateHost, name);
   }
 
   private markAllTouched(): void {
-    this.ensureInitialized();
-    const current = this.touchedFields[0]();
-    let missing = false;
-    for (const name of this.metadata.keys()) {
-      if (!current.has(name)) {
-        missing = true;
-        break;
-      }
-    }
-    if (missing) {
-      const next = new Set(current);
-      for (const name of this.metadata.keys()) {
-        next.add(name);
-      }
-      this.touchedFields[1](next);
-    }
-    for (const name of this.metadata.keys()) {
-      const child = this.childFor(name);
-      if (child !== undefined) {
-        child.markAllTouched();
-        continue;
-      }
-      const items = this.arrayChildren.get(name);
-      if (items !== undefined) {
-        for (const item of items) {
-          item.markAllTouched();
-        }
-      }
-    }
+    markAllTouched(this.stateHost);
   }
 
   private setReadyFor(name: string, ready: boolean): void {
-    if ((this.readyStates.get(name) ?? true) === ready) {
-      return;
-    }
-    this.readyStates.set(name, ready);
-    this.readyVersion[1]((version) => version + 1);
+    setReadyFor(this.stateHost, name, ready);
   }
 
   private addValidating(name: string): void {
-    if (this.validatingFieldSet.has(name)) {
-      return;
-    }
-    this.validatingFieldSet.add(name);
-    this.validatingVersion[1]((version) => version + 1);
+    addValidating(this.stateHost, name);
   }
 
   private removeValidating(name: string): void {
-    if (!this.validatingFieldSet.delete(name)) {
-      return;
-    }
-    this.validatingVersion[1]((version) => version + 1);
+    removeValidating(this.stateHost, name);
   }
 
   private clearValidatingFields(): void {
-    if (this.validatingFieldSet.size === 0) {
-      return;
-    }
-    this.validatingFieldSet.clear();
-    this.validatingVersion[1]((version) => version + 1);
+    clearValidatingFields(this.stateHost);
   }
 
   private hasAnyTouched(): boolean {
     this.ensureInitialized();
     this.syncChildren();
-    if (this.touchedFields[0]().size > 0) {
-      return true;
-    }
-    for (const child of this.children.values()) {
-      if (child.hasAnyTouched()) {
-        return true;
-      }
-    }
-    return false;
+    return hasAnyTouched(this.stateHost);
   }
 
   private hasValidating(): boolean {
     this.ensureInitialized();
     this.syncChildren();
-    this.validatingVersion[0]();
-    if (this.validatingFieldSet.size > 0 || this.validatingForm[0]() > 0) {
-      return true;
-    }
-    for (const child of this.children.values()) {
-      if (child.hasValidating()) {
-        return true;
-      }
-    }
-    return false;
+    return hasValidating(this.stateHost);
   }
 
   private clearTimers(): void {
