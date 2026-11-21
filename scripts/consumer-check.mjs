@@ -140,7 +140,7 @@ function writeProject() {
       '  public accessor email: string = "";',
       "}",
       "",
-      "export class LoginForm extends Form<{ email: string }> {",
+      "export class LoginForm extends Form {",
       "  @Field()",
       "  @Required()",
       "  @IsEmail()",
@@ -199,6 +199,13 @@ try {
   writeProject();
   install(tarballs);
   linkVite();
+
+  const tsc = join(root, "node_modules", "typescript", "bin", "tsc");
+  assert.ok(existsSync(tsc), "в workspace нет TypeScript — выполните pnpm install");
+  execFileSync(process.execPath, [tsc, "--noEmit", "-p", join(project, "tsconfig.json")], {
+    cwd: project,
+    stdio: "inherit",
+  });
 
   for (const name of packedNames) {
     assert.ok(

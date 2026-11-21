@@ -10,6 +10,7 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const counterDir = join(root, "examples", "counter");
 const todoDir = join(root, "examples", "todo");
 const routerDir = join(root, "examples", "router");
+const formsDir = join(root, "examples", "forms");
 const cacheDir = join(homedir(), ".cache", "ms-playwright");
 
 const BROWSER_TYPES = { chromium, firefox, webkit };
@@ -408,6 +409,75 @@ async function selectDomState(page) {
   });
 }
 
+async function runForms(browser) {
+  const server = await startServer(formsDir);
+  const page = await browser.newPage();
+  const errors = collectErrors(page);
+
+  try {
+    await page.goto(server.url, { waitUntil: "domcontentloaded" });
+    await page.locator("form.profile").waitFor();
+    assert.equal(await page.title(), "Silent Framework: форма профиля");
+
+    const name = page.locator("#profile-name");
+    const email = page.locator("#profile-email");
+    const state = page.locator('[id="profile-address.state"]');
+    const city = page.locator('[id="profile-address.city"]');
+
+    assert.equal(await name.getAttribute("required"), "");
+    assert.equal(await name.getAttribute("aria-required"), "true");
+    assert.equal(await email.getAttribute("required"), "");
+    assert.equal(await state.getAttribute("required"), "");
+    assert.equal(
+      await page.locator('label[for="profile-name"] span[aria-hidden="true"]').count(),
+      1,
+      "обязательное поле не помечено звёздочкой для скринридера",
+    );
+
+    await name.fill("Алиса");
+    await email.fill("не-email");
+    await email.blur();
+    const emailError = page.locator("#profile-email-error");
+    await emailError.waitFor();
+    assert.equal(await emailError.getAttribute("role"), "alert");
+    assert.match((await emailError.textContent()) ?? "", /email/i);
+
+    await email.fill("alice@example.com");
+    await city.fill("Москва");
+    await state.selectOption("moscow");
+
+    await page.getByRole("button", { name: "Сохранить" }).click();
+    const submitting = page.getByRole("status").filter({ hasText: "Отправляем…" });
+    await submitting.waitFor();
+    const success = page.getByRole("status").filter({ hasText: "Профиль сохранён: Алиса" });
+    await success.waitFor();
+    assert.equal(await success.getAttribute("aria-live"), "polite");
+
+    await email.fill("taken@example.com");
+    await page.getByRole("button", { name: "Сохранить" }).click();
+    await page.waitForFunction(() =>
+      document
+        .querySelector("#profile-email-error")
+        ?.textContent?.includes("Этот email уже занят"),
+    );
+    assert.equal(await emailError.getAttribute("role"), "alert");
+
+    const avatar = page.locator("#profile-avatar");
+    await avatar.setInputFiles({
+      name: "avatar.png",
+      mimeType: "image/png",
+      buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+    });
+    await page.getByRole("status").filter({ hasText: "Загрузка…" }).waitFor();
+    await page.locator(".file-name").filter({ hasText: "avatar.png" }).waitFor();
+
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+    await server.close();
+  }
+}
+
 async function runRegressions(browser, browserName) {
   const server = await startServer(counterDir);
   const page = await browser.newPage();
@@ -509,9 +579,9 @@ async function runRegressions(browser, browserName) {
 }
 
 const SUITES = {
-  chromium: [runCounter, runTodo, runRouter, runRegressions],
-  firefox: [runCounter, runTodo, runRouter, runRegressions],
-  webkit: [runCounter, runTodo, runRouter, runRegressions],
+  chromium: [runCounter, runTodo, runRouter, runForms, runRegressions],
+  firefox: [runCounter, runTodo, runRouter, runForms, runRegressions],
+  webkit: [runCounter, runTodo, runRouter, runForms, runRegressions],
 };
 
 async function main() {

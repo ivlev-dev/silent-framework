@@ -37,7 +37,7 @@ export class ProfileForm extends Form {
 
   @Field()
   @Label("Аватар")
-  @Hint("Загрузка файла...")
+  @Hint("PNG или JPG, до 2 МБ")
   public accessor avatar = "";
 
   @FormField()
@@ -78,6 +78,15 @@ export class ProfileForm extends Form {
   override reset(): void {
     this.clearUploadTimer();
     super.reset();
+    // Значение формы сброшено, но нативный `<input type="file">` хранит файл
+    // отдельно от модели: очищаем его вручную. В SSR `document` отсутствует.
+    if (typeof document === "undefined") {
+      return;
+    }
+    const input = document.getElementById(this.avatarField().id);
+    if (input instanceof HTMLInputElement) {
+      input.value = "";
+    }
   }
 
   override dispose(): void {

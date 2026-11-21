@@ -41,7 +41,9 @@ export function App(this: { vm: AppVM }) {
         <div class="field">
           <label for={name.id}>
             {name.label}
-            {name.isRequired ? " *" : ""}
+            <Show when={name.isRequired}>
+              <span aria-hidden="true"> *</span>
+            </Show>
           </label>
           <input
             id={name.id}
@@ -49,6 +51,8 @@ export function App(this: { vm: AppVM }) {
             value={name.value}
             placeholder={name.placeholder ?? ""}
             autocomplete="name"
+            required={name.isRequired}
+            aria-required={name.isRequired ? "true" : undefined}
             onInput={(event: InputEvent) => name.onInput(event)}
             onBlur={(event: FocusEvent) => name.onBlur(event)}
             aria-invalid={!name.isValid}
@@ -61,7 +65,7 @@ export function App(this: { vm: AppVM }) {
             </p>
           </Show>
           <Show when={name.error !== undefined}>
-            <p class="error" id={`${name.id}-error`}>
+            <p class="error" id={`${name.id}-error`} role="alert">
               {name.error}
             </p>
           </Show>
@@ -70,7 +74,9 @@ export function App(this: { vm: AppVM }) {
         <div class="field">
           <label for={email.id}>
             {email.label}
-            {email.isRequired ? " *" : ""}
+            <Show when={email.isRequired}>
+              <span aria-hidden="true"> *</span>
+            </Show>
           </label>
           <input
             id={email.id}
@@ -79,6 +85,8 @@ export function App(this: { vm: AppVM }) {
             value={email.value}
             placeholder={email.placeholder ?? ""}
             autocomplete="email"
+            required={email.isRequired}
+            aria-required={email.isRequired ? "true" : undefined}
             onInput={(event: InputEvent) => email.onInput(event)}
             onBlur={(event: FocusEvent) => email.onBlur(event)}
             aria-invalid={!email.isValid}
@@ -91,7 +99,7 @@ export function App(this: { vm: AppVM }) {
             </p>
           </Show>
           <Show when={email.error !== undefined}>
-            <p class="error" id={`${email.id}-error`}>
+            <p class="error" id={`${email.id}-error`} role="alert">
               {email.error}
             </p>
           </Show>
@@ -113,7 +121,7 @@ export function App(this: { vm: AppVM }) {
             disabled={age.isValidating}
           />
           <Show when={age.error !== undefined}>
-            <p class="error" id={`${age.id}-error`}>
+            <p class="error" id={`${age.id}-error`} role="alert">
               {age.error}
             </p>
           </Show>
@@ -145,13 +153,15 @@ export function App(this: { vm: AppVM }) {
             </p>
           </Show>
           <Show when={!avatar.isReady}>
-            <p class="pending">Загрузка...</p>
+            <p class="pending" role="status" aria-live="polite">
+              Загрузка…
+            </p>
           </Show>
           <Show when={avatar.value !== ""}>
             <p class="file-name">Выбран файл: {avatar.value}</p>
           </Show>
           <Show when={avatar.error !== undefined}>
-            <p class="error" id={`${avatar.id}-error`}>
+            <p class="error" id={`${avatar.id}-error`} role="alert">
               {avatar.error}
             </p>
           </Show>
@@ -163,7 +173,9 @@ export function App(this: { vm: AppVM }) {
           <div class="field">
             <label for={city.id}>
               {city.label}
-              {city.isRequired ? " *" : ""}
+              <Show when={city.isRequired}>
+                <span aria-hidden="true"> *</span>
+              </Show>
             </label>
             <input
               id={city.id}
@@ -171,6 +183,8 @@ export function App(this: { vm: AppVM }) {
               value={city.value}
               placeholder={city.placeholder ?? ""}
               autocomplete="address-level2"
+              required={city.isRequired}
+              aria-required={city.isRequired ? "true" : undefined}
               onInput={(event: InputEvent) => city.onInput(event)}
               onBlur={(event: FocusEvent) => city.onBlur(event)}
               aria-invalid={!city.isValid}
@@ -183,7 +197,7 @@ export function App(this: { vm: AppVM }) {
               </p>
             </Show>
             <Show when={city.error !== undefined}>
-              <p class="error" id={`${city.id}-error`}>
+              <p class="error" id={`${city.id}-error`} role="alert">
                 {city.error}
               </p>
             </Show>
@@ -192,13 +206,17 @@ export function App(this: { vm: AppVM }) {
           <div class="field">
             <label for={state.id}>
               {state.label}
-              {state.isRequired ? " *" : ""}
+              <Show when={state.isRequired}>
+                <span aria-hidden="true"> *</span>
+              </Show>
             </label>
             <select
               id={state.id}
               name={state.name}
               value={state.value}
               autocomplete="address-level1"
+              required={state.isRequired}
+              aria-required={state.isRequired ? "true" : undefined}
               onChange={(event: Event) => state.onChange(event)}
               onBlur={(event: FocusEvent) => state.onBlur(event)}
               aria-invalid={!state.isValid}
@@ -217,7 +235,7 @@ export function App(this: { vm: AppVM }) {
               </p>
             </Show>
             <Show when={state.error !== undefined}>
-              <p class="error" id={`${state.id}-error`}>
+              <p class="error" id={`${state.id}-error`} role="alert">
                 {state.error}
               </p>
             </Show>
@@ -242,7 +260,7 @@ export function App(this: { vm: AppVM }) {
             disabled={interests.isValidating}
           />
           <Show when={interests.error !== undefined}>
-            <p class="error" id={`${interests.id}-error`}>
+            <p class="error" id={`${interests.id}-error`} role="alert">
               {interests.error}
             </p>
           </Show>
@@ -253,10 +271,14 @@ export function App(this: { vm: AppVM }) {
             Сохранить
           </button>
           <Show when={form.isSubmitting}>
-            <span class="pending">Отправляем...</span>
+            <span class="pending" role="status" aria-live="polite">
+              Отправляем…
+            </span>
           </Show>
           <Show when={this.vm.status !== ""}>
-            <span class="success">{this.vm.status}</span>
+            <span class="success" role="status" aria-live="polite">
+              {this.vm.status}
+            </span>
           </Show>
         </div>
 

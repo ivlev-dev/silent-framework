@@ -108,7 +108,7 @@ email.onChange({ currentTarget: { value: "user@example.com" } });
 await form.onSubmit((submitted) => api.login(submitted.values))();
 ```
 
-`getFieldProps` отдаёт реактивные `value`, `label`, `placeholder`, `hint`, `error`, `isReady`, `isValid`, `isValidating` и обработчики `onInput`/`onChange`/`onBlur`, а также DOM-`id` по умолчанию `${className}-${path}` (`LoginForm-email`); `formId` задаёт свой префикс. Вложенные формы подключаются через `@FormField()` — значения, ошибки и готовность агрегируются, пути типизированы (`address.city`); серверные ошибки ставятся `setFieldErrors` и снимаются при изменении значения. Подробнее — [`docs/api/form.md`](./docs/api/form.md), полный пример — [`examples/forms`](./examples/forms).
+`getFieldProps` отдаёт реактивные `value`, `label`, `placeholder`, `hint`, `error`, `isReady`, `isValid`, `isValidating` и обработчики `onInput`/`onChange`/`onBlur`, а также DOM-`id` по умолчанию `${className}-${path}` (`LoginForm-email`). Имя класса может измениться при минификации, поэтому для стабильных id (минификация, SSR) задавайте `formId`: `new LoginForm({ formId: "login" })` даёт `login-email`. Вложенные формы подключаются через `@FormField()` — значения, ошибки и готовность агрегируются, пути типизированы (`address.city`); серверные ошибки ставятся `setFieldErrors` и снимаются при изменении значения. Подробнее — [`docs/api/form.md`](./docs/api/form.md), полный пример — [`examples/forms`](./examples/forms).
 
 ## Компонент и ViewModel
 
