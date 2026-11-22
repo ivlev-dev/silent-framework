@@ -633,7 +633,7 @@
       },
       "Resource": {
         "kind": "interface",
-        "signature": "export interface Resource<T> { readonly data: Accessor<T | undefined>; readonly error: Accessor<unknown>; readonly pending: Accessor<boolean>; readonly status: Accessor<ResourceStatus>; readonly ready: Promise<void>; readonly key: Accessor<unknown>; read(): T | undefined; refetch(): Promise<T | undefined>; set(value: T): void; mutate(updater: (previous: T | undefined) => T): void; abort(reason?: unknown): void; dispose(): void; }"
+        "signature": "export interface Resource<T> { readonly data: Accessor<T | undefined>; readonly error: Accessor<unknown>; readonly pending: Accessor<boolean>; readonly status: Accessor<ResourceStatus>; /** Завершается отклонением, если текущий запрос завершился ошибкой. */ readonly ready: Promise<void>; readonly key: Accessor<unknown>; read(): T | undefined; /** * Запускает запрос. Промис отклоняется ошибкой fetcher'а (после записи в * `error`/`status` и вызова `onError`); данные последнего успешного * запроса при этом сохраняются. */ refetch(): Promise<T | undefined>; set(value: T): void; mutate(updater: (previous: T | undefined) => T): void; abort(reason?: unknown): void; dispose(): void; }"
       },
       "ResourceCache": {
         "kind": "class",
@@ -1516,7 +1516,7 @@
       },
       "RouterErrorCode": {
         "kind": "type",
-        "signature": "export type RouterErrorCode = \"abort\" | \"guard\" | \"load\" | \"no-match\" | \"redirect\" | \"resolve\" | \"scroll\";"
+        "signature": "export type RouterErrorCode = \"abort\" | \"guard\" | \"history\" | \"load\" | \"no-match\" | \"redirect\" | \"resolve\" | \"scroll\";"
       },
       "RouterHistory": {
         "kind": "interface",

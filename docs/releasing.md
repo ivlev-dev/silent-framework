@@ -15,10 +15,10 @@
 ## Версии и зависимости
 
 - Версия одна на все пакеты `@ivlev-dev/silent*` и `Cargo.toml`; рассинхрон не допускается.
-- Внутренние зависимости библиотечных пакетов (`core`, `server`, `router`, `vite`) объявлены как `peerDependencies` с диапазоном `>=0.X.0 <0.(X+1).0`; для локальной разработки те же пакеты продублированы в `devDependencies` со значением `workspace:*`.
-- Метапакет `@ivlev-dev/silent` держит в `dependencies` шесть пакетов (core, di, reactivity, router, swc, vite) с диапазоном `>=0.X.0 <0.(X+1).0`. `server`, `validation` и `validation-vite` устанавливаются отдельно.
+- Внутренние зависимости библиотечных пакетов (`core`, `server`, `router`, `form` и др.) объявлены как `peerDependencies` с диапазоном `>=0.X.0 <0.(X+1).0`; для локальной разработки те же пакеты продублированы в `devDependencies` со значением `workspace:*`.
+- Метапакет `@ivlev-dev/silent` держит в `dependencies` шесть пакетов (core, di, reactivity, router, swc, vite) с диапазоном `>=0.X.0 <0.(X+1).0`. `server`, `validation`, `validation-vite` и `form` устанавливаются отдельно.
 - Диапазон описывает всю текущую `0.X`-линейку: патч-релизы (`0.X.Y`) совместимы между собой, а `minor` (`0.(X+1).0`) требует согласованного обновления.
-- `pnpm version:bump` обновляет не только поле `version`, но и диапазоны внутренних зависимостей и peer-зависимостей в манифестах.
+- `pnpm version:bump` обновляет поле `version`, диапазоны внутренних зависимостей и peer-зависимостей в манифестах, затем запускает `pnpm install --lockfile-only`, чтобы `pnpm-lock.yaml` не разошёлся с манифестами.
 
 ## Пошаговый релиз
 
@@ -29,7 +29,7 @@
    pnpm version:bump patch   # или minor / major
    ```
 
-   Скрипт обновляет 10 `package.json`, диапазоны внутренних зависимостей, `[workspace.package] version` в `Cargo.toml` и переносит заметки из `## Unreleased` в новый раздел `## X.Y.Z`, оставляя `## Unreleased` пустым. После этого обновите `Cargo.lock` командой `cargo check -p silent-transform`.
+   Скрипт обновляет 11 `package.json` (`reactivity`, `di`, `core`, `swc`, `vite`, `server`, `router`, `validation`, `validation-vite`, `form`, `silent`), диапазоны внутренних зависимостей, `[workspace.package] version` в `Cargo.toml`, `pnpm-lock.yaml` (через `pnpm install --lockfile-only`) и переносит заметки из `## Unreleased` в новый раздел `## X.Y.Z`, оставляя `## Unreleased` пустым. Если `pnpm` не найден или обновление lockfile упало, скрипт завершается ошибкой — выполните `pnpm install --lockfile-only` вручную и проверьте `git diff pnpm-lock.yaml`. После этого обновите `Cargo.lock` командой `cargo check -p silent-transform`.
 
    Для точечной установки версии и проверки без изменений:
 
@@ -59,17 +59,30 @@
    ```
 
 7. Что делает CI (`.github/workflows/release.yml`, запуск по тегу `v*`):
-   - проверяет совпадение тега с версиями всех 10 пакетов;
+   - проверяет совпадение тега с версиями всех 11 пакетов и что `pnpm-lock.yaml` не разошёлся с диапазонами (`pnpm version:check`);
    - собирает нативные бинарники для Linux x64 (`x86_64-unknown-linux-gnu`) и Windows x64 (`x86_64-pc-windows-msvc`); остальные платформы требуют локальной сборки;
    - прогоняет `build`, `typecheck`, `cargo fmt`, `cargo test`, `pnpm test`, `pnpm api:check`, `pnpm pack:check`, `pnpm install:check`;
    - публикует пакеты в npm (требуется секрет `NPM_TOKEN`);
-   - проверяет, что все 10 пакетов имеют опубликованную версию (`pnpm published:check`; до 30 попыток по 15 с — npm отдаёт обновление не сразу). `dist-tag` `latest` не проверяется, а только печатается в логе рядом с версией.
+   - проверяет, что все 11 пакетов имеют опубликованную версию (`pnpm published:check`; до 30 попыток по 15 с — npm отдаёт обновление не сразу). `dist-tag` `latest` не проверяется, а только печатается в логе рядом с версией.
 
    Параметры `published:check` задаются переменными окружения: `PUBLISH_ATTEMPTS` (по умолчанию `30`), `PUBLISH_DELAY_MS` (пауза между попытками, `15000`) и `PUBLISH_TIMEOUT_MS` (таймаут запроса к реестру, `15000`).
 
+## Чек-лист релиза
+
+- [ ] `pnpm version:check` зелёный (версии пакетов, `Cargo.toml` и `pnpm-lock.yaml` согласованы).
+- [ ] `pnpm install --frozen-lockfile` проходит после bump.
+- [ ] `git diff pnpm-lock.yaml` содержит только ожидаемые изменения диапазонов.
+- [ ] `pnpm build`, `pnpm typecheck`, `pnpm test` зелёные.
+- [ ] `pnpm api:check` и `pnpm api:check:self` зелёные.
+- [ ] `pnpm pack:check` и `pnpm install:check` проходят, включая subpath `@ivlev-dev/silent-server/pool`.
+- [ ] `pnpm test:ssr-pool` зелёный (воркер-пул SSR).
+- [ ] `pnpm test:ssr` и `pnpm test:e2e` зелёные.
+- [ ] `core` и `server` выпускаются парой: сервер импортирует внутренний subpath core (`@ivlev-dev/silent-core/runtime-context-provider`), одного совпадения peer-диапазона недостаточно.
+
 ## Требования к релизу
 
-- Версия одна во всех 10 пакетах `packages/{core,di,reactivity,server,router,validation,validation-vite,silent,swc,vite}/package.json` и в `Cargo.toml` (`[workspace.package] version`).
+- Версия одна во всех 11 пакетах `packages/{core,di,reactivity,server,router,validation,validation-vite,form,silent,swc,vite}/package.json` и в `Cargo.toml` (`[workspace.package] version`).
+- `pnpm-lock.yaml` обновлён тем же bump'ом и проходит `pnpm install --frozen-lockfile`.
 - `pnpm version:check` зелёный.
 - `pnpm api:check` зелёный.
 - Тег имеет вид `vX.Y.Z` и совпадает с версией в пакетах.
@@ -78,6 +91,8 @@
 
 - Подняли `minor` вместо `patch` для изменений производительности или рефакторинга без изменения публичного API.
 - Забыли обновить версию в `Cargo.toml`.
+- Забыли закоммитить `pnpm-lock.yaml` после bump — `pnpm install --frozen-lockfile` в release CI падает.
 - Тег не совпадает с версией в `package.json` (CI прервёт релиз).
-- Обновили не все 10 пакетов или часть версий осталась старой.
+- Обновили не все 11 пакетов или часть версий осталась старой.
 - Забыли пересчитать диапазоны `>=0.X.0 <0.(X+1).0` после `minor`-бампа (это делает `pnpm version:bump`).
+- Выпустили `server` без парного `core` (или наоборот): сервер использует внутренний subpath core, которого может не быть в опубликованной версии.

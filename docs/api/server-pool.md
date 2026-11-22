@@ -6,7 +6,7 @@ Subpath `@ivlev-dev/silent-server/pool` — opt-in worker pool для парал
 import { createRenderPool } from "@ivlev-dev/silent-server/pool";
 ```
 
-Пул загружает entry-модуль в каждый `worker_threads`-воркер. Entry должен быть собранным ESM-файлом и экспортировать `render` и/или `renderStream`; dev-загрузка через `vite.ssrLoadModule` не поддерживается. Воркеры получают собственные DOM-шимы и собственный экземпляр модулей, поэтому рендеры в разных воркерах выполняются параллельно.
+Пул загружает entry-модуль в каждый `worker_threads`-воркер. Entry должен быть собранным ESM-файлом и экспортировать `render` и/или `renderStream`; dev-загрузка через `vite.ssrLoadModule` не поддерживается. Воркеры получают собственные DOM-шимы и собственный экземпляр модулей, поэтому рендеры в разных воркерах выполняются параллельно. `data:` URL запрещён (`entry-load-failed`): воркер загружает entry обычным `import()` и должен иметь файловый URL.
 
 ## API
 
@@ -21,7 +21,7 @@ function createRenderPool<Args extends readonly unknown[] = readonly unknown[]>(
 ): RenderPool<Args>;
 ```
 
-Создаёт пул, но не запускает воркеры при `warmup: "lazy"` (по умолчанию). `entry` — абсолютный или относительный путь (от `process.cwd()`), `file:`/`data:` URL либо URL, полученный из `import.meta.resolve`. Bare specifier и `http(s)` URL отклоняются с `entry-load-failed`. Некорректные опции дают `TypeError`.
+Создаёт пул, но не запускает воркеры при `warmup: "lazy"` (по умолчанию). `entry` — абсолютный или относительный путь (от `process.cwd()`), `file:` URL либо URL, полученный из `import.meta.resolve`. Bare specifier, `data:` и `http(s)` URL отклоняются с `entry-load-failed`. Некорректные опции дают `TypeError`.
 
 ```ts
 import { createRenderPool } from "@ivlev-dev/silent-server/pool";
@@ -58,7 +58,7 @@ interface RenderPoolOptions {
 ```
 
 - `workers` — число воркеров, целое `>= 1`; по умолчанию `min(4, availableParallelism())`.
-- `warmup` — `"lazy"` (по умолчанию) или `"eager"`. При `"eager"` конструктор вызывает `ready()` без ожидания; ошибка проявится в `state: "failed"`.
+- `warmup` — `"lazy"` (по умолчанию) или `"eager"`. При `"eager"` конструктор вызывает `ready()` без ожидания; если ни один воркер не поднялся, пул перейдёт в `state: "failed"`, иначе продолжит работу на живых воркерах.
 - `timeoutMs` — два независимых бюджета одной длительности: предел ожидания в очереди и отдельно предел выполнения unary-задачи или всего стрима; по умолчанию `30_000`. `0` отключает оба. Истечение в очереди снимает задачу, не завершая воркер; истечение при выполнении завершает задачу с `timeout`, воркер выводится из работы.
 - `idleTimeoutMs` — таймаут простоя стрима; по умолчанию равен `timeoutMs`. Продлевается на `head`/`shell`/каждый чанк, на каждое чтение consumer'а и на `resume`; тикает и во время `pause`. `0` отключает только таймаут простоя.
 - `terminateGraceMs` — пауза после `cancel`/retire перед `worker.terminate()`; по умолчанию `500`.
@@ -94,11 +94,11 @@ interface RenderPool<Args extends readonly unknown[] = readonly unknown[]> {
 - `workers` — настроенное число воркеров.
 - `name` — имя пула.
 - `state` — текущее состояние `PoolState`.
-- **`render(args, options?)`** — ставит unary-задачу в очередь и возвращает `Promise<RenderResult>` (`{ html, head }`). `args` — tuple аргументов entry. Аргументы проверяются structured clone до запуска; инфраструктурные сбои отклоняют промис `PoolError`, ошибки entry — обычный `Error` с сохранёнными `name`/`message`/`stack`/`code`/`cause`.
+- **`render(args, options?)`** — ставит unary-задачу в очередь и возвращает `Promise<RenderResult>` (`{ html, head }`). `args` — tuple аргументов entry. До запуска проверяются structured clone и бюджет аргументов: не более 8 × 1024 × 1024 условных единиц (длина строк/ключей, байты `ArrayBuffer`/TypedArray, 8 на число, 4 на `null`, 16 на `Date`/`RegExp`) и глубина не больше 64. Превышение отклоняется `PoolError` с `code: "args-not-cloneable"`. Инфраструктурные сбои отклоняют промис `PoolError`, ошибки entry — обычный `Error` с сохранёнными `name`/`message`/`stack`/`code`/`cause`.
 - **`renderStream(args, options?)`** — возвращает `StreamHandle` сразу. Ошибки (включая `queue-full` и уже отменённый `signal`) приходят через `head`/`finalHead`/`done` и поток, а не синхронным исключением.
-- **`ready()`** — поднимает всех воркеров и ждёт загрузки entry. При `state: "failed"` или `"closed"` отклоняется соответствующей ошибкой.
+- **`ready()`** — поднимает всех воркеров и ждёт загрузки entry. При `state: "failed"` или `"closed"` отклоняется соответствующей ошибкой. Если ни один воркер не завершил boot, отклоняется причина падения (или `worker-start-failed`).
 - **`stats()`** — снимает текущую статистику.
-- **`close(options?)`** — идемпотентно закрывает пул: задачи из очереди отклоняются с `pool-closed`, активные стримы отменяются (`AbortError`, `code: "pool-closed"`), unary-задачи доигрываются. По истечении `options.timeoutMs` (по умолчанию `timeoutMs` пула) воркеры завершаются принудительно. `force: true` завершает воркеры сразу.
+- **`close(options?)`** — идемпотентно закрывает пул: задачи из очереди отклоняются с `pool-closed`, активные стримы отменяются (`AbortError`, `code: "pool-closed"`), unary-задачи доигрываются. По истечении `options.timeoutMs` (по умолчанию `timeoutMs` пула) воркеры завершаются принудительно; `timeoutMs: 0` означает «не ждать» и завершает их сразу. `force: true` также завершает воркеры сразу и отклоняет активные unary-задачи.
 - **`[Symbol.asyncDispose]()`** — вызывает `close()`; позволяет использовать `await using`.
 
 ### `PoolRenderOptions`
@@ -191,10 +191,10 @@ type PoolState = "idle" | "booting" | "ready" | "closing" | "closed" | "failed";
 
 - `idle` — пул создан, воркеров ещё нет.
 - `booting` — воркеры запускаются.
-- `ready` — хотя бы один воркер загрузил entry (при `ready()` — все запрошенные).
+- `ready` — хотя бы один воркер загрузил entry. `ready()` ждёт завершения boot всех запущенных воркеров, но допускает частичный успех: если хотя бы один воркер готов, промис разрешается, а упавшие boot-воркеры рестартуют.
 - `closing` — идёт `close()`.
 - `closed` — пул закрыт; новые задачи получают `pool-closed`.
-- `failed` — несовместимый протокол, ошибка загрузки entry, невозможность старта или слишком частые падения; новые задачи получают сохранённую ошибку.
+- `failed` — несовместимый протокол, ошибка загрузки entry, boot-падение, после которого не осталось готовых воркеров (сразу `entry-load-failed`, без рестарта), невозможность старта или слишком частые падения; новые задачи получают сохранённую ошибку. Если пул уже обслуживает запросы, упавший на boot дополнительный воркер рестартует по общим правилам.
 
 ### `PoolStats`
 
@@ -401,8 +401,8 @@ type PoolErrorCode =
 | --- | --- | --- |
 | `pool-closed` | `PoolError` / `AbortError` | Вызов после `close()`; задачи из очереди при закрытии; активный стрим при `close()`. |
 | `queue-full` | `PoolError` | Очередь достигла `maxQueue`. |
-| `args-not-cloneable` | `PoolError` | Аргументы не проходят structured clone. |
-| `entry-load-failed` | `PoolError` (или исходный `name`) | Entry не загрузился; некорректный URL или `http(s)` URL; bare specifier. |
+| `args-not-cloneable` | `PoolError` | Аргументы не проходят structured clone (`DataCloneError`) или превышают бюджет 8 × 1024 × 1024 единиц / глубину 64. |
+| `entry-load-failed` | `PoolError` (или исходный `name`) | Entry не загрузился; не осталось готовых воркеров после boot-падения; некорректный URL, `data:`/`http(s)` URL или bare specifier. |
 | `worker-start-failed` | `PoolError` | Не удалось создать воркер; пул остановлен после более чем 5 падений за 30 с. |
 | `protocol-mismatch` | `PoolError` (или исходный `name`) | Несовместимый протокол; некорректный результат `render`. |
 | `render-unsupported` | `PoolError` | Entry не экспортирует `render`. |

@@ -13,7 +13,8 @@
 - `@ivlev-dev/silent-router` — опциональный router: `IRouter`, route-классы `Route`, `Link`, `RouterView`, browser/memory history, guards/loaders, DI-доставка и SSR.
 - `@ivlev-dev/silent-validation` — опциональная валидация: stage-3 accessor-декораторы, правила, i18n и рантайм-проверка схем.
 - `@ivlev-dev/silent-validation-vite` — Vite-плагин `validation()`: генерирует схемы из TS-типов для потомков `ValidationModel`.
-- `@ivlev-dev/silent` — метапакет: ставит `core`, `di`, `reactivity`, `router`, `swc` и `vite` одной зависимостью (`server`, `validation` и `validation-vite` — отдельно).
+- `@ivlev-dev/silent-form` — опциональные реактивные формы: `Form` поверх `ValidationModel`, `@Field`/`@FormField`, вложенные формы, `FormArray`, wizard, dirty-guard и `uploadField`. Зависит от `core`, `reactivity` и `validation`; в метапакет не входит.
+- `@ivlev-dev/silent` — метапакет: ставит `core`, `di`, `reactivity`, `router`, `swc` и `vite` одной зависимостью (`server`, `form`, `validation` и `validation-vite` — отдельно).
 
 Все пакеты публикуются как ESM; относительные импорты в собранном коде содержат явное расширение `.js`, чтобы пакеты грузились в чистом Node без бандлера.
 
@@ -377,6 +378,8 @@ packages/server/src/dom/
 Контракт провайдера вынесен во внутренний сабпуть `@ivlev-dev/silent-core/runtime-context-provider` (помечен `@internal`, из основного entry не экспортируется). Серверный пакет лениво инициализирует `node:async_hooks`; если ALS недоступен, один раз выводит предупреждение и переходит на прежний последовательный fallback через модульные переменные. Dispose и очистка ресурсов выполняются внутри store; store закрывается последним (`active = false`, поля обнуляются), поэтому поздние колбэки после таймаута или отмены не видят store-scoped состояния (опции, id, коллекторы metadata/stream, pending). Оговорка: `isServerMode()` опирается на процессный флаг активного сериализованного рендера, поэтому поздний колбэк может получить `true`, пока идёт другой рендер.
 
 Границы изоляции: ALS разделяет опции, id, `head`, stream и pending, но не DOM-шимы (`document`, `Node`, `Element`, ...) и не планировщик реактивности (`flushSync`). Поэтому `enqueueRenderTask` по-прежнему выполняет один рендер за раз, а параллелизм достигается worker/process pool. Вложенный `renderToString`/`renderToStream` внутри активного рендера даёт `RenderReentrancyError` (класс не экспортируется, проверка по `name`).
+
+Практическая модель остаётся прежней: **один рендер на экземпляр модуля/процесс**, ALS даёт изоляцию контекста, но не параллельность; очередь отпускается по завершении, таймауту или отмене (`reader.cancel()`/`options.signal`). Для параллельного SSR в одном процессе используйте `@ivlev-dev/silent-server/pool`, для масштабирования — несколько процессов/реплик. Request-scoped данные живут в request scope контейнера (`renderToString` создаёт его сам); глобальный `container` — process-wide.
 
 #### Worker pool
 

@@ -93,6 +93,7 @@ interface RouterOptions {
 - `RouterState` — `route`, `params`, `query`, `hash`, `matched`, `pending`, `error`.
 - `route`, `params`, `query`, `hash`, `meta`, `matched`, `state()` — реактивные accessor'ы.
 - `push`, `replace`, `back`, `forward` — навигация; `resolve`/`href` — построение URL; `start`/`stop`/`dispose` — жизненный цикл. Повторный `push`/`replace` на текущий `fullPath` (с учётом query и hash) не создаёт запись в истории и не перезапускает guards/loaders.
+- Строковые цели и `base` канонизируются (обратные слэши, пустые сегменты, `.`/`..`, `%2e%2e`); параметры `""`, `"."`, `".."` отклоняются с `code: "resolve"`, lone surrogate заменяется на `U+FFFD`. Подробности — в разделе «Канонизация пути и параметров».
 - Объектная цель `resolve({ name, params, query, hash })` без `query`/`hash` наследует их у текущего маршрута; явные поля объекта имеют приоритет. Query и hash внутри `path` (`{ path: "/search?q=a#top" }`) разбираются так же, как в строковой цели, но уступают явным `query`/`hash`.
 - `Router.current()` возвращает последний запущенный роутер (`start()`); `stop()` и `dispose()` снимают его из реестра. Это клиентский fallback для компонентов без DI и `router` prop; в серверном рендере `Link`/`RouterView` его не используют и требуют `router` prop или контейнер с биндингом.
 - При отменённой popstate-навигации (guard вернул `false`) URL восстанавливается через `history.replace` на текущий маршрут, чтобы адресная строка не расходилась с `RouterView`.
@@ -249,6 +250,27 @@ interface RouteViewProps<Path extends string = string, Query = RouteQuery> {
 - специфичность: чистый статический сегмент важнее mixed, mixed важнее чистого параметра, параметр важнее wildcard; при равной специфичности учитывается длина литералов и порядок объявления;
 - вложенная цепочка важнее одиночного маршрута.
 
+### Канонизация пути и параметров
+
+Перед матчингом путь приводится к канонической форме (та же логика, что у браузера при записи URL):
+
+- обратные слэши считаются разделителями: `/users\..\about` → `/about`;
+- пустые сегменты схлопываются: `/users//5` → `/users/5`;
+- `.` и `..` разрешаются, включая percent-encoded варианты `%2e`, `%2E`, `%2e%2e`;
+- завершающий слэш снимается, `base` тоже канонизируется (`/app/` → `/app`).
+
+Канонический путь используют и матчинг, и `fullPath`, и `history.push`, поэтому состояние роутера не расходится с адресной строкой.
+
+Параметры маршрута:
+
+- отсутствующий, `""`, `"."` и `".."` параметр запрещены: `resolve`/`href`/`push` бросают `RouterNavigationError` с `code: "resolve"`. Percent-encoding не помогает: браузер всё равно трактует `%2e` как dot-segment;
+- параметры кодируются через `encodeURIComponent(value.toWellFormed())`. Lone surrogate не бросает ошибку: он заменяется на `U+FFFD` (`/users/%EF%BF%BD`), и это же значение приходит в `params`;
+- wildcard-часть разбивается по `/`; пустые сегменты отбрасываются, `.`/`..` внутри wildcard тоже отклоняются с `code: "resolve"`.
+
+Hash-only переход (`"#new"` или `{ hash: "#new" }`) сохраняет **сырой** query текущего маршрута из `fullPath`, а не пересобирает его из типизированного `query`. Поэтому параметры, отброшенные схемой (например, `?page=abc` при `page: "number"`), не теряются при смене только hash.
+
+Ошибки записи в историю (`pushState`/`replaceState` бросают `SecurityError`, `DataCloneError` и т.п.) классифицируются как `RouterNavigationError` с `code: "history"`: маршрут не меняется, `state.error` заполняется, вызывается `onError`.
+
 Object-routes (`RouteRecord`) остаются как совместимый устаревший формат:
 
 ```ts
@@ -323,7 +345,9 @@ function createGuard<Path extends string = string, Query = RouteQuery>(
 
 Схемы обрабатываются по allow-list: `http`, `https`, `mailto`, `tel`, а также протокол-относительные `//` и hash-ссылки `#`. Любая другая схема (`javascript:`, `data:`, `vbscript:` и неизвестные) считается небезопасной: атрибут `href` не выставляется, клик не перехватывается и не навигирует, active-классы и `aria-current` не применяются.
 
-Если для внутренней цели не нашлось маршрута, `Link` не выбрасывает исключение (это важно для SSR): `href` берётся из сырой строки `to`, а для объектной цели не выставляется; `aria-current` и active-классы не применяются. Клик по строковой цели при этом передаётся в `router.push`/`replace`, а ошибка `no-match` не всплывает из рендера. Публичный `router.resolve` по-прежнему сообщает об отсутствии маршрута через `RouterNavigationError`.
+Обратные слэши нормализуются в `/`, как это делает браузер, но если из-за нормализации абсолютный путь становится protocol-relative (`/\evil.com` → `//evil.com`), цель считается небезопасной и остаётся без `href`. Для внутренней цели клик передаёт в `router.push` уже нормализованную строку (обратные слэши заменены на `/`), а `.`/`..` канонизирует роутер.
+
+Если для внутренней цели не нашлось маршрута, `Link` не выбрасывает исключение (это важно для SSR): `href` берётся из сырой строки `to` **с добавленным `base`** (`/nope` при `base: "/app"` → `/app/nope`), а для объектной цели не выставляется; `aria-current` и active-классы не применяются. Клик по строковой цели при этом передаётся в `router.push`/`replace`, а ошибка `no-match` не всплывает из рендера. Публичный `router.resolve` по-прежнему сообщает об отсутствии маршрута через `RouterNavigationError`.
 
 ## `RouterView`
 
@@ -404,7 +428,21 @@ const router = new Router({
 
 Позиция сохраняется при уходе с маршрута и передаётся в `savedPosition` при возврате. Без `scrollBehavior` сохранённая позиция восстанавливается автоматически, а при непустом `hash` после обновления DOM прокручивается элемент с соответствующим `id` (или `name`). Возврат `false` или `null` отменяет прокрутку. Если `scrollBehavior` задан, он полностью управляет прокруткой, включая hash. Устаревший результат `scrollBehavior` от предыдущей навигации игнорируется; исключение из `scrollBehavior` не делает навигацию ошибочной — оно приходит в `onError` с кодом `"scroll"`, `state.error` остаётся `null`.
 
-`RouterNavigationError` содержит `code` (`abort`, `guard`, `load`, `no-match`, `redirect`, `resolve`, `scroll`) и `to`; `RouterAbortError` — прерванная навигация; `RouterMissingError` — отсутствие роутера у `Link`/`RouterView`.
+`RouterNavigationError` содержит `code` (`abort`, `guard`, `history`, `load`, `no-match`, `redirect`, `resolve`, `scroll`) и `to`; `RouterAbortError` — прерванная навигация; `RouterMissingError` — отсутствие роутера у `Link`/`RouterView`.
+
+```ts
+type RouterErrorCode =
+  | "abort"
+  | "guard"
+  | "history"
+  | "load"
+  | "no-match"
+  | "redirect"
+  | "resolve"
+  | "scroll";
+```
+
+`history` означает сбой `history.push`/`replace`, `resolve` — некорректную цель или параметр (включая `"."`/`".."` и пустую строку), `guard` — отказ guard, `no-match` — отсутствие маршрута.
 
 ## `createTestRouter`
 

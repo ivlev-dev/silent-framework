@@ -96,12 +96,14 @@ void mount(document.querySelector("#app")!, App, { container });
 
 ## Link
 
-`LinkProps`: `to`, `replace`, `activeClass`, `exactActiveClass`, `class`, `children`, `router`, `prefetch`.
+`LinkProps`: `to`, `replace`, `activeClass`, `exactActiveClass`, `class`, `children`, `router`, `prefetch`, `exactQuery`.
 
 - рендерит настоящий `<a href>` и перехватывает только левый клик без модификаторов;
 - `activeClass` — префиксное совпадение, `exactActiveClass` — точное;
 - на точный активный маршрут ставит `aria-current="page"`;
 - внешние URL (`http(s)://`, `mailto:`, `tel:`, `//`) и hash-ссылки не перехватываются;
+- обратные слэши нормализуются в `/`; цель, которая после нормализации становится protocol-relative (`/\evil.com`), считается небезопасной и получает `href` без значения;
+- если маршрут для внутренней строки не найден, `href` всё равно строится с `base` (`/app/nope`), но active-классы и `aria-current` не применяются; для объектной цели `href` не выставляется;
 - `prefetch: true | "hover"` заранее загружает lazy-маршрут на `pointerenter`, `pointerdown` и `focus`, `prefetch: "visible"` — при появлении во viewport.
 
 ```tsx
@@ -126,7 +128,16 @@ router.resolve("/users/7"); // RouteLocation без навигации
 router.href("/users/7");    // строка с учётом base
 ```
 
-`RouterState` содержит `route`, `params`, `query`, `hash`, `matched`, `pending`, `error`. Пока идёт навигация, `pending === true`; ошибка сохраняется в `error`, а промис `push`/`replace` отклоняется `RouterNavigationError` с `code`: `abort`, `guard`, `load`, `no-match`, `redirect`, `resolve`.
+`RouterState` содержит `route`, `params`, `query`, `hash`, `matched`, `pending`, `error`. Пока идёт навигация, `pending === true`; ошибка сохраняется в `error`, а промис `push`/`replace` отклоняется `RouterNavigationError` с `code`: `abort`, `guard`, `history`, `load`, `no-match`, `redirect`, `resolve`.
+
+### Канонизация и параметры
+
+Строковые цели и `base` приводятся к той же форме, что использует браузер: обратные слэши (`/users\..\about`) считаются разделителями, пустые сегменты схлопываются, `.` и `..` (включая `%2e`/`%2e%2e`) разрешаются, завершающий слэш снимается. Поэтому `router.resolve("/users/../about").path === "/about"`, а `history` получает уже канонический URL.
+
+- Отсутствующий, `""`, `"."` и `".."` параметр запрещён: `resolve`/`href`/`push` бросают `RouterNavigationError` с `code: "resolve"`. Это защищает от расхождения состояния роутера и адресной строки.
+- Lone surrogate в параметре не бросает ошибку: `toWellFormed()` заменяет его на `U+FFFD`, и в `params` приходит уже заменённое значение.
+- Переход только по hash (`router.push("#section")` или `{ hash: "#section" }`) сохраняет сырой query текущего `fullPath`, даже если схема отбросила невалидные для неё параметры.
+- Если `history.push`/`replace` бросает (`SecurityError`, `DataCloneError`, cross-origin URL), навигация отклоняется `RouterNavigationError` с `code: "history"`; текущий маршрут не меняется, `state.error` заполняется, `onError` вызывается.
 
 ## Guards, redirect и loaders
 
@@ -404,7 +415,7 @@ export class LoginVM {
 <button onClick={() => void router.navigate("/cabinet")}>В кабинет</button>
 ```
 
-`push()`/`replace()` бросают `RouterNavigationError` при guard/load/no-match, поэтому в `onClick` без обработки промиса возникает unhandled rejection. В обработчиках используйте `navigate()`, а `push()` — в async-функциях с `try/catch`.
+`push()`/`replace()` бросают `RouterNavigationError` при guard/load/no-match/resolve/history, поэтому в `onClick` без обработки промиса возникает unhandled rejection. В обработчиках используйте `navigate()`, а `push()` — в async-функциях с `try/catch`.
 
 ### 6. Тестовый рецепт с `createTestRouter`
 

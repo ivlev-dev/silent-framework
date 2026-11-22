@@ -58,6 +58,10 @@ export default defineConfig({
 });
 ```
 
+### Платформы нативного addon
+
+Компилятор поставляется нативным addon'ом `@ivlev-dev/silent-swc`. В npm-пакете есть готовые бинарники только для **`linux-x64-gnu`** и **`win32-x64-msvc`**. На macOS (`x64`/`arm64`), `linux-arm64`, `win32-arm64`, musl и других платформах addon нужно собрать локально из исходников: понадобится Rust (stable) и инструкция [`docs/api/swc.md`](./docs/api/swc.md#сборка) (в репозитории — `pnpm --filter @ivlev-dev/silent-swc build`). Без собранного бинарника `@ivlev-dev/silent-vite` завершится ошибкой с подсказкой о сборке.
+
 При установке метапакета плагин доступен и оттуда: `import { silent } from "@ivlev-dev/silent"`. Оттуда же реэкспортируется роутер: `import { Router, RouterView, Link } from "@ivlev-dev/silent"`.
 
 В библиотечных пакетах внутренние `@ivlev-dev/silent-*` объявлены как peer-зависимости с диапазоном `>=0.12.0 <0.13.0` (метапакет ставит их как обычные зависимости): патч-версии совместимы, а `0.13.0` требует согласованного обновления. npm 7+ и pnpm ставят такие peer-зависимости автоматически.
@@ -407,6 +411,7 @@ pnpm published:check
 pnpm consumer:check
 pnpm test:e2e
 pnpm test:ssr
+pnpm test:ssr-pool
 pnpm install:check
 pnpm deprecate:legacy --dry-run
 ```

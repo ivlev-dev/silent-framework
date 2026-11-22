@@ -997,6 +997,19 @@ const page = `<!doctype html><html><head>${head}</head><body><div id="app">${htm
 - серверный мини-DOM не реализует события и `replaceChildren` — интерактивные эффекты выполняются, но ничего не делают;
 - произвольный HTML в `template()` не поддерживается: парсер рассчитан на подмножество, которое генерирует компилятор.
 
+### Безопасность разметки
+
+Сериализатор защищает от выхода из тега и атрибута, но **не является HTML-санитайзером**. Доверяйте разметке и данным ровно настолько, насколько доверяли бы ручной строковой сборке HTML.
+
+- **Имена атрибутов** проверяются консервативным allow-list: `^[A-Za-z_:][-A-Za-z0-9_:.]*$`. Разрешены обычные имена, `data-*`, `aria-*`, `xlink:href`, `xml:lang`; пробелы, кавычки, `>`, `/` и похожие символы отбрасываются. Проверка применяется в `attr`/`applyAttr`, `spread`, `applyProps`, `Head`, `ElementImpl.setAttribute`, `AttributesImpl.set` и в самом сериализаторе. Невалидное имя не попадает в HTML ни на сервере, ни в SSR-сериализации.
+- **События не сериализуются.** Имена вида `onXxx`, `onXxxCapture` и `on:*` считаются событиями (`isEventAttributeName`) и не выводятся как атрибуты на SSR; клиентские обработчики навешиваются через `on`, а не через строку HTML. `attr(el, "onclick", ...)` и `spread` с таким ключом на SSR атрибут не создают.
+- **Значения экранируются.** Текст: `&`, `<`, `>`; значения атрибутов: `&`, `<`, `>`, `"`. Строковые `innerHTML`-вставки этим не защищены — см. ниже.
+- **Raw-text `<style>`/`<script>` нейтрализуются.** При сериализации закрывающий тег превращается в `<\/style>`/`<\/script>`, а `<!--` — в `<\!--`. Это не даёт содержимому закрыть элемент и открыть новый тег; это касается и `textContent`, и `Head({ style: [...] })`. Само содержимое (CSS/JS) не санитизируется и остаётся исполняемым — не подставляйте туда недоверенные данные.
+- **`dangerouslySetInnerHTML` остаётся явным raw-API.** В JSX/props (`applyProps`) строка пишется как HTML без экранирования и на сервере (в контентную дыру), и на клиенте (`el.innerHTML`). `spread` на SSR фильтрует `innerHTML`/`dangerouslySetInnerHTML`, но это не делает сам API безопасным: ответственность за санитизацию лежит на приложении. Если HTML приходит от пользователя или из внешнего источника, очищайте его до передачи.
+- **Динамические URL-атрибуты проверяются по allow-list.** Для `href`, `src`, `action`, `formaction`, `poster`, `cite`, `data`, `background`, `icon`, `manifest`, `xlink:href` разрешены относительные и protocol-relative (`//`) пути, `#hash`, `http:`, `https:`, `mailto:` и `tel:`. Схемы `javascript:`, `data:`, `vbscript:`, `file:` и неизвестные отклоняются: атрибут не выставляется (или удаляется при обновлении). Проверка нормализует управляющие/невидимые символы и HTML-сущности (`&#106;`, `&colon;`), чтобы обойти её кодированием было нельзя. Список ограничен перечисленными именами: `srcset`, `srcdoc`, `content` и подобные не анализируются — для них нужна собственная проверка. `Link` из `@ivlev-dev/silent-router` дополнительно классифицирует внешние/небезопасные цели.
+- **`style` как атрибут санитизируется.** Имена CSS-свойств ограничены обычными/вендорными/`--custom`, значения отбрасывают top-level `;`, `{}`, `@` и `expression(`; объектная форма проходит те же проверки через `normalizeStyle`. URL внутри `url(...)` этой проверкой не анализируется. Это защита от инъекции объявлений, а не гарантия безопасного CSS. Содержимое raw-text `<style>` (CSS-текст) так не разбирается — ему доверяйте как коду.
+- **CSP «из коробки» нет.** Фреймворк не добавляет и не настраивает Content-Security-Policy, nonce или hash. `nonce` в `renderToStream` относится только к inline-runtime стриминга; политику и её заголовки настраивает приложение.
+
 ### `renderToStream`
 
 *Стабильность: public.*
@@ -1069,8 +1082,14 @@ interface StreamOptions extends RenderOptions {
 - `onShell` — синхронный shell до асинхронных патчей.
 - `onChunk` — каждый фактически записанный чанк.
 - `nonce` — nonce для inline-runtime и скриптов патчей.
-- `signal` — отмена доставки; рендер завершается и освобождает ресурсы, новые чанки не пишутся.
+- `signal` — внешняя отмена: рендер и доставка прекращаются, поток завершается ошибкой `AbortError`, сессия и DOM-глобалы освобождаются, очередь SSR отпускается. Уже aborted-сигнал не создаёт сессию.
 - Остальные поля совпадают с `RenderOptions`.
+
+Отмена читателем отличается от `options.signal`:
+
+- `reader.cancel(reason)` (и выход из `for await` через `break`/`return`) вызывает внутренний abort: рендер останавливается на ближайшей проверке, `settleRender` получает aborted-сигнал, сессия освобождается, а очередь SSR отпускается. Поток при этом не получает error-chunk — отмена читателем считается штатной и не отклоняет уже закрытый поток.
+- `options.signal` — внешняя отмена: делает то же самое, но дополнительно переводит поток в состояние ошибки `AbortError` (если он ещё не отменён читателем).
+- Оба пути не ждут завершения зависших ресурсов: ожидание `settleRender` прерывается, а при освобождении сессии ресурсы получают `abort` в `ResourceFetchContext.signal`. `cancel()` после завершения рендера или повторный `cancel()` — no-op.
 
 Ограничения стриминга:
 
@@ -1079,7 +1098,7 @@ interface StreamOptions extends RenderOptions {
 - inline-runtime требует разрешённых inline-скриптов или `nonce`; без JS остаётся shell с fallback;
 - ошибка после отправки shell закрывает поток ошибкой (соединение обрывается, fallback остаётся видимым);
 - backpressure не учитывается: чанки буферизуются, пока читатель их не заберёт;
-- поток удерживает внутреннюю очередь SSR до завершения рендера.
+- поток удерживает внутреннюю очередь SSR до завершения рендера или отмены (`reader.cancel()`/`options.signal`); зависший без отмены стрим блокирует другие рендеры процесса.
 
 ### `RenderEntry`
 
@@ -1581,9 +1600,34 @@ function createResourceCache(): ResourceCache;
 function clearResourceCache(cache?: ResourceCache): void;
 const sharedResourceCache: ResourceCache;
 type ResourceStatus = "idle" | "pending" | "success" | "error";
+
+interface ResourceOptions<T, K = unknown> {
+  readonly key?: K | (() => K);
+  readonly initialValue?: T;
+  readonly cache?: ResourceCache | false;
+  readonly cacheTime?: number;
+  readonly dedupe?: boolean;
+  readonly immediate?: boolean;
+  readonly throwOnError?: boolean;
+  readonly onError?: (error: unknown) => void;
+  readonly boundary?: { register(promise: Promise<void>): void } | null;
+  readonly signal?: AbortSignal;
+  readonly disposeOnCleanup?: boolean;
+}
 ```
 
-`Resource` даёт accessors `data`, `error`, `pending`, `status`, `key`, промис `ready`, методы `read`, `refetch`, `set`, `mutate`, `abort`, `dispose`. `ResourceFetchContext` содержит `signal` и `key`. `ResourceFetcher` возвращает значение или Promise. `ResourceOptions` включает key/cache/cacheTime/dedupe/immediate/throwOnError/onError/boundary/signal/disposeOnCleanup. Активный промис ресурса регистрируется в текущей границе `Suspense` (или в явном `options.boundary`) и учитывается `whenIdle`; при этом чтение ресурса не бросает промис и не приостанавливает рендер.
+`Resource` даёт accessors `data`, `error`, `pending`, `status`, `key`, промис `ready`, методы `read`, `refetch`, `set`, `mutate`, `abort`, `dispose`. `ResourceFetchContext` содержит `signal` и `key`. `ResourceFetcher` возвращает значение или Promise. Активный промис ресурса регистрируется в текущей границе `Suspense` (или в явном `options.boundary`) и учитывается `whenIdle`; при этом чтение ресурса не бросает промис и не приостанавливает рендер.
+
+Кэш и дедупликация по `key`:
+
+- **Клиент по умолчанию** использует общий модульный `sharedResourceCache` с `cacheTime: Infinity` и `dedupe: true`: одинаковые ключи разделяют данные и in-flight запрос. Для сброса вызовите `clearResourceCache()` (или `clearResourceCache(cache)` для своего экземпляра).
+- **Сервер внутри активного SSR-рендера** без явного `cache` получает отдельный `ResourceCache` на этот рендер. Одинаковые ключи дедуплицируются внутри запроса, но данные не переходят между запросами. Привязка хранится в `WeakMap` по store рендера и исчезает вместе с ним.
+- **Явный `cache: ResourceCache`** используется и на сервере. Это единственный способ осознанно разделить данные между SSR-запросами; ключ должен включать tenant/пользователя/локаль, иначе данные одного запроса увидит другой. `createResourceCache()` создаёт отдельный экземпляр.
+- **Вне активного SSR-контекста** (например, ресурс, созданный на верхнем уровне серверного модуля) серверный store отсутствует, и используется общий `sharedResourceCache` — как на клиенте.
+- **`cacheTime`** — TTL записи в миллисекундах, по умолчанию `Infinity`. Просроченная запись удаляется и запрашивается заново. `cacheTime: 0` (как и `cache: false`) отключает кэш и in-flight дедупликацию между ресурсами; повторный `refetch()` того же ресурса всё ещё может вернуть его активный промис.
+- **`dedupe`** по умолчанию `true`: параллельные запросы с одним ключом разделяют промис. `dedupe: false` отключает объединение in-flight запросов (включая повторный `refetch`); готовые значения всё ещё кэшируются, если кэш включён.
+- **`key`** может быть значением или функцией. Функция перезапускает `refetch` при изменении результата; статический `undefined` считается отсутствием ключа, и результат не кэшируется.
+- `refetch()` возвращает активный промис для того же ключа, если `dedupe` включён; `abort()`/`dispose()` отменяют текущий запрос через `AbortSignal` в `ResourceFetchContext`.
 
 ### Head
 
@@ -1638,7 +1682,7 @@ function normalizeStyle(...values: readonly StyleInput[]): string;
 const styleValue = normalizeStyle;
 ```
 
-Типы: `ClassDictionary`, `ClassNameValue`, `StylePrimitive`, `StyleObject`, `StyleInput`; функции: `classNames`, `normalizeClass`, `styleDeclarations`, `normalizeStyle`, `styleValue`. `class`/`className` принимают строку, массив, объект условий и вложенные функции. `normalizeStyle` объединяет объекты/строки, добавляет `px` для размерных числовых свойств, сохраняет CSS custom properties и unitless-свойства.
+Типы: `ClassDictionary`, `ClassNameValue`, `StylePrimitive`, `StyleObject`, `StyleInput`; функции: `classNames`, `normalizeClass`, `styleDeclarations`, `normalizeStyle`, `styleValue`. `class`/`className` принимают строку, массив, объект условий и вложенные функции. `normalizeStyle` объединяет объекты/строки, добавляет `px` для размерных числовых свойств, сохраняет CSS custom properties и unitless-свойства. Небезопасные имена CSS-свойств и значения (top-level `;`, `{}`, `@`, `expression(`) отбрасываются.
 
 ### Обновление props
 
@@ -1831,7 +1875,7 @@ type StylePrimitive = string | number | boolean | null | undefined;
 function spread(el: Element, accessor: () => unknown): void;
 ```
 
-Реактивный спред объекта props на элемент: классы, стили, атрибуты, `ref` (функция ref освобождается вызовом с `null` при смене ключа и cleanup-ветвлениях), события (`on:`-имена, `onXxx`, `onXxxCapture`), свойства, булевы атрибуты. Ключи `children` и `key` игнорируются. Атрибуты, пропавшие из нового объекта, удаляются; `null`/`undefined` снимает ранее установленные значения. На SSR события и `innerHTML` фильтруются, динамические `class`/`style` заменяют статические, а не дублируют их.
+Реактивный спред объекта props на элемент: классы, стили, атрибуты, `ref` (функция ref освобождается вызовом с `null` при смене ключа и cleanup-ветвлениях), события (`on:`-имена, `onXxx`, `onXxxCapture`), свойства, булевы атрибуты. Ключи `children` и `key` игнорируются. Атрибуты, пропавшие из нового объекта, удаляются; `null`/`undefined` снимает ранее установленные значения. На SSR события и `innerHTML` фильтруются, невалидные имена и небезопасные URL-значения отбрасываются, `style` санитизируется, динамические `class`/`style` заменяют статические, а не дублируют их.
 
 ### `on`
 

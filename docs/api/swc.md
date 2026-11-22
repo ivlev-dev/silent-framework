@@ -179,6 +179,8 @@ napi build --release --platform --manifest-path ../../crates/silent-node/Cargo.t
 
 Release-workflow собирает пребилды только для `linux-x64-gnu` (`x86_64-unknown-linux-gnu`) и `win32-x64-msvc` (`x86_64-pc-windows-msvc`). Для остальных платформ (`linux-arm64`, `darwin-x64`, `darwin-arm64`, `win32-arm64` и др.) бинарник нужно собрать локально командой `pnpm --filter @ivlev-dev/silent-swc build`.
 
+На Linux libc определяется по отчёту процесса: для musl ожидается тройка `linux-<arch>-musl`, и gnu-бинарник **не** подхватывается автоматически. Осознанный fallback на gnu включается только переменной `SILENT_SWC_ALLOW_GNU_FALLBACK=1`.
+
 ## Ошибки
 
 - Синтаксическая ошибка или ошибка преобразования: `transform` бросает исключение (napi-ошибка с текстом причины), JSON-результат не возвращается.
@@ -198,6 +200,7 @@ Release-workflow собирает пребилды только для `linux-x6
 ## Ограничения
 
 - Нет чисто JavaScript-реализации: требуется собранный нативный бинарник для текущей платформы.
+- Addon нельзя загрузить в браузере или edge-runtime без Node-API — компиляция выполняется в Node.
 - API полностью синхронное.
 - Ввод и вывод передаются строками; большие файлы полностью держатся в памяти.
 - `optionsJson` и `indexJson` должны быть валидным JSON или пустыми строками.
