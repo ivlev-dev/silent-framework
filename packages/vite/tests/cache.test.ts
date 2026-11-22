@@ -68,6 +68,21 @@ describe("transform cache", () => {
     expect(readdirSync(directory).filter((name) => name.endsWith(".json")).length).toBe(2);
   });
 
+  it("подчищает кеш при записи с малым лимитом", () => {
+    const directory = tempDirectory();
+    for (let index = 0; index < 4; index += 1) {
+      writeTransformCache(
+        directory,
+        transformCacheKey([`write-${index}`]),
+        result,
+        2,
+      );
+    }
+    expect(
+      readdirSync(directory).filter((name) => name.endsWith(".json")),
+    ).toHaveLength(2);
+  });
+
   it("хэш содержимого стабилен и различает входы", () => {
     expect(hashContent("value")).toBe(hashContent("value"));
     expect(hashContent("value")).not.toBe(hashContent("other"));

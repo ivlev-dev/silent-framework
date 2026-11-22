@@ -2,7 +2,7 @@ use super::transform::{rewrite_this, string_expr, SilentPass};
 use crate::template_plan::TemplatePlan;
 use std::collections::HashSet;
 use std::fmt::Write as _;
-use swc_core::common::{SyntaxContext, DUMMY_SP};
+use swc_core::common::{Span, SyntaxContext, DUMMY_SP};
 use swc_core::ecma::ast::{
     ArrayLit, ArrowExpr, ArrowFunctionBody, AssignExpr, AssignOp, AssignTarget, BinExpr, BinaryOp,
     BindingIdent, Bool, CallExpr, Callee, ComputedPropName, Expr, ExprOrSpread, Function,
@@ -13,6 +13,28 @@ use swc_core::ecma::ast::{
     Stmt, Str, UnaryOp, VarDecl, VarDeclKind, VarDeclarator,
 };
 use swc_core::ecma::visit::{Visit, VisitMutWith, VisitWith};
+
+#[derive(Default)]
+struct ControlFlowProbe {
+    awaits: bool,
+    yields: bool,
+}
+
+impl Visit for ControlFlowProbe {
+    fn visit_await_expr(&mut self, _: &swc_core::ecma::ast::AwaitExpr) {
+        self.awaits = true;
+    }
+
+    fn visit_yield_expr(&mut self, _: &swc_core::ecma::ast::YieldExpr) {
+        self.yields = true;
+    }
+
+    // `await`/`yield` во вложенной функции относится к её собственному контексту
+    // и не делает внешнее JSX-выражение асинхронным/генераторным.
+    fn visit_function(&mut self, _: &Function) {}
+
+    fn visit_arrow_expr(&mut self, _: &ArrowExpr) {}
+}
 
 #[derive(Default)]
 struct TemplateParts {
@@ -90,6 +112,89 @@ impl SilentPass {
         }
     }
 
+    /// Материализует выражение с `await` в `const` перед созданием шаблона.
+    /// Так accessor остаётся синхронным, а сгенерированный код — валидным JS.
+    fn materialize_expr(&mut self, expr: &mut Expr, prefix: &str, decls: &mut Vec<(Ident, Expr)>) {
+        let mut probe = ControlFlowProbe::default();
+        expr.visit_with(&mut probe);
+        if probe.yields {
+            let message = if self.in_generator_context() {
+                "yield внутри JSX не поддерживается: вынесите yield из выражения JSX"
+            } else {
+                "yield в JSX допустим только внутри generator-функции"
+            };
+            self.report_error(message);
+            return;
+        }
+        if !probe.awaits {
+            return;
+        }
+        if !self.in_async_context() {
+            self.report_error(
+                "await внутри JSX допустим только в async-функции или на верхнем уровне модуля",
+            );
+            return;
+        }
+        let name = self.fresh_ident(prefix);
+        let value = std::mem::replace(expr, Expr::Ident(name.clone()));
+        decls.push((name, value));
+    }
+
+    fn materialize_props(
+        &mut self,
+        properties: &mut [PropOrSpread],
+        decls: &mut Vec<(Ident, Expr)>,
+    ) {
+        for property in properties {
+            match property {
+                PropOrSpread::Spread(spread) => {
+                    self.materialize_expr(&mut spread.expr, "_p$", decls);
+                }
+                PropOrSpread::Prop(prop) => match &mut **prop {
+                    Prop::KeyValue(entry) => {
+                        self.materialize_expr(&mut entry.value, "_p$", decls);
+                    }
+                    Prop::Getter(getter) => {
+                        if let Some(body) = &mut getter.function.body {
+                            if let [Stmt::Return(stmt)] = body.stmts.as_mut_slice() {
+                                if let Some(value) = &mut stmt.arg {
+                                    self.materialize_expr(value, "_p$", decls);
+                                }
+                            }
+                        }
+                    }
+                    Prop::Assign(entry) => {
+                        self.materialize_expr(&mut entry.value, "_p$", decls);
+                    }
+                    Prop::Shorthand(_) | Prop::Setter(_) | Prop::Method(_) => {}
+                },
+            }
+        }
+    }
+
+    fn value_declarations(&self, decls: Vec<(Ident, Expr)>) -> Vec<Stmt> {
+        decls
+            .into_iter()
+            .map(|(name, value)| {
+                Stmt::Decl(swc_core::ecma::ast::Decl::Var(Box::new(VarDecl {
+                    span: DUMMY_SP,
+                    ctxt: SyntaxContext::empty(),
+                    kind: VarDeclKind::Const,
+                    declare: false,
+                    decls: vec![VarDeclarator {
+                        span: DUMMY_SP,
+                        name: Pat::Ident(BindingIdent {
+                            id: name,
+                            type_ann: None,
+                        }),
+                        definite: false,
+                        init: Some(Box::new(value)),
+                    }],
+                })))
+            })
+            .collect()
+    }
+
     fn build_element_html(&mut self, element: &JSXElement, parts: &mut TemplateParts) {
         let svg = self.svg_context;
         self.build_element_html_in(element, parts, svg);
@@ -108,10 +213,18 @@ impl SilentPass {
 
         // Корневой `<svg>` тоже находится в SVG-контексте для собственных атрибутов.
         let attrs_svg = svg || is_svg_name(&element.opening.name);
+        // Значение select нужно знать до атрибутов: при совпадении с option
+        // статический `value` не рендерится, а при промахе — сохраняется.
+        let select_value = if tag.eq_ignore_ascii_case("select") {
+            static_select_value(element)
+        } else {
+            None
+        };
+        let select_matched = select_value.is_some();
         for attr in &element.opening.attrs {
             match attr {
                 JSXAttrOrSpread::JSXAttr(attr) => {
-                    self.build_html_attr(attr, &tag, attrs_svg, parts)
+                    self.build_html_attr(attr, &tag, attrs_svg, select_matched, parts)
                 }
                 JSXAttrOrSpread::SpreadElement(spread) => {
                     let expr = self.compile_expr(&spread.expr);
@@ -121,11 +234,6 @@ impl SilentPass {
         }
 
         let void = is_void_tag(&tag);
-        let select_value = if tag.eq_ignore_ascii_case("select") {
-            static_select_value(element)
-        } else {
-            None
-        };
         if tag.eq_ignore_ascii_case("option")
             && parts.select_value.as_deref().is_some_and(|value| {
                 static_literal_attr(element, "value").as_deref() == Some(value)
@@ -213,7 +321,7 @@ impl SilentPass {
         parts: &mut TemplateParts,
     ) -> Option<RcdataChildren> {
         enum Piece {
-            Text(String),
+            Text { value: String, span: Span },
             Dynamic(Expr),
         }
 
@@ -229,7 +337,10 @@ impl SilentPass {
                         process_text(&raw)
                     };
                     if !value.is_empty() {
-                        pieces.push(Piece::Text(value));
+                        pieces.push(Piece::Text {
+                            value,
+                            span: text.span,
+                        });
                     }
                 }
                 JSXElementChild::JSXExprContainer(container) => {
@@ -240,11 +351,17 @@ impl SilentPass {
                         Expr::Lit(Lit::Str(value)) => {
                             let text = value.value.to_string_lossy().into_owned();
                             if !text.is_empty() {
-                                pieces.push(Piece::Text(text));
+                                pieces.push(Piece::Text {
+                                    value: text,
+                                    span: value.span,
+                                });
                             }
                         }
                         Expr::Lit(Lit::Num(value)) => {
-                            pieces.push(Piece::Text(format_number(value.value)));
+                            pieces.push(Piece::Text {
+                                value: format_number(value.value),
+                                span: value.span,
+                            });
                         }
                         Expr::Lit(Lit::Bool(_)) | Expr::Lit(Lit::Null(_)) => {}
                         Expr::JSXElement(_) | Expr::JSXFragment(_) => {
@@ -276,15 +393,45 @@ impl SilentPass {
             }
         }
 
-        let static_only = pieces.iter().all(|piece| matches!(piece, Piece::Text(_)));
+        let static_only = pieces
+            .iter()
+            .all(|piece| matches!(piece, Piece::Text { .. }));
 
         if static_only {
             let mut text = String::new();
+            let mut span = DUMMY_SP;
+            let mut offending_span: Option<Span> = None;
             for piece in pieces {
-                if let Piece::Text(value) = piece {
+                if let Piece::Text {
+                    value,
+                    span: piece_span,
+                } = piece
+                {
+                    if text.is_empty() {
+                        span = piece_span;
+                    }
+                    if raw_text && offending_span.is_none() && contains_closing_tag(tag, &value) {
+                        offending_span = Some(piece_span);
+                    }
                     text.push_str(&value);
                 }
             }
+            let text = if raw_text {
+                // `<script>`/`<style>` не декодируют сущности, поэтому текст
+                // попадает в разметку как есть. Закрывающий тег внутри него
+                // завершил бы элемент — нейтрализуем его так же, как runtime
+                // (`<\/script` остаётся валидной JS-строкой/регэкспом).
+                let escaped = escape_raw_text(tag, &text);
+                if escaped != text && !raw_text_escape_is_safe(tag, &text, &escaped) {
+                    self.report_error_at(
+                        offending_span.unwrap_or(span),
+                        raw_text_escape_error(tag),
+                    );
+                }
+                escaped
+            } else {
+                text
+            };
             parts.plan.add_text(&text);
             return Some(RcdataChildren {
                 attrs: String::new(),
@@ -299,7 +446,7 @@ impl SilentPass {
         let mut combined: Option<Expr> = None;
         for piece in pieces {
             let expr = match piece {
-                Piece::Text(value) => string_expr(&value),
+                Piece::Text { value, .. } => string_expr(&value),
                 Piece::Dynamic(expr) => expr,
             };
             combined = Some(match combined {
@@ -338,7 +485,14 @@ impl SilentPass {
         })
     }
 
-    fn build_html_attr(&mut self, attr: &JSXAttr, tag: &str, svg: bool, parts: &mut TemplateParts) {
+    fn build_html_attr(
+        &mut self,
+        attr: &JSXAttr,
+        tag: &str,
+        svg: bool,
+        select_matched: bool,
+        parts: &mut TemplateParts,
+    ) {
         let name = attr_name_string(&attr.name);
         if name == "key" {
             return;
@@ -357,7 +511,8 @@ impl SilentPass {
             }
             return;
         }
-        let static_value_only = name == "value" && tag.eq_ignore_ascii_case("select");
+        let static_value_only =
+            name == "value" && tag.eq_ignore_ascii_case("select") && select_matched;
         let Some(value) = &attr.value else {
             if !static_value_only {
                 write_static_attr(parts, static_name, StaticValue::Bool(true));
@@ -553,12 +708,23 @@ impl SilentPass {
         }
         let TemplateParts {
             html,
-            holes,
-            attrs,
+            mut holes,
+            mut attrs,
             plan,
             svg,
             select_value: _,
         } = parts;
+        let mut materialized: Vec<(Ident, Expr)> = Vec::new();
+        for attr in attrs.iter_mut() {
+            self.materialize_expr(&mut attr.expr, "_a$", &mut materialized);
+            if let Some(setter) = &mut attr.setter {
+                self.materialize_expr(setter, "_s$", &mut materialized);
+            }
+        }
+        for hole in holes.iter_mut() {
+            self.materialize_expr(hole, "_h$", &mut materialized);
+        }
+        let uses_await = !materialized.is_empty();
         let runtime = Expr::Ident(self.helper("templateHoles"));
         let mount_static = !self.ssr && plan.is_static();
         let planned = if self.hydrate { plan.finish() } else { None };
@@ -599,7 +765,8 @@ impl SilentPass {
             // Полностью статический шаблон не требует временной переменной и IIFE.
             return member_expr(clone_call, "node");
         }
-        let result = ident_expr("_r$");
+        let result_ident = self.fresh_ident("_r$");
+        let result = Expr::Ident(result_ident.clone());
 
         let mut statements = vec![Stmt::Decl(swc_core::ecma::ast::Decl::Var(Box::new(
             VarDecl {
@@ -610,7 +777,7 @@ impl SilentPass {
                 decls: vec![VarDeclarator {
                     span: DUMMY_SP,
                     name: Pat::Ident(BindingIdent {
-                        id: ident("_r$"),
+                        id: result_ident,
                         type_ann: None,
                     }),
                     definite: false,
@@ -618,6 +785,7 @@ impl SilentPass {
                 }],
             },
         )))];
+        statements.extend(self.value_declarations(materialized));
 
         for (index, attr) in attrs.into_iter().enumerate() {
             let element = computed_member(member_expr(result.clone(), "attrs"), index);
@@ -711,22 +879,37 @@ impl SilentPass {
                 span: DUMMY_SP,
                 stmts: statements,
             })),
-            is_async: false,
+            is_async: uses_await,
             is_generator: false,
             type_params: None,
             return_type: None,
         });
-        call_expr(
+        let call = call_expr(
             Expr::Paren(ParenExpr {
                 span: DUMMY_SP,
                 expr: Box::new(arrow),
             }),
             Vec::new(),
-        )
+        );
+        if uses_await {
+            Expr::Await(swc_core::ecma::ast::AwaitExpr {
+                span: DUMMY_SP,
+                arg: Box::new(call),
+            })
+        } else {
+            call
+        }
     }
 
     fn finish_ssr_template(&mut self, parts: TemplateParts) -> Expr {
-        let TemplateParts { html, holes, .. } = parts;
+        let TemplateParts {
+            html, mut holes, ..
+        } = parts;
+        let mut materialized: Vec<(Ident, Expr)> = Vec::new();
+        for hole in holes.iter_mut() {
+            self.materialize_expr(hole, "_h$", &mut materialized);
+        }
+        let uses_await = !materialized.is_empty();
         let count = holes.len();
         let mut segments: Vec<String> = Vec::with_capacity(count + 1);
         let mut rest = html.as_str();
@@ -781,7 +964,38 @@ impl SilentPass {
                 right: Box::new(computed_member(Expr::Ident(name.clone()), index + 1)),
             });
         }
-        call_expr(Expr::Ident(self.helper("ssrRaw")), vec![parts_expr])
+        let result = call_expr(Expr::Ident(self.helper("ssrRaw")), vec![parts_expr]);
+        if !uses_await {
+            return result;
+        }
+        let mut statements = self.value_declarations(materialized);
+        statements.push(Stmt::Return(ReturnStmt {
+            span: DUMMY_SP,
+            arg: Some(Box::new(result)),
+        }));
+        let arrow = Expr::Arrow(ArrowExpr {
+            span: DUMMY_SP,
+            ctxt: SyntaxContext::empty(),
+            params: Vec::new(),
+            body: Box::new(ArrowFunctionBody::FunctionBody(FunctionBody {
+                span: DUMMY_SP,
+                stmts: statements,
+            })),
+            is_async: true,
+            is_generator: false,
+            type_params: None,
+            return_type: None,
+        });
+        Expr::Await(swc_core::ecma::ast::AwaitExpr {
+            span: DUMMY_SP,
+            arg: Box::new(call_expr(
+                Expr::Paren(ParenExpr {
+                    span: DUMMY_SP,
+                    expr: Box::new(arrow),
+                }),
+                Vec::new(),
+            )),
+        })
     }
 
     fn hoisted_namespaced_template(&mut self, html: &str, svg: bool, init: Expr) -> Ident {
@@ -815,6 +1029,18 @@ impl SilentPass {
         self.errors.borrow_mut().push(format!(
             "{}: {}",
             self.filename.to_string_lossy(),
+            message.into()
+        ));
+    }
+
+    /// Диагностика с позицией исходника (`file:line:column`).
+    fn report_error_at(&self, span: Span, message: impl Into<String>) {
+        let location = self.source_map.lookup_char_pos(span.lo());
+        self.errors.borrow_mut().push(format!(
+            "{}:{}:{}: {}",
+            self.filename.to_string_lossy(),
+            location.line,
+            location.col_display + 1,
             message.into()
         ));
     }
@@ -906,7 +1132,9 @@ impl SilentPass {
             self.add_static_rows_hint(element, &mut properties);
         }
         self.add_index_hint(element, &mut properties);
-        call_expr(
+        let mut materialized: Vec<(Ident, Expr)> = Vec::new();
+        self.materialize_props(&mut properties, &mut materialized);
+        let call = call_expr(
             Expr::Ident(self.helper("component")),
             vec![
                 tag,
@@ -915,7 +1143,38 @@ impl SilentPass {
                     props: properties,
                 }),
             ],
-        )
+        );
+        if materialized.is_empty() {
+            return call;
+        }
+        let mut statements = self.value_declarations(materialized);
+        statements.push(Stmt::Return(ReturnStmt {
+            span: DUMMY_SP,
+            arg: Some(Box::new(call)),
+        }));
+        let arrow = Expr::Arrow(ArrowExpr {
+            span: DUMMY_SP,
+            ctxt: SyntaxContext::empty(),
+            params: Vec::new(),
+            body: Box::new(ArrowFunctionBody::FunctionBody(FunctionBody {
+                span: DUMMY_SP,
+                stmts: statements,
+            })),
+            is_async: true,
+            is_generator: false,
+            type_params: None,
+            return_type: None,
+        });
+        Expr::Await(swc_core::ecma::ast::AwaitExpr {
+            span: DUMMY_SP,
+            arg: Box::new(call_expr(
+                Expr::Paren(ParenExpr {
+                    span: DUMMY_SP,
+                    expr: Box::new(arrow),
+                }),
+                Vec::new(),
+            )),
+        })
     }
 
     fn compile_children_value(&mut self, children: &[JSXElementChild]) -> Option<Expr> {
@@ -1943,6 +2202,125 @@ fn is_raw_text_tag(tag: &str) -> bool {
     matches!(tag.to_ascii_lowercase().as_str(), "style" | "script")
 }
 
+/// Нейтрализует закрывающий тег внутри raw-text (`<script>`/`<style>`),
+/// повторяя runtime-поведение `escapeRawText`: `</script` → `<\/script`,
+/// если сразу за именем идёт пробел, `/`, `>` или конец строки.
+/// `<!--` намеренно не трогаем: это ломает JSON-LD и CSS.
+fn escape_raw_text(tag: &str, value: &str) -> String {
+    if !is_raw_text_tag(tag) || !value.contains("</") {
+        return value.to_string();
+    }
+    let tag = tag.to_ascii_lowercase();
+    let mut result = String::with_capacity(value.len() + 8);
+    let mut index = 0usize;
+    while index < value.len() {
+        if is_closing_tag_at(value, index, &tag) {
+            result.push_str("<\\/");
+            // `</` — ASCII, граница символов сохраняется.
+            index += 2;
+            continue;
+        }
+        let character = value[index..]
+            .chars()
+            .next()
+            .expect("index is a char boundary");
+        result.push(character);
+        index += character.len_utf8();
+    }
+    result
+}
+
+/// Есть ли в тексте закрывающий тег, который придётся нейтрализовать.
+fn contains_closing_tag(tag: &str, value: &str) -> bool {
+    if !is_raw_text_tag(tag) || !value.contains("</") {
+        return false;
+    }
+    let tag = tag.to_ascii_lowercase();
+    let mut index = 0usize;
+    while index < value.len() {
+        if is_closing_tag_at(value, index, &tag) {
+            return true;
+        }
+        index += value[index..]
+            .chars()
+            .next()
+            .expect("index is a char boundary")
+            .len_utf8();
+    }
+    false
+}
+
+fn is_closing_tag_at(value: &str, index: usize, tag: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.get(index) != Some(&b'<') || bytes.get(index + 1) != Some(&b'/') {
+        return false;
+    }
+    let start = index + 2;
+    let end = start + tag.len();
+    let Some(name) = bytes.get(start..end) else {
+        return false;
+    };
+    if !name.eq_ignore_ascii_case(tag.as_bytes()) {
+        return false;
+    }
+    match value[end..].chars().next() {
+        None => true,
+        Some(character) => character == '/' || character == '>' || is_js_whitespace(character),
+    }
+}
+
+fn is_js_whitespace(character: char) -> bool {
+    character.is_whitespace() || character == '\u{feff}'
+}
+
+/// Проверяет, что вставка `\` в `</script` не сломала JS-синтаксис.
+/// Если исходный текст парсился как JS, а экранированный — нет, литерал
+/// нельзя выразить безопасно и нужна диагностика (например,
+/// `a < /script/i.test(b)` — это регэксп, а не строка).
+fn raw_text_escape_is_safe(tag: &str, original: &str, escaped: &str) -> bool {
+    if !tag.eq_ignore_ascii_case("script") {
+        return true;
+    }
+    !parses_as_script(original) || parses_as_script(escaped)
+}
+
+fn parses_as_script(source: &str) -> bool {
+    // `<script>` — классический скрипт (sloppy mode), `<script type="module">`
+    // парсится как модуль; принимаем оба варианта, чтобы не давать ложных
+    // диагностик на валидном JS.
+    parse_as(source, false) || parse_as(source, true)
+}
+
+fn parse_as(source: &str, module: bool) -> bool {
+    use swc_core::common::{FileName, SourceMap};
+    use swc_core::ecma::ast::EsVersion;
+    use swc_core::ecma::parser::{lexer::Lexer, EsSyntax, Parser, StringInput, Syntax};
+
+    let source_map = SourceMap::default();
+    let file = source_map.new_source_file(FileName::Anon.into(), source.to_string());
+    let lexer = Lexer::new(
+        Syntax::Es(EsSyntax {
+            decorators: true,
+            ..Default::default()
+        }),
+        EsVersion::EsNext,
+        StringInput::from(&*file),
+        None,
+    );
+    let mut parser = Parser::new_from(lexer);
+    if module {
+        parser.parse_module().is_ok()
+    } else {
+        parser.parse_script().is_ok()
+    }
+}
+
+fn raw_text_escape_error(tag: &str) -> String {
+    format!(
+        "статический текст <{tag}> содержит закрывающий тег </{tag}>, который нельзя безопасно экранировать без изменения JS; используйте <\\/{tag} в исходнике или интерполяцию"
+    )
+}
+
 fn raw_text_child_error(tag: &str) -> String {
     format!(
         "элемент <{tag}> поддерживает только текстовое содержимое; используйте интерполяцию строк вместо JSX-детей"
@@ -2018,19 +2396,23 @@ fn is_ignorable_void_child(child: &JSXElementChild) -> bool {
 fn static_select_value(element: &JSXElement) -> Option<String> {
     let value = static_literal_attr(element, "value")?;
     let mut options = 0usize;
+    let mut matched = false;
     for child in &element.children {
         match child {
             JSXElementChild::JSXText(text) if text.value.to_string_lossy().trim().is_empty() => {}
             JSXElementChild::JSXElement(option)
                 if element_name_string(&option.opening.name).eq_ignore_ascii_case("option") =>
             {
-                static_literal_attr(option, "value")?;
+                let option_value = static_literal_attr(option, "value")?;
+                if option_value == value {
+                    matched = true;
+                }
                 options += 1;
             }
             _ => return None,
         }
     }
-    (options > 0).then_some(value)
+    (options > 0 && matched).then_some(value)
 }
 
 fn static_literal_attr(element: &JSXElement, name: &str) -> Option<String> {
@@ -2101,5 +2483,44 @@ mod number_format_tests {
         assert_eq!(format_number(-0.0), "0");
         assert_eq!(format_number(1e20), "100000000000000000000");
         assert_eq!(format_number(1.5e21), "1.5e+21");
+    }
+}
+
+#[cfg(test)]
+mod raw_text_tests {
+    use super::escape_raw_text;
+
+    #[test]
+    fn neutralizes_closing_tag_with_boundary() {
+        assert_eq!(
+            escape_raw_text("script", r#"const x = "</script>";"#),
+            r#"const x = "<\/script>";"#
+        );
+        assert_eq!(escape_raw_text("style", "a{}</style >b"), "a{}<\\/style >b");
+        assert_eq!(
+            escape_raw_text("script", r#"x = "</ScRiPt/""#),
+            r#"x = "<\/ScRiPt/""#
+        );
+    }
+
+    #[test]
+    fn keeps_lookalikes_and_comments() {
+        assert_eq!(
+            escape_raw_text("script", r#"var s = "</scriptx>";"#),
+            r#"var s = "</scriptx>";"#
+        );
+        assert_eq!(
+            escape_raw_text("script", "const t = \"</style>\";"),
+            "const t = \"</style>\";"
+        );
+        assert_eq!(escape_raw_text("style", "/* <!-- */ a{}"), "/* <!-- */ a{}");
+    }
+
+    #[test]
+    fn ignores_non_raw_text_tags() {
+        assert_eq!(
+            escape_raw_text("textarea", "a</textarea>b"),
+            "a</textarea>b"
+        );
     }
 }

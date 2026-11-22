@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import type { NativeTransformResult } from "@ivlev-dev/silent-swc";
 
 export interface SilentIndex {
@@ -25,6 +28,39 @@ export function loadSwc(): Promise<SwcModule> {
     });
   }
   return swcPromise;
+}
+
+/**
+ * Отпечаток нативного addon: имя, размер и mtime `.node` плюс содержимое
+ * `.build-hash-*`. Позволяет инвалидировать кеш трансформаций после
+ * `pnpm build:native`, когда версия пакета не менялась.
+ */
+export function nativeAddonFingerprint(): string {
+  try {
+    const require = createRequire(import.meta.url);
+    const entry = require.resolve("@ivlev-dev/silent-swc");
+    const directory = join(dirname(entry), "native");
+    const names = readdirSync(directory)
+      .filter((name) => name.endsWith(".node") || name.startsWith(".build-hash-"))
+      .sort();
+    const parts: string[] = [];
+    for (const name of names) {
+      const file = join(directory, name);
+      const stats = statSync(file);
+      let buildHash = "";
+      if (name.startsWith(".build-hash-")) {
+        try {
+          buildHash = readFileSync(file, "utf8").trim();
+        } catch {
+          buildHash = "";
+        }
+      }
+      parts.push(`${name}:${stats.size}:${stats.mtimeMs}:${buildHash}`);
+    }
+    return parts.length > 0 ? parts.join("|") : "unknown";
+  } catch {
+    return "unknown";
+  }
 }
 
 export function nativeTransform(

@@ -219,6 +219,101 @@ fn static_script_keeps_raw_characters() {
 }
 
 #[test]
+fn static_script_neutralizes_closing_tag_inside_string() {
+    let code = run(r#"export function view() {
+  return <script>{'const html = "</script>";'}</script>;
+}
+"#);
+    assert!(
+        code.contains(r#"<script>const html = "<\\/script>";</script>"#),
+        "closing tag must be neutralized: {code}"
+    );
+    assert_eq!(
+        code.matches("</script>").count(),
+        1,
+        "only the real closing tag may remain: {code}"
+    );
+}
+
+#[test]
+fn static_style_neutralizes_closing_tag_breakout() {
+    let code = run(r#"export function view() {
+  return <style>{'a{}</style><script>alert(1)</script>'}</style>;
+}
+"#);
+    assert!(
+        code.contains(r#"<style>a{}<\\/style><script>alert(1)</script></style>"#),
+        "closing tag must be neutralized: {code}"
+    );
+    assert_eq!(
+        code.matches("</style>").count(),
+        1,
+        "only the real closing tag may remain: {code}"
+    );
+    assert!(
+        !code.contains("</style><script>"),
+        "style breakout must be impossible: {code}"
+    );
+}
+
+#[test]
+fn static_script_neutralizes_closing_tag_variants() {
+    let code = run(r#"export function view() {
+  return <script>{'const a = "</ScRiPt >"; const b = "</script/"; const c = "</SCRIPT>";'}</script>;
+}
+"#);
+    assert!(
+        code.contains(r#"const a = "<\\/ScRiPt >""#),
+        "mixed case with whitespace must be neutralized: {code}"
+    );
+    assert!(
+        code.contains(r#"const b = "<\\/script/""#),
+        "slash after the tag name must be neutralized: {code}"
+    );
+    assert!(
+        code.contains(r#"const c = "<\\/SCRIPT>""#),
+        "uppercase closing tag must be neutralized: {code}"
+    );
+}
+
+#[test]
+fn static_script_keeps_non_closing_lookalikes() {
+    let code = run(r#"export function view() {
+  return <script>{'var s = "</scriptx>"; var t = "</style>";'}</script>;
+}
+"#);
+    assert!(
+        code.contains(r#"var s = "</scriptx>"; var t = "</style>";"#),
+        "lookalike tags must stay untouched: {code}"
+    );
+    assert!(!code.contains("<\\/scriptx"), "unexpected escape: {code}");
+}
+
+#[test]
+fn static_json_ld_keeps_html_comment_opener() {
+    let code = run(r#"export function view() {
+  return <script type="application/ld+json">{'{"@context":"https://schema.org","note":"<!--keep-->"}'}</script>;
+}
+"#);
+    assert!(
+        code.contains("<!--keep-->"),
+        "HTML comment opener must stay untouched: {code}"
+    );
+    assert!(!code.contains("<\\!--"), "unexpected escape: {code}");
+}
+
+#[test]
+fn static_script_with_unexpressible_closing_tag_reports_location() {
+    let error = compile(
+        "export function view() {\n  return <script>{'const x = a</script/i.test(b);'}</script>;\n}\n",
+    )
+    .unwrap_err();
+    assert!(error.contains("/proj/src/view.tsx:2:19"), "{error}");
+    assert!(error.contains("</script>"), "{error}");
+    assert!(error.contains("безопасно экранировать"), "{error}");
+}
+
+#[test]
 fn dynamic_style_uses_text_content_binding() {
     let code = run(r#"export function view(props: { css: string }) {
   return <style>{props.css}</style>;

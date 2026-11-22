@@ -10,7 +10,7 @@ use swc_core::base::config::{Options, SourceMapsConfig};
 use swc_core::base::Compiler;
 use swc_core::common::comments::SingleThreadedComments;
 use swc_core::common::errors::Handler;
-use swc_core::common::{FileName, SourceMap, SyntaxContext, DUMMY_SP};
+use swc_core::common::{FileName, SourceMap, Spanned, SyntaxContext, DUMMY_SP};
 use swc_core::ecma::ast::{
     AssignExpr, AssignOp, AssignTarget, BindingIdent, CallExpr, Callee, ClassDecl, ClassExpr,
     ClassMember, ClassMethod, Constructor, Decl, EsVersion, Expr, ExprOrSpread, Function, Ident,
@@ -23,10 +23,21 @@ use swc_core::ecma::ast::{
 };
 use swc_core::ecma::parser::Syntax;
 use swc_core::ecma::transforms::proposal::DecoratorVersion;
-use swc_core::ecma::visit::{VisitMut, VisitMutWith};
+use swc_core::ecma::visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 fn default_true() -> bool {
     true
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DiMode {
+    Allow,
+    Warn,
+    // Прямой вызов addon без явной политики сохраняет прежнее поведение:
+    // неразрешённые DI-зависимости считаются ошибкой компиляции.
+    #[default]
+    Error,
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,6 +57,8 @@ pub struct SilentOptions {
     pub hydrate: bool,
     #[serde(default)]
     pub aliases: Vec<crate::alias::AliasRule>,
+    #[serde(default)]
+    pub di: DiMode,
 }
 
 impl Default for SilentOptions {
@@ -58,6 +71,7 @@ impl Default for SilentOptions {
             ssr: false,
             hydrate: true,
             aliases: Vec::new(),
+            di: DiMode::Error,
         }
     }
 }
@@ -75,8 +89,15 @@ pub(crate) enum LocalKind {
     Type,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct FunctionContext {
+    pub is_async: bool,
+    pub is_generator: bool,
+}
+
 pub(crate) struct SilentPass {
     pub(crate) filename: PathBuf,
+    pub(crate) source_map: std::sync::Arc<SourceMap>,
     pub(crate) index: Index,
     pub(crate) runtime: String,
     pub(crate) require_preloader: bool,
@@ -89,6 +110,7 @@ pub(crate) struct SilentPass {
     pub(crate) metadata: Vec<ModuleItem>,
     pub(crate) view_stack: Vec<bool>,
     pub(crate) type_param_scopes: Vec<HashSet<String>>,
+    pub(crate) fn_context: Vec<FunctionContext>,
     pub(crate) hmr: bool,
     pub(crate) ssr: bool,
     pub(crate) hydrate: bool,
@@ -98,11 +120,14 @@ pub(crate) struct SilentPass {
     pub(crate) hoisted_template_names: HashMap<String, Ident>,
     pub(crate) template_counter: usize,
     pub(crate) svg_context: bool,
+    pub(crate) di: DiMode,
+    pub(crate) used_names: HashSet<String>,
 }
 
 impl SilentPass {
     fn new(
         filename: &Path,
+        source_map: std::sync::Arc<SourceMap>,
         index: Index,
         options: &SilentOptions,
         imports: ImportManager,
@@ -110,6 +135,7 @@ impl SilentPass {
     ) -> Self {
         Self {
             filename: filename.to_path_buf(),
+            source_map,
             index,
             runtime: options
                 .runtime
@@ -125,6 +151,7 @@ impl SilentPass {
             metadata: Vec::new(),
             view_stack: Vec::new(),
             type_param_scopes: Vec::new(),
+            fn_context: Vec::new(),
             hmr: options.hmr,
             ssr: options.ssr,
             hydrate: options.hydrate,
@@ -134,6 +161,8 @@ impl SilentPass {
             hoisted_template_names: HashMap::new(),
             template_counter: 0,
             svg_context: false,
+            di: options.di,
+            used_names: HashSet::new(),
         }
     }
 
@@ -145,12 +174,59 @@ impl SilentPass {
         ));
     }
 
+    /// DI-диагностика подчиняется политике `di`: `allow` её подавляет,
+    /// `warn` отдаёт в diagnostics, `error` делает ошибкой компиляции.
+    pub(crate) fn di_error(&mut self, message: impl Into<String>) {
+        let message = format!("{}: {}", self.filename.to_string_lossy(), message.into());
+        match self.di {
+            DiMode::Allow => {}
+            DiMode::Warn => self.warnings.push(message),
+            DiMode::Error => self.errors.borrow_mut().push(message),
+        }
+    }
+
     pub(crate) fn warning(&mut self, message: impl Into<String>) {
         self.warnings.push(format!(
             "{}: {}",
             self.filename.to_string_lossy(),
             message.into()
         ));
+    }
+
+    /// Верхний уровень модуля исполняется в async-контексте (top-level await),
+    /// поэтому отсутствие функции в стеке трактуем как async.
+    pub(crate) fn in_async_context(&self) -> bool {
+        self.fn_context
+            .last()
+            .map(|context| context.is_async)
+            .unwrap_or(true)
+    }
+
+    pub(crate) fn in_generator_context(&self) -> bool {
+        self.fn_context
+            .last()
+            .map(|context| context.is_generator)
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn fresh_ident(&mut self, prefix: &str) -> Ident {
+        let mut index = 0usize;
+        loop {
+            let candidate = format!("{prefix}{index}");
+            index += 1;
+            if self.is_name_taken(&candidate) {
+                continue;
+            }
+            self.used_names.insert(candidate.clone());
+            self.imports.reserve(&candidate);
+            return Ident::new(candidate.into(), DUMMY_SP, SyntaxContext::empty());
+        }
+    }
+
+    fn is_name_taken(&self, name: &str) -> bool {
+        self.imports.is_taken(name)
+            || self.locals.contains_key(name)
+            || self.used_names.contains(name)
     }
 
     pub(crate) fn helper(&mut self, name: &str) -> Ident {
@@ -162,12 +238,16 @@ impl SilentPass {
         if let Some(existing) = self.hoisted_template_names.get(html) {
             return existing.clone();
         }
-        let name = Ident::new(
-            format!("_tmpl${}", self.template_counter).into(),
-            DUMMY_SP,
-            SyntaxContext::empty(),
-        );
-        self.template_counter += 1;
+        let name = loop {
+            let candidate = format!("_tmpl${}", self.template_counter);
+            self.template_counter += 1;
+            if self.is_name_taken(&candidate) {
+                continue;
+            }
+            break Ident::new(candidate.into(), DUMMY_SP, SyntaxContext::empty());
+        };
+        self.used_names.insert(name.sym.to_string());
+        self.imports.reserve(name.sym.as_ref());
         self.hoisted_template_names
             .insert(html.to_string(), name.clone());
         self.hoisted_templates.push((name.clone(), init));
@@ -259,7 +339,7 @@ impl SilentPass {
                 }
                 if let Some(import) = self.imports.get(&name).cloned() {
                     if import.kind == ImportKind::Namespace {
-                        self.error(format!(
+                        self.di_error(format!(
                             "namespace import {name} нельзя использовать как тип внедрения"
                         ));
                         return None;
@@ -277,7 +357,7 @@ impl SilentPass {
             }
             TsEntityName::TsQualifiedName(qualified) => {
                 let TsEntityName::Ident(left) = &qualified.left else {
-                    self.error("сложное квалифицированное имя типа не поддерживается");
+                    self.di_error("сложное квалифицированное имя типа не поддерживается");
                     return None;
                 };
                 let left_name = left.sym.to_string();
@@ -288,7 +368,7 @@ impl SilentPass {
                             .add_value_import(&self.filename, &import.source, &export);
                     return Some(Expr::Ident(local));
                 }
-                self.error(format!("не удалось разрешить {left_name}.{export}"));
+                self.di_error(format!("не удалось разрешить {left_name}.{export}"));
                 None
             }
         }
@@ -316,7 +396,7 @@ impl SilentPass {
                     .add_value_import(&self.filename, source, imported);
                 return Some(Expr::Ident(local));
             }
-            self.error(format!(
+            self.di_error(format!(
                 "для типа {token} не найдено реализации и value-экспорта"
             ));
             return None;
@@ -333,11 +413,11 @@ impl SilentPass {
         implementations: Vec<String>,
     ) -> Option<Expr> {
         if implementations.is_empty() {
-            self.error(format!("для интерфейса {token} не найдено реализации"));
+            self.di_error(format!("для интерфейса {token} не найдено реализации"));
             return None;
         }
         if implementations.len() > 1 {
-            self.error(format!(
+            self.di_error(format!(
                 "для интерфейса {token} найдено несколько реализаций: {}; укажите явный bind",
                 implementations.join(", ")
             ));
@@ -345,7 +425,7 @@ impl SilentPass {
         }
         let implementation = implementations.first()?.clone();
         let Some((module, class_name)) = split_token(&implementation) else {
-            self.error(format!(
+            self.di_error(format!(
                 "некорректный токен реализации {implementation}: ожидается путь#Класс"
             ));
             return None;
@@ -392,7 +472,7 @@ impl SilentPass {
                         SyntaxContext::empty(),
                     )));
                 }
-                self.error(format!("для интерфейса {token} не найдено реализации"));
+                self.di_error(format!("для интерфейса {token} не найдено реализации"));
                 None
             }
         }
@@ -485,7 +565,7 @@ impl SilentPass {
                     Pat::Assign(assign) => match &*assign.left {
                         Pat::Ident(binding) => (&binding.id, binding.type_ann.as_ref()),
                         _ => {
-                            self.error(format!(
+                            self.di_error(format!(
                                 "класс {class_name}: параметр конструктора #{} должен быть identifier",
                                 index + 1
                             ));
@@ -493,7 +573,7 @@ impl SilentPass {
                         }
                     },
                     _ => {
-                        self.error(format!(
+                        self.di_error(format!(
                             "класс {class_name}: параметр конструктора #{} должен быть identifier",
                             index + 1
                         ));
@@ -505,7 +585,7 @@ impl SilentPass {
                     TsParamPropParam::Assign(assign) => match &*assign.left {
                         Pat::Ident(binding) => (&binding.id, binding.type_ann.as_ref()),
                         _ => {
-                            self.error(format!(
+                            self.di_error(format!(
                                 "класс {class_name}: параметр конструктора #{} должен быть identifier",
                                 index + 1
                             ));
@@ -532,7 +612,7 @@ impl SilentPass {
                 return None;
             }
             let Some(dependency) = self.resolve_type_value(&type_ann.type_ann) else {
-                self.error(format!(
+                self.di_error(format!(
                     "класс {class_name}: не удалось разрешить тип параметра конструктора {}",
                     ident.sym
                 ));
@@ -632,7 +712,7 @@ impl SilentPass {
             return;
         };
         let Some(vm) = self.resolve_type_value(&vm_type) else {
-            self.error(format!(
+            self.di_error(format!(
                 "компонент {}: не удалось разрешить класс ViewModel",
                 name.sym
             ));
@@ -643,7 +723,7 @@ impl SilentPass {
             .and_then(|value| self.resolve_type_value(value));
         let preloader_name = preloader_type.as_ref().and_then(type_value_name);
         if self.require_preloader && preloader.is_none() {
-            self.error(format!(
+            self.di_error(format!(
                 "компонент {}: обязателен preloader в this-типе",
                 name.sym
             ));
@@ -873,7 +953,12 @@ impl VisitMut for SilentPass {
         crate::props::rewrite_function_props(&mut node.function);
         let depth = self.enter_type_params(node.function.type_params.as_deref());
         self.view_stack.push(is_view);
+        self.fn_context.push(FunctionContext {
+            is_async: node.function.is_async,
+            is_generator: node.function.is_generator,
+        });
         node.visit_mut_children_with(self);
+        self.fn_context.pop();
         self.view_stack.pop();
         self.leave_type_params(depth);
     }
@@ -886,7 +971,12 @@ impl VisitMut for SilentPass {
         crate::props::rewrite_function_props(&mut node.function);
         let depth = self.enter_type_params(node.function.type_params.as_deref());
         self.view_stack.push(is_view);
+        self.fn_context.push(FunctionContext {
+            is_async: node.function.is_async,
+            is_generator: node.function.is_generator,
+        });
         node.visit_mut_children_with(self);
+        self.fn_context.pop();
         self.view_stack.pop();
         self.leave_type_params(depth);
     }
@@ -894,8 +984,58 @@ impl VisitMut for SilentPass {
     fn visit_mut_arrow_expr(&mut self, node: &mut swc_core::ecma::ast::ArrowExpr) {
         crate::props::rewrite_arrow_props(node);
         let depth = self.enter_type_params(node.type_params.as_deref());
+        self.fn_context.push(FunctionContext {
+            is_async: node.is_async,
+            is_generator: node.is_generator,
+        });
         node.visit_mut_children_with(self);
+        self.fn_context.pop();
         self.leave_type_params(depth);
+    }
+
+    fn visit_mut_class_method(&mut self, node: &mut ClassMethod) {
+        self.fn_context.push(FunctionContext {
+            is_async: node.function.is_async,
+            is_generator: node.function.is_generator,
+        });
+        node.visit_mut_children_with(self);
+        self.fn_context.pop();
+    }
+
+    fn visit_mut_private_method(&mut self, node: &mut swc_core::ecma::ast::PrivateMethod) {
+        self.fn_context.push(FunctionContext {
+            is_async: node.function.is_async,
+            is_generator: node.function.is_generator,
+        });
+        node.visit_mut_children_with(self);
+        self.fn_context.pop();
+    }
+
+    fn visit_mut_constructor(&mut self, node: &mut Constructor) {
+        self.fn_context.push(FunctionContext::default());
+        node.visit_mut_children_with(self);
+        self.fn_context.pop();
+    }
+
+    fn visit_mut_method_prop(&mut self, node: &mut swc_core::ecma::ast::MethodProp) {
+        self.fn_context.push(FunctionContext {
+            is_async: node.function.is_async,
+            is_generator: node.function.is_generator,
+        });
+        node.visit_mut_children_with(self);
+        self.fn_context.pop();
+    }
+
+    fn visit_mut_getter_prop(&mut self, node: &mut swc_core::ecma::ast::GetterProp) {
+        self.fn_context.push(FunctionContext::default());
+        node.visit_mut_children_with(self);
+        self.fn_context.pop();
+    }
+
+    fn visit_mut_setter_prop(&mut self, node: &mut swc_core::ecma::ast::SetterProp) {
+        self.fn_context.push(FunctionContext::default());
+        node.visit_mut_children_with(self);
+        self.fn_context.pop();
     }
 
     fn visit_mut_class_decl(&mut self, class: &mut ClassDecl) {
@@ -980,7 +1120,7 @@ impl VisitMut for SilentPass {
                 None => "не удалось разрешить тип в вызове resolve<T>(): укажите конкретный класс или интерфейс"
                     .to_string(),
             };
-            self.error(message);
+            self.di_error(message);
             return;
         };
         call.args = vec![ExprOrSpread {
@@ -999,8 +1139,29 @@ impl swc_core::ecma::ast::Pass for SilentPass {
         };
         self.collect_locals(module);
         self.collect_component_metadata(module);
+        self.collect_used_names(module);
         module.visit_mut_with(self);
         self.append_module_items(module);
+    }
+}
+
+impl SilentPass {
+    /// Собирает все идентификаторы модуля, чтобы служебные имена (`_r$`,
+    /// `_tmpl$N`, `_h$N`, …) не затеняли пользовательские переменные.
+    fn collect_used_names(&mut self, module: &Module) {
+        struct Collector<'a> {
+            names: &'a mut HashSet<String>,
+        }
+
+        impl Visit for Collector<'_> {
+            fn visit_ident(&mut self, ident: &Ident) {
+                self.names.insert(ident.sym.to_string());
+            }
+        }
+
+        module.visit_with(&mut Collector {
+            names: &mut self.used_names,
+        });
     }
 }
 
@@ -1106,7 +1267,19 @@ fn has_di_create(member: &ClassMember) -> bool {
     let MemberProp::Ident(property) = &member.prop else {
         return false;
     };
-    object.sym == "Symbol" && property.sym == "for"
+    if object.sym != "Symbol" || property.sym != "for" {
+        return false;
+    }
+    let [arg] = call.args.as_slice() else {
+        return false;
+    };
+    if arg.spread.is_some() {
+        return false;
+    }
+    matches!(
+        &*arg.expr,
+        Expr::Lit(Lit::Str(value)) if value.value.to_string_lossy() == "silent.di.create"
+    )
 }
 
 fn build_di_create(dependencies: Vec<Expr>) -> ClassMethod {
@@ -1372,7 +1545,7 @@ fn transform_inner(
     if swc_options.config.jsc.syntax.is_none() {
         swc_options.config.jsc.syntax =
             Some(Syntax::Typescript(swc_core::ecma::parser::TsSyntax {
-                tsx: filename.ends_with(".tsx") || filename.ends_with(".jsx"),
+                tsx: is_jsx_capable_file(filename),
                 decorators: true,
                 ..Default::default()
             }));
@@ -1409,7 +1582,14 @@ fn transform_inner(
     let module = parse_module(&source_map, &file, filename, &swc_options)?;
     let imports = ImportManager::new(&module);
     let errors = Rc::new(RefCell::new(Vec::new()));
-    let mut pass = SilentPass::new(&path, index, &options, imports, errors.clone());
+    let mut pass = SilentPass::new(
+        &path,
+        source_map.clone(),
+        index,
+        &options,
+        imports,
+        errors.clone(),
+    );
 
     let mut program = Program::Module(module);
     pass.process(&mut program);
@@ -1487,7 +1667,7 @@ fn parse_statement(code: &str) -> Result<Stmt, String> {
 }
 
 fn parse_module(
-    _source_map: &SourceMap,
+    source_map: &SourceMap,
     file: &std::sync::Arc<swc_core::common::SourceFile>,
     filename: &str,
     options: &Options,
@@ -1495,16 +1675,32 @@ fn parse_module(
     use swc_core::ecma::parser::{lexer::Lexer, Parser, StringInput};
     let syntax = options.config.jsc.syntax.unwrap_or_else(|| {
         Syntax::Typescript(swc_core::ecma::parser::TsSyntax {
-            tsx: filename.ends_with(".tsx") || filename.ends_with(".jsx"),
+            tsx: is_jsx_capable_file(filename),
             decorators: true,
             ..Default::default()
         })
     });
     let lexer = Lexer::new(syntax, EsVersion::EsNext, StringInput::from(&**file), None);
     let mut parser = Parser::new_from(lexer);
-    parser
-        .parse_module()
-        .map_err(|error| format!("parse error: {error:?}"))
+    parser.parse_module().map_err(|error| {
+        let span = error.span();
+        let loc = source_map.lookup_char_pos(span.lo());
+        format!(
+            "[silent-transform] {}:{}:{}: ошибка разбора: {}",
+            filename,
+            loc.line,
+            loc.col_display + 1,
+            error.kind().msg()
+        )
+    })
+}
+
+/// `.js`/`.mjs`/`.cjs` тоже могут содержать JSX: Vite отдаёт их в pre-плагин,
+/// а TSX-парсер SWC корректно разбирает обычный JavaScript.
+fn is_jsx_capable_file(filename: &str) -> bool {
+    [".tsx", ".jsx", ".js", ".mjs", ".cjs"]
+        .iter()
+        .any(|extension| filename.ends_with(extension))
 }
 
 struct NoopPass;

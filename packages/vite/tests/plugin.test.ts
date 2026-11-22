@@ -1,8 +1,18 @@
-import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import type { Plugin, ResolvedConfig } from "vite";
+import type { ConfigEnv, Plugin, ResolvedConfig, UserConfig } from "vite";
 import { silent } from "../src/index.js";
 import type { SilentOptions } from "../src/index.js";
 import { matchesPattern } from "../src/options.js";
@@ -26,7 +36,10 @@ vi.mock("@ivlev-dev/silent-swc", () => ({
 }));
 
 interface CallableHooks {
-  config?: () => { define?: Record<string, string> } | undefined;
+  config?: (
+    config?: UserConfig,
+    env?: ConfigEnv,
+  ) => { define?: Record<string, string> } | undefined;
   buildStart?: () => Promise<void> | void;
   configResolved?: (config: ResolvedConfig) => void;
   transform?: (
@@ -450,6 +463,59 @@ describe("silent()", () => {
     expect(optionsJson.hydrate).toBe(false);
   });
 
+  it("options JSON передаёт политику di", async () => {
+    const byDefault = createPlugin();
+    await byDefault.transform?.("code", fileFor("src", "a.ts"));
+    expect(JSON.parse(transformMock.mock.calls[0]?.[2] ?? "{}").di).toBe("warn");
+
+    transformMock.mockClear();
+    const strict = createPlugin({ di: "error" });
+    await strict.transform?.("code", fileFor("src", "b.ts"));
+    expect(JSON.parse(transformMock.mock.calls[0]?.[2] ?? "{}").di).toBe("error");
+  });
+
+  it("не просит sourcemap, если Vite его не запросил", async () => {
+    const cacheDir = mkdtempSync(path.join(tmpdir(), "silent-vite-map-off-"));
+    cacheDirectories.push(cacheDir);
+    const plugin = createPlugin();
+    plugin.configResolved?.({
+      cacheDir,
+      command: "build",
+      build: { sourcemap: false },
+    } as unknown as ResolvedConfig);
+    await plugin.transform?.("code", fileFor("src", "app.ts"));
+
+    const optionsJson = JSON.parse(transformMock.mock.calls[0]?.[2] ?? "{}");
+    expect(optionsJson.swc.sourceMaps).toBe(false);
+  });
+
+  it("оставляет sourcemap и явную настройку пользователя", async () => {
+    const cacheDir = mkdtempSync(path.join(tmpdir(), "silent-vite-map-on-"));
+    cacheDirectories.push(cacheDir);
+    const plugin = createPlugin();
+    plugin.configResolved?.({
+      cacheDir,
+      command: "build",
+      build: { sourcemap: true },
+    } as unknown as ResolvedConfig);
+    await plugin.transform?.("code", fileFor("src", "app.ts"));
+    expect(
+      JSON.parse(transformMock.mock.calls[0]?.[2] ?? "{}").swc.sourceMaps,
+    ).toBeUndefined();
+
+    transformMock.mockClear();
+    const explicit = createPlugin({ swc: { sourceMaps: true } });
+    explicit.configResolved?.({
+      cacheDir,
+      command: "build",
+      build: { sourcemap: false },
+    } as unknown as ResolvedConfig);
+    await explicit.transform?.("code", fileFor("src", "app.ts"));
+    expect(
+      JSON.parse(transformMock.mock.calls[0]?.[2] ?? "{}").swc.sourceMaps,
+    ).toBe(true);
+  });
+
   it("передаёт результат scan как indexJson", async () => {
     scanMock.mockImplementation(
       () =>
@@ -522,6 +588,185 @@ describe("silent()", () => {
     expect(transformMock).toHaveBeenCalledTimes(2);
     expect(transformMock.mock.calls[0]?.[1]).toBe(file);
     expect(transformMock.mock.calls[1]?.[1]).toBe(file);
+  });
+
+  it("не индексирует файлы из exclude", async () => {
+    const root = process.cwd();
+    scanMock.mockImplementation(
+      () =>
+        JSON.stringify({
+          interfaces: {
+            [`${root}/src/types#Store`]: [
+              `${root}/src/vendor/store#FakeStore`,
+              `${root}/src/memory-store#MemoryStore`,
+            ],
+          },
+          values: {
+            [`${root}/src/types`]: ["Store"],
+            [`${root}/src/vendor/store`]: ["FakeStore"],
+            [`${root}/src/memory-store`]: ["MemoryStore"],
+          },
+        }),
+    );
+    const plugin = createPlugin({ exclude: /vendor/ });
+    await plugin.buildStart?.();
+    await plugin.transform?.("code", fileFor("src", "app.ts"));
+
+    const index = JSON.parse(transformMock.mock.calls.at(-1)?.[3] ?? "{}");
+    expect(index.values[`${root}/src/vendor/store`]).toBeUndefined();
+    expect(index.interfaces[`${root}/src/types#Store`]).toEqual([
+      `${root}/src/memory-store#MemoryStore`,
+    ]);
+  });
+
+  it("не сканирует исключённый файл инкрементально", async () => {
+    const plugin = createPlugin({ exclude: /vendor/ });
+    await plugin.buildStart?.();
+
+    await plugin.watchChange?.(fileFor("vendor", "lib.ts"), { event: "update" });
+    await plugin.transform?.("code", fileFor("src", "app.ts"));
+
+    expect(scanFilesMock).not.toHaveBeenCalled();
+  });
+
+  it("берёт root из config.root, если опция не задана", async () => {
+    const project = realpathSync.native(
+      mkdtempSync(path.join(tmpdir(), "silent-vite-root-")),
+    );
+    const cacheDir = mkdtempSync(path.join(tmpdir(), "silent-vite-cache-"));
+    cacheDirectories.push(project, cacheDir);
+    mkdirSync(path.join(project, "src"), { recursive: true });
+
+    const plugin = createPlugin();
+    plugin.configResolved?.({
+      root: project,
+      cacheDir,
+      command: "build",
+    } as unknown as ResolvedConfig);
+
+    await plugin.buildStart?.();
+    await plugin.transform?.("code", path.join(project, "src", "app.ts"));
+
+    expect(scanMock).toHaveBeenCalledWith(project, expect.any(String));
+    expect(transformMock).toHaveBeenCalledWith(
+      "code",
+      path.join(project, "src", "app.ts"),
+      expect.any(String),
+      expect.any(String),
+    );
+  });
+
+  it("явный root не перекрывается config.root", async () => {
+    const explicit = realpathSync.native(
+      mkdtempSync(path.join(tmpdir(), "silent-vite-root-explicit-")),
+    );
+    const configured = realpathSync.native(
+      mkdtempSync(path.join(tmpdir(), "silent-vite-root-config-")),
+    );
+    const cacheDir = mkdtempSync(path.join(tmpdir(), "silent-vite-cache-"));
+    cacheDirectories.push(explicit, configured, cacheDir);
+
+    const plugin = createPlugin({ root: explicit });
+    plugin.configResolved?.({
+      root: configured,
+      cacheDir,
+      command: "build",
+    } as unknown as ResolvedConfig);
+    await plugin.buildStart?.();
+
+    expect(scanMock).toHaveBeenCalledWith(explicit, expect.any(String));
+  });
+
+  it("scan: \"full\" не сканирует одно изменение дважды", async () => {
+    const plugin = createPlugin({ scan: "full" });
+    await plugin.buildStart?.();
+    expect(scanMock).toHaveBeenCalledTimes(1);
+
+    const file = fileFor("src", "types.ts");
+    await plugin.watchChange?.(file, { event: "update" });
+    await plugin.handleHotUpdate?.({ file });
+
+    expect(scanMock).toHaveBeenCalledTimes(2);
+    await plugin.transform?.("code", fileFor("src", "app.ts"));
+    expect(scanMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("инвалидирует кеш после пересборки нативного addon", async () => {
+    const cacheDir = mkdtempSync(path.join(tmpdir(), "silent-vite-addon-"));
+    cacheDirectories.push(cacheDir);
+    const entry = createRequire(import.meta.url).resolve(
+      "@ivlev-dev/silent-swc",
+    );
+    const nativeDirectory = path.join(path.dirname(entry), "native");
+    const addonName = readdirSync(nativeDirectory).find((name) =>
+      name.endsWith(".node"),
+    );
+    if (addonName === undefined) {
+      return;
+    }
+    const addon = path.join(nativeDirectory, addonName);
+    const original = statSync(addon);
+    const file = fileFor("src", "addon-cache.ts");
+    try {
+      const plugin = createPlugin();
+      plugin.configResolved?.({ cacheDir, command: "build" } as ResolvedConfig);
+      await plugin.transform?.("const value = 1;", file);
+      expect(transformMock).toHaveBeenCalledTimes(1);
+
+      const rebuilt = new Date(original.mtimeMs + 10_000);
+      utimesSync(addon, original.atime, rebuilt);
+
+      await plugin.transform?.("const value = 1;", file);
+      expect(transformMock).toHaveBeenCalledTimes(2);
+    } finally {
+      utimesSync(addon, original.atime, original.mtime);
+    }
+  });
+
+  it("предупреждает о RegExp-алиасах и не роняет конфиг", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const cacheDir = mkdtempSync(path.join(tmpdir(), "silent-vite-regexp-"));
+    cacheDirectories.push(cacheDir);
+    try {
+      const plugin = createPlugin();
+      plugin.configResolved?.({
+        cacheDir,
+        command: "build",
+        resolve: { alias: [{ find: /^@\//, replacement: "/tmp/lib" }] },
+      } as unknown as ResolvedConfig);
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]?.[0])).toContain("RegExp");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("читает paths из унаследованного tsconfig", async () => {
+    const project = mkdtempSync(path.join(tmpdir(), "silent-vite-extends-"));
+    const cacheDir = mkdtempSync(path.join(tmpdir(), "silent-vite-cache-"));
+    cacheDirectories.push(project, cacheDir);
+    mkdirSync(path.join(project, "configs"), { recursive: true });
+    writeFileSync(
+      path.join(project, "configs", "base.json"),
+      JSON.stringify({
+        compilerOptions: { baseUrl: "..", paths: { "~/*": ["src/*"] } },
+      }),
+    );
+    writeFileSync(
+      path.join(project, "tsconfig.json"),
+      JSON.stringify({ extends: "./configs/base" }),
+    );
+
+    const plugin = createPlugin({ root: project });
+    plugin.configResolved?.({ cacheDir } as ResolvedConfig);
+    await plugin.buildStart?.();
+
+    const aliases = JSON.parse(scanMock.mock.calls[0]?.[1] ?? "{}").aliases;
+    expect(aliases).toContainEqual({
+      find: "~/*",
+      replacement: path.join(project, "src", "*"),
+    });
   });
 
   it("пропускает виртуальные модули", async () => {

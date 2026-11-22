@@ -1,8 +1,20 @@
 import type { ConfigEnv, Plugin, ResolvedConfig, UserConfig } from "vite";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { NativeTransformResult } from "@ivlev-dev/silent-swc";
-import { loadSwc, nativeScan, nativeScanFiles, nativeTransform } from "./native.js";
-import { aliasesJson, mergeAliasRules, viteAliases, type AliasRule } from "./aliases.js";
+import {
+  loadSwc,
+  nativeAddonFingerprint,
+  nativeScan,
+  nativeScanFiles,
+  nativeTransform,
+} from "./native.js";
+import {
+  aliasMatchesSource,
+  aliasesJson,
+  mergeAliasRules,
+  viteAliases,
+  type AliasRule,
+} from "./aliases.js";
 import type { SilentIndex } from "./native.js";
 import {
   cleanModuleId,
@@ -12,22 +24,27 @@ import {
   isVirtualModule,
   matchesPattern,
   resolveOptions,
+  SOURCE_EXTENSIONS,
 } from "./options.js";
 import type { DiMode, SilentOptions } from "./options.js";
 import {
+  filterIndexModules,
   mergeIndexDelta,
   moduleFingerprint,
+  modulePathOfFile,
   pruneEmptyInterfaceTokens,
   removeModuleFromIndex,
   stableIndexJson,
 } from "./incremental.js";
 import {
   hashContent,
+  PLUGIN_VERSION,
   pruneTransformCache,
   readTransformCache,
   transformCacheKey,
   writeTransformCache,
 } from "./cache.js";
+import { collectTypeOnlyImportSources, isBareSpecifier } from "./type-imports.js";
 
 const EMPTY_INDEX_JSON = JSON.stringify({ interfaces: {}, values: {} });
 const DI_MESSAGE_PREFIX = "[silent-vite] DI: ";
@@ -63,8 +80,14 @@ function readIncomingMap(options: unknown): unknown {
   return (options as Record<string, unknown>).inMap;
 }
 
+function isDeclarationId(id: string): boolean {
+  return /\.d\.[cm]?ts(?:$|[?#])/.test(id);
+}
+
 export function silent(options: SilentOptions = {}): Plugin {
   const opts = resolveOptions(options);
+  // Пользовательский root важнее config.root; иначе берём root из Vite.
+  const rootExplicit = options.root !== undefined;
 
   let aliasRules: AliasRule[] = [];
   let aliasOptionsJson = aliasesJson([]);
@@ -75,6 +98,8 @@ export function silent(options: SilentOptions = {}): Plugin {
   let cachedIndexHash: string | null = null;
   let indexPromise: Promise<string> | null = null;
   let fullRefreshPromise: Promise<void> | null = null;
+  let lastFullRefreshKey: string | null = null;
+  let lastFullRefreshAt = 0;
   let indexGeneration = 0;
   // Операции с индексом сериализованы: инкрементальный апдейт и полный scan
   // не могут перезаписать результат друг друга.
@@ -84,22 +109,81 @@ export function silent(options: SilentOptions = {}): Plugin {
   let cacheDirectory: string | null = null;
   let transformVersion: string | null = null;
   let warnedIncomingMap = false;
+  // null — конфиг ещё не разрешён, оставляем решение addon'у (sourcemap по умолчанию).
+  let sourceMapsEnabled: boolean | null = null;
 
-  const buildOptionsJson = (ssr: boolean): string =>
-    JSON.stringify({
-      swc: opts.swc,
+  const buildOptionsJson = (
+    ssr: boolean,
+    extraAliases: readonly AliasRule[] = [],
+  ): string => {
+    const swc = { ...opts.swc } as Record<string, unknown>;
+    if (swc.sourceMaps === undefined && sourceMapsEnabled === false) {
+      swc.sourceMaps = false;
+    }
+    return JSON.stringify({
+      swc,
       requirePreloader: opts.requirePreloader,
       runtime: opts.runtime,
       hmr: opts.hmr,
       ssr,
       hydrate: opts.hydrate,
-      aliases: aliasRules,
+      aliases: extraAliases.length === 0
+        ? aliasRules
+        : [...aliasRules, ...extraAliases],
+      di: opts.di,
     });
+  };
 
   // Пересобирает правила из снимка Vite-алиасов и актуальных tsconfig paths.
   const rebuildAliases = (): void => {
     aliasRules = mergeAliasRules(viteAliasSnapshot, opts.root);
     aliasOptionsJson = aliasesJson(aliasRules);
+  };
+
+  /**
+   * Индекс хранит пути без расширения, поэтому проверяем ключ в вариантах
+   * всех поддерживаемых расширений — так include/exclude трансформации
+   * применяются и к DI-скану.
+   */
+  const isIndexedModule = (modulePath: string): boolean => {
+    const candidates = [
+      modulePath,
+      ...SOURCE_EXTENSIONS.map((extension) => `${modulePath}.${extension}`),
+    ];
+    if (!candidates.some((candidate) => matchesPattern(opts.include, candidate))) {
+      return false;
+    }
+    return !candidates.some((candidate) => matchesPattern(opts.exclude, candidate));
+  };
+
+  /**
+   * Type-only импорты из модулей, которые addon не сможет разрешить (bare
+   * пакеты без runtime-файла), получают ссылку на текущий модуль: runtime-импорт
+   * значения не генерируется, вместо него появляется DI-диагностика.
+   */
+  const typeOnlyAliasesFor = async (
+    moduleId: string,
+    code: string,
+    resolveImport?: (source: string) => Promise<string | null>,
+  ): Promise<AliasRule[]> => {
+    if (!code.includes("import")) return [];
+    const sources = collectTypeOnlyImportSources(code);
+    if (sources.length === 0) return [];
+    const modulePath = modulePathOfFile(moduleId);
+    const rules: AliasRule[] = [];
+    for (const source of sources) {
+      if (!isBareSpecifier(source)) continue;
+      if (aliasMatchesSource(source, aliasRules)) continue;
+      if (rules.some((rule) => rule.find === source)) continue;
+      if (resolveImport !== undefined) {
+        const resolved = await resolveImport(source);
+        // Установленный runtime-модуль резолвится в JS: type-only имя могло
+        // быть реэкспортировано как значение, поэтому отдаём решение addon'у.
+        if (resolved !== null && !isDeclarationId(resolved)) continue;
+      }
+      rules.push({ find: source, replacement: modulePath });
+    }
+    return rules;
   };
 
   const getSwc = (): ReturnType<typeof loadSwc> => {
@@ -136,6 +220,7 @@ export function silent(options: SilentOptions = {}): Plugin {
       if (cachedIndexJson !== null) return cachedIndexJson;
       const generation = indexGeneration;
       const index: SilentIndex = nativeScan(swc, opts.root, aliasOptionsJson);
+      filterIndexModules(index, isIndexedModule);
       // Скан синхронный, поэтому поколение измениться не может; проверка
       // оставлена страховкой от будущих асинхронных реализаций сканера.
       if (generation !== indexGeneration) {
@@ -178,11 +263,28 @@ export function silent(options: SilentOptions = {}): Plugin {
   };
 
   /**
-   * Режим `scan: "full"`: инвалидирует индекс и тут же запускает полный scan.
-   * Повторные вызовы во время уже запланированного скана переиспользуют его —
-   * задача всё равно читает актуальное состояние файловой системы.
+   * Режим `scan: "full"`: инвалидирует индекс и запускает полный scan.
+   * Повторный запрос с тем же ключом (watchChange + handleHotUpdate на одно
+   * изменение) переиспользует уже запланированный или только что
+   * завершившийся скан, поэтому файл не сканируется дважды.
    */
-  const refreshFullIndex = (): Promise<void> => {
+  const FULL_REFRESH_DEDUPE_MS = 250;
+
+  const requestFullRefresh = (key: string): Promise<void> => {
+    const now = Date.now();
+    const duplicate =
+      key === lastFullRefreshKey
+      && now - lastFullRefreshAt < FULL_REFRESH_DEDUPE_MS;
+    if (duplicate) {
+      if (fullRefreshPromise !== null) {
+        return fullRefreshPromise.catch(() => {
+          invalidateIndex();
+        });
+      }
+      if (cachedIndexJson !== null) return Promise.resolve();
+    }
+    lastFullRefreshKey = key;
+    lastFullRefreshAt = now;
     const reuse = fullRefreshPromise !== null && cachedIndexJson === null;
     invalidateIndex();
     if (reuse) return fullRefreshPromise!;
@@ -192,13 +294,10 @@ export function silent(options: SilentOptions = {}): Plugin {
       if (fullRefreshPromise === pending) fullRefreshPromise = null;
     };
     void pending.then(forget, forget);
-    return pending;
-  };
-
-  const scheduleFullRefresh = (): Promise<void> =>
-    refreshFullIndex().catch(() => {
+    return pending.catch(() => {
       invalidateIndex();
     });
+  };
 
   /**
    * Инкрементальное обновление индекса для одного файла. Если индекс ещё не
@@ -215,6 +314,8 @@ export function silent(options: SilentOptions = {}): Plugin {
       isVirtualModule(file)
       || !isSourceModule(file)
       || !isInsideRoot(opts.root, file)
+      || !matchesPattern(opts.include, file)
+      || matchesPattern(opts.exclude, file)
     ) {
       return Promise.resolve();
     }
@@ -232,6 +333,7 @@ export function silent(options: SilentOptions = {}): Plugin {
           invalidateIndex();
           return;
         }
+        filterIndexModules(delta, isIndexedModule);
         mergeIndexDelta(cachedIndex, delta);
       }
       pruneEmptyInterfaceTokens(cachedIndex, file);
@@ -258,7 +360,14 @@ export function silent(options: SilentOptions = {}): Plugin {
     event: "create" | "update" | "delete",
   ): Promise<void> => {
     if (!opts.index) return Promise.resolve();
-    if (opts.scan === "full") return scheduleFullRefresh();
+    const file = cleanModuleId(id);
+    if (
+      !matchesPattern(opts.include, file)
+      || matchesPattern(opts.exclude, file)
+    ) {
+      return Promise.resolve();
+    }
+    if (opts.scan === "full") return requestFullRefresh(`source:${file}`);
     return scheduleModuleRefresh(id, event);
   };
 
@@ -304,7 +413,33 @@ export function silent(options: SilentOptions = {}): Plugin {
     },
     configResolved(config: ResolvedConfig) {
       cacheDirectory = join(config.cacheDir, "silent-transform");
-      viteAliasSnapshot = viteAliases(config.resolve?.alias ?? [], opts.root);
+      sourceMapsEnabled =
+        config.command === "serve" || Boolean(config.build?.sourcemap);
+      const configuredRoot =
+        typeof config.root === "string" && config.root.length > 0
+          ? resolve(config.root)
+          : null;
+      if (!rootExplicit && configuredRoot !== null && configuredRoot !== opts.root) {
+        opts.root = configuredRoot;
+      }
+      const logger = (
+        config as unknown as {
+          logger?: { warn?: (message: string) => void };
+        }
+      ).logger;
+      const warnAlias = (message: string): void => {
+        const text = `[silent-vite] ${message}`;
+        if (typeof logger?.warn === "function") {
+          logger.warn(text);
+        } else {
+          console.warn(text);
+        }
+      };
+      viteAliasSnapshot = viteAliases(
+        config.resolve?.alias ?? [],
+        opts.root,
+        warnAlias,
+      );
       rebuildAliases();
       invalidateIndex();
     },
@@ -313,7 +448,7 @@ export function silent(options: SilentOptions = {}): Plugin {
         // tsconfig paths перечитываются, Vite-алиасы берутся из снимка.
         rebuildAliases();
         if (opts.index && opts.scan === "full") {
-          return scheduleFullRefresh();
+          return requestFullRefresh(`tsconfig:${cleanModuleId(id)}`);
         }
         invalidateIndex();
         return;
@@ -325,11 +460,8 @@ export function silent(options: SilentOptions = {}): Plugin {
     },
     handleHotUpdate({ file }) {
       if (isSourceModule(file) && !isVirtualModule(file)) {
-        if (opts.scan === "full") {
-          // Полный scan выполнит watchChange/следующий ensureIndex.
-          invalidateIndex();
-          return;
-        }
+        // В full-режиме ключ совпадает с watchChange: одно изменение
+        // не запускает полный scan дважды.
         return refreshSourceChange(file, "update");
       }
     },
@@ -365,16 +497,35 @@ export function silent(options: SilentOptions = {}): Plugin {
 
       const swc = await getSwc();
       const indexJson = await ensureIndex();
-      const callOptionsJson = buildOptionsJson(transformOptions?.ssr === true);
+      const resolveImport =
+        typeof this?.resolve === "function"
+          ? async (source: string): Promise<string | null> => {
+              try {
+                const resolved = await this.resolve(source, moduleId, {
+                  skipSelf: true,
+                });
+                return resolved?.id ?? null;
+              } catch {
+                return null;
+              }
+            }
+          : undefined;
+      const callOptionsJson = buildOptionsJson(
+        transformOptions?.ssr === true,
+        await typeOnlyAliasesFor(moduleId, code, resolveImport),
+      );
       const cacheEnabled =
         cacheDirectory !== null && process.env.SILENT_TRANSFORM_CACHE !== "off";
       const directory = cacheEnabled ? cacheDirectory : null;
       if (directory === null) {
         return emit(nativeTransform(swc, code, moduleId, callOptionsJson, indexJson));
       }
-      transformVersion ??= swc.version();
+      transformVersion ??= `${PLUGIN_VERSION}:${swc.version()}`;
+      // Fingerprint пересчитывается на каждый transform: пересборка addon
+      // инвалидирует кеш даже без перезапуска dev-сервера.
       const key = transformCacheKey([
         transformVersion,
+        nativeAddonFingerprint(),
         moduleId,
         callOptionsJson,
         indexHashOf(indexJson),
@@ -385,7 +536,7 @@ export function silent(options: SilentOptions = {}): Plugin {
         return emit(cached);
       }
       const result = nativeTransform(swc, code, moduleId, callOptionsJson, indexJson);
-      writeTransformCache(directory, key, result);
+      writeTransformCache(directory, key, result, opts.cacheLimit);
       return emit(result);
     },
   };

@@ -107,6 +107,39 @@ export function removeModuleFromIndex(index: SilentIndex, file: string): boolean
   return changed;
 }
 
+/**
+ * Удаляет из индекса записи модулей, не прошедших пользовательский фильтр
+ * (`include`/`exclude` плагина). Токены интерфейсов сохраняются: реализация
+ * могла быть объявлена во включённом модуле, а сам тип — в исключённом.
+ */
+export function filterIndexModules(
+  index: SilentIndex,
+  isIncluded: (modulePath: string) => boolean,
+): boolean {
+  let changed = false;
+
+  for (const key of Object.keys(index.values)) {
+    if (isIncluded(key)) continue;
+    delete index.values[key];
+    changed = true;
+  }
+
+  for (const [token, implementations] of Object.entries(index.interfaces)) {
+    const kept = implementations.filter((implementation) =>
+      isIncluded(moduleOfToken(implementation)),
+    );
+    if (kept.length === implementations.length) continue;
+    changed = true;
+    if (kept.length === 0) {
+      delete index.interfaces[token];
+    } else {
+      index.interfaces[token] = kept;
+    }
+  }
+
+  return changed;
+}
+
 /** Сливает индекс, полученный для набора файлов, в полный индекс. */
 export function mergeIndexDelta(index: SilentIndex, delta: SilentIndex): boolean {
   let changed = false;

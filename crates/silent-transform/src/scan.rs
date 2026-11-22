@@ -4,10 +4,10 @@ use crate::paths::{is_source_file, module_token, resolve_module};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use swc_core::common::{FileName, SourceMap};
+use swc_core::common::{FileName, SourceMap, Spanned};
 use swc_core::ecma::ast::{
-    Decl, EsVersion, Expr, ImportSpecifier, MemberProp, Module, ModuleDecl, ModuleExportName,
-    ModuleItem, Pat, TsEntityName,
+    Class, Decl, EsVersion, Expr, ImportSpecifier, MemberProp, Module, ModuleDecl,
+    ModuleExportName, ModuleItem, Pat, TsEntityName,
 };
 use swc_core::ecma::parser::{lexer::Lexer, Parser, StringInput, Syntax, TsSyntax};
 
@@ -45,16 +45,12 @@ fn prefilter_source(source: &str) -> bool {
     .any(|needle| source.contains(needle))
 }
 
-fn parse_module(path: &Path, source: String) -> Option<Module> {
+fn parse_module(path: &Path, source: String) -> Result<Module, String> {
     let source_map = SourceMap::default();
     let file = source_map.new_source_file(FileName::Real(path.to_path_buf()).into(), source);
     let lexer = Lexer::new(
         Syntax::Typescript(TsSyntax {
-            tsx: path
-                .extension()
-                .and_then(|value| value.to_str())
-                .map(|extension| extension == "tsx" || extension == "jsx")
-                .unwrap_or(false),
+            tsx: is_jsx_capable_path(path),
             decorators: true,
             ..Default::default()
         }),
@@ -63,7 +59,24 @@ fn parse_module(path: &Path, source: String) -> Option<Module> {
         None,
     );
     let mut parser = Parser::new_from(lexer);
-    parser.parse_module().ok()
+    parser.parse_module().map_err(|error| {
+        let span = error.span();
+        let loc = source_map.lookup_char_pos(span.lo());
+        format!(
+            "{}:{}:{}: ошибка разбора: {}",
+            path.display(),
+            loc.line,
+            loc.col_display + 1,
+            error.kind().msg()
+        )
+    })
+}
+
+fn is_jsx_capable_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|value| value.to_str())
+        .map(|extension| matches!(extension, "tsx" | "jsx" | "js" | "mjs" | "cjs"))
+        .unwrap_or(false)
 }
 
 fn module_export_name(name: &ModuleExportName) -> String {
@@ -180,15 +193,16 @@ fn collect_implements(
     aliases: &[AliasRule],
     index: &mut Index,
 ) {
-    let impl_token = |ident: &swc_core::ecma::ast::Ident| module_token(file, ident.sym.as_ref());
-
     for item in &module.body {
-        let Some(class) = class_from_item(item) else {
+        let Some((class, implementation_name)) = class_from_item(item) else {
             continue;
         };
-        let ident = &class.ident;
-        let implementation = impl_token(ident);
-        for implemented in &class.class.implements {
+        let implementation = format!(
+            "{}#{}",
+            crate::paths::module_path_without_extension(file),
+            implementation_name
+        );
+        for implemented in &class.implements {
             let Some(entity) = entity_from_expr(&implemented.expr) else {
                 continue;
             };
@@ -203,13 +217,49 @@ fn collect_implements(
     }
 }
 
-fn class_from_item(item: &ModuleItem) -> Option<&swc_core::ecma::ast::ClassDecl> {
+fn class_from_item(item: &ModuleItem) -> Option<(&Class, String)> {
     match item {
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => match &export.decl {
-            Decl::Class(class) => Some(class),
+            Decl::Class(class) => Some((&class.class, class.ident.sym.to_string())),
+            Decl::Var(var) => class_from_var(var),
             _ => None,
         },
-        ModuleItem::Stmt(swc_core::ecma::ast::Stmt::Decl(Decl::Class(class))) => Some(class),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(export)) => match &export.decl {
+            swc_core::ecma::ast::DefaultDecl::Class(class) => {
+                Some((&class.class, "default".to_string()))
+            }
+            _ => None,
+        },
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(export)) => {
+            class_from_expr(&export.expr).map(|class| (class, "default".to_string()))
+        }
+        ModuleItem::Stmt(swc_core::ecma::ast::Stmt::Decl(Decl::Class(class))) => {
+            Some((&class.class, class.ident.sym.to_string()))
+        }
+        ModuleItem::Stmt(swc_core::ecma::ast::Stmt::Decl(Decl::Var(var))) => class_from_var(var),
+        _ => None,
+    }
+}
+
+fn class_from_var(var: &swc_core::ecma::ast::VarDecl) -> Option<(&Class, String)> {
+    for declarator in &var.decls {
+        let Pat::Ident(binding) = &declarator.name else {
+            continue;
+        };
+        let Some(init) = &declarator.init else {
+            continue;
+        };
+        if let Some(class) = class_from_expr(init) {
+            return Some((class, binding.id.sym.to_string()));
+        }
+    }
+    None
+}
+
+fn class_from_expr(expr: &Expr) -> Option<&Class> {
+    match expr {
+        Expr::Class(class) => Some(&class.class),
+        Expr::Paren(paren) => class_from_expr(&paren.expr),
         _ => None,
     }
 }
@@ -323,7 +373,14 @@ fn collect_into_index(file: &Path, aliases: &[AliasRule], index: &mut Index) {
     if !prefilter_source(&source) {
         return;
     }
-    let Some(module) = parse_module(file, source) else {
+    let Some(module) = parse_module(file, source)
+        .map_err(|error| {
+            // Скан не должен молча пропускать неразобранные файлы: без диагностики
+            // DI-индекс выглядит «пустым» без объяснения причины.
+            eprintln!("[silent-transform] scan: {error}");
+        })
+        .ok()
+    else {
         return;
     };
     let imports = collect_imports(&module);

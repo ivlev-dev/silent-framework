@@ -132,7 +132,17 @@ impl ImportManager {
             return existing.clone();
         }
 
-        let local_name = self.unique_name(export);
+        let local_base = if export == "default" {
+            "_default".to_string()
+        } else {
+            let sanitized = sanitize_identifier(export);
+            if is_reserved_word(&sanitized) {
+                format!("_{sanitized}")
+            } else {
+                sanitized
+            }
+        };
+        let local_name = self.unique_name(&local_base);
         let local = Ident::new(local_name.clone().into(), DUMMY_SP, SyntaxContext::empty());
         self.taken.insert(local_name);
 
@@ -147,14 +157,19 @@ impl ImportManager {
                 local: local.clone(),
             })
         } else {
+            let imported = if is_valid_identifier(export) {
+                ModuleExportName::Ident(Ident::new(export.into(), DUMMY_SP, SyntaxContext::empty()))
+            } else {
+                ModuleExportName::Str(Str {
+                    span: DUMMY_SP,
+                    value: export.into(),
+                    raw: None,
+                })
+            };
             ImportSpecifier::Named(ImportNamedSpecifier {
                 span: DUMMY_SP,
                 local: local.clone(),
-                imported: Some(ModuleExportName::Ident(Ident::new(
-                    export.into(),
-                    DUMMY_SP,
-                    SyntaxContext::empty(),
-                ))),
+                imported: Some(imported),
                 is_type_only: false,
             })
         };
@@ -201,4 +216,84 @@ fn export_name(name: &ModuleExportName) -> String {
         ModuleExportName::Ident(ident) => ident.sym.to_string(),
         ModuleExportName::Str(value) => value.value.to_string_lossy().into_owned(),
     }
+}
+
+fn is_valid_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first.is_ascii_alphabetic() || first == '_' || first == '$') {
+        return false;
+    }
+    chars.all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '$')
+}
+
+fn sanitize_identifier(name: &str) -> String {
+    let mut result = String::with_capacity(name.len());
+    for (index, character) in name.chars().enumerate() {
+        let valid = if index == 0 {
+            character.is_ascii_alphabetic() || character == '_' || character == '$'
+        } else {
+            character.is_ascii_alphanumeric() || character == '_' || character == '$'
+        };
+        result.push(if valid { character } else { '_' });
+    }
+    if result.is_empty() {
+        "_".to_string()
+    } else {
+        result
+    }
+}
+
+fn is_reserved_word(name: &str) -> bool {
+    matches!(
+        name,
+        "await"
+            | "break"
+            | "case"
+            | "catch"
+            | "class"
+            | "const"
+            | "continue"
+            | "debugger"
+            | "default"
+            | "delete"
+            | "do"
+            | "else"
+            | "enum"
+            | "export"
+            | "extends"
+            | "false"
+            | "finally"
+            | "for"
+            | "function"
+            | "if"
+            | "implements"
+            | "import"
+            | "in"
+            | "instanceof"
+            | "interface"
+            | "let"
+            | "new"
+            | "null"
+            | "package"
+            | "private"
+            | "protected"
+            | "public"
+            | "return"
+            | "static"
+            | "super"
+            | "switch"
+            | "this"
+            | "throw"
+            | "true"
+            | "try"
+            | "typeof"
+            | "var"
+            | "void"
+            | "while"
+            | "with"
+            | "yield"
+    )
 }

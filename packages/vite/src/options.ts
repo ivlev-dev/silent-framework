@@ -36,6 +36,17 @@ export interface ResolvedOptions {
   cacheLimit: number;
 }
 
+export const SOURCE_EXTENSIONS = [
+  "ts",
+  "tsx",
+  "mts",
+  "cts",
+  "js",
+  "jsx",
+  "mjs",
+  "cjs",
+] as const;
+
 export const DEFAULT_INCLUDE = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
 export const DEFAULT_EXCLUDE = /node_modules/;
 export const DEFAULT_RUNTIME = "@ivlev-dev/silent-core";

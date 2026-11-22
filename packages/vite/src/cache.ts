@@ -9,10 +9,38 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { NativeTransformResult } from "@ivlev-dev/silent-swc";
 
 const CACHE_FORMAT = "silent-transform-v1";
 export const TRANSFORM_CACHE_LIMIT = 4096;
+
+function readSelfVersion(): string {
+  const candidates = [
+    new URL("../package.json", import.meta.url),
+    new URL("../../package.json", import.meta.url),
+  ];
+  for (const candidate of candidates) {
+    try {
+      const parsed: unknown = JSON.parse(
+        readFileSync(fileURLToPath(candidate), "utf8"),
+      );
+      if (
+        typeof parsed === "object"
+        && parsed !== null
+        && typeof (parsed as Record<string, unknown>)["version"] === "string"
+      ) {
+        return (parsed as Record<string, string>)["version"]!;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return "unknown";
+}
+
+/** Версия плагина входит в ключ кеша: обновление плагина сбрасывает записи. */
+export const PLUGIN_VERSION = readSelfVersion();
 
 export function hashContent(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -61,10 +89,22 @@ export function readTransformCache(
   }
 }
 
+/**
+ * Счётчик записей между prune-проходами. Маленький кеш подчищается чаще:
+ * при `cacheLimit: 2` — после каждой записи, при дефолтном лимите — раз в 256.
+ */
+const writesSincePrune = new Map<string, number>();
+
+function pruneInterval(limit: number): number {
+  if (limit <= 2) return 1;
+  return Math.max(2, Math.min(256, Math.floor(limit / 2)));
+}
+
 export function writeTransformCache(
   directory: string,
   key: string,
   result: NativeTransformResult,
+  limit = TRANSFORM_CACHE_LIMIT,
 ): void {
   try {
     mkdirSync(directory, { recursive: true });
@@ -72,6 +112,13 @@ export function writeTransformCache(
   } catch {
     return;
   }
+  const writes = (writesSincePrune.get(directory) ?? 0) + 1;
+  if (writes >= pruneInterval(limit)) {
+    writesSincePrune.delete(directory);
+    pruneTransformCache(directory, limit);
+    return;
+  }
+  writesSincePrune.set(directory, writes);
 }
 
 export function pruneTransformCache(
