@@ -516,22 +516,22 @@ importers:
   packages/silent:
     dependencies:
       '@ivlev-dev/silent-core':
-        specifier: '>=0.12.0 <0.13.0'
+        specifier: '>=0.13.0 <0.14.0'
         version: link:../core
       '@ivlev-dev/silent-di':
-        specifier: '>=0.12.0 <0.13.0'
+        specifier: '>=0.13.0 <0.14.0'
         version: link:../di
       '@ivlev-dev/silent-reactivity':
-        specifier: '>=0.12.0 <0.13.0'
+        specifier: '>=0.13.0 <0.14.0'
         version: link:../reactivity
       '@ivlev-dev/silent-router':
-        specifier: '>=0.12.0 <0.13.0'
+        specifier: '>=0.13.0 <0.14.0'
         version: link:../router
       '@ivlev-dev/silent-swc':
-        specifier: '>=0.12.0 <0.13.0'
+        specifier: '>=0.13.0 <0.14.0'
         version: link:../swc
       '@ivlev-dev/silent-vite':
-        specifier: '>=0.12.0 <0.13.0'
+        specifier: '>=0.13.0 <0.14.0'
         version: link:../vite
       vite:
         specifier: '>=8'
