@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### SSR: worker pool
+
+- Новый subpath `@ivlev-dev/silent-server/pool`: `createRenderPool` запускает `worker_threads` и выполняет SSR параллельно. Каждый воркер получает собственные DOM-шимы и экземпляр entry-модуля, поэтому общая очередь `renderToString` больше не ограничивает параллелизм внутри процесса.
+- Unary-рендер: entry экспортирует `render(...args) → { html, head }`, вызов — `pool.render(args, { signal, timeoutMs })`. Стриминг: `renderStream(...args, handlers) → ReadableStream<string>`, обработчики последним аргументом (`signal`, обязательный `onHead`, необязательный `onShell`); вызов — `pool.renderStream(args, options)` с `StreamHandle` (`stream`, `head`, `finalHead`, `done`, `cancel`).
+- Планировщик: один job на воркер, очередь с `maxQueue` (`queue-full` → 503), таймауты `timeoutMs`/`idleTimeoutMs`, `warmup`/`ready()`, `stats()`, `close()` и `[Symbol.asyncDispose]`; рестарт воркеров после падений с лимитом.
+- Таймауты: `timeoutMs` ограничивает ожидание в очереди отдельно от выполнения, и задача, снятая из очереди по таймауту, не завершает воркер; `idleTimeoutMs` продлевается на `head`, `shell`, каждом чанке, каждом чтении consumer'а и на `resume` и тикает даже во время `pause`, поэтому медленный читающий клиент не обрывается по простою, а читатель, переставший читать при полном буфере, завершается `TimeoutError`; `idleTimeoutMs: 0` отключает таймаут простоя.
+- Метрики и протокол: отмена по `signal` до старта задачи увеличивает `aborted` и эмитит `job:abort` без `failed`; некорректное сообщение воркера переводит пул в `failed` (`protocol-mismatch`) без падения процесса.
+- Ошибки: инфраструктурные — `PoolError` с полем `code` (`pool-closed`, `queue-full`, `args-not-cloneable`, `entry-load-failed`, `worker-start-failed`, `protocol-mismatch`, `render-unsupported`, `stream-unsupported`, `stream-contract`, `stream-head-missing`, `stream-overflow`, `worker-exited`, `busy`, `timeout`, `aborted`); `PoolError` и тип `PoolErrorCode` экспортируются из subpath, поэтому сбой пула отличается от ошибки entry через `instanceof PoolError`. Ошибки entry сохраняют `name`/`stack`/`code`/`cause`, `RenderReentrancyError` ловится по `name`. `EntryCapabilities` — публичный тип поля `capabilities` в событии `worker:ready`.
+- Добавлены публичные типы контракта entry в основной entry сервера: `RenderEntry`, `RenderStreamEntry`, `RenderStreamHandlers`, `ServerEntryModule`.
+- Ограничения v1: entry должен быть собранным файлом (dev/`vite.ssrLoadModule` не поддерживается); нет честного backpressure — вместо него `highWaterMark`, `maxBufferedChars` и `stream-overflow`; финальный head после отправки `<head>` не применить; `singleton`-привязки DI и `process.env` — per-worker; `terminate()` не выполняет `finally`; вложенный рендер запрещён; subpath `/pool` нельзя бандлить (воркер ищется по `import.meta.url`).
+- Документация: новый гайд `docs/guides/ssr-pool.md`, справочник `docs/api/server-pool.md`, обновлены `docs/api/index.md`, `docs/api/core.md`, `docs/guides/ssr.md`, `docs/architecture.md` и README сервера; `api:check`, `pack:check` и `install:check` покрывают новый subpath.
+- Пул выходит парно с остальными `@ivlev-dev/silent-*`: версии пакетов остаются синхронными, диапазоны `peerDependencies` сервера не меняются.
+
 ### Пакет форм
 
 - Новый пакет `@ivlev-dev/silent-form` (0.12.0): реактивные формы на stage-3 `accessor`-декораторах поверх `@ivlev-dev/silent-validation` и реактивности core.

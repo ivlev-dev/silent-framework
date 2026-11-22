@@ -43,11 +43,13 @@ jobs:
       - run: pnpm consumer:check
       - run: pnpm --filter @ivlev-dev/silent-example-counter build
       - run: pnpm --filter @ivlev-dev/silent-example-ssr-counter build
+      - run: pnpm --filter @ivlev-dev/silent-example-ssr-pool build
       - run: pnpm --filter @ivlev-dev/silent-example-router build
       - run: pnpm --filter @ivlev-dev/silent-example-forms build
       - run: pnpm exec playwright-core install --with-deps chromium
       - run: pnpm test:e2e
       - run: pnpm test:ssr
+      - run: pnpm test:ssr-pool
       - run: pnpm pack:check
       - run: pnpm bench:guard --only=build
       - run: pnpm bench:guard --only=browser

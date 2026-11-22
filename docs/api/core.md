@@ -946,7 +946,7 @@ const { html } = await renderToString(App, { props: { title: "Hi" } });
 
 При доступном `node:async_hooks` каждый вызов создаёт отдельный контекст рендера в `AsyncLocalStorage`: runtime-опции, серверный режим, коллектор `head`, stream-коллектор (при стриминге), счётчик id и pending принадлежат этому рендеру и видны после `await` внутри ViewModel и `resource`. Без ALS серверный пакет один раз выводит предупреждение и работает через прежние модульные переменные.
 
-Рендеры по-прежнему сериализуются очередью, и ALS не включает параллельные рендеры: DOM-шимы общие на процесс. Вложенный `renderToString` внутри активного рендера не ждёт очередь, а сразу возвращает отклонённый промис с `name === "RenderReentrancyError"`; `renderToStream` в той же ситуации бросает такую ошибку синхронно. Класс не экспортируется из пакета — проверяйте `name`. Новых публичных экспортов нет; провайдер контекста доступен только через внутренний сабпуть `@ivlev-dev/silent-core/runtime-context-provider`.
+Рендеры по-прежнему сериализуются очередью, и ALS не включает параллельные рендеры: DOM-шимы общие на процесс. Вложенный `renderToString` внутри активного рендера не ждёт очередь, а сразу возвращает отклонённый промис с `name === "RenderReentrancyError"`; `renderToStream` в той же ситуации бросает такую ошибку синхронно. Класс не экспортируется из пакета — проверяйте `name`. Провайдер контекста доступен только через внутренний сабпуть `@ivlev-dev/silent-core/runtime-context-provider`; публичные типы контракта entry-модуля для worker pool описаны ниже.
 
 ### `RenderOptions`
 
@@ -1080,6 +1080,61 @@ interface StreamOptions extends RenderOptions {
 - ошибка после отправки shell закрывает поток ошибкой (соединение обрывается, fallback остаётся видимым);
 - backpressure не учитывается: чанки буферизуются, пока читатель их не заберёт;
 - поток удерживает внутреннюю очередь SSR до завершения рендера.
+
+### `RenderEntry`
+
+*Стабильность: public.*
+
+```ts
+type RenderEntry<Args extends readonly unknown[] = readonly unknown[]> = (
+  ...args: Args
+) => RenderResult | Promise<RenderResult>;
+```
+
+Тип функции `render` из entry-модуля, который загружает worker pool (`@ivlev-dev/silent-server/pool`). Функция принимает те же аргументы, что переданы в `pool.render(args)`, и возвращает `{ html, head }` синхронно или промисом. Основной путь `renderToString` этот тип не использует.
+
+### `RenderStreamEntry`
+
+*Стабильность: public.*
+
+```ts
+type RenderStreamEntry<Args extends readonly unknown[] = readonly unknown[]> = (
+  ...args: [...Args, RenderStreamHandlers]
+) => ReadableStream<string> | Promise<ReadableStream<string>>;
+```
+
+Тип функции `renderStream` из entry-модуля: обработчики всегда идут последним аргументом, после аргументов задачи. Функция возвращает `ReadableStream<string>` либо промис с ним; async-iterable также принимается воркером.
+
+### `RenderStreamHandlers`
+
+*Стабильность: public.*
+
+```ts
+interface RenderStreamHandlers {
+  readonly signal: AbortSignal;
+  onHead(head: string, info: HeadStreamInfo): void;
+  onShell?(html: string): void;
+}
+```
+
+Обработчики, которые worker pool передаёт `renderStream` последним аргументом.
+
+- `signal` — отменяется при `cancel()`, таймауте, переполнении буфера и `pool.close()`; передайте его в `renderToStream`, чтобы рендер освободил ресурсы.
+- `onHead` — обязателен: без хотя бы одного вызова задание завершается ошибкой с `code: "stream-head-missing"`. `info.final` сообщает, что значение пришло после асинхронных границ.
+- `onShell` — синхронный shell до асинхронных патчей. Пул не передаёт его HTML в `PoolStreamOptions.onShell`, а только размер в байтах.
+
+### `ServerEntryModule`
+
+*Стабильность: public.*
+
+```ts
+interface ServerEntryModule<Args extends readonly unknown[] = readonly unknown[]> {
+  readonly render?: RenderEntry<Args> | undefined;
+  readonly renderStream?: RenderStreamEntry<Args> | undefined;
+}
+```
+
+Модуль, который загружает worker pool. Достаточно одного из экспортов: `render` для unary-рендера, `renderStream` для стриминга. Если запрошенный вид рендера отсутствует, пул возвращает `render-unsupported` или `stream-unsupported`.
 
 
 ## JSX

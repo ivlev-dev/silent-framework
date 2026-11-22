@@ -9,7 +9,7 @@
 - `@ivlev-dev/silent-core` — декораторы, ViewModel, JSX runtime, компоненты, монтирование, HMR.
 - `@ivlev-dev/silent-swc` — нативный Node-API addon.
 - `@ivlev-dev/silent-vite` — Vite-плагин.
-- `@ivlev-dev/silent-server` — SSR: мини-DOM, `renderToString`, сериализация без внешних DOM-зависимостей.
+- `@ivlev-dev/silent-server` — SSR: мини-DOM, `renderToString`, сериализация без внешних DOM-зависимостей; subpath `/pool` — worker pool для параллельного рендера.
 - `@ivlev-dev/silent-router` — опциональный router: `IRouter`, route-классы `Route`, `Link`, `RouterView`, browser/memory history, guards/loaders, DI-доставка и SSR.
 - `@ivlev-dev/silent-validation` — опциональная валидация: stage-3 accessor-декораторы, правила, i18n и рантайм-проверка схем.
 - `@ivlev-dev/silent-validation-vite` — Vite-плагин `validation()`: генерирует схемы из TS-типов для потомков `ValidationModel`.
@@ -377,6 +377,16 @@ packages/server/src/dom/
 Контракт провайдера вынесен во внутренний сабпуть `@ivlev-dev/silent-core/runtime-context-provider` (помечен `@internal`, из основного entry не экспортируется). Серверный пакет лениво инициализирует `node:async_hooks`; если ALS недоступен, один раз выводит предупреждение и переходит на прежний последовательный fallback через модульные переменные. Dispose и очистка ресурсов выполняются внутри store; store закрывается последним (`active = false`, поля обнуляются), поэтому поздние колбэки после таймаута или отмены не видят store-scoped состояния (опции, id, коллекторы metadata/stream, pending). Оговорка: `isServerMode()` опирается на процессный флаг активного сериализованного рендера, поэтому поздний колбэк может получить `true`, пока идёт другой рендер.
 
 Границы изоляции: ALS разделяет опции, id, `head`, stream и pending, но не DOM-шимы (`document`, `Node`, `Element`, ...) и не планировщик реактивности (`flushSync`). Поэтому `enqueueRenderTask` по-прежнему выполняет один рендер за раз, а параллелизм достигается worker/process pool. Вложенный `renderToString`/`renderToStream` внутри активного рендера даёт `RenderReentrancyError` (класс не экспортируется, проверка по `name`).
+
+#### Worker pool
+
+Subpath `@ivlev-dev/silent-server/pool` (`createRenderPool`) запускает `worker_threads`-воркеры, каждый со своим экземпляром модулей и своими DOM-шимами. Инвариант планировщика — **один job на воркер**: задача занимает слот до `result`/`end`, остальные ждут в очереди; вложенный рендер внутри активного запрещён.
+
+- Unary-задача передаётся через общий `parentPort` сообщением `render`; ответ коррелируется по `id`.
+- Стрим получает отдельный `MessageChannel` на задание: чанки, `head`, `shell` и `end` идут по нему, а `pause`/`resume`/`cancel` — обратно. Общий канал не смешивает стримы разных задач.
+- Успех стрима — только `end`; закрытие порта или выход воркера до `end` дают `worker-exited`. `head` обязателен (`stream-head-missing`).
+- Таймаут/отмена unary завершают воркер; стрим сначала получает `cancel`, затем воркер выводится из работы и через `terminateGraceMs` завершается. `close()` отменяет активные стримы и дожидается unary-задач.
+- Границы v1: честного backpressure нет (серверный `renderToStream` не умеет ждать читателя), вместо него — `highWaterMark`, `maxBufferedChars` и `stream-overflow`. Singletons DI и `process.env` — per-worker; entry должен быть собранным файлом. Финальный head после отправки `<head>` применить нельзя — только shell-head.
 
 ### Гидрация
 

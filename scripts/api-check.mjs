@@ -18,6 +18,7 @@ const PACKAGES = [
   { name: "@ivlev-dev/silent-swc", entry: "packages/swc/index.d.ts", doc: "docs/api/swc.md" },
   { name: "@ivlev-dev/silent-vite", entry: "packages/vite/dist/index.d.ts", doc: "docs/api/vite.md" },
   { name: "@ivlev-dev/silent-server", entry: "packages/server/dist/index.d.ts", doc: "docs/api/core.md" },
+  { name: "@ivlev-dev/silent-server/pool", entry: "packages/server/dist/pool.d.ts", doc: "docs/api/server-pool.md" },
   { name: "@ivlev-dev/silent-router", entry: "packages/router/dist/index.d.ts", doc: "docs/api/router.md" },
 ];
 

@@ -63,7 +63,7 @@ pnpm add @ivlev-dev/silent-server
 
 ### Сериализация и вложенные рендеры
 
-Очередь `enqueueRenderTask` сохранена: ALS разделяет контекст, но не делает рендеры параллельными. DOM-шимы (`document`, `Node`, `Element`, `Text`, `Comment`, `HTMLTemplateElement` и другие) остаются глобальными на процесс, поэтому одновременно выполняется один рендер на процесс (точнее, на экземпляр модуля). Для параллельной обработки запросов запускайте worker- или process pool: несколько процессов Node, `cluster`, реплики — по одному рендеру на поток.
+Очередь `enqueueRenderTask` сохранена: ALS разделяет контекст, но не делает рендеры параллельными. DOM-шимы (`document`, `Node`, `Element`, `Text`, `Comment`, `HTMLTemplateElement` и другие) остаются глобальными на процесс, поэтому одновременно выполняется один рендер на процесс (точнее, на экземпляр модуля). Для параллельной обработки запросов запускайте worker- или process pool: несколько процессов Node, `cluster`, реплики — по одному рендеру на поток. Встроенный worker pool для `worker_threads` описан в [«Worker pool для SSR»](./ssr-pool.md).
 
 Вложенный `renderToString` внутри активного рендера не встаёт в очередь: внешний рендер держит её до завершения, поэтому вызов сразу отклоняется ошибкой с `name === "RenderReentrancyError"`. `renderToStream` в той же ситуации бросает такую же ошибку синхронно. Запрещён любой такой вызов, пока внешний рендер активен, — в том числе отложенный через `queueMicrotask` или `setTimeout`, а не только синхронно ожидаемый: async-контекст сохраняется, и проверка срабатывает в момент вызова. Класс не экспортируется из `@ivlev-dev/silent-server`, поэтому проверяйте `error.name`, а не `instanceof`. Отклонённый вложенный вызов очередь не блокирует — следующий рендер выполняется как обычно.
 
@@ -110,14 +110,11 @@ try {
 
 ```js
 import { createServer } from "node:http";
-import { renderToString } from "@ivlev-dev/silent-server";
-import { App } from "./dist/server/entry-server.js";
+import { render } from "./dist/server/entry-server.js";
 
 const server = createServer(async (request, response) => {
   try {
-    const { html, head } = await renderToString(App, {
-      props: { title: "Silent Framework" },
-    });
+    const { html, head } = await render({ title: "Silent Framework" });
 
     const page = `<!doctype html>
 <html lang="ru">
@@ -162,26 +159,33 @@ function renderToStream(
 
 ```js
 import { createServer } from "node:http";
-import { renderToStream } from "@ivlev-dev/silent-server";
-import { App } from "./dist/server/entry-server.js";
+import { renderStream } from "./dist/server/entry-server.js";
 
 const server = createServer(async (request, response) => {
   let head = "";
-  const stream = renderToStream(App, {
-    props: { title: "Silent Framework" },
-    chunkSize: 8 * 1024,
-    nonce: response.getHeader("x-nonce") ?? undefined,
-    onHead(next, info) {
-      head = next;
-      if (info.final) {
-        // Асинхронная часть добавила метаданные: обновите head на клиенте.
-      }
-    },
-    onShell() {
-      response.setHeader("content-type", "text/html; charset=utf-8");
-      response.write(`<!doctype html><html lang="ru"><head><meta charset="utf-8" />${head}</head><body><div id="app">`);
-    },
+  const controller = new AbortController();
+  response.on("close", () => {
+    if (!response.writableEnded) {
+      controller.abort();
+    }
   });
+
+  const stream = renderStream(
+    { title: "Silent Framework" },
+    {
+      signal: controller.signal,
+      onHead(next, info) {
+        head = next;
+        if (info.final) {
+          // Асинхронная часть добавила метаданные: обновите head на клиенте.
+        }
+      },
+      onShell() {
+        response.setHeader("content-type", "text/html; charset=utf-8");
+        response.write(`<!doctype html><html lang="ru"><head><meta charset="utf-8" />${head}</head><body><div id="app">`);
+      },
+    },
+  );
 
   try {
     for await (const chunk of stream) {
@@ -311,11 +315,40 @@ export default defineConfig({
 });
 ```
 
-`src/entry-server.ts` экспортирует приложение для HTTP-сервера:
+`src/entry-server.ts` экспортирует `render` (и при необходимости `renderStream`) для HTTP-сервера:
 
 ```ts
-export { App } from "./app";
+import {
+  renderToString,
+  renderToStream,
+  type RenderStreamHandlers,
+} from "@ivlev-dev/silent-server";
+import { App } from "./app";
+
+export interface RenderProps {
+  title: string;
+}
+
+export function render(
+  props: RenderProps,
+): Promise<{ html: string; head: string }> {
+  return renderToString(App, { props });
+}
+
+export function renderStream(
+  props: RenderProps,
+  handlers: RenderStreamHandlers,
+): ReadableStream<string> {
+  return renderToStream(App, {
+    props,
+    signal: handlers.signal,
+    onHead: handlers.onHead,
+    onShell: handlers.onShell,
+  });
+}
 ```
+
+`render` — точка входа для обычного HTTP-рендера; `renderStream` нужен, если сервер стримит ответ или использует [`@ivlev-dev/silent-server/pool`](./ssr-pool.md). Воркер пула загружает только собранный файл, поэтому entry должен быть результатом `vite build --ssr`, а не dev-модулем.
 
 Сборка и запуск:
 
@@ -325,13 +358,13 @@ vite build --config vite.ssr.config.ts
 node server.mjs
 ```
 
-В результате `dist/client` содержит клиентские ассеты и `index.html`, а `dist/server/entry-server.js` — серверный модуль приложения. Сам HTTP-сервер можно держать отдельным `.mjs`-файлом и не собирать: он импортирует готовый `entry-server.js` и `@ivlev-dev/silent-server`.
+В результате `dist/client` содержит клиентские ассеты и `index.html`, а `dist/server/entry-server.js` — серверный модуль приложения с функциями `render`/`renderStream`. Сам HTTP-сервер можно держать отдельным `.mjs`-файлом и не собирать: он импортирует готовый `entry-server.js`, а рантайм подтягивается через него.
 
 Альтернативы для серверной части:
 
 - `tsx server.ts` — запуск TypeScript-сервера без отдельной компиляции. `tsx` не применяет компилятор Silent Framework, поэтому приложение всё равно должно быть собрано Vite или загружено через dev-сервер.
 - `tsc -p tsconfig.server.json` — компиляция серверного файла в JavaScript. Как и `tsx`, `tsc` не заменяет silent-компилятор: для view нужен плагин.
-- В разработке удобно не собирать приложение, а загружать его через Vite: `vite.createServer({ server: { middlewareMode: true }, appType: "custom" })` и `vite.ssrLoadModule("/src/app.tsx")`. Этот сценарий используется в `scripts/ssr-e2e.mjs`.
+- В разработке удобно не собирать приложение, а загружать его через Vite: `vite.createServer({ server: { middlewareMode: true }, appType: "custom" })` и `vite.ssrLoadModule("/src/app.tsx")`. Этот сценарий используется в `scripts/ssr-e2e.mjs`. Встроенный worker pool с ним не работает: ему нужен собранный entry.
 
 ## Сопоставление props
 
@@ -391,8 +424,7 @@ import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join } from "node:path";
-import { renderToString } from "@ivlev-dev/silent-server";
-import { App } from "./dist/server/entry-server.js";
+import { render } from "./dist/server/entry-server.js";
 
 const clientDir = join(process.cwd(), "dist/client");
 const assetsDir = join(clientDir, "assets");
@@ -437,7 +469,7 @@ const server = createServer(async (request, response) => {
 
   try {
     const props = { title: "Silent Framework" };
-    const { html, head } = await renderToString(App, { props });
+    const { html, head } = await render(props);
     const page = template
       .replace("</head>", `${head}</head>`)
       .replace('<div id="app"></div>', `<div id="app">${html}</div>`);
@@ -461,8 +493,7 @@ server.listen(3000);
 import express from "express";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { renderToString } from "@ivlev-dev/silent-server";
-import { App } from "./dist/server/entry-server.js";
+import { render } from "./dist/server/entry-server.js";
 
 const clientDir = join(process.cwd(), "dist/client");
 const template = await readFile(join(clientDir, "index.html"), "utf8");
@@ -479,7 +510,7 @@ app.use(
 app.use(async (request, response, next) => {
   try {
     const props = { title: "Silent Framework" };
-    const { html, head } = await renderToString(App, { props });
+    const { html, head } = await render(props);
     const page = template
       .replace("</head>", `${head}</head>`)
       .replace('<div id="app"></div>', `<div id="app">${html}</div>`);
@@ -506,7 +537,7 @@ app.listen(3000);
 - HTML зависит от props, cookies и деплоя — используйте `no-cache` или `public, max-age=0, must-revalidate`;
 - если ответ зависит от пользователя, добавьте `private` и `Vary: Cookie`, иначе CDN может отдать чужую разметку.
 
-`renderToString` выполняет рендеры последовательно внутри процесса из-за общих DOM-глобалов, и ALS-контекст этого не меняет (см. [«Изоляция контекста рендера»](#изоляция-контекста-рендера)). Для нагрузки запускайте несколько процессов Node или worker-потоков (например, через кластер или несколько реплик), а не рассчитывайте на параллелизм внутри одного процесса.
+`renderToString` выполняет рендеры последовательно внутри процесса из-за общих DOM-глобалов, и ALS-контекст этого не меняет (см. [«Изоляция контекста рендера»](#изоляция-контекста-рендера)). Для нагрузки запускайте несколько процессов Node или worker-потоков (например, через кластер или несколько реплик), а не рассчитывайте на параллелизм внутри одного процесса. Если нужен параллелизм внутри одного процесса, используйте [worker pool](./ssr-pool.md).
 
 ## Диагностика
 

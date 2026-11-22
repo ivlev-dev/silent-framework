@@ -355,6 +355,25 @@ importers:
         specifier: ^8.3.6
         version: 8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)
 
+  examples/ssr-pool:
+    dependencies:
+      '@ivlev-dev/silent-core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@ivlev-dev/silent-server':
+        specifier: workspace:*
+        version: link:../../packages/server
+    devDependencies:
+      '@ivlev-dev/silent-vite':
+        specifier: workspace:*
+        version: link:../../packages/vite
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vite:
+        specifier: 8.3.6
+        version: 8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)
+
   examples/todo:
     dependencies:
       '@ivlev-dev/silent-core':

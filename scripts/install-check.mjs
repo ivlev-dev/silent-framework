@@ -74,6 +74,7 @@ try {
 import { container } from "@ivlev-dev/silent-di";
 import { hydrate, mount } from "@ivlev-dev/silent-core";
 import { renderToString } from "@ivlev-dev/silent-server";
+import { createRenderPool } from "@ivlev-dev/silent-server/pool";
 import { validate } from "@ivlev-dev/silent-validation";
 import { Form, Field, Label, Required } from "@ivlev-dev/silent-form";
 import silent from "@ivlev-dev/silent-vite";
@@ -88,6 +89,7 @@ if (typeof mount !== "function" || typeof hydrate !== "function") {
   throw new Error("core: mount/hydrate missing");
 }
 if (typeof renderToString !== "function") throw new Error("server: renderToString");
+if (typeof createRenderPool !== "function") throw new Error("server: pool createRenderPool");
 if (typeof validate !== "function") throw new Error("validation: validate missing");
 if (typeof Form !== "function") throw new Error("form: Form class missing");
 if (typeof Field !== "function" || typeof Label !== "function" || typeof Required !== "function") {

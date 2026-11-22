@@ -364,11 +364,32 @@
     ],
     "@ivlev-dev/silent-server": [
       "HeadStreamInfo",
+      "RenderEntry",
       "RenderOptions",
       "RenderResult",
+      "RenderStreamEntry",
+      "RenderStreamHandlers",
       "renderToStream",
       "renderToString",
+      "ServerEntryModule",
       "StreamOptions"
+    ],
+    "@ivlev-dev/silent-server/pool": [
+      "createRenderPool",
+      "EntryCapabilities",
+      "PoolError",
+      "PoolErrorCode",
+      "PoolErrorInfo",
+      "PoolEvent",
+      "PoolRenderOptions",
+      "PoolState",
+      "PoolStats",
+      "PoolStreamOptions",
+      "PoolWorkersStats",
+      "RenderPool",
+      "RenderPoolOptions",
+      "StreamHandle",
+      "StreamSummary"
     ],
     "@ivlev-dev/silent-swc": [
       "NativeTransformResult",

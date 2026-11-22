@@ -16,6 +16,7 @@
 | `@ivlev-dev/silent-core` | [core.md](./core.md) | декораторы, ViewModel, компоненты, JSX runtime, HMR, Suspense, hydration |
 | `@ivlev-dev/silent-router` | [router.md](./router.md) | router: route-классы, `Link`, `RouterView`, guards/loaders, SSR |
 | `@ivlev-dev/silent-server` | [core.md](./core.md#ssr) | `renderToString` и серверный мини-DOM |
+| `@ivlev-dev/silent-server/pool` | [server-pool.md](./server-pool.md) | worker pool: параллельный unary- и streaming-рендер |
 | `@ivlev-dev/silent-swc` | [swc.md](./swc.md) | нативный Node-API addon |
 | `@ivlev-dev/silent-vite` | [vite.md](./vite.md) | Vite-плагин и его опции |
 | `@ivlev-dev/silent-validation` | [validation.md](./validation.md) | классовая валидация: декораторы, схемы из TS-типов, i18n |
@@ -27,6 +28,7 @@
 
 - [С чего начать](../getting-started.md)
 - [SSR и деплой](../guides/ssr.md)
+- [Worker pool для SSR](../guides/ssr-pool.md)
 - [Гидрация](../guides/hydration.md)
 - [Dependency Injection](../guides/di.md)
 - [Роутер](../guides/router.md)

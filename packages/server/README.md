@@ -184,6 +184,72 @@ response.end();
 
 `renderToString` не изменился: он по-прежнему ждёт всё дерево и возвращает `{ html, head }` без служебных маркеров стриминга.
 
+## Worker pool
+
+Subpath `@ivlev-dev/silent-server/pool` добавляет opt-in worker pool для параллельного SSR. Основной процесс по-прежнему рендерит один раз за раз из-за общих DOM-глобалов; пул поднимает `worker_threads`, в каждом свой экземпляр модулей и свои DOM-шимы, поэтому задачи выполняются параллельно.
+
+```ts
+import { createRenderPool } from "@ivlev-dev/silent-server/pool";
+
+const pool = createRenderPool<[string]>(new URL("./dist/server/entry-server.js", import.meta.url), {
+  workers: 2,
+  warmup: "eager",
+  timeoutMs: 10_000,
+});
+
+await pool.ready();
+const { html, head } = await pool.render(["/"]);
+```
+
+Entry-модуль должен быть **собранным** ESM-файлом и экспортировать `render` и/или `renderStream`:
+
+```ts
+export function render(url: string): Promise<{ html: string; head: string }> {
+  return renderToString(App, { props: { url } });
+}
+
+export function renderStream(
+  url: string,
+  handlers: RenderStreamHandlers,
+): ReadableStream<string> {
+  return renderToStream(App, {
+    props: { url },
+    signal: handlers.signal,
+    onHead: handlers.onHead,
+    onShell: handlers.onShell,
+  });
+}
+```
+
+`renderStream` получает обработчики последним аргументом: `signal`, обязательный `onHead(head, { final })` и необязательный `onShell(html)`. Стрим отдаёт `StreamHandle` с `stream`, `head`, `finalHead`, `done` и `cancel()`; успех — только `end`, а при закрытии порта или выходе воркера до `end` задача отклоняется `worker-exited`.
+
+| API | Назначение |
+| --- | --- |
+| `createRenderPool(entry, options?)` | Создаёт пул; entry — путь или `file:`/`data:` URL. |
+| `pool.render(args, options?)` | Unary-рендер: `Promise<{ html, head }>`; `options.signal`/`timeoutMs`. |
+| `pool.renderStream(args, options?)` | Стриминг: сразу возвращает `StreamHandle`. |
+| `pool.ready()` | Поднимает воркеры и ждёт загрузки entry. |
+| `pool.stats()` | Состояние, очередь, счётчики задач и падений. |
+| `pool.close({ force?, timeoutMs? })` | Идемпотентное закрытие: очередь отклоняется, стримы отменяются, unary-задачи доигрываются. |
+| `pool[Symbol.asyncDispose]()` | То же, что `close()`; работает с `await using`. |
+
+Опции: `workers` (по умолчанию `min(4, availableParallelism())`), `warmup` (`"lazy"`/`"eager"`), `timeoutMs` (30 с; ограничивает ожидание в очереди и отдельно — выполнение; таймаут очереди не завершает воркер), `idleTimeoutMs` (равен `timeoutMs`; продлевается на `head`/`shell`/чанках, на каждом чтении consumer'а и на `resume`, тикает и на паузе; `0` отключает только простой), `terminateGraceMs` (500 мс), `maxQueue` (`workers * 64`), `maxTasksPerWorker`, `name`, `env`, `execArgv`, `resourceLimits`, `onEvent`, `onError`.
+
+Инфраструктурные ошибки — экземпляры `PoolError`, класс экспортируется из subpath: проверяйте `error instanceof PoolError`, а причину — по полю `code`: `pool-closed`, `queue-full`, `args-not-cloneable`, `entry-load-failed`, `worker-start-failed`, `protocol-mismatch`, `render-unsupported`, `stream-unsupported`, `stream-contract`, `stream-head-missing`, `stream-overflow`, `worker-exited`, `busy`, `timeout` (`name: "TimeoutError"`), `aborted` (`name: "AbortError"`). Ошибки entry сохраняют `name`/`message`/`stack`/`code`/`cause`, но не проходят `instanceof` исходного класса. Некорректное сообщение воркера переводит пул в `state: "failed"` (`protocol-mismatch`), не роняя процесс.
+
+Ограничения:
+
+- entry должен быть собран Vite/`tsc`; `vite.ssrLoadModule` и dev-модули не поддерживаются;
+- `singleton`-привязки DI, кэши и модульное состояние — per-worker, а `process.env` фиксируется при спавне воркера;
+- один job на воркер; вложенный `renderToString`/`renderToStream` внутри активного рендера запрещён;
+- честного backpressure нет: `highWaterMark` (64 × 1024 символов) и `maxBufferedChars` (4 000 000) ограничивают буфер пула, а переполнение даёт `stream-overflow`;
+- финальный head после отправки `<head>` применить нельзя — используйте shell-head; `finalHead` годится для логов/трейлера;
+- `worker.terminate()` не выполняет `finally`, поэтому не полагайтесь на очистку в `finally` при таймауте/отмене.
+
+**Не бандлите subpath `/pool`.** Путь к воркеру вычисляется как `new URL("./worker-main.js", import.meta.url)`, поэтому `@ivlev-dev/silent-server/pool` должен загружаться из `node_modules` как есть; после бандлинга в один файл `worker-main.js` рядом не окажется.
+
+Подробный гайд: [docs/guides/ssr-pool.md](https://github.com/ivlev-dev/silent-framework/blob/main/docs/guides/ssr-pool.md). Пример: [examples/ssr-pool](https://github.com/ivlev-dev/silent-framework/tree/main/examples/ssr-pool).
+
 ## API
 
 | Символ | Назначение |

@@ -1589,6 +1589,10 @@
         "kind": "interface",
         "signature": "export interface HeadStreamInfo { readonly final: boolean; }"
       },
+      "RenderEntry": {
+        "kind": "type",
+        "signature": "export type RenderEntry<Args extends readonly unknown[] = readonly unknown[]> = (...args: Args) => RenderResult | Promise<RenderResult>;"
+      },
       "RenderOptions": {
         "kind": "interface",
         "signature": "export interface RenderOptions { readonly props?: Record<string, unknown> | undefined; readonly container?: Container | undefined; readonly preloader?: Preloader | undefined; readonly onError?: ((error: unknown, component: AnyComponent) => void) | undefined; readonly markers?: boolean | undefined; readonly signal?: AbortSignal | undefined; readonly timeoutMs?: number | undefined; }"
@@ -1596,6 +1600,14 @@
       "RenderResult": {
         "kind": "interface",
         "signature": "export interface RenderResult { readonly html: string; readonly head: string; }"
+      },
+      "RenderStreamEntry": {
+        "kind": "type",
+        "signature": "export type RenderStreamEntry<Args extends readonly unknown[] = readonly unknown[]> = (...args: [...Args, RenderStreamHandlers]) => ReadableStream<string> | Promise<ReadableStream<string>>;"
+      },
+      "RenderStreamHandlers": {
+        "kind": "interface",
+        "signature": "export interface RenderStreamHandlers { readonly signal: AbortSignal; onHead(head: string, info: HeadStreamInfo): void; onShell?(html: string): void; }"
       },
       "renderToStream": {
         "kind": "function",
@@ -1607,9 +1619,76 @@
         "type": "(app: AnyComponent, options?: RenderOptions) => Promise<RenderResult>",
         "signature": "export declare function renderToString(app: AnyComponent, options?: RenderOptions): Promise<RenderResult>;"
       },
+      "ServerEntryModule": {
+        "kind": "interface",
+        "signature": "export interface ServerEntryModule<Args extends readonly unknown[] = readonly unknown[]> { readonly render?: RenderEntry<Args> | undefined; readonly renderStream?: RenderStreamEntry<Args> | undefined; }"
+      },
       "StreamOptions": {
         "kind": "interface",
         "signature": "export interface StreamOptions extends RenderOptions { readonly chunkSize?: number; readonly onHead?: ((head: string, info: HeadStreamInfo) => void) | undefined; readonly onShell?: ((html: string) => void) | undefined; readonly onChunk?: ((chunk: string) => void) | undefined; readonly nonce?: string | undefined; readonly signal?: AbortSignal | undefined; }"
+      }
+    },
+    "@ivlev-dev/silent-server/pool": {
+      "createRenderPool": {
+        "kind": "function",
+        "type": "<Args extends readonly unknown[] = readonly unknown[]>(entry: string | URL, options?: RenderPoolOptions) => RenderPool<Args>",
+        "signature": "export declare function createRenderPool<Args extends readonly unknown[] = readonly unknown[]>(entry: string | URL, options?: RenderPoolOptions): RenderPool<Args>;"
+      },
+      "EntryCapabilities": {
+        "kind": "interface",
+        "signature": "export interface EntryCapabilities { readonly render: boolean; readonly renderStream: boolean; }"
+      },
+      "PoolError": {
+        "kind": "class",
+        "signature": "export declare class PoolError extends Error { readonly code: PoolErrorCode; constructor(code: PoolErrorCode, message: string, options?: PoolErrorOptions); }"
+      },
+      "PoolErrorCode": {
+        "kind": "type",
+        "signature": "export type PoolErrorCode = \"pool-closed\" | \"queue-full\" | \"args-not-cloneable\" | \"entry-load-failed\" | \"worker-start-failed\" | \"protocol-mismatch\" | \"render-unsupported\" | \"stream-unsupported\" | \"stream-contract\" | \"stream-head-missing\" | \"stream-overflow\" | \"worker-exited\" | \"busy\" | \"timeout\" | \"aborted\";"
+      },
+      "PoolErrorInfo": {
+        "kind": "interface",
+        "signature": "export interface PoolErrorInfo { readonly source: \"worker\" | \"event\" | \"callback\"; readonly workerId?: number; readonly event?: PoolEvent; }"
+      },
+      "PoolEvent": {
+        "kind": "type",
+        "signature": "export type PoolEvent = { readonly type: \"worker:spawn\"; readonly workerId: number; } | { readonly type: \"worker:ready\"; readonly workerId: number; readonly capabilities: EntryCapabilities; } | { readonly type: \"worker:exit\"; readonly workerId: number; readonly code: number; readonly expected: boolean; } | { readonly type: \"worker:restart\"; readonly workerId: number; readonly reason: string; } | { readonly type: \"job:queued\"; readonly jobId: number; readonly kind: \"render\" | \"stream\"; } | { readonly type: \"job:start\"; readonly jobId: number; readonly kind: \"render\" | \"stream\"; readonly workerId: number; } | { readonly type: \"job:finish\"; readonly jobId: number; readonly kind: \"render\" | \"stream\"; readonly ok: boolean; readonly durationMs: number; } | { readonly type: \"job:timeout\"; readonly jobId: number; readonly kind: \"render\" | \"stream\"; readonly timeoutMs: number; } | { readonly type: \"job:abort\"; readonly jobId: number; readonly kind: \"render\" | \"stream\"; readonly reason?: string; } | { readonly type: \"pool:closed\"; } | { readonly type: \"pool:failed\"; readonly error: unknown; };"
+      },
+      "PoolRenderOptions": {
+        "kind": "interface",
+        "signature": "export interface PoolRenderOptions { readonly signal?: AbortSignal | undefined; readonly timeoutMs?: number | undefined; }"
+      },
+      "PoolState": {
+        "kind": "type",
+        "signature": "export type PoolState = \"idle\" | \"booting\" | \"ready\" | \"closing\" | \"closed\" | \"failed\";"
+      },
+      "PoolStats": {
+        "kind": "interface",
+        "signature": "export interface PoolStats { readonly state: PoolState; readonly workers: PoolWorkersStats; readonly queueDepth: number; readonly completed: number; readonly failed: number; readonly timedOut: number; readonly aborted: number; readonly rejectedOverflow: number; readonly restarts: number; readonly deaths: number; readonly staleMessages: number; }"
+      },
+      "PoolStreamOptions": {
+        "kind": "interface",
+        "signature": "export interface PoolStreamOptions extends PoolRenderOptions { readonly idleTimeoutMs?: number | undefined; readonly highWaterMark?: number | undefined; readonly maxBufferedChars?: number | undefined; readonly onHead?: ((head: string, info: { readonly final: boolean; }) => void) | undefined; readonly onShell?: ((info: { readonly bytes: number; }) => void) | undefined; }"
+      },
+      "PoolWorkersStats": {
+        "kind": "interface",
+        "signature": "export interface PoolWorkersStats { readonly total: number; readonly booting: number; readonly idle: number; readonly busy: number; }"
+      },
+      "RenderPool": {
+        "kind": "interface",
+        "signature": "export interface RenderPool<Args extends readonly unknown[] = readonly unknown[]> { readonly workers: number; readonly name: string; readonly state: PoolState; render(args: Args, options?: PoolRenderOptions): Promise<RenderResult>; renderStream(args: Args, options?: PoolStreamOptions): StreamHandle; ready(): Promise<void>; stats(): PoolStats; close(options?: { force?: boolean; timeoutMs?: number; }): Promise<void>; [Symbol.asyncDispose](): Promise<void>; }"
+      },
+      "RenderPoolOptions": {
+        "kind": "interface",
+        "signature": "export interface RenderPoolOptions { readonly workers?: number | undefined; readonly warmup?: \"lazy\" | \"eager\" | undefined; readonly timeoutMs?: number | undefined; readonly idleTimeoutMs?: number | undefined; readonly terminateGraceMs?: number | undefined; readonly maxQueue?: number | undefined; readonly maxTasksPerWorker?: number | undefined; readonly name?: string | undefined; readonly env?: NodeJS.ProcessEnv | undefined; readonly execArgv?: readonly string[] | undefined; readonly resourceLimits?: ResourceLimits | undefined; readonly onEvent?: ((event: PoolEvent) => void) | undefined; readonly onError?: ((error: unknown, info: PoolErrorInfo) => void) | undefined; }"
+      },
+      "StreamHandle": {
+        "kind": "interface",
+        "signature": "export interface StreamHandle { readonly stream: ReadableStream<string>; readonly head: Promise<string>; readonly finalHead: Promise<string>; readonly done: Promise<StreamSummary>; cancel(reason?: unknown): void; }"
+      },
+      "StreamSummary": {
+        "kind": "interface",
+        "signature": "export interface StreamSummary { readonly head: string; readonly finalHead: string; readonly chunks: number; readonly chars: number; readonly durationMs: number; readonly workerId: number; }"
       }
     },
     "@ivlev-dev/silent-swc": {
