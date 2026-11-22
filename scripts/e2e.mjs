@@ -1,152 +1,121 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import {
+  cpSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium, firefox, webkit } from "playwright-core";
 import { createServer } from "vite";
+import { launchBrowser, selectBrowserName } from "./lib/browser.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const counterDir = join(root, "examples", "counter");
 const todoDir = join(root, "examples", "todo");
 const routerDir = join(root, "examples", "router");
 const formsDir = join(root, "examples", "forms");
-const cacheDir = join(homedir(), ".cache", "ms-playwright");
 
-const BROWSER_TYPES = { chromium, firefox, webkit };
-
-const BROWSER_LAYOUTS = {
-  chromium: [
-    ["chrome-linux64", "chrome"],
-    ["chrome-linux", "chrome"],
-    ["chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium"],
-  ],
-  firefox: [
-    ["firefox", "firefox"],
-    ["firefox", "firefox-bin"],
-  ],
-  webkit: [
-    ["pw_run.sh"],
-    ["minibrowser-gtk", "bin", "MiniBrowser"],
-    ["minibrowser-wpe", "bin", "MiniBrowser"],
-  ],
-};
-
-function selectBrowserName() {
-  const raw = (process.env.SILENT_E2E_BROWSER ?? "chromium").trim().toLowerCase();
-  if (!Object.hasOwn(BROWSER_TYPES, raw)) {
-    throw new Error(
-      `SILENT_E2E_BROWSER="${raw}" не поддерживается. Допустимо: chromium, firefox, webkit.`,
-    );
-  }
-  return raw;
-}
-
-function expectedRevision(browserName) {
-  try {
-    const manifest = JSON.parse(
-      readFileSync(join(root, "node_modules", "playwright-core", "browsers.json"), "utf8"),
-    );
-    return manifest.browsers?.find((entry) => entry.name === browserName)?.revision;
-  } catch {
-    return undefined;
-  }
-}
-
-function installedRevisions(browserName) {
-  if (!existsSync(cacheDir)) {
-    return [];
-  }
-  const expected = expectedRevision(browserName);
-  return readdirSync(cacheDir)
-    .filter((entry) => entry.startsWith(`${browserName}-`))
-    .sort((left, right) => {
-      if (expected !== undefined) {
-        const leftMatches = left.endsWith(`-${expected}`) ? 0 : 1;
-        const rightMatches = right.endsWith(`-${expected}`) ? 0 : 1;
-        if (leftMatches !== rightMatches) {
-          return leftMatches - rightMatches;
-        }
-      }
-      const leftRevision = Number(left.slice(browserName.length + 1));
-      const rightRevision = Number(right.slice(browserName.length + 1));
-      return rightRevision - leftRevision;
-    });
-}
-
-function findExecutable(browserName) {
-  const revisions = installedRevisions(browserName);
-  for (const revision of revisions) {
-    for (const layout of BROWSER_LAYOUTS[browserName]) {
-      const candidate = join(cacheDir, revision, ...layout);
-      if (existsSync(candidate)) {
-        return candidate;
-      }
-    }
-  }
-  throw new Error(
-    [
-      `${browserName}: исполняемый файл не найден в ${cacheDir}.`,
-      `Установите браузер: pnpm exec playwright-core install --with-deps ${browserName}`,
-      revisions.length === 0
-        ? "Установленных ревизий для этого браузера нет."
-        : `Проверены ревизии: ${revisions.join(", ")}.`,
-    ].join(" "),
-  );
-}
-
-function sanitizedEnv() {
-  const env = {};
-  for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined) {
-      env[key] = value;
-    }
-  }
-  delete env["LD_PRELOAD"];
-  return env;
-}
-
-async function launchBrowser(browserName) {
-  const browserType = BROWSER_TYPES[browserName];
-  const executablePath = findExecutable(browserName);
-  const options = {
-    executablePath,
-    headless: true,
-    env: sanitizedEnv(),
-  };
-  if (browserName === "chromium") {
-    options.args = ["--no-sandbox"];
-  }
-  try {
-    return await browserType.launch(options);
-  } catch (error) {
-    throw new Error(
-      `${browserName}: не удалось запустить ${executablePath}. ` +
-        `Проверьте зависимости: pnpm exec playwright-core install --with-deps ${browserName}\n` +
-        `${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-}
-
+// Vite-плагин Silent использует process.cwd() при сканировании DI/алиасов,
+// поэтому на время жизни dev-сервера cwd переключается на пример. В отличие
+// от прежнего поведения, cwd обязательно восстанавливается в close().
 async function startServer(directory) {
+  const previousCwd = process.cwd();
   process.chdir(directory);
-  const server = await createServer({
-    configFile: join(directory, "vite.config.ts"),
-    root: directory,
-    logLevel: "error",
-    server: { host: "127.0.0.1", port: 0 },
-  });
-  await server.listen();
+  let server = null;
+  try {
+    server = await createServer({
+      configFile: join(directory, "vite.config.ts"),
+      root: directory,
+      logLevel: "error",
+      server: { host: "127.0.0.1", port: 0 },
+    });
+    await server.listen();
+  } catch (error) {
+    process.chdir(previousCwd);
+    throw error;
+  }
   const address = server.httpServer?.address();
   if (address === null || typeof address === "string") {
+    await server.close();
+    process.chdir(previousCwd);
     throw new Error("Не удалось определить порт Vite");
   }
   return {
     url: `http://127.0.0.1:${String(address.port)}/`,
     close: async () => {
-      await server.close();
+      try {
+        await server.close();
+      } finally {
+        process.chdir(previousCwd);
+      }
     },
   };
+}
+
+// HMR-тест меняет исходники примера. Работаем в одноразовой копии, чтобы
+// не трогать tracked-файлы и не зависеть от порядка/сбоев прогона.
+// Копия лежит внутри examples/counter: так Node/Vite находят её
+// node_modules по обычному обходу вверх. Префикс `.tmp-` в .gitignore.
+function createCounterSandbox() {
+  const workDir = mkdtempSync(join(counterDir, ".tmp-e2e-counter-"));
+  const skipped = new Set(["node_modules", "dist", ".vite", ".vite-temp"]);
+  // Копируем по одному элементу: fs.cpSync не разрешает копировать
+  // каталог в его собственный подкаталог.
+  for (const entry of readdirSync(counterDir)) {
+    if (skipped.has(entry) || entry.startsWith(".tmp-")) {
+      continue;
+    }
+    cpSync(join(counterDir, entry), join(workDir, entry), { recursive: true });
+  }
+  // Копия лежит на два уровня глубже оригинала, поэтому относительный
+  // путь в tsconfig.json нужно удлинить на один уровень.
+  const tsconfigFile = join(workDir, "tsconfig.json");
+  writeFileSync(
+    tsconfigFile,
+    readFileSync(tsconfigFile, "utf8").replaceAll(
+      "../../tsconfig.base.json",
+      "../../../tsconfig.base.json",
+    ),
+  );
+  return {
+    workDir,
+    cleanup() {
+      rmSync(workDir, { recursive: true, force: true, maxRetries: 3 });
+    },
+  };
+}
+
+// Ждём не «примерно 500 мс», а сообщение HMR-клиента Vite: оно приходит
+// после того, как обновлённый модуль загружен и применён.
+function waitForHmrUpdate(page, fileName, timeoutMs = 15_000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error(`HMR не применил ${fileName} за ${String(timeoutMs)} мс`));
+    }, timeoutMs);
+
+    const onConsole = (message) => {
+      let text = "";
+      try {
+        text = message.text();
+      } catch {
+        return;
+      }
+      if (/hot updated/i.test(text) && text.includes(fileName)) {
+        cleanup();
+        resolve();
+      }
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      page.off("console", onConsole);
+    };
+
+    page.on("console", onConsole);
+  });
 }
 
 function collectErrors(page) {
@@ -163,15 +132,19 @@ function collectErrors(page) {
 }
 
 async function runCounter(browser) {
-  const viewFile = join(counterDir, "src", "counter.tsx");
-  const vmFile = join(counterDir, "src", "counter.vm.ts");
+  const sandbox = createCounterSandbox();
+  const viewFile = join(sandbox.workDir, "src", "counter.tsx");
+  const vmFile = join(sandbox.workDir, "src", "counter.vm.ts");
   const viewSource = readFileSync(viewFile, "utf8");
   const vmSource = readFileSync(vmFile, "utf8");
-  const server = await startServer(counterDir);
-  const page = await browser.newPage();
-  const errors = collectErrors(page);
+  let server = null;
+  let page = null;
 
   try {
+    server = await startServer(sandbox.workDir);
+    page = await browser.newPage();
+    const errors = collectErrors(page);
+
     await page.goto(server.url, { waitUntil: "domcontentloaded" });
     await page.locator(".value").waitFor();
     assert.equal((await page.locator(".value").textContent())?.trim(), "0");
@@ -201,22 +174,33 @@ async function runCounter(browser) {
     assert.equal((await page.locator(".value").textContent())?.trim(), "2");
     assert.equal((await page.locator(".items li").first().textContent())?.trim(), "item-1");
 
+    // Ждём применения именно модуля VM, а не фиксированный таймаут:
+    // после этого клик гарантированно попадёт в обновлённую реализацию.
+    const vmApplied = waitForHmrUpdate(page, "counter.vm.ts");
     writeFileSync(
       vmFile,
       vmSource.replace("this.count += step;", "this.count += step + 5;"),
     );
-    await page.waitForTimeout(500);
+    await vmApplied;
     await page.getByRole("button", { name: "+" }).click();
     assert.equal((await page.locator(".value").textContent())?.trim(), "9");
     assert.equal((await page.locator(".items li").first().textContent())?.trim(), "item-1");
 
     assert.deepEqual(errors, []);
   } finally {
-    writeFileSync(viewFile, viewSource);
-    writeFileSync(vmFile, vmSource);
-    await page.waitForTimeout(300);
-    await page.close();
-    await server.close();
+    try {
+      if (page !== null) {
+        await page.close();
+      }
+    } finally {
+      try {
+        if (server !== null) {
+          await server.close();
+        }
+      } finally {
+        sandbox.cleanup();
+      }
+    }
   }
 }
 
@@ -288,8 +272,11 @@ async function runTodo(browser) {
 
     assert.deepEqual(errors, []);
   } finally {
-    await page.close();
-    await server.close();
+    try {
+      await page.close();
+    } finally {
+      await server.close();
+    }
   }
 }
 
@@ -388,8 +375,11 @@ async function runRouter(browser) {
 
     assert.deepEqual(errors, []);
   } finally {
-    await page.close();
-    await server.close();
+    try {
+      await page.close();
+    } finally {
+      await server.close();
+    }
   }
 }
 
@@ -473,8 +463,11 @@ async function runForms(browser) {
 
     assert.deepEqual(errors, []);
   } finally {
-    await page.close();
-    await server.close();
+    try {
+      await page.close();
+    } finally {
+      await server.close();
+    }
   }
 }
 
@@ -573,8 +566,11 @@ async function runRegressions(browser, browserName) {
 
     assert.deepEqual(errors, []);
   } finally {
-    await page.close();
-    await server.close();
+    try {
+      await page.close();
+    } finally {
+      await server.close();
+    }
   }
 }
 
@@ -586,9 +582,8 @@ const SUITES = {
 
 async function main() {
   const browserName = selectBrowserName();
-  const executablePath = findExecutable(browserName);
+  const { browser, executablePath } = await launchBrowser(browserName);
   console.log(`e2e: ${browserName} (${executablePath})`);
-  const browser = await launchBrowser(browserName);
   try {
     for (const suite of SUITES[browserName]) {
       await suite(browser, browserName);

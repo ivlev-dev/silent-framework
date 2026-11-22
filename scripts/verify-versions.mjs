@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -33,6 +33,43 @@ function normalizeTag(tag) {
   return tag.replace(/^v/, "");
 }
 
+function internalRange(version) {
+  const match = version.match(/^(\d+)\.(\d+)\.(\d+)$/);
+  if (!match) {
+    console.error(`Некорректная версия: ${version}`);
+    process.exit(1);
+  }
+  return `>=${match[1]}.${match[2]}.0 <${match[1]}.${Number(match[2]) + 1}.0`;
+}
+
+/**
+ * `pnpm install --frozen-lockfile` в CI сверяет lockfile с манифестами.
+ * Если внутренние диапазоны обновили без `pnpm install --lockfile-only`,
+ * релиз падает уже на установке — лучше поймать это локально.
+ */
+function checkLockfile(version) {
+  if (!existsSync(join(root, "pnpm-lock.yaml"))) {
+    return;
+  }
+  const expected = internalRange(version);
+  const stale = [];
+  const lines = readText("pnpm-lock.yaml").split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = lines[index].match(/specifier:\s*'?(>=\d+\.\d+\.\d+ <\d+\.\d+\.\d+)'?/);
+    if (match !== null && match[1] !== expected) {
+      stale.push(`${index + 1}: ${match[1]} (ожидается ${expected})`);
+    }
+  }
+  if (stale.length > 0) {
+    console.error("pnpm-lock.yaml устарел относительно версии пакетов:");
+    for (const entry of stale) {
+      console.error(entry);
+    }
+    console.error("Выполните `pnpm install --lockfile-only` и закоммитьте lockfile.");
+    process.exit(1);
+  }
+}
+
 const entries = [];
 for (const name of packages) {
   const path = `packages/${name}/package.json`;
@@ -51,6 +88,7 @@ if (versions.size !== 1) {
 }
 
 const version = entries[0].version;
+checkLockfile(version);
 const explicitTag = process.argv[2];
 const tag =
   explicitTag ??

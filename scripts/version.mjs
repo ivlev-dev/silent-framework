@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -192,6 +193,35 @@ function writePackages(version) {
   }
 }
 
+/**
+ * Приводит pnpm-lock.yaml в соответствие с обновлёнными манифестами.
+ * Без этого minor/major-бамп меняет диапазоны внутренних зависимостей,
+ * а `pnpm install --frozen-lockfile` в release CI падает на устаревшем
+ * lockfile. `--lockfile-only` не трогает node_modules и не запускает
+ * lifecycle-скрипты.
+ */
+function updateLockfile() {
+  const command = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+  try {
+    execFileSync(command, ["install", "--lockfile-only", "--ignore-scripts"], {
+      cwd: root,
+      stdio: "inherit",
+      shell: process.platform === "win32",
+    });
+  } catch (error) {
+    if (error !== null && typeof error === "object" && error.code === "ENOENT") {
+      fail(
+        "Не удалось обновить pnpm-lock.yaml: pnpm не найден в PATH. "
+          + "Манифесты уже обновлены — установите pnpm и выполните `pnpm install --lockfile-only`, bump повторять не нужно.",
+      );
+    }
+    fail(
+      "Не удалось обновить pnpm-lock.yaml после bump. "
+        + "Манифесты уже обновлены — выполните `pnpm install --lockfile-only` вручную и проверьте `git diff pnpm-lock.yaml`; bump повторять не нужно.",
+    );
+  }
+}
+
 function parseArguments(argv) {
   const dryRun = argv.includes("--dry-run");
   const rest = argv.filter((argument) => argument !== "--dry-run");
@@ -241,6 +271,7 @@ if (options.dryRun) {
     }
   }
   console.log(`Cargo.toml: ${currentVersion} -> ${nextVersion}`);
+  console.log("pnpm-lock.yaml: будет обновлён через pnpm install --lockfile-only");
   console.log(
     changelog.changed
       ? `CHANGELOG.md: будет добавлен заголовок ## ${nextVersion}`
@@ -254,6 +285,7 @@ writeCargoVersion(nextVersion);
 if (changelog.changed) {
   writeText("CHANGELOG.md", changelog.text);
 }
+updateLockfile();
 console.log(
   changelog.changed
     ? `Версия обновлена до ${nextVersion}, заголовок добавлен в CHANGELOG.md`

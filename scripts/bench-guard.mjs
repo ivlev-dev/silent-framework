@@ -1,27 +1,81 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 const root = join(import.meta.dirname, "..");
-const baselinePath = join(root, "scripts", "bench-baseline.json");
+const defaultBaselinePath = join(root, "scripts", "bench-baseline.json");
+
+const SECTION_NAMES = ["build", "browser", "alloc", "ssr", "hydrate"];
 
 const rawArgs = process.argv.slice(2);
 const update = rawArgs.includes("--update");
 const strict = rawArgs.includes("--strict");
 const onlyArg = rawArgs.find((value) => value.startsWith("--only="));
-const only = new Set(
-  onlyArg === undefined ? ["build", "browser", "alloc"] : onlyArg.slice("--only=".length).split(","),
-);
+const baselineArg = rawArgs.find((value) => value.startsWith("--baseline="));
+const metricsArg = rawArgs.find((value) => value.startsWith("--metrics="));
+
+function fail(message, code = 1) {
+  console.error(message);
+  process.exit(code);
+}
+
+function requestedSections() {
+  if (onlyArg === undefined) {
+    return ["build", "browser", "alloc"];
+  }
+  const values = onlyArg
+    .slice("--only=".length)
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  if (values.length === 0) {
+    fail("bench-guard: --only= пуст; укажите секции через запятую");
+  }
+  const unknown = values.filter((value) => !SECTION_NAMES.includes(value));
+  if (unknown.length > 0) {
+    fail(
+      `bench-guard: неизвестные секции ${unknown.join(", ")}; доступны: ${SECTION_NAMES.join(", ")}`,
+    );
+  }
+  return values;
+}
+
+function pathOption(value, name) {
+  if (value === undefined) {
+    return null;
+  }
+  const path = value.slice(`--${name}=`.length);
+  if (path.length === 0) {
+    fail(`bench-guard: --${name}= пуст`);
+  }
+  return resolve(process.cwd(), path);
+}
+
+const only = new Set(requestedSections());
+const explicitOnly = onlyArg !== undefined;
+const baselinePath = pathOption(baselineArg, "baseline") ?? defaultBaselinePath;
+const metricsPath = pathOption(metricsArg, "metrics");
 
 const LIMITS = {
   startGzipKb: 0.3,
   startJsKb: 2,
   warmMs: 40,
+  // Отношения silent/solid сравниваются в процентах: абсолютная разница
+  // 0.4 для ratio 0.5 — это +80%, а не «почти ничего».
+  ratioGrowth: 40,
   ratioDrop: 15,
   opsDrop: 25,
   allocGrowth: 8,
 };
+
+function readJson(path, what) {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    fail(`bench-guard: не удалось прочитать ${what} ${path}: ${String(error)}`);
+  }
+}
 
 function run(name, jsonPath, script) {
   const result = spawnSync("pnpm", [script, "--json", jsonPath], {
@@ -142,8 +196,8 @@ function buildChecks(metrics, baseline) {
         name: `build.${key}`,
         base: baseRatio,
         current: silentMs / solidMs,
-        limit: LIMITS.warmMs,
-        kind: "growth",
+        limit: LIMITS.ratioGrowth,
+        kind: "growthPct",
       });
     }
   }
@@ -200,30 +254,93 @@ function buildChecks(metrics, baseline) {
 
 function evaluate(check) {
   const deltaPct = check.base === 0 ? 0 : ((check.current - check.base) / check.base) * 100;
-  const failed =
-    check.kind === "growth" ? check.current - check.base > check.limit : deltaPct < -check.limit;
+  let failed;
+  if (check.kind === "growth") {
+    failed = check.current - check.base > check.limit;
+  } else if (check.kind === "growthPct") {
+    failed = check.base === 0 ? check.current > 0 : deltaPct > check.limit;
+  } else {
+    failed = deltaPct < -check.limit;
+  }
   return { failed, deltaPct };
 }
 
-const current = collect();
+function loadBaseline() {
+  if (!existsSync(baselinePath)) {
+    fail(
+      `bench-guard: нет ${baselinePath} — создайте baseline командой --update (для одной секции: --update --only=<секция>)`,
+      2,
+    );
+  }
+  const baseline = readJson(baselinePath, "baseline");
+  if (baseline === null || typeof baseline !== "object" || Array.isArray(baseline)) {
+    fail(`bench-guard: baseline ${baselinePath} должен быть JSON-объектом`);
+  }
+  return baseline;
+}
+
+function explicitMissingSections(baseline) {
+  if (!explicitOnly) {
+    return [];
+  }
+  return [...only].filter((section) => baseline[section] === undefined);
+}
+
+let baseline = null;
+if (!update) {
+  baseline = loadBaseline();
+  const missing = explicitMissingSections(baseline);
+  if (missing.length > 0) {
+    fail(
+      `bench-guard: в baseline нет секции ${missing.join(", ")}, но она запрошена через --only. `
+        + `Обновите baseline: pnpm bench:guard --update --only=${missing.join(",")}`,
+    );
+  }
+}
+
+const current = metricsPath === null ? collect() : readJson(metricsPath, "метрики");
+if (current === null || typeof current !== "object" || Array.isArray(current)) {
+  fail(`bench-guard: метрики ${metricsPath} должны быть JSON-объектом`);
+}
+const missingMetrics = [...only].filter((section) => current[section] === undefined);
+if (missingMetrics.length > 0) {
+  fail(`bench-guard: нет метрик для секции ${missingMetrics.join(", ")}`);
+}
 
 if (update) {
-  writeFileSync(baselinePath, `${JSON.stringify(current, null, 2)}\n`);
-  console.log(`bench-guard: baseline записан (${Object.keys(current).join(", ")})`);
+  const existing = existsSync(baselinePath) ? readJson(baselinePath, "baseline") : {};
+  if (existing === null || typeof existing !== "object" || Array.isArray(existing)) {
+    fail(`bench-guard: baseline ${baselinePath} должен быть JSON-объектом`);
+  }
+  // Секции, которые не запрашивались в этом прогоне, сохраняются как есть.
+  // Внутри запрошенной секции также сохраняем метрики, которых нет в текущем
+  // прогоне (например, если бенч вернул не все поля).
+  const merged = { ...existing };
+  for (const [section, values] of Object.entries(current)) {
+    const previous = existing[section];
+    merged[section] =
+      values !== null
+      && typeof values === "object"
+      && !Array.isArray(values)
+      && previous !== null
+      && typeof previous === "object"
+      && !Array.isArray(previous)
+        ? { ...previous, ...values }
+        : values;
+  }
+  writeFileSync(baselinePath, `${JSON.stringify(merged, null, 2)}\n`);
+  console.log(`bench-guard: baseline записан (${Object.keys(merged).join(", ")})`);
   process.exit(0);
 }
 
-if (!existsSync(baselinePath)) {
-  console.error("bench-guard: нет scripts/bench-baseline.json — запусти с --update");
-  process.exit(2);
-}
-
-const baseline = JSON.parse(readFileSync(baselinePath, "utf8"));
 const missingBaseline = [...only].filter(
   (section) => current[section] !== undefined && baseline[section] === undefined,
 );
 for (const section of missingBaseline) {
-  console.log(`warn  ${section}: в baseline нет метрик — проверка не выполняется`);
+  console.log(
+    `warn  ${section}: в baseline нет метрик — проверка не выполняется `
+      + `(добавьте через --update --only=${section})`,
+  );
 }
 let checks = buildChecks(current, baseline);
 let ratioCheck = checks.find((check) => check.name === "browser.ratio");
@@ -248,7 +365,12 @@ let failed = 0;
 for (const check of checks) {
   const { failed: isFailed, deltaPct } = evaluate(check);
   const sign = deltaPct >= 0 ? "+" : "";
-  const limit = check.kind === "growth" ? `+${String(check.limit)}` : `-${String(check.limit)}%`;
+  const limit =
+    check.kind === "growth"
+      ? `+${String(check.limit)}`
+      : check.kind === "growthPct"
+        ? `+${String(check.limit)}%`
+        : `-${String(check.limit)}%`;
   console.log(
     `${(isFailed ? "FAIL" : "ok").padEnd(5)} ${check.name}: ${check.current.toFixed(2)} против ${check.base.toFixed(2)} (${sign}${deltaPct.toFixed(1)}%, порог ${limit})`,
   );
@@ -277,12 +399,4 @@ if (failed > 0) {
   process.exit(1);
 }
 
-if (missingBaseline.length > 0) {
-  const message = `bench-guard: нет baseline для ${missingBaseline.join(", ")}`;
-  if (strict) {
-    console.error(message);
-    process.exit(1);
-  }
-  console.log(`${message} (добавьте через --update)`);
-}
 console.log("bench-guard: ok");

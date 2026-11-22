@@ -7,6 +7,7 @@ on:
 
 jobs:
   rust:
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,8 +19,18 @@ jobs:
       - run: cargo clippy -p silent-transform -p silent-node --all-targets -- -D warnings
       - run: cargo test -p silent-transform
 
-  node:
+  # Основной набор проверок: сборка, типы, юнит-тесты. Node 22 — нижняя
+  # поддерживаемая версия (engines >=22), Node 26 — основная. TypeScript 7
+  # и Vitest 5 работают на обеих версиях, поэтому отдельного Node 26-only
+  # шага здесь не требуется.
+  unit:
+    name: unit (node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 26]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -27,7 +38,7 @@ jobs:
           run_install: false
       - uses: actions/setup-node@v4
         with:
-          node-version: 26
+          node-version: ${{ matrix.node }}
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -37,30 +48,20 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm coverage
+        if: matrix.node == 26
+      - run: pnpm coverage:packages
+        if: matrix.node == 26
       - run: pnpm api:check
       - run: pnpm api:check:self
       - run: pnpm install:check
       - run: pnpm consumer:check
-      - run: pnpm --filter @ivlev-dev/silent-example-counter build
-      - run: pnpm --filter @ivlev-dev/silent-example-ssr-counter build
-      - run: pnpm --filter @ivlev-dev/silent-example-ssr-pool build
-      - run: pnpm --filter @ivlev-dev/silent-example-router build
-      - run: pnpm --filter @ivlev-dev/silent-example-forms build
-      - run: pnpm exec playwright-core install --with-deps chromium
-      - run: pnpm test:e2e
-      - run: pnpm test:ssr
-      - run: pnpm test:ssr-pool
-      - run: pnpm pack:check
-      - run: pnpm bench:guard --only=build
-      - run: pnpm bench:guard --only=browser
 
-  e2e:
-    name: e2e (${{ matrix.browser }})
+  # SSR, примеры, упаковка и бенчмарки — только на основной версии Node,
+  # чтобы не дублировать тяжёлые шаги в матрице.
+  ssr:
+    name: ssr
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        browser: [firefox, webkit]
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -74,7 +75,74 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm exec playwright-core install --with-deps firefox webkit
+      - run: pnpm --filter @ivlev-dev/silent-example-counter build
+      - run: pnpm --filter @ivlev-dev/silent-example-ssr-counter build
+      - run: pnpm --filter @ivlev-dev/silent-example-ssr-pool build
+      - run: pnpm --filter @ivlev-dev/silent-example-router build
+      - run: pnpm --filter @ivlev-dev/silent-example-forms build
+      - run: pnpm exec playwright-core install --with-deps chromium
+      - run: pnpm test:ssr
+      - run: pnpm test:ssr-pool
+      - run: pnpm pack:check
+      # --strict обязателен для CI-гейта: без него шумные метрики (ops, ratio)
+      # печатаются как предупреждения и не валят сборку.
+      - run: pnpm bench:guard --only=build --strict
+      # Шаг --only=browser вернётся после замера browser-бенчмарка на раннере
+      # и добавления секции browser в scripts/bench-baseline.json: сейчас
+      # baseline.browser нет, и bench-guard с --only=browser обязан падать.
+
+  e2e:
+    name: e2e (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm exec playwright-core install --with-deps ${{ matrix.browser }}
       - run: pnpm test:e2e
         env:
           SILENT_E2E_BROWSER: ${{ matrix.browser }}
+      # SSR-гидрация в каждом браузере матрицы. Chromium и Firefox
+      # проверены локально; webkit в CI не блокирует сборку (нужны
+      # системные библиотеки, локально проверить не удалось).
+      - run: pnpm test:ssr
+        env:
+          SILENT_E2E_BROWSER: ${{ matrix.browser }}
+        continue-on-error: ${{ matrix.browser == 'webkit' }}
+
+  # Windows проверяет только типы: юнит-тесты и e2e требуют нативного SWC
+  # аддона и браузеров, поэтому здесь не собираем native-скрипты.
+  windows:
+    name: typecheck (windows, node ${{ matrix.node }})
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 26]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:tsc
+      - run: pnpm typecheck

@@ -20,7 +20,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "test": "vitest run"
   },
   "peerDependencies": {
@@ -32,6 +32,7 @@
     "@ivlev-dev/silent-core": "workspace:*",
     "@ivlev-dev/silent-di": "workspace:*",
     "@ivlev-dev/silent-reactivity": "workspace:*",
+    "@types/jsdom": "^27.0.0",
     "jsdom": "^31.0.0",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"

@@ -1,44 +1,63 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
-import { homedir } from "node:os";
+import { createServer as createNetServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium } from "playwright-core";
 import { createServer } from "vite";
 import { renderToStream, renderToString } from "@ivlev-dev/silent-server";
+import { launchBrowser, selectBrowserName } from "./lib/browser.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const example = join(root, "examples", "counter");
 
-function chromiumEnv() {
-  const env = {};
-  for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined) {
-      env[key] = value;
-    }
+// Аккуратная остановка дочернего production-сервера: SIGTERM, затем
+// SIGKILL по таймауту. Иначе finally может зависнуть навсегда.
+async function stopChild(child, timeoutMs = 5_000) {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return;
   }
-  delete env["LD_PRELOAD"];
-  return env;
+  const exited = new Promise((resolve) => child.once("exit", resolve));
+  child.kill("SIGTERM");
+  const timer = setTimeout(() => {
+    child.kill("SIGKILL");
+  }, timeoutMs);
+  await exited;
+  clearTimeout(timer);
 }
 
-function findChrome() {
-  const base = join(homedir(), ".cache", "ms-playwright");
-  for (const entry of readdirSync(base)) {
-    if (!entry.startsWith("chromium-")) {
-      continue;
-    }
-    for (const candidate of [
-      join(base, entry, "chrome-linux64", "chrome"),
-      join(base, entry, "chrome-linux", "chrome"),
-    ]) {
-      if (existsSync(candidate)) {
-        return candidate;
+// Vite в middleware-режиме всё равно поднимает ws для HMR, а дефолтный
+// порт 24678 может быть занят другим инстансом/процессом. Берём свободный
+// порт у ОС и отдаём его Vite.
+async function freePort() {
+  const server = createNetServer();
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  const port = address !== null && typeof address === "object" ? address.port : 0;
+  await new Promise((resolve, reject) => {
+    server.close((error) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
       }
-    }
+    });
+  });
+  if (port === 0) {
+    throw new Error("не удалось выделить свободный порт для HMR");
   }
-  throw new Error("Chromium не найден в ~/.cache/ms-playwright");
+  return port;
+}
+
+async function hmrServerOptions() {
+  return {
+    middlewareMode: true,
+    hmr: { host: "127.0.0.1", port: await freePort() },
+  };
 }
 
 function pageTemplate(ssrHtml, head) {
@@ -80,12 +99,13 @@ async function renderStreaming(app, props) {
 }
 
 async function main() {
+  const browserName = selectBrowserName();
   const vite = await createServer({
     configFile: join(example, "vite.config.ts"),
     root: example,
     logLevel: "error",
     appType: "custom",
-    server: { middlewareMode: true },
+    server: await hmrServerOptions(),
   });
 
   let http = null;
@@ -179,12 +199,9 @@ async function main() {
     }
     const url = `http://127.0.0.1:${address.port}/`;
 
-    browser = await chromium.launch({
-      executablePath: findChrome(),
-      headless: true,
-      args: ["--no-sandbox"],
-      env: chromiumEnv(),
-    });
+    const launched = await launchBrowser(browserName);
+    browser = launched.browser;
+    console.log(`ssr: ${browserName} (${launched.executablePath})`);
 
     const page = await browser.newPage();
     const errors = [];
@@ -213,7 +230,6 @@ async function main() {
       undefined,
       { timeout: 10_000 },
     );
-    await page.waitForTimeout(300);
 
     const renderedValue = await page.textContent("strong.value");
     assert.equal(renderedValue, "0", "гидрация изменила начальное значение счётчика");
@@ -328,7 +344,7 @@ async function main() {
       root: formsDir,
       logLevel: "error",
       appType: "custom",
-      server: { middlewareMode: true, hmr: false },
+      server: await hmrServerOptions(),
     });
     let formsHttp = null;
     try {
@@ -661,10 +677,7 @@ async function main() {
           await prodPage.close();
           console.log("ssr forms: production server ok");
         } finally {
-          child.kill();
-          if (child.exitCode === null) {
-            await new Promise((resolve) => child.once("exit", resolve));
-          }
+          await stopChild(child);
         }
       } else {
         console.log(
@@ -684,7 +697,7 @@ async function main() {
       root: routerDir,
       logLevel: "error",
       appType: "custom",
-      server: { middlewareMode: true, hmr: false },
+      server: await hmrServerOptions(),
     });
     let routerHttp = null;
     try {

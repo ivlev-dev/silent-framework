@@ -16,6 +16,7 @@ jobs:
           - os: windows-latest
             triple: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -38,6 +39,7 @@ jobs:
   publish:
     needs: prebuild
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     permissions:
       contents: read
     steps:
@@ -52,14 +54,14 @@ jobs:
           registry-url: https://registry.npmjs.org
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: Verify tag matches package versions and lockfile
+        run: node scripts/verify-versions.mjs
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v4
         with:
           pattern: native-*
           path: packages/swc/native
           merge-multiple: true
-      - name: Verify tag matches package versions
-        run: node scripts/verify-versions.mjs
       - run: pnpm build
       - run: pnpm typecheck
       - run: cargo fmt --all -- --check

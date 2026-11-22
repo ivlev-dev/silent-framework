@@ -9,5 +9,20 @@ export default defineConfig({
     // Фаззинг гидратации списков при параллельном прогоне не укладывается
     // в дефолтные 5 с (наблюдались ложные падения по таймауту).
     testTimeout: 30_000,
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.ts"],
+      exclude: ["src/**/*.d.ts"],
+      reporter: ["text"],
+      // Пороги на 2–3% ниже фактического покрытия на момент введения
+      // (lines/statements −2, branches/functions −3): фиксируют текущий
+      // уровень и ловят регрессии, не падая от небольших правок.
+      thresholds: {
+        lines: 83,
+        statements: 83,
+        branches: 74,
+        functions: 85,
+      },
+    },
   },
 });

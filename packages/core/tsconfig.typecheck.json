@@ -2,11 +2,15 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
+    "composite": false,
+    "incremental": false,
+    "rootDir": ".",
+    "types": ["node"],
     "jsx": "react-jsx",
     "jsxImportSource": "@ivlev-dev/silent-core",
     "paths": {
       "@ivlev-dev/silent-core/jsx-runtime": ["./src/jsx.ts"]
     }
   },
-  "include": ["src/jsx.ts", "tests/jsx-typecheck.tsx"]
+  "include": ["src", "tests"]
 }
