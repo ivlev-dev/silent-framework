@@ -1110,10 +1110,12 @@ function splitTopLevel(text: string): string[] {
 }
 
 function entryFieldName(entry: string): string | null {
-  const match = /^("(?:[^"\\]|\\.)*")\s*:/.exec(entry);
+  const match = /^("(?:[^"\\]|\\.)*"|\["(?:[^"\\]|\\.)*"\])\s*:/.exec(entry);
   if (match === null || match[1] === undefined) return null;
+  const token = match[1];
+  const literal = token.startsWith("[") ? token.slice(1, -1) : token;
   try {
-    const parsed: unknown = JSON.parse(match[1]);
+    const parsed: unknown = JSON.parse(literal);
     return typeof parsed === "string" ? parsed : null;
   } catch {
     return null;

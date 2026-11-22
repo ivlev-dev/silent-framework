@@ -12,6 +12,23 @@ export interface UploadOptions {
 }
 
 /**
+ * Токен последней загрузки для поля. Поздние/отменённые результаты
+ * предыдущих загрузок не должны перетирать новую и снимать её `isReady`.
+ */
+const uploadTokens = new WeakMap<Form, Map<string, number>>();
+
+function nextUploadToken(form: Form, path: string): number {
+  let tokens = uploadTokens.get(form);
+  if (tokens === undefined) {
+    tokens = new Map();
+    uploadTokens.set(form, tokens);
+  }
+  const token = (tokens.get(path) ?? 0) + 1;
+  tokens.set(path, token);
+  return token;
+}
+
+/**
  * Простой file-helper: помечает поле неготовым на время загрузки,
  * передаёт результат загрузчика в `setValue` и снова помечает готовым.
  * Для отмены используйте `options.signal`; для прогресса — `onProgress`.
@@ -24,15 +41,22 @@ export async function uploadField<T>(
   options?: UploadOptions,
 ): Promise<T> {
   const field = form.getFieldProps(path as never) as FieldProps<unknown>;
+  const token = nextUploadToken(form, path);
+  const tokens = uploadTokens.get(form)!;
+  const isLatest = (): boolean => tokens.get(path) === token;
   field.setReady(false);
   try {
     const result = await uploader(file, {
       signal: options?.signal,
       onProgress: (progress) => options?.onProgress?.(progress),
     });
-    field.setValue(result as never);
+    if (isLatest() && options?.signal?.aborted !== true) {
+      field.setValue(result as never);
+    }
     return result;
   } finally {
-    field.setReady(true);
+    if (isLatest()) {
+      field.setReady(true);
+    }
   }
 }

@@ -5,8 +5,9 @@ import type { FormArray } from "./types.js";
 export interface FormArrayHost {
   items(name: string): Form[] | undefined;
   requireItems(name: string): Form[];
-  directErrors(name: string): readonly string[];
+  ownErrors(name: string): readonly string[];
   arrayErrors(name: string): Readonly<Record<string, readonly string[]>>;
+  readyState(name: string): boolean;
   isTouched(name: string): boolean;
   isDirtyField(name: string): boolean;
   createItem(name: string): Form | undefined;
@@ -21,11 +22,11 @@ export function createFieldArray<T extends Form>(
 ): FormArray<T> {
   const requireItems = (): Form[] => host.requireItems(name);
   const arrayErrors = (): Readonly<Record<string, readonly string[]>> => {
-    const own = host.directErrors(name);
+    const own = host.ownErrors(name);
     const children = host.arrayErrors(name);
     return own.length > 0 ? { [name]: own, ...children } : children;
   };
-  const ownErrors = (): readonly string[] => host.directErrors(name);
+  const ownErrors = (): readonly string[] => host.ownErrors(name);
   return {
     get items() {
       return requireItems() as unknown as readonly T[];
@@ -40,9 +41,15 @@ export function createFieldArray<T extends Form>(
       return ownErrors();
     },
     get isReady() {
-      return (
-        host.directErrors(name).length === 0 &&
-        requireItems().every((item) => item.isReady)
+      if (host.ownErrors(name).length > 0) {
+        return false;
+      }
+      if (Object.keys(host.arrayErrors(name)).length > 0) {
+        return false;
+      }
+      return requireItems().every(
+        (item, index) =>
+          host.readyState(`${name}[${index}]`) && item.isReady,
       );
     },
     get isDirty() {

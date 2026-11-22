@@ -131,7 +131,7 @@ function AppView(this: { vm: AppVM }, props: { router: Router }): Node {
   void this.vm;
   const root = appTemplate();
   insert(
-    root.holes[0]?.parentNode ?? root.node,
+    (root.holes[0]?.parentNode as Node | undefined) ?? root.node,
     () => RouterView({ router: props.router }),
     root.holes[0],
   );

@@ -67,6 +67,8 @@ describe("splice с большими вставками", () => {
     expect(ordered.splice(1, 3, 9, 8)).toEqual([2, 3, 4]);
     expect([...ordered]).toEqual([1, 9, 8, 5]);
 
+    // @ts-expect-error splice() без аргументов допустим по спецификации ECMAScript,
+    // но типы lib требуют обязательный start.
     expect(ordered.splice()).toEqual([]);
     expect([...ordered]).toEqual([1, 9, 8, 5]);
 

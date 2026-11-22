@@ -16,7 +16,7 @@ interface FlushDebugInfo {
 }
 const flushDebug = (
   createRoot as unknown as Record<symbol, FlushDebugInfo>
-)[FLUSH_DEBUG];
+)[FLUSH_DEBUG]!;
 
 describe("dependency reconciliation", () => {
   it("keeps dynamic dependencies correct across many reruns", () => {
@@ -104,10 +104,10 @@ describe("deep proxy fast paths", () => {
   it("supports inherited accessors", () => {
     const proto = {
       get doubled(): number {
-        return this.value * 2;
+        return (this as unknown as { value: number }).value * 2;
       },
       set doubled(next: number) {
-        this.value = next / 2;
+        (this as unknown as { value: number }).value = next / 2;
       },
     };
     type Model = { value: number; doubled: number };
@@ -122,7 +122,7 @@ describe("deep proxy fast paths", () => {
   it("tracks an inherited getter dependency", () => {
     const proto = {
       get doubled(): number {
-        return this.value * 2;
+        return (this as unknown as { value: number }).value * 2;
       },
     };
     type Model = { value: number; readonly doubled: number };

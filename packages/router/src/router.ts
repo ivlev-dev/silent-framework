@@ -15,8 +15,8 @@ import {
   RouterAbortError,
   RouterNavigationError,
   ROUTER_MAX_REDIRECT_STEPS,
+  canonicalizePath,
   compileRoutes,
-  normalizePath,
   resolveLocation,
   type CompiledRoute,
   type MatchedRoute,
@@ -114,7 +114,8 @@ function normalizeBase(base: string): string {
   if (base === "" || base === "/") {
     return "";
   }
-  return normalizePath(base);
+  const normalized = canonicalizePath(base);
+  return normalized === "/" ? "" : normalized;
 }
 
 function createDefaultHistory(): RouterHistory {
@@ -631,10 +632,22 @@ export class Router implements IRouter {
     }
     if (action !== "none") {
       const to = `${this.base}${location.fullPath}`;
-      if (action === "replace") {
-        this.history.replace(to);
-      } else {
-        this.history.push(to);
+      try {
+        if (action === "replace") {
+          this.history.replace(to);
+        } else {
+          this.history.push(to);
+        }
+      } catch (error) {
+        // pushState/replaceState могут бросить SecurityError/DataCloneError
+        // (cross-origin URL, несовпадение base и т.п.). Это не ошибка guard,
+        // поэтому классифицируем отдельным кодом.
+        throw new RouterNavigationError(
+          `Не удалось записать URL в историю: ${to}`,
+          "history",
+          to,
+          error,
+        );
       }
     }
     this.routeSignal[1](location);
@@ -779,15 +792,16 @@ export class Router implements IRouter {
 
   private stripBase(pathname: string): string {
     if (this.base === "") {
-      return normalizePath(pathname);
+      return canonicalizePath(pathname);
     }
-    if (pathname === this.base || pathname === `${this.base}/`) {
+    const path = canonicalizePath(pathname);
+    if (path === this.base || path === `${this.base}/`) {
       return "/";
     }
-    if (pathname.startsWith(`${this.base}/`)) {
-      return normalizePath(pathname.slice(this.base.length));
+    if (path.startsWith(`${this.base}/`)) {
+      return canonicalizePath(path.slice(this.base.length));
     }
-    return normalizePath(pathname);
+    return path;
   }
 }
 

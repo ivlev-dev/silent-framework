@@ -245,6 +245,20 @@ function safeDisposeLateValue(value: unknown): void {
   }
 }
 
+// resolve() сохраняет Promise-контракт, но ошибка синхронного teardown-пути
+// (вызов на уже освобождённом контейнере) не должна всплывать как
+// unhandledRejection: во время teardown промис часто никто не ждёт. Пометка
+// handled не мешает вызывающему получить отказ через await/.catch().
+// Остальные синхронные ошибки (нет биндинга, цикл, scope) намеренно
+// остаются «необработанными», чтобы не скрывать ошибки конфигурации.
+function rejectionFor<T>(error: unknown): Promise<T> {
+  const rejected = Promise.reject<T>(error);
+  if (error instanceof ContainerDisposedError) {
+    void rejected.catch(() => undefined);
+  }
+  return rejected;
+}
+
 export class Container {
   readonly name: string;
 
@@ -381,7 +395,7 @@ export class Container {
     try {
       return this.resolveInternal<T>(token, null);
     } catch (error) {
-      return Promise.reject(error);
+      return rejectionFor<T>(error);
     }
   }
 
@@ -501,25 +515,25 @@ export class Container {
   }
 
   private disposeDetached(removed: ReadonlySet<unknown>): void {
+    if (removed.size === 0) {
+      return;
+    }
+    const retained = new Set<unknown>();
+    this.collectRetained(retained);
     for (const value of removed) {
-      if (!this.isValueRetained(value)) {
+      if (!retained.has(value)) {
         safeDisposeValue(value);
       }
     }
   }
 
-  private isValueRetained(value: unknown): boolean {
+  private collectRetained(retained: Set<unknown>): void {
     for (const resolvedValue of this.resolved.values()) {
-      if (Object.is(resolvedValue, value)) {
-        return true;
-      }
+      retained.add(resolvedValue);
     }
     for (const child of this.children) {
-      if (child.isValueRetained(value)) {
-        return true;
-      }
+      child.collectRetained(retained);
     }
-    return false;
   }
 
   onDispose(fn: () => void): void {
@@ -726,9 +740,10 @@ export class Container {
     void settled.then(
       (value: unknown) => {
         if (cacheContainer.disposed) {
-          if (binding.scope !== "transient") {
-            safeDisposeLateValue(value);
-          }
+          // Вызывающий получил ContainerDisposedError и значение не увидит,
+          // поэтому поздний инстанс освобождаем при любом scope, включая
+          // transient: иначе он утекает без владельца.
+          safeDisposeLateValue(value);
           return;
         }
         if (binding.scope !== "transient" && cacheContainer.cache.get(token) === promise) {
@@ -846,7 +861,7 @@ export class Container {
     try {
       return target.resolveInternal(token, context);
     } catch (error) {
-      return Promise.reject(error);
+      return rejectionFor(error);
     }
   }
 

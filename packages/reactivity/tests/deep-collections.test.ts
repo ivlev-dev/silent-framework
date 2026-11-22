@@ -114,7 +114,7 @@ describe("deepReactive Map", () => {
   it("supports entries, default iteration and forEach", () => {
     const map = deepReactive(new Map<string, number>([["a", 1]]));
     const entrySnapshots: [string, number][][] = [];
-    const forEachSnapshots: [string, number][] = [];
+    const forEachSnapshots: [string, number][][] = [];
     createRenderEffect(() => {
       entrySnapshots.push(collect(map.entries()) as [string, number][]);
     });
@@ -181,7 +181,7 @@ describe("deepReactive Map", () => {
     const [reactiveKey] = collect(map.keys());
     expect(reactiveKey).toBeDefined();
     expect(isReactive(reactiveKey)).toBe(true);
-    expect(map.get(reactiveKey)).toBe("value");
+    expect(map.get(reactiveKey!)).toBe("value");
 
     const [entry] = collect(map.entries()) as [unknown, string][];
     expect(entry?.[0]).toBe(reactiveKey);
@@ -431,6 +431,20 @@ describe("readonly", () => {
     expect(state.list).toEqual([1, 2]);
     expect(state.map.size).toBe(1);
     expect(state.set.size).toBe(1);
+  });
+
+  it("не разворачивает readonly при записи в реактивное поле", () => {
+    const source = deepReactive({ count: 0 });
+    const frozen = readonly(source);
+    const holder = deepReactive<{ child: unknown }>({ child: null });
+    holder.child = frozen;
+
+    expect(holder.child).toBe(frozen);
+    expect(isReadonly(holder.child)).toBe(true);
+    expect(() => {
+      (holder.child as { count: number }).count = 2;
+    }).toThrow(ReadonlyMutationError);
+    expect(source.count).toBe(0);
   });
 
   it("reports a descriptive mutation error", () => {

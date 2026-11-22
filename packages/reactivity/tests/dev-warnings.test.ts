@@ -35,7 +35,7 @@ describe("dev-предупреждения", () => {
   it("не предупреждает в production", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const nodeProcess = (
-      globalThis as {
+      globalThis as unknown as {
         process: { env: Record<string, string | undefined> };
       }
     ).process;

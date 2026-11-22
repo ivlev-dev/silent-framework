@@ -142,7 +142,7 @@ const layoutTemplate = templateHoles('<section data-view="layout"><!--silent-hol
 function HydratedApp(this: { vm: AppVM }): Node {
   void this.vm;
   const root = appTemplate();
-  insert(root.holes[0]?.parentNode ?? root.node, () => RouterView({}), root.holes[0]);
+  insert((root.holes[0]?.parentNode as Node | undefined) ?? root.node, () => RouterView({}), root.holes[0]);
   return root.node;
 }
 
@@ -158,7 +158,7 @@ class HydratedLayoutVM {
 function HydratedLayout(this: { vm: HydratedLayoutVM }): Node {
   void this.vm;
   const root = layoutTemplate();
-  insert(root.holes[0]?.parentNode ?? root.node, () => RouterView({ depth: 1 }), root.holes[0]);
+  insert((root.holes[0]?.parentNode as Node | undefined) ?? root.node, () => RouterView({ depth: 1 }), root.holes[0]);
   return root.node;
 }
 

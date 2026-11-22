@@ -18,6 +18,7 @@ export interface FieldPropsHost {
   labelFor(name: string): string;
   metadataLabelFor(path: string): string | undefined;
   directErrors(name: string): readonly string[];
+  ownErrors(name: string): readonly string[];
   nestedFormErrors(name: string): readonly string[];
   readyState(name: string): boolean;
   isValidatingField(name: string): boolean;
@@ -42,6 +43,7 @@ export interface FieldPropsHost {
   arrayErrors(name: string): Readonly<Record<string, readonly string[]>>;
   arrayItemExternalErrors(path: string): readonly string[] | undefined;
   replaceArray(name: string, value: unknown): void;
+  ensureCanBind(item: Form, name: string, index: number): void;
   commitArray(
     name: string,
     next: Form[],
@@ -290,7 +292,7 @@ export function createFormArrayProps(
   const id = host.idFor(name);
   const items = (): Form[] => host.requireArrayItems(name);
   const allErrors = (): readonly string[] => {
-    const result: string[] = [...host.directErrors(name)];
+    const result: string[] = [...host.ownErrors(name)];
     for (const messages of Object.values(host.arrayErrors(name))) {
       result.push(...messages);
     }
@@ -320,8 +322,11 @@ export function createFormArrayProps(
     },
     get isReady() {
       return (
-        host.directErrors(name).length === 0 &&
-        items().every((item) => item.isReady)
+        allErrors().length === 0 &&
+        items().every(
+          (item, index) =>
+            host.readyState(`${name}[${index}]`) && item.isReady,
+        )
       );
     },
     get isValidating() {
@@ -340,7 +345,7 @@ export function createFormArrayProps(
     },
     get isValid() {
       return (
-        host.directErrors(name).length === 0 &&
+        allErrors().length === 0 &&
         items().every((item) => item.isValid)
       );
     },
@@ -416,7 +421,10 @@ export function createArrayItemProps(
       return false;
     },
     get isReady() {
-      return host.requireArrayItem(root, index).isReady;
+      return (
+        host.readyState(fieldPath) &&
+        host.requireArrayItem(root, index).isReady
+      );
     },
     get isValidating() {
       return host.hasValidating(host.requireArrayItem(root, index));
@@ -451,6 +459,11 @@ export function createArrayItemProps(
       if (previous === undefined) {
         throw new Error(`Элемент "${path}" больше не существует`);
       }
+      if (previous === value) {
+        return;
+      }
+      host.ensureCanBind(value, root, index);
+      items[index] = value;
       host.commitArray(root, items, [previous]);
     },
     setReady(ready) {
@@ -482,6 +495,7 @@ export function createArrayItemFieldProps(
   rest: string,
 ): FieldProps<unknown> {
   const id = host.idFor(path);
+  const fieldPath = `${root}[${index}]`;
   const childProps = (): FieldProps<unknown> =>
     host.childProps(host.requireArrayItem(root, index), rest);
   return {
@@ -513,7 +527,7 @@ export function createArrayItemFieldProps(
       return childProps().isRequired;
     },
     get isReady() {
-      return childProps().isReady;
+      return host.readyState(fieldPath) && childProps().isReady;
     },
     get isValidating() {
       return childProps().isValidating;

@@ -1,5 +1,6 @@
 import {
   createSignalHandle,
+  createSignalHandleWithCleanup,
   isTracking,
   type SignalHandle,
 } from "./graph.js";
@@ -168,9 +169,33 @@ function getField(record: ReactiveRecord, key: PropertyKey): SignalHandle<unknow
   if (existing !== undefined) {
     return existing;
   }
-  const field = createSignalHandle<unknown>(Reflect.get(record.raw, key, record.raw));
+  let field: SignalHandle<unknown> | null = null;
+  field = createSignalHandleWithCleanup<unknown>(
+    Reflect.get(record.raw, key, record.raw),
+    () => {
+      if (record.fields.get(key) === field) {
+        record.fields.delete(key);
+      }
+    },
+  );
   record.fields.set(key, field);
   return field;
+}
+
+/**
+ * Чтение поля: отсутствующий ключ получает сигнал поля (чтобы добавление
+ * именно этого ключа будило эффект), но после ухода последнего observer'а
+ * запись удаляется через onEmpty. Вне трекинга сигналы не создаются.
+ */
+function readFieldValue(record: ReactiveRecord, key: PropertyKey): unknown {
+  const existing = record.fields.get(key);
+  if (existing !== undefined) {
+    return existing.read();
+  }
+  if (!isTracking()) {
+    return Reflect.get(record.raw, key, record.raw);
+  }
+  return getField(record, key).read();
 }
 
 function updateField(
@@ -222,25 +247,41 @@ function writeIndex(
   updateField(record, index, newValue);
 }
 
-function notifyChangedIndices(
+/**
+ * Сверяет значения и собственность индексов после перестановки и возвращает
+ * true, если набор ключей (hole ↔ own) изменился. Разреженный массив после
+ * sort/reverse может сохранить значения, но потерять/приобрести ключи —
+ * подписчики Object.keys/for-in должны проснуться.
+ */
+function reconcileArrayShape(
   record: ReactiveRecord,
   previous: readonly unknown[],
-): void {
+  previousOwn: readonly boolean[],
+): boolean {
   const array = record.raw as unknown[];
   const length = Math.max(previous.length, array.length);
-  if (length === 0) {
-    return;
-  }
+  let keysChanged = previous.length !== array.length;
   for (let index = 0; index < length; index += 1) {
+    const wasOwn = previousOwn[index] === true;
+    const owned = hasOwn(array, index);
     const before = previous[index];
     const after = array[index];
-    if (!Object.is(before, after)) {
+    if (!Object.is(before, after) || wasOwn !== owned) {
       writeIndex(record, index, before, after);
     }
+    if (wasOwn !== owned) {
+      keysChanged = true;
+    }
   }
+  return keysChanged;
 }
 
 function unwrapValue(value: unknown): unknown {
+  // readonly-прокси — намеренная защита: не разворачиваем его до raw, иначе
+  // сохранённая в реактивном поле ссылка снова станет записываемой.
+  if (typeof value === "object" && value !== null && readonlyProxies.has(value)) {
+    return value;
+  }
   return unwrap(value);
 }
 
@@ -407,28 +448,51 @@ function arraySplice(record: ReactiveRecord, args: unknown[]): unknown {
 function arraySort(record: ReactiveRecord, args: unknown[]): unknown {
   const array = record.raw as unknown[];
   const previous = array.slice();
+  const previousOwn: boolean[] = [];
+  for (let index = 0; index < previous.length; index += 1) {
+    previousOwn[index] = hasOwn(array, index);
+  }
   const comparator = args[0];
   if (typeof comparator === "function") {
     array.sort(comparator as (a: unknown, b: unknown) => number);
   } else {
     array.sort();
   }
-  notifyChangedIndices(record, previous);
+  if (reconcileArrayShape(record, previous, previousOwn)) {
+    bumpKeys(record);
+  }
   return record.proxy;
 }
 
 function arrayReverse(record: ReactiveRecord): unknown {
   const array = record.raw as unknown[];
   const length = array.length;
-  array.reverse();
-  // После reverse значение на позиции index — это прежнее значение
-  // на позиции length - 1 - index. Снимок массива не нужен.
+  if (length === 0) {
+    return record.proxy;
+  }
+  // Для reverse хватает снимка собственных индексов: значение на позиции
+  // index до переворота читается из зеркальной позиции после него.
+  const previousOwn: boolean[] = [];
   for (let index = 0; index < length; index += 1) {
-    const before = array[length - 1 - index];
+    previousOwn[index] = hasOwn(array, index);
+  }
+  array.reverse();
+  let keysChanged = false;
+  for (let index = 0; index < length; index += 1) {
+    const mirror = length - 1 - index;
+    const before = array[mirror];
     const after = array[index];
-    if (!Object.is(before, after)) {
+    const wasOwn = previousOwn[index] === true;
+    const owned = previousOwn[mirror] === true;
+    if (!Object.is(before, after) || wasOwn !== owned) {
       writeIndex(record, index, before, after);
     }
+    if (wasOwn !== owned) {
+      keysChanged = true;
+    }
+  }
+  if (keysChanged) {
+    bumpKeys(record);
   }
   return record.proxy;
 }
@@ -535,12 +599,41 @@ function getSlot(
   } else {
     value = undefined;
   }
-  const slot = createSignalHandle<CollectionSlot>({ present, value });
+  let slot: SignalHandle<CollectionSlot> | null = null;
+  slot = createSignalHandleWithCleanup<CollectionSlot>(
+    { present, value },
+    () => {
+      if (record.slots.get(key) === slot) {
+        record.slots.delete(key);
+      }
+    },
+  );
   record.slots.set(key, slot);
   return slot;
 }
 
+function rawSlotValue(
+  record: ReactiveRecord,
+  key: unknown,
+): CollectionSlot {
+  const raw = record.raw as Map<unknown, unknown> | Set<unknown>;
+  if (!raw.has(key)) {
+    return ABSENT_SLOT;
+  }
+  if (record.collection === "map") {
+    return { present: true, value: (raw as Map<unknown, unknown>).get(key) };
+  }
+  return { present: true, value: key };
+}
+
 function readSlot(record: ReactiveRecord, key: unknown): CollectionSlot {
+  const existing = record.slots.get(key);
+  if (existing !== undefined) {
+    return existing.read();
+  }
+  if (!isTracking()) {
+    return rawSlotValue(record, key);
+  }
   return getSlot(record, key).read();
 }
 
@@ -632,16 +725,16 @@ function setMapEntry(
   const raw = record.raw as Map<unknown, unknown>;
   const rawKey = unwrap(key);
   const rawValue = unwrap(value);
-  const slot = getSlot(record, rawKey);
-  const current = slot.peek();
   const exists = raw.has(rawKey);
-  if (current.present && exists && Object.is(current.value, rawValue)) {
+  if (exists && Object.is(raw.get(rawKey), rawValue)) {
     return record.proxy;
   }
-  const isNew = !exists;
   raw.set(rawKey, rawValue);
-  slot.write({ present: true, value: rawValue });
-  if (isNew) {
+  const slot = record.slots.get(rawKey);
+  if (slot !== undefined) {
+    slot.write({ present: true, value: rawValue });
+  }
+  if (!exists) {
     bumpKeys(record);
     writeCollectionSize(record);
   }
@@ -663,18 +756,17 @@ function deleteMapEntry(record: ReactiveRecord, key: unknown): boolean {
 function addSetValue(record: ReactiveRecord, value: unknown): unknown {
   const raw = record.raw as Set<unknown>;
   const rawValue = unwrap(value);
-  const slot = getSlot(record, rawValue);
-  const current = slot.peek();
   const exists = raw.has(rawValue);
-  if (current.present && exists) {
+  if (exists) {
     return record.proxy;
   }
   raw.add(rawValue);
-  slot.write({ present: true, value: rawValue });
-  if (!exists) {
-    bumpKeys(record);
-    writeCollectionSize(record);
+  const slot = record.slots.get(rawValue);
+  if (slot !== undefined) {
+    slot.write({ present: true, value: rawValue });
   }
+  bumpKeys(record);
+  writeCollectionSize(record);
   return record.proxy;
 }
 
@@ -981,7 +1073,7 @@ function objectGet(record: ReactiveRecord, key: PropertyKey): unknown {
     ) {
       return own.value;
     }
-    return deepReactive(getField(record, key).read());
+    return deepReactive(readFieldValue(record, key));
   }
   const inherited = findInheritedDescriptor(raw, key);
   if (inherited !== undefined) {
@@ -1006,7 +1098,7 @@ function objectGet(record: ReactiveRecord, key: PropertyKey): unknown {
     // только для собственных данных и строковых полей.
     return Reflect.get(raw, key, record.proxy);
   }
-  return deepReactive(getField(record, key).read());
+  return deepReactive(readFieldValue(record, key));
 }
 
 function arrayGet(record: ReactiveRecord, key: PropertyKey): unknown {
@@ -1019,7 +1111,7 @@ function arrayGet(record: ReactiveRecord, key: PropertyKey): unknown {
   if (typeof key === "string") {
     const index = toArrayIndex(key);
     if (index !== null) {
-      return deepReactive(getField(record, index).read());
+      return deepReactive(readFieldValue(record, index));
     }
     const methods = record.arrayMethods;
     if (methods !== null) {

@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { Container, createToken } from "../src/index.js";
 
+class CountingMap<K, V> extends Map<K, V> {
+  valuesReads = 0;
+
+  override values(): MapIterator<V> {
+    this.valuesReads += 1;
+    return super.values();
+  }
+}
+
 describe("Оптимизации DI без изменения поведения", () => {
   it("bindValue кладёт готовый промис в кеш: повторный resolve возвращает тот же промис", async () => {
     const root = new Container("root");
@@ -47,10 +56,10 @@ describe("Оптимизации DI без изменения поведения
     root.bind(token, () => ({ version: 1 })).inScopedScope();
 
     const scope = root.createScope("request");
-    const first = await scope.resolve(token);
+    const first = await scope.resolve<{ version: number }>(token);
 
     root.bind(token, () => ({ version: 2 })).inScopedScope();
-    const second = await scope.resolve(token);
+    const second = await scope.resolve<{ version: number }>(token);
 
     expect(first.version).toBe(1);
     expect(second.version).toBe(2);
@@ -68,5 +77,27 @@ describe("Оптимизации DI без изменения поведения
     root.bind(token, () => "second");
     expect(await scope.resolve(token)).toBe("second");
     expect(await root.resolve(token)).toBe("second");
+  });
+
+  it("clearCache обходит каждое поддерево один раз, а не на каждое значение", () => {
+    const root = new Container("root");
+    const scope = root.createScope("request");
+    const rootResolved = new CountingMap<unknown, unknown>();
+    const scopeResolved = new CountingMap<unknown, unknown>();
+    (root as unknown as { resolved: Map<unknown, unknown> }).resolved = rootResolved;
+    (scope as unknown as { resolved: Map<unknown, unknown> }).resolved = scopeResolved;
+
+    for (let index = 0; index < 5; index += 1) {
+      root.bindValue(createToken(`root-${index}`), { index });
+    }
+    scope.bindValue(createToken("scope"), { index: 5 });
+
+    root.clearCache();
+
+    // По одному проходу на контейнер при отсоединении и по одному при
+    // сборе выживших значений; старый вариант обходил дерево на каждое
+    // удалённое значение.
+    expect(rootResolved.valuesReads).toBe(2);
+    expect(scopeResolved.valuesReads).toBe(2);
   });
 });

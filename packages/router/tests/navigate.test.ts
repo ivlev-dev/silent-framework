@@ -4,6 +4,7 @@ import {
   createMemoryHistory,
   createTestRouter,
   type RouteRecord,
+  type RouteLocation,
   type RouteTarget,
   type Router,
 } from "../src/index";
@@ -127,7 +128,7 @@ describe("navigate()", () => {
         { path: "/about", component: leaf("about") },
         {
           path: "/slow",
-          load: async (_to, signal) => {
+          load: async (_to: RouteLocation, signal: AbortSignal) => {
             started = true;
             expect(signal.aborted).toBe(false);
             await new Promise((resolve) => {

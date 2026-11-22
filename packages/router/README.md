@@ -9,6 +9,7 @@
 - `IRouter` и `Router implements IRouter`; ViewModel получает роутер через `constructor(private readonly router: IRouter)`.
 - Route-классы с типизированными `PathParams<"/edit/{id}">` и generic-query, включая mixed-сегменты `edit-{id}-{tab}` и `v{version}.{ext}`.
 - Синтаксис `/edit/{id}` и совместимый `:id`, вложенные маршруты, `*`, index-маршруты.
+- Канонизация пути и `base` как в браузере (обратные слэши, пустые сегменты, `.`/`..`/`%2e%2e`); отсутствующие/`""`/`"."`/`".."` параметры отклоняются с `code: "resolve"`, lone surrogate заменяется на `U+FFFD`.
 - Runtime-схема query (`QuerySchema`) приводит `number`, `boolean` и массивы; `RouteViewProps.query` и `router.query` содержат уже распарсенные значения.
 - `redirect`, синхронные и асинхронные `beforeEnter`, ленивый `load(context)` с кешированием.
 - `Link` и `RouterView` получают роутер из DI-контекста или явного `router` prop синхронно; на клиенте есть fallback на `Router.current()`, в серверном рендере без prop/контейнера бросается `RouterMissingError`.
@@ -282,7 +283,7 @@ class ReportRoute extends Route {
 
 Новая навигация вызывает `AbortController.abort()` у предыдущей. Устаревшая навигация завершается без обновления состояния и без отклонения промиса. Если guard вернул `false`, навигация отменяется, а текущий маршрут остаётся прежним.
 
-Ошибки guard и загрузчика оборачиваются в `RouterNavigationError` с `code: "guard" | "load"`. Отсутствие роутера у компонента даёт `RouterMissingError`. Прерванная навигация использует `RouterAbortError`. `RouterOptions.onError` вызывается для реальных ошибок, но не для отмены и не для `false` от guard.
+Ошибки guard и загрузчика оборачиваются в `RouterNavigationError` с `code: "guard" | "load"`; ошибка записи URL в историю — `code: "history"`, некорректная цель/параметр — `code: "resolve"`. Отсутствие роутера у компонента даёт `RouterMissingError`. Прерванная навигация использует `RouterAbortError`. `RouterOptions.onError` вызывается для реальных ошибок, но не для отмены и не для `false` от guard.
 
 ```ts
 import { RouterNavigationError } from "@ivlev-dev/silent-router";
@@ -316,9 +317,9 @@ const replaced = await router.navigate({ name: "user", params: { id: 7 } }, { re
 router.push("/private"); // бросает RouterNavigationError при ошибке
 ```
 
-`navigate()` не бросает: при успехе возвращает `true`, при отмене, `false` от guard, no-match, ошибках guard/load/resolve — `false` и записывает ошибку в `state.error`. `onError` вызывается для реальных ошибок.
+`navigate()` не бросает: при успехе возвращает `true`, при отмене, `false` от guard, no-match, ошибках guard/load/resolve/history — `false` и записывает ошибку в `state.error`. `onError` вызывается для реальных ошибок.
 
-Почему `onClick={() => router.push(...)}` даёт unhandled rejection: `push` возвращает `Promise<void>`, который отклоняется при guard/load/no-match, а `onClick` не ждёт и не обрабатывает промис. В обработчиках используйте `navigate()`:
+Почему `onClick={() => router.push(...)}` даёт unhandled rejection: `push` возвращает `Promise<void>`, который отклоняется при guard/load/no-match/resolve/history, а `onClick` не ждёт и не обрабатывает промис. В обработчиках используйте `navigate()`:
 
 ```tsx
 <button onClick={() => void router.navigate("/private")}>Открыть</button>

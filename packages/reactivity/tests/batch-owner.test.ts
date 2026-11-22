@@ -124,9 +124,9 @@ describe("owner", () => {
       return disposeRoot;
     });
     expect(getOwner()).toBeNull();
-    expect(inner?.disposed).toBe(false);
+    expect((inner as Owner | null)?.disposed).toBe(false);
     dispose();
-    expect(inner?.disposed).toBe(true);
+    expect((inner as Owner | null)?.disposed).toBe(true);
   });
 
   it("runs cleanup before rerun and on dispose", async () => {

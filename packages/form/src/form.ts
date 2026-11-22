@@ -253,6 +253,7 @@ export abstract class Form extends ValidationModel {
       labelFor: (name) => this.labelFor(name),
       metadataLabelFor: (path) => this.metadataLabelFor(path),
       directErrors: (name) => this.directErrors(name),
+      ownErrors: (name) => this.ownFieldErrors(name),
       nestedFormErrors: (name) => this.nestedFormErrors(name),
       readyState: (name) => {
         this.readyVersion[0]();
@@ -285,6 +286,9 @@ export abstract class Form extends ValidationModel {
       arrayErrors: (name) => this.arrayErrors(name),
       arrayItemExternalErrors: (path) => this.errorStore.externalMap.get(path),
       replaceArray: (name, value) => this.replaceArray(name, value),
+      ensureCanBind: (item, name, index) => {
+        item.ensureCanBind(asInstance(this), `${name}[${index}]`);
+      },
       commitArray: (name, next, removed) =>
         this.commitArray(name, next, removed),
       runFormArrayValidation: (name) =>
@@ -293,8 +297,12 @@ export abstract class Form extends ValidationModel {
     this.arrayHost = {
       items: (name) => this.arrayItems(name),
       requireItems: (name) => this.requireArrayItems(name),
-      directErrors: (name) => this.directErrors(name),
+      ownErrors: (name) => this.ownFieldErrors(name),
       arrayErrors: (name) => this.arrayErrors(name),
+      readyState: (name) => {
+        this.readyVersion[0]();
+        return this.readyStates.get(name) ?? true;
+      },
       isTouched: (name) => this.touchedFields[0]().has(name),
       isDirtyField: (name) => this.dirtyFields[0]().has(name),
       ensureCanBind: (item, name, index) => {
@@ -1411,6 +1419,11 @@ export abstract class Form extends ValidationModel {
   private directErrors(name: string): readonly string[] {
     this.errorsRevision[0]();
     return this.errorStore.fieldErrors(name);
+  }
+
+  private ownFieldErrors(name: string): readonly string[] {
+    this.errorsRevision[0]();
+    return this.errorStore.ownErrors(name);
   }
 
   private nestedFormErrors(name: string): readonly string[] {

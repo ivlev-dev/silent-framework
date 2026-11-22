@@ -45,7 +45,7 @@ describe("контекст guard", () => {
           path: "/auth",
           name: "auth",
           component: leaf("auth"),
-          beforeEnter: (to, from, signal, context) => {
+          beforeEnter: (to: TypedRouteLocation, from: TypedRouteLocation | null, signal: AbortSignal, context: RouteGuardContext) => {
             seen.push(context);
             expect(to.path).toBe("/auth");
             expect(from?.path).toBe("/");
@@ -77,7 +77,7 @@ describe("контекст guard", () => {
         {
           path: "/plain",
           component: leaf("plain"),
-          beforeEnter: (_to, _from, _signal, context) => {
+          beforeEnter: (_to: TypedRouteLocation, _from: TypedRouteLocation | null, _signal: AbortSignal, context: RouteGuardContext) => {
             container = context.container;
             return true;
           },

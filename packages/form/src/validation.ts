@@ -165,10 +165,14 @@ export async function runFormArrayValidation(
   options?: ValidationOptions,
   onSettled?: () => void,
 ): Promise<boolean> {
+  const generation = host.validationGeneration;
   const metadata = host.metadata.get(root);
   const active = metadata === undefined || host.isFieldActiveForValidation(metadata);
   try {
     const rootValid = await runFieldValidation(host, root, options);
+    if (host.disposed || generation !== host.validationGeneration) {
+      return false;
+    }
     if (!active) {
       return rootValid;
     }
@@ -178,6 +182,9 @@ export async function runFormArrayValidation(
         item.validate(nestedValidationOptions(host, `${root}[${index}]`, options)),
       ),
     );
+    if (host.disposed || generation !== host.validationGeneration) {
+      return false;
+    }
     return rootValid && results.every(Boolean);
   } finally {
     onSettled?.();
@@ -190,17 +197,24 @@ export async function runFormFieldValidation(
   options?: ValidationOptions,
   onSettled?: () => void,
 ): Promise<boolean> {
+  const generation = host.validationGeneration;
   const child = host.requireChild(root);
   const metadata = host.metadata.get(root);
   const active = metadata === undefined || host.isFieldActiveForValidation(metadata);
   try {
     const rootValid = await runFieldValidation(host, root, options);
+    if (host.disposed || generation !== host.validationGeneration) {
+      return false;
+    }
     if (!active) {
       return rootValid;
     }
     const childValid = await child.validate(
       childValidationOptions(host, root, options),
     );
+    if (host.disposed || generation !== host.validationGeneration) {
+      return false;
+    }
     return rootValid && childValid;
   } finally {
     onSettled?.();
@@ -228,7 +242,9 @@ export async function runFullValidation(
   try {
     const result = await validateAsync(host.instance, validationOptions(host, options));
     if (host.disposed || generation !== host.validationGeneration) {
-      return host.isValid;
+      // Прогон устарел: его ошибки не записаны, а `isValid` уже может
+      // относиться к другому поколению значений. Промис обязан быть false.
+      return false;
     }
     const map = new Map<string, string[]>();
     for (const error of result.errors) {
@@ -283,7 +299,7 @@ export async function runFullValidation(
       }
       const results = await Promise.all(pending);
       if (host.disposed || generation !== host.validationGeneration) {
-        return host.isValid;
+        return false;
       }
       const ownValid =
         host.errorStore.validationSize === 0 &&
@@ -320,14 +336,17 @@ export function runFieldValidation(
         name,
         validationOptions(host, options),
       );
-      if (
-        host.disposed ||
-        generation !== host.validationGeneration ||
-        host.validationTokens.get(name) !== token
-      ) {
-        return result.valid;
+      if (host.disposed || generation !== host.validationGeneration) {
+        // Прогон устарел: значение изменилось (или форма уничтожена),
+        // поэтому результат относится к прошлому состоянию.
+        return false;
       }
-      host.errorStore.replaceFieldErrors(name, result.errors);
+      if (host.validationTokens.get(name) === token) {
+        host.errorStore.replaceFieldErrors(name, result.errors);
+      }
+      // Токен мог смениться более поздним прогоном того же поля в рамках
+      // одного поколения. Значение то же, поэтому результат актуален:
+      // ошибки пишет только последний прогон, а вердикт возвращаем этот.
       return result.valid;
     } finally {
       if (!host.disposed && generation === host.validationGeneration) {

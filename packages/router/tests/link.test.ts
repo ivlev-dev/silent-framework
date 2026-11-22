@@ -275,6 +275,113 @@ describe("Link", () => {
     expect(push).not.toHaveBeenCalled();
   });
 
+  it.each([
+    "/\\evil.com",
+    "\\\\evil.com",
+    "/\\evil.com?x=1",
+    "/\\evil.com#sec",
+  ])(
+    "не выставляет href для unsafe backslash-цели %s",
+    async (to) => {
+      const { router } = setup();
+      await router.start();
+      const push = vi.spyOn(router, "push");
+      const { host } = mount(() => Link({ to, children: "опасно" }));
+      const anchor = host.querySelector("a")!;
+      expect(anchor.getAttribute("href")).toBeNull();
+      expect(anchor.getAttribute("aria-current")).toBeNull();
+
+      const event = new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+      });
+      anchor.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+      expect(push).not.toHaveBeenCalled();
+    },
+  );
+
+  it("нормализует обратные слэши внутренней цели и сохраняет base", async () => {
+    const { router, history } = setup();
+    await router.start();
+    const push = vi.spyOn(router, "push");
+    const { host } = mount(() => Link({
+      to: "/users\\..\\about",
+      children: "about",
+    }));
+    const anchor = host.querySelector("a")!;
+    expect(anchor.getAttribute("href")).toBe("/app/about");
+
+    const event = new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+    });
+    anchor.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(push).toHaveBeenCalledWith("/users/../about");
+    await tick();
+    expect(router.route?.name).toBe("about");
+    expect(history.location.pathname).toBe("/app/about");
+  });
+
+  it("сохраняет обратные слэши в query и совпадает с router.href", async () => {
+    const { router } = setup();
+    await router.start();
+    const to = "/users?q=a\\b&next=/\\evil.com";
+    const { host } = mount(() => Link({ to, children: "поиск" }));
+    const href = host.querySelector("a")?.getAttribute("href");
+    expect(href).toBe(router.href(to));
+    expect(href).toBe("/app/users?q=a%5Cb&next=%2F%5Cevil.com");
+  });
+
+  it("сохраняет обратные слэши в hash и совпадает с router.href", async () => {
+    const { router } = setup();
+    await router.start();
+    const to = "/users#sec\\tion";
+    const { host } = mount(() => Link({ to, children: "раздел" }));
+    const href = host.querySelector("a")?.getAttribute("href");
+    expect(href).toBe(router.href(to));
+    expect(href).toBe("/app/users#sec\\tion");
+  });
+
+  it("не считает protocol-relative query внешней целью", async () => {
+    const { router } = setup();
+    await router.start();
+    const push = vi.spyOn(router, "push");
+    const to = "/users?next=//evil.com";
+    const { host } = mount(() => Link({ to, children: "дальше" }));
+    const anchor = host.querySelector("a")!;
+    expect(anchor.getAttribute("href")).toBe("/app/users?next=%2F%2Fevil.com");
+
+    const event = new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+    });
+    anchor.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(push).toHaveBeenCalledWith(to);
+  });
+
+  it("передаёт backslash в query без искажения при навигации", async () => {
+    const { router, history } = setup();
+    await router.start();
+    const push = vi.spyOn(router, "push");
+    const to = "/users?q=a\\b";
+    const { host } = mount(() => Link({ to, children: "поиск" }));
+    host.querySelector("a")?.dispatchEvent(new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+    }));
+    expect(push).toHaveBeenCalledWith(to);
+    await tick();
+    expect(history.location.pathname).toBe("/app/users");
+    expect(history.location.search).toBe("?q=a%5Cb");
+  });
+
   it("ставит aria-current на точный активный маршрут", async () => {
     const { router } = setup();
     await router.start();
@@ -480,7 +587,7 @@ describe("Link", () => {
     expect(push).not.toHaveBeenCalled();
   });
 
-  it("не бросает при отсутствии маршрута и отдаёт сырой href", async () => {
+  it("сохраняет base при ошибке resolve внутренней цели", async () => {
     const { router } = setup();
     await router.start();
     const push = vi.spyOn(router, "push");
@@ -492,7 +599,7 @@ describe("Link", () => {
       children: "404",
     }));
     const anchor = host.querySelector("a")!;
-    expect(anchor.getAttribute("href")).toBe("/nope");
+    expect(anchor.getAttribute("href")).toBe("/app/nope");
     expect(anchor.getAttribute("aria-current")).toBeNull();
     expect(anchor.className).toBe("nav");
 
@@ -526,7 +633,7 @@ describe("Link", () => {
     const rendered = await renderToString(
       (() => Link({ to: "/nope", router, children: "404" })) as AnyComponent,
     );
-    expect(rendered.html).toContain('href="/nope"');
+    expect(rendered.html).toContain('href="/app/nope"');
     expect(rendered.html).not.toContain("aria-current");
   });
 

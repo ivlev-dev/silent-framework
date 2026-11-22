@@ -10,7 +10,7 @@ const EMAIL_PATTERN =
 const UUID_PATTERN =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const ISO8601_PATTERN =
-  /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})?)?$/;
+  /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(Z|[+-]\d{2}:\d{2})?)?$/;
 const PHONE_PATTERN = /^\+?[0-9 ()-]{7,20}$/;
 const ALPHA_PATTERN = /^\p{L}+$/u;
 const ALPHANUMERIC_PATTERN = /^[\p{L}\p{N}]+$/u;
@@ -63,10 +63,48 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
+function daysInMonth(year: number, month: number): number {
+  if (month === 2) {
+    const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+    return leap ? 29 : 28;
+  }
+  if (month === 4 || month === 6 || month === 9 || month === 11) {
+    return 30;
+  }
+  return 31;
+}
+
 function isIso8601(value: string): boolean {
-  if (!ISO8601_PATTERN.test(value)) {
+  const match = ISO8601_PATTERN.exec(value);
+  if (match === null) {
     return false;
   }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) {
+    return false;
+  }
+  if (match[4] !== undefined) {
+    const hour = Number(match[4]);
+    const minute = Number(match[5]);
+    const second = match[6] === undefined ? 0 : Number(match[6]);
+    const endOfDay = hour === 24 && minute === 0 && second === 0;
+    if ((hour > 23 && !endOfDay) || minute > 59 || second > 59) {
+      return false;
+    }
+    const zone = match[7];
+    if (zone !== undefined && zone !== "Z") {
+      const zoneHour = Number(zone.slice(1, 3));
+      const zoneMinute = Number(zone.slice(4, 6));
+      if (zoneHour > 23 || zoneMinute > 59) {
+        return false;
+      }
+    }
+  }
+  // Date.parse отсекает невозможные значения (например, месяц 13),
+  // но нормализует переполнение дня (2024-02-31 -> 2 марта), поэтому
+  // компоненты проверяются выше вручную.
   return !Number.isNaN(Date.parse(value));
 }
 

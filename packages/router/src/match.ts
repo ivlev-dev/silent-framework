@@ -28,6 +28,7 @@ export type QuerySchema<Q> = {
 export type RouterErrorCode =
   | "abort"
   | "guard"
+  | "history"
   | "load"
   | "no-match"
   | "redirect"
@@ -212,6 +213,40 @@ export function normalizePath(path: string): string {
     value = value.slice(0, -1);
   }
   return value === "" ? "/" : value;
+}
+
+const SINGLE_DOT_SEGMENT = /^(?:\.|%2e)$/i;
+const DOUBLE_DOT_SEGMENT = /^(?:\.\.|\.%2e|%2e\.|%2e%2e)$/i;
+
+/**
+ * Приводит путь к канонической форме, совпадающей с нормализацией URL:
+ * обратные слэши считаются разделителями, пустые сегменты схлопываются,
+ * а `.`/`..` (включая percent-encoded варианты) разрешаются.
+ *
+ * Это нужно, чтобы состояние роутера и адресная строка не расходились:
+ * браузер нормализует `/users/../` и `/users/%2e%2e` в `/` ещё до записи
+ * в history, поэтому матчинг и `fullPath` должны видеть тот же путь.
+ */
+export function canonicalizePath(path: string): string {
+  let value = path.trim().replace(/\\/g, "/");
+  if (value === "") {
+    return "/";
+  }
+  if (!value.startsWith("/")) {
+    value = `/${value}`;
+  }
+  const segments: string[] = [];
+  for (const segment of value.split("/")) {
+    if (segment === "" || SINGLE_DOT_SEGMENT.test(segment)) {
+      continue;
+    }
+    if (DOUBLE_DOT_SEGMENT.test(segment)) {
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+  return segments.length === 0 ? "/" : `/${segments.join("/")}`;
 }
 
 function pathSegments(path: string): string[] {
@@ -561,7 +596,10 @@ export function parseQuery(search: string): RouteQuery {
     return {};
   }
   const params = new URLSearchParams(raw);
-  const result: Record<string, string | string[]> = {};
+  // null-prototype: ключи query — данные, включая `__proto__` и `constructor`.
+  // На обычном объекте присваивание `result["__proto__"]` меняло бы прототип
+  // (или молча теряло значение), а `constructor` перекрывал бы встроенное поле.
+  const result: Record<string, string | string[]> = Object.create(null);
   for (const [key, value] of params) {
     const existing = Object.prototype.hasOwnProperty.call(result, key)
       ? result[key]
@@ -602,7 +640,7 @@ export function buildQuery(query: RouteQuery): string {
 }
 
 function normalizeQuery(query: Readonly<Record<string, QueryInput>>): RouteQuery {
-  const result: Record<string, RouteQueryValue> = {};
+  const result: Record<string, RouteQueryValue> = Object.create(null);
   for (const [key, value] of Object.entries(query)) {
     if (value === null || value === undefined) {
       continue;
@@ -727,7 +765,10 @@ function applyQuerySchema(
   if (schema === undefined) {
     return query;
   }
-  const result: Record<string, RouteQueryValue> = { ...query };
+  const result: Record<string, RouteQueryValue> = Object.create(null);
+  for (const [key, value] of Object.entries(query)) {
+    result[key] = value;
+  }
   for (const [key, parser] of Object.entries(schema)) {
     const parsed = parseWithSchema(parser, query[key]);
     if (parsed === undefined || parsed === null) {
@@ -739,8 +780,51 @@ function applyQuerySchema(
   return result;
 }
 
-function encodeParam(value: string): string {
-  return encodeURIComponent(value);
+function encodeParam(value: string, name: string, pattern: string): string {
+  try {
+    return encodeURIComponent(value.toWellFormed());
+  } catch (error) {
+    throw new RouterNavigationError(
+      `Не удалось закодировать параметр маршрута ":${name}"`,
+      "resolve",
+      pattern,
+      error,
+    );
+  }
+}
+
+function paramValue(
+  raw: string | number | undefined,
+  name: string,
+  pattern: string,
+): string {
+  if (raw === undefined) {
+    throw new RouterNavigationError(
+      `Не задан параметр маршрута ":${name}"`,
+      "resolve",
+      pattern,
+    );
+  }
+  const value = String(raw);
+  if (value === "") {
+    throw new RouterNavigationError(
+      `Пустой параметр маршрута ":${name}"`,
+      "resolve",
+      pattern,
+    );
+  }
+  // Точка и две точки браузер трактует как dot-segment и нормализует URL:
+  // `/users/..` превращается в `/`, из-за чего состояние роутера расходится
+  // с адресной строкой. Percent-encoding здесь не помогает (`%2e` для URL
+  // тоже dot-segment), поэтому такие значения отклоняем.
+  if (value === "." || value === "..") {
+    throw new RouterNavigationError(
+      `Недопустимый параметр маршрута ":${name}": "." и ".." нельзя использовать как сегмент`,
+      "resolve",
+      pattern,
+    );
+  }
+  return value;
 }
 
 function interpolateSegments(
@@ -763,7 +847,16 @@ function interpolateSegments(
         String(raw)
           .split("/")
           .filter((part) => part.length > 0)
-          .map((part) => encodeParam(part))
+          .map((part) => {
+            if (part === "." || part === "..") {
+              throw new RouterNavigationError(
+                `Недопустимый параметр маршрута ":${segment.name}": "." и ".." нельзя использовать как сегмент`,
+                "resolve",
+                pattern,
+              );
+            }
+            return encodeParam(part, segment.name, pattern);
+          })
           .join("/"),
       );
       continue;
@@ -775,28 +868,12 @@ function interpolateSegments(
           value += part.value;
           continue;
         }
-        const raw = params[part.name];
-        if (raw === undefined) {
-          throw new RouterNavigationError(
-            `Не задан параметр маршрута ":${part.name}"`,
-            "resolve",
-            pattern,
-          );
-        }
-        value += encodeParam(String(raw));
+        value += encodeParam(paramValue(params[part.name], part.name, pattern), part.name, pattern);
       }
       output.push(value);
       continue;
     }
-    const raw = params[segment.name];
-    if (raw === undefined) {
-      throw new RouterNavigationError(
-        `Не задан параметр маршрута ":${segment.name}"`,
-        "resolve",
-        pattern,
-      );
-    }
-    output.push(encodeParam(String(raw)));
+    output.push(encodeParam(paramValue(params[segment.name], segment.name, pattern), segment.name, pattern));
   }
   return normalizePath(`/${output.filter((part) => part.length > 0).join("/")}`);
 }
@@ -857,7 +934,7 @@ export function createLocation(
   hash: string,
   components?: ReadonlyMap<RouteRecord, AnyComponent>,
 ): RouteLocation {
-  const path = normalizePath(pathname);
+  const path = canonicalizePath(pathname);
   const match = matchRoutes(compiled, path);
   if (match === null) {
     throw new RouterNavigationError(
@@ -936,6 +1013,17 @@ function resolveRelativePath(base: string, relative: string): string {
   return normalizePath(`/${[...segments, ...pathSegments(relative)].join("/")}`);
 }
 
+function rawSearchOf(location: RouteLocation | null): string {
+  if (location === null) {
+    return "";
+  }
+  const fullPath = location.fullPath;
+  const hashIndex = fullPath.indexOf("#");
+  const withoutHash = hashIndex === -1 ? fullPath : fullPath.slice(0, hashIndex);
+  const queryIndex = withoutHash.indexOf("?");
+  return queryIndex === -1 ? "" : withoutHash.slice(queryIndex);
+}
+
 function resolveStringTarget(
   compiled: readonly CompiledRoute[],
   value: string,
@@ -944,10 +1032,13 @@ function resolveStringTarget(
 ): RouteLocation {
   const currentPath = current?.path ?? "/";
   if (value.startsWith("#")) {
+    // Hash-only переход не должен пересобирать query из типизированного
+    // `query`: невалидные для схемы параметры там уже отброшены.
+    // Берём сырой search из fullPath текущего маршрута.
     return createLocation(
       compiled,
       currentPath,
-      buildQuery(current?.query ?? {}),
+      rawSearchOf(current),
       value,
       components,
     );
@@ -1016,12 +1107,20 @@ export function resolveLocation(
   }
   // Объектная цель без query/hash наследует их у текущего маршрута;
   // query/hash из target.path уступают явным полям объекта.
-  const query = target.query === undefined
-    ? current?.query ?? {}
-    : normalizeQuery(target.query);
-  const search = target.query !== undefined
+  // Наследуем именно сырой search, иначе невалидные для схемы параметры
+  // (например `?page=abc`) терялись бы при смене только hash.
+  const hasQuery = target.query !== undefined;
+  const query = hasQuery
+    ? normalizeQuery(target.query ?? {})
+    : current?.query ?? {};
+  // Сырой search наследуем только когда цель не задаёт новый путь/имя
+  // (переход вида `{ hash }`). Для остальных целей сохраняем прежнюю
+  // семантику: query пересобирается из типизированного значения.
+  const inheritsLocation = target.name === undefined
+    && (target.path === undefined || target.path === "");
+  const search = hasQuery
     ? buildQuery(query)
-    : inlineSearch ?? buildQuery(query);
+    : inlineSearch ?? (inheritsLocation ? rawSearchOf(current) : buildQuery(query));
   const hash = target.hash !== undefined
     ? target.hash
     : inlineHash ?? current?.hash ?? "";

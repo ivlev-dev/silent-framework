@@ -150,6 +150,27 @@ describe("onDispose после dispose", () => {
   });
 });
 
+describe("resolve на освобождённом контейнере", () => {
+  it("не оставляет unhandled rejection, но всё равно отклоняется ContainerDisposedError", async () => {
+    const root = new Container("root");
+    root.dispose();
+
+    const unhandled: unknown[] = [];
+    const listener = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", listener);
+    try {
+      const pending = root.resolve("token");
+      await flush();
+      expect(unhandled).toEqual([]);
+      await expect(pending).rejects.toBeInstanceOf(ContainerDisposedError);
+    } finally {
+      process.off("unhandledRejection", listener);
+    }
+  });
+});
+
 describe("dispose во время незавершённого resolve", () => {
   it("отложенная фабрика: resolve отклоняется ContainerDisposedError, инстанс освобождён один раз", async () => {
     const root = new Container("root");
@@ -245,7 +266,7 @@ describe("dispose во время незавершённого resolve", () => {
     expect(root.snapshot().resolved).toBe(0);
   });
 
-  it("transient при dispose отклоняется, но инстанс остаётся у вызывающего", async () => {
+  it("transient при dispose отклоняется, а поздний инстанс освобождается", async () => {
     const root = new Container("root");
     const token = createToken<Tracked>("transient-slow");
     let release: () => void = () => undefined;
@@ -269,7 +290,63 @@ describe("dispose во время незавершённого resolve", () => {
     release();
     await flush();
 
-    expect(instance?.disposed).toBe(0);
+    // Вызывающий не получил инстанс (промис отклонён), поэтому владельца
+    // у значения нет — его нужно освободить, иначе утечка.
+    expect(instance?.disposed).toBe(1);
+
+    root.dispose();
+    await flush();
+    expect(instance?.disposed).toBe(1);
+  });
+
+  it("освобождает поздние transient и singleton инстансы ровно один раз", async () => {
+    const root = new Container("root");
+    const transientToken = createToken<LateDisposable>("late-transient");
+    const singletonToken = createToken<Tracked>("late-singleton");
+    let release: () => void = () => undefined;
+    let transientInstance: LateDisposable | undefined;
+    let singletonInstance: Tracked | undefined;
+    const gate = new Promise<void>((resolveGate) => {
+      release = resolveGate;
+    });
+
+    root.bind(transientToken, async () => {
+      const created: LateDisposable = {
+        disposeCalls: 0,
+        dispose(): void {
+          this.disposeCalls += 1;
+        },
+      };
+      transientInstance = created;
+      await gate;
+      return created;
+    }).inTransientScope();
+    root.bind(singletonToken, async () => {
+      const created = makeTracked();
+      singletonInstance = created;
+      await gate;
+      return created;
+    });
+
+    const pendingTransient = root.resolve(transientToken);
+    const pendingSingleton = root.resolve(singletonToken);
+    root.dispose();
+
+    expect(await errorOf(pendingTransient)).toBeInstanceOf(ContainerDisposedError);
+    expect(await errorOf(pendingSingleton)).toBeInstanceOf(ContainerDisposedError);
+
+    release();
+    await flush();
+
+    // transient — через dispose(), singleton — через Symbol.dispose.
+    expect(transientInstance?.disposeCalls).toBe(1);
+    expect(singletonInstance?.disposed).toBe(1);
+    expect(root.snapshot().resolved).toBe(0);
+
+    root.dispose();
+    await flush();
+    expect(transientInstance?.disposeCalls).toBe(1);
+    expect(singletonInstance?.disposed).toBe(1);
   });
 
   it("поздно созданный инстанс освобождается методом dispose()", async () => {

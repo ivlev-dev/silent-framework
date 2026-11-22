@@ -144,11 +144,49 @@ export function assignArrayItem(
   );
 }
 
+/**
+ * Массив уже связан с этой формой и не изменился по составу, порядку
+ * и id-контексту. В этом случае пересборка id и сброс props-кэша не нужны.
+ */
+function sameArrayItems(
+  host: NestedLink,
+  name: string,
+  items: Form[],
+): boolean {
+  const previous = host.arrayChildren.get(name);
+  if (previous === undefined || previous.length !== items.length) {
+    return false;
+  }
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index]!;
+    if (previous[index] !== item) {
+      return false;
+    }
+    const link = linkOf(item);
+    if (
+      link.parentForm !== host.form ||
+      link.parentField !== `${name}[${index}]` ||
+      link.idPrefix !== host.idPrefix
+    ) {
+      return false;
+    }
+    const local = `${name}[${index}]`;
+    const expectedPath = host.idPath === "" ? local : `${host.idPath}.${local}`;
+    if (link.idPath !== expectedPath) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function bindArrayChildren(
   host: NestedLink,
   name: string,
   items: Form[],
 ): void {
+  if (sameArrayItems(host, name, items)) {
+    return;
+  }
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index]!;
     const link = linkOf(item);

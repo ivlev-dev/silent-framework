@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  copyReactiveState,
   createRenderEffect,
   flushSync,
   readField,
@@ -68,5 +69,30 @@ describe("аллокация сигналов полей store", () => {
       },
     );
     expect(internals(storeFor(instance)).fieldSignals.size).toBe(1);
+  });
+
+  it("копирует поля, записанные без чтения (set без get)", () => {
+    const source: Record<string, number> = { count: 0 };
+    const target: Record<string, number> = { count: 0 };
+    writeField(source, "count", 42, (raw) => {
+      source.count = raw;
+    });
+    writeField(source, "other", 7, (raw) => {
+      (source as { other?: number }).other = raw;
+    });
+
+    expect(internals(storeFor(source)).fieldSignals.size).toBe(0);
+    copyReactiveState(source, target);
+
+    expect(
+      readField(target, "count", () => target.count),
+    ).toBe(42);
+    expect(
+      readField(
+        target,
+        "other",
+        () => (target as { other?: number }).other ?? -1,
+      ),
+    ).toBe(7);
   });
 });

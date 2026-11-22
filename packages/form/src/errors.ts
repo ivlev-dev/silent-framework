@@ -180,6 +180,22 @@ export class ErrorStore {
     return this.index().get(name) ?? EMPTY_ERRORS;
   }
 
+  /**
+   * Ошибки ровно по ключу поля, без агрегации дочерних путей
+   * (`items[0]` не попадает в `items`, `address.city` — в `address`).
+   */
+  ownErrors(name: string): readonly string[] {
+    const validation = this.validation.get(name);
+    const external = this.external.get(name);
+    if (validation === undefined) {
+      return external ?? EMPTY_ERRORS;
+    }
+    if (external === undefined) {
+      return validation;
+    }
+    return Object.freeze([...validation, ...external]);
+  }
+
   /** Сообщения validation-ошибок конкретного поля (для проверки изменений). */
   validationFieldErrors(name: string): readonly string[] {
     return this.validation.get(name) ?? EMPTY_ERRORS;

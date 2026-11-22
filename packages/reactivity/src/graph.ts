@@ -136,6 +136,7 @@ interface SignalNode {
   reconcileStamp: number;
   readonly equals: EqualityFn<unknown>;
   readonly observers: Set<ComputationNode>;
+  onEmpty: (() => void) | null;
 }
 
 interface MemoNode {
@@ -170,6 +171,8 @@ interface EffectNode {
   initialized: boolean;
   running: boolean;
   failed: boolean;
+  /** true, пока узел учтён в stats.activeEffects (runaway снимает учёт). */
+  counted: boolean;
   warnedAsync: boolean;
   deps: SourceNode[] | null;
   depVersions: number[] | null;
@@ -213,7 +216,11 @@ let initialFlushing = false;
 let batchDepth = 0;
 let emptyFlushRuns = 0;
 
-function createSignalNode<T>(value: T, equals: EqualityFn<unknown>): SignalNode {
+function createSignalNode<T>(
+  value: T,
+  equals: EqualityFn<unknown>,
+  onEmpty: (() => void) | null = null,
+): SignalNode {
   signalsCreated += 1;
   return {
     type: "signal",
@@ -222,6 +229,7 @@ function createSignalNode<T>(value: T, equals: EqualityFn<unknown>): SignalNode 
     reconcileStamp: 0,
     equals,
     observers: new Set<ComputationNode>(),
+    onEmpty,
   };
 }
 
@@ -236,6 +244,25 @@ function trackDependency(node: SourceNode): void {
     listener.nextDepMap = nextDeps;
   }
   nextDeps.set(node, node.version);
+}
+
+/**
+ * Снимает подписку вычислительного узла с источника. Для сигналов с
+ * onEmpty-хуком (внутренние слоты deep-прокси) последний ушедший observer
+ * сообщает владельцу, что запись можно удалить: иначе карты полей/слотов
+ * растут на чтениях, которые эффект больше не повторяет.
+ */
+function detachDependency(dep: SourceNode, node: ComputationNode): void {
+  if (!dep.observers.delete(node)) {
+    return;
+  }
+  if (dep.type === "signal" && dep.observers.size === 0) {
+    const onEmpty = dep.onEmpty;
+    if (onEmpty !== null) {
+      dep.onEmpty = null;
+      onEmpty();
+    }
+  }
 }
 
 function readSource(node: SourceNode): unknown {
@@ -390,13 +417,41 @@ function depsChangedSinceRead(node: ComputationNode): boolean {
   return false;
 }
 
+/**
+ * Проверка зависимостей может бросить исключение (упавшая мемо в цепочке).
+ * Узел нельзя оставлять в CHECK: это не CLEAN (чтения продолжают считать его
+ * актуальным), но и не DIRTY, поэтому markCheck его больше не разбудит —
+ * соседние источники перестают перезапускать эффект.
+ */
+function recoverFailedCheck(node: ComputationNode): void {
+  if (node.type === "memo") {
+    // DIRTY + failed повторяет состояние упавшего recomputeMemo: следующее
+    // изменение зависимости сбросит failed и разбудит наблюдателей.
+    node.state = DIRTY;
+    node.failed = true;
+    return;
+  }
+  if (node.state === CHECK) {
+    node.state = CLEAN;
+  }
+}
+
 function updateIfNecessary(node: ComputationNode): void {
   if (node.disposed || node.state === CLEAN) {
     return;
   }
-  if (node.state === CHECK && !depsChanged(node)) {
-    node.state = CLEAN;
-    return;
+  if (node.state === CHECK) {
+    let changed: boolean;
+    try {
+      changed = depsChanged(node);
+    } catch (error) {
+      recoverFailedCheck(node);
+      throw error;
+    }
+    if (!changed) {
+      node.state = CLEAN;
+      return;
+    }
   }
   if (node.type === "memo") {
     recomputeMemo(node);
@@ -434,7 +489,7 @@ function reconcileDependencies(node: ComputationNode): void {
   if (nextMap === null || nextMap.size === 0) {
     if (previousDeps !== null) {
       for (const dep of previousDeps) {
-        dep.observers.delete(node);
+        detachDependency(dep, node);
       }
       previousDeps.length = 0;
     }
@@ -487,7 +542,7 @@ function reconcileDependencies(node: ComputationNode): void {
     }
     for (const dep of previousDeps) {
       if (dep.reconcileStamp !== presenceStamp) {
-        dep.observers.delete(node);
+        detachDependency(dep, node);
       }
     }
     const previousStamp = ++reconcileStampSeq;
@@ -606,7 +661,12 @@ function runQueuedEffect(node: EffectNode): void {
   try {
     updateIfNecessary(node);
   } catch (error) {
-    if (node.state === DIRTY) {
+    // DIRTY означает «источник изменился во время прогона» — узел уже стоит
+    // в очереди и должен перезапуститься. Любое другое состояние (включая
+    // CHECK после исключения в depsChanged) сбрасываем в CLEAN, иначе
+    // markCheck перестанет будить эффект. Без повторной постановки, чтобы
+    // постоянно падающая зависимость не крутила бесконечный цикл.
+    if (node.state !== DIRTY) {
       node.state = CLEAN;
     }
     reportEffectError(error, effectOwner(node));
@@ -624,14 +684,34 @@ function createFlushBudget(): FlushBudget {
 
 /**
  * Помечает эффект как сбойный: ошибка уходит в обработчик, узел снимается
- * с очереди и больше не ставится в неё автоматически. Пользовательские
- * cleanup не вызываются — состояние владельца не трогаем.
+ * с очереди и больше не ставится в неё автоматически, а подписки на
+ * источники снимаются. Пользовательские cleanup не вызываются — состояние
+ * владельца не трогаем; сам owner потом освободит узел обычным путём.
  */
 function failRunawayEffect(node: EffectNode): void {
   node.failed = true;
   node.state = CLEAN;
   effectQueue.delete(node);
   pendingInitial.delete(node);
+  const deps = node.deps;
+  if (deps !== null) {
+    for (const dep of deps) {
+      detachDependency(dep, node);
+    }
+    deps.length = 0;
+  }
+  const depVersions = node.depVersions;
+  if (depVersions !== null) {
+    depVersions.length = 0;
+  }
+  node.deps = null;
+  node.depVersions = null;
+  node.nextDepMap?.clear();
+  node.nextDepMap = null;
+  if (node.counted) {
+    node.counted = false;
+    activeEffects = Math.max(0, activeEffects - 1);
+  }
   reportEffectError(
     new Error("Reactivity flush exceeded iteration limit"),
     effectOwner(node),
@@ -717,72 +797,156 @@ function createOwnerNode(parent: OwnerNode | null): OwnerNode {
   return node;
 }
 
-function runCleanups(owner: OwnerNode): void {
-  const cleanups = owner.cleanups;
-  if (cleanups === null) {
-    return;
+function mergeErrors(
+  target: unknown[] | null,
+  source: unknown[] | null,
+): unknown[] | null {
+  if (source === null || source.length === 0) {
+    return target;
   }
-  owner.cleanups = null;
-  for (let index = cleanups.length - 1; index >= 0; index -= 1) {
-    const cleanup = cleanups[index];
-    if (cleanup !== undefined) {
-      cleanup();
-    }
+  if (target === null) {
+    return source;
   }
+  for (const error of source) {
+    target.push(error);
+  }
+  return target;
 }
 
-function disposeOwnerChildren(owner: OwnerNode): void {
-  const children = owner.children;
-  if (children === null) {
+function formatDisposeError(errors: unknown[]): unknown {
+  if (errors.length === 1) {
+    return errors[0];
+  }
+  return new AggregateError(
+    errors,
+    `Ошибки при освобождении реактивного узла: ${errors.length}`,
+  );
+}
+
+function reportDisposeErrors(
+  errors: unknown[] | null,
+  owner: OwnerNode,
+): void {
+  if (errors === null || errors.length === 0) {
     return;
   }
-  owner.children = null;
-  for (const child of children) {
-    if (child.computation !== null) {
-      disposeComputation(child.computation);
-    } else {
-      disposeOwner(child);
+  reportEffectError(
+    formatDisposeError(errors),
+    owner.parent === null ? null : toOwner(owner),
+  );
+}
+
+function throwDisposeErrors(errors: unknown[] | null): void {
+  if (errors === null || errors.length === 0) {
+    return;
+  }
+  throw formatDisposeError(errors);
+}
+
+/**
+ * Выполняет cleanup'ы LIFO, изолируя каждый: исключение одного не должно
+ * мешать остальным. Массив ошибок создаётся только при сбое, чтобы не
+ * добавлять аллокаций на каждый rerun эффекта.
+ */
+function runCleanups(owner: OwnerNode): unknown[] | null {
+  const cleanups = owner.cleanups;
+  if (cleanups === null) {
+    return null;
+  }
+  owner.cleanups = null;
+  let errors: unknown[] | null = null;
+  for (let index = cleanups.length - 1; index >= 0; index -= 1) {
+    const cleanup = cleanups[index];
+    if (cleanup === undefined) {
+      continue;
+    }
+    try {
+      cleanup();
+    } catch (error) {
+      (errors ??= []).push(error);
     }
   }
+  return errors;
+}
+
+function disposeOwnerChildren(owner: OwnerNode): unknown[] | null {
+  const children = owner.children;
+  if (children === null) {
+    return null;
+  }
+  owner.children = null;
+  let errors: unknown[] | null = null;
+  for (const child of children) {
+    let childErrors: unknown[] | null;
+    try {
+      childErrors =
+        child.computation !== null
+          ? disposeComputationInternal(child.computation)
+          : disposeOwnerInternal(child);
+    } catch (error) {
+      childErrors = [error];
+    }
+    errors = mergeErrors(errors, childErrors);
+  }
+  return errors;
 }
 
 function resetOwner(owner: OwnerNode): void {
-  runCleanups(owner);
-  disposeOwnerChildren(owner);
+  let errors = runCleanups(owner);
+  try {
+    // Дети освобождаются даже после исключения в cleanup; ошибки
+    // репортятся в обработчик эффектов, чтобы rerun продолжился.
+    errors = mergeErrors(errors, disposeOwnerChildren(owner));
+  } finally {
+    reportDisposeErrors(errors, owner);
+  }
 }
 
-function disposeOwner(owner: OwnerNode): void {
+function disposeOwnerInternal(owner: OwnerNode): unknown[] | null {
   if (owner.disposed) {
-    return;
+    return null;
   }
   owner.disposed = true;
   if (owner.counted) {
     activeOwners = Math.max(0, activeOwners - 1);
   }
-  runCleanups(owner);
-  disposeOwnerChildren(owner);
-  if (owner.parent !== null) {
-    owner.parent.children?.delete(owner);
+  let errors = runCleanups(owner);
+  try {
+    errors = mergeErrors(errors, disposeOwnerChildren(owner));
+  } finally {
+    if (owner.parent !== null) {
+      owner.parent.children?.delete(owner);
+    }
   }
+  return errors;
 }
 
-function disposeComputation(node: ComputationNode): void {
+function disposeOwner(owner: OwnerNode): void {
+  throwDisposeErrors(disposeOwnerInternal(owner));
+}
+
+function disposeComputationInternal(
+  node: ComputationNode,
+): unknown[] | null {
   if (node.disposed) {
-    return;
+    return null;
   }
   node.disposed = true;
   if (node.type === "memo") {
     activeMemos = Math.max(0, activeMemos - 1);
     node.observers.clear();
   } else {
-    activeEffects = Math.max(0, activeEffects - 1);
+    if (node.counted) {
+      node.counted = false;
+      activeEffects = Math.max(0, activeEffects - 1);
+    }
     effectQueue.delete(node);
     pendingInitial.delete(node);
   }
   const deps = node.deps;
   if (deps !== null) {
     for (const dep of deps) {
-      dep.observers.delete(node);
+      detachDependency(dep, node);
     }
     deps.length = 0;
   }
@@ -796,7 +960,11 @@ function disposeComputation(node: ComputationNode): void {
   node.depVersions = null;
   node.nextDepMap?.clear();
   node.nextDepMap = null;
-  disposeOwner(node.owner);
+  return disposeOwnerInternal(node.owner);
+}
+
+function disposeComputation(node: ComputationNode): void {
+  throwDisposeErrors(disposeComputationInternal(node));
 }
 
 class OwnerRef implements Owner {
@@ -837,6 +1005,7 @@ function createEffectNode(type: "effect" | "renderEffect", fn: () => void): Effe
     initialized: false,
     running: false,
     failed: false,
+    counted: false,
     warnedAsync: false,
     deps: null,
     depVersions: null,
@@ -850,6 +1019,7 @@ function createEffectNode(type: "effect" | "renderEffect", fn: () => void): Effe
     node.disposed = true;
   } else {
     activeEffects += 1;
+    node.counted = true;
   }
   return node;
 }
@@ -862,9 +1032,30 @@ export function createSignalHandle<T>(
   value: T,
   equals?: (a: T, b: T) => boolean,
 ): SignalHandle<T> {
+  return createHandle(value, equals, null);
+}
+
+/**
+ * Внутренний вариант createSignalHandle: onEmpty вызывается, когда у сигнала
+ * снимается последний observer. Не экспортируется из публичного index —
+ * используется deep-прокси для очистки карт полей/слотов.
+ */
+export function createSignalHandleWithCleanup<T>(
+  value: T,
+  onEmpty: () => void,
+  equals?: (a: T, b: T) => boolean,
+): SignalHandle<T> {
+  return createHandle(value, equals, onEmpty);
+}
+
+function createHandle<T>(
+  value: T,
+  equals: ((a: T, b: T) => boolean) | undefined,
+  onEmpty: (() => void) | null,
+): SignalHandle<T> {
   const equality: EqualityFn<unknown> =
     equals === undefined ? Object.is : (a, b) => equals(a as T, b as T);
-  const node = createSignalNode(value, equality);
+  const node = createSignalNode(value, equality, onEmpty);
   return {
     read(): T {
       return readSource(node) as T;
@@ -1011,7 +1202,9 @@ function createEffectUnlessStatic(fn: () => void): (() => void) | null {
     currentOwner = parentOwner;
     probeDepth -= 1;
     tracker.nextDepMap?.clear();
-    disposeOwner(holder);
+    // Не теряем исходную ошибку probe-функции из-за сбоя cleanup: ошибки
+    // освобождения уходят в обработчик эффектов.
+    reportDisposeErrors(disposeOwnerInternal(holder), holder);
     throw error;
   }
   currentListener = previousListener;

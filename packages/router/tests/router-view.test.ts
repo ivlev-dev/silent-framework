@@ -226,7 +226,7 @@ describe("RouterView", () => {
     const pending = router.push("/lazy");
     await tick();
     expect(resolveLoad).not.toBeNull();
-    resolveLoad?.(leaf("lazy"));
+    (resolveLoad as ((component: () => HTMLElement) => void) | null)?.(leaf("lazy"));
     await pending;
     expect(host.querySelector("[data-view=lazy]")).not.toBeNull();
   });

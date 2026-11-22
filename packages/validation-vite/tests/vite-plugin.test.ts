@@ -1570,6 +1570,39 @@ describe("validation()", () => {
     expect(code).toMatch(/import \* as __silent_validation_\d+ from ["']\.\/b["'];\r\n/);
   });
 
+  it("вырезает недоступное поле с вычисляемым ключом __proto__", () => {
+    const directory = createProject();
+    writeFileSync(
+      path.join(directory, "money.d.ts"),
+      ["export declare class Money {", "  amount: number;", "}", ""].join("\n"),
+    );
+    const file = path.join(directory, "proto.ts");
+    writeFileSync(
+      file,
+      [
+        'import type { Money } from "./money";',
+        'import { ValidationModel } from "@ivlev-dev/silent-validation";',
+        "",
+        "export class Proto extends ValidationModel {",
+        "  accessor __proto__: Money = null as unknown as Money;",
+        '  accessor name: string = "";',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const warnings: string[] = [];
+    const result = getTransform(validation()).call(
+      { warn: (message: string) => warnings.push(message) },
+      readFileSync(file, "utf8"),
+      file,
+    );
+    expect(result).not.toBeNull();
+    const code = (result as TransformOutput).code;
+    expect(warnings.some((message) => message.includes("Proto.__proto__"))).toBe(true);
+    expect(code).not.toContain('["__proto__"]:');
+    expect(code).toMatch(/["']name["']\s*:\s*"string"/);
+  });
+
   it("оставляет Promise, Iterable, WeakMap и WeakSet и вырезает реально недоступные поля", () => {
     const directory = createProject();
     writeFileSync(

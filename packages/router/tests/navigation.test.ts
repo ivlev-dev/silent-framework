@@ -229,7 +229,7 @@ describe("навигация", () => {
     expect(started).toBe(true);
     const second = router.push("/about");
     await Promise.all([first, second]);
-    expect(loaderSignal?.aborted).toBe(true);
+    expect((loaderSignal as AbortSignal | null)?.aborted).toBe(true);
     expect(router.route?.path).toBe("/about");
   });
 
@@ -387,7 +387,7 @@ describe("навигация", () => {
     expect(scrollTo).toHaveBeenCalledWith(0, 5);
 
     scrollTo.mockClear();
-    releaseSlow?.();
+    (releaseSlow as (() => void) | null)?.();
     await first;
     expect(scrollTo).not.toHaveBeenCalled();
   });

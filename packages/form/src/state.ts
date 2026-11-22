@@ -3,6 +3,24 @@ import type { ErrorStore } from "./errors.js";
 import type { FieldMetadata } from "./metadata.js";
 import { cloneValue, isThenable } from "./utils.js";
 
+/**
+ * Записывает собственное перечислимое свойство. Обычное присваивание
+ * `record["__proto__"]` меняет прототип (или молча теряет поле), поэтому
+ * снимки собираются только через `defineProperty`.
+ */
+function defineEntry<T>(record: Record<string, T>, key: string, value: T): void {
+  Object.defineProperty(record, key, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
+}
+
+function hasEntry<T>(record: Record<string, T>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(record, key);
+}
+
 /** Минимальный контракт сигнала, нужный агрегатам. */
 export interface SignalLike<T> {
   0(): T;
@@ -81,8 +99,15 @@ export function computeReady(host: StateHost): boolean {
       return false;
     }
     const items = host.arrayItems(name);
-    if (active && items !== undefined && !items.every((item) => item.isReady)) {
-      return false;
+    if (active && items !== undefined) {
+      for (let index = 0; index < items.length; index += 1) {
+        if (host.readyStates.get(`${name}[${index}]`) === false) {
+          return false;
+        }
+        if (!items[index]!.isReady) {
+          return false;
+        }
+      }
     }
   }
   return host.errorStore.validationSize === 0 && host.errorStore.externalSize === 0;
@@ -248,8 +273,12 @@ export function computeErrors(
       if (messages.length === 0) {
         continue;
       }
-      const existing = result[key];
-      result[key] = existing === undefined ? messages : [...existing, ...messages];
+      const existing = hasEntry(result, key) ? result[key] : undefined;
+      defineEntry(
+        result,
+        key,
+        existing === undefined ? messages : [...existing, ...messages],
+      );
     }
   };
   merge(host.errorStore.validationMap);
@@ -258,7 +287,7 @@ export function computeErrors(
     const child = host.childFor(name);
     if (child !== undefined) {
       for (const [key, messages] of Object.entries(child.errors)) {
-        result[`${name}.${key}`] = messages;
+        defineEntry(result, `${name}.${key}`, messages);
       }
       continue;
     }
@@ -269,7 +298,7 @@ export function computeErrors(
     for (let index = 0; index < items.length; index += 1) {
       const item = items[index]!;
       for (const [key, messages] of Object.entries(item.errors)) {
-        result[`${name}[${index}].${key}`] = messages;
+        defineEntry(result, `${name}[${index}].${key}`, messages);
       }
     }
   }
@@ -281,15 +310,19 @@ export function computeValues(host: StateHost): Record<string, unknown> {
   for (const name of host.metadata.keys()) {
     const value = host.readValue(name);
     if (host.isForm(value)) {
-      result[name] = value.values;
+      defineEntry(result, name, value.values);
       continue;
     }
     const items = host.arrayItems(name);
     if (items !== undefined) {
-      result[name] = items.map((item) => item.values);
+      defineEntry(
+        result,
+        name,
+        items.map((item) => item.values),
+      );
       continue;
     }
-    result[name] = cloneValue(value);
+    defineEntry(result, name, cloneValue(value));
   }
   return result;
 }

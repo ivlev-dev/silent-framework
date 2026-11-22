@@ -12,6 +12,7 @@ import {
 import { createMemo, createRenderEffect, onCleanup } from "@ivlev-dev/silent-reactivity";
 import {
   RouterMissingError,
+  canonicalizePath,
   isPathActive,
   type RouteLocation,
   type RouteQuery,
@@ -73,36 +74,107 @@ type TargetKind = "external" | "internal" | "unsafe";
 interface TargetInfo {
   readonly kind: TargetKind;
   readonly externalHref: string | null;
+  /** Нормализованная внутренняя цель (backslash → slash только в pathname); null для объектов. */
+  readonly internalTarget: string | null;
+}
+
+interface SplitTarget {
+  readonly path: string;
+  readonly search: string;
+  readonly hash: string;
+}
+
+/**
+ * Делит строковую цель на path/search/hash. Разделение нужно, чтобы
+ * нормализовать обратные слэши только в pathname: в query и hash они
+ * являются обычными данными и должны дойти до resolve без изменений.
+ */
+function splitTarget(target: string): SplitTarget {
+  let rest = target;
+  let hash = "";
+  const hashIndex = rest.indexOf("#");
+  if (hashIndex !== -1) {
+    hash = rest.slice(hashIndex);
+    rest = rest.slice(0, hashIndex);
+  }
+  let search = "";
+  const queryIndex = rest.indexOf("?");
+  if (queryIndex !== -1) {
+    search = rest.slice(queryIndex);
+    rest = rest.slice(0, queryIndex);
+  }
+  return { path: rest, search, hash };
 }
 
 const SCHEME_PATTERN = /^([a-z][a-z0-9+.-]*):/i;
 const ALLOWED_SCHEMES: ReadonlySet<string> = new Set(["http", "https", "mailto", "tel"]);
+// Сентинел для `new URL`: нужен только чтобы отличить same-origin путь
+// от protocol-relative/cross-origin цели, реальный origin не используется.
+const CLASSIFICATION_ORIGIN = "http://silent-router.invalid";
 
 /**
  * Классифицирует цель ссылки. Внешними считаются только схемы из allow-list
  * (`http(s)`, `mailto`, `tel`), протокол-относительные (`//`) и hash-ссылки (`#`).
  * Неизвестные и опасные схемы (`javascript:`, `data:`, `vbscript:` и т.п.)
  * помечаются как `unsafe`: href не выставляется, клик не перехватывается.
+ *
+ * Обратные слэши нормализуются в `/` только в pathname, как это делает браузер.
+ * В query/hash они остаются исходными данными. Если из-за нормализации
+ * pathname становится protocol-relative (`/\evil.com` → `//evil.com`), цель
+ * считается unsafe: иначе `<a>` выглядит внутренней, а ведёт на чужой origin.
  */
 function inspectTarget(target: RouteTarget): TargetInfo {
   if (typeof target !== "string") {
-    return { kind: "internal", externalHref: null };
+    return { kind: "internal", externalHref: null, internalTarget: null };
   }
   // Браузер игнорирует ASCII-пробелы и управляющие символы в URL,
   // поэтому схему проверяем по нормализованной строке.
   const probe = target.replace(/[\u0000-\u0020]+/g, "");
-  if (probe.startsWith("#") || probe.startsWith("//")) {
-    return { kind: "external", externalHref: target };
+  if (probe.startsWith("#")) {
+    return { kind: "external", externalHref: target, internalTarget: null };
   }
   const scheme = SCHEME_PATTERN.exec(probe);
-  if (scheme === null) {
-    return { kind: "internal", externalHref: null };
+  if (scheme !== null) {
+    const name = (scheme[1] ?? "").toLowerCase();
+    if (ALLOWED_SCHEMES.has(name)) {
+      return { kind: "external", externalHref: target, internalTarget: null };
+    }
+    return { kind: "unsafe", externalHref: null, internalTarget: null };
   }
-  const name = (scheme[1] ?? "").toLowerCase();
-  if (ALLOWED_SCHEMES.has(name)) {
-    return { kind: "external", externalHref: target };
+  const split = splitTarget(target);
+  const normalizedPath = split.path.replace(/\\/g, "/");
+  const normalized = `${normalizedPath}${split.search}${split.hash}`;
+  const normalizedPathProbe = normalizedPath.replace(/[\u0000-\u0020]+/g, "");
+  if (normalizedPathProbe.startsWith("//")) {
+    const trimmed = target.replace(/^[\u0000-\u0020]+/, "");
+    if (!trimmed.startsWith("//")) {
+      return { kind: "unsafe", externalHref: null, internalTarget: null };
+    }
+    return { kind: "external", externalHref: target, internalTarget: null };
   }
-  return { kind: "unsafe", externalHref: null };
+  let url: URL;
+  try {
+    url = new URL(normalized, CLASSIFICATION_ORIGIN);
+  } catch {
+    return { kind: "unsafe", externalHref: null, internalTarget: null };
+  }
+  if (url.origin !== CLASSIFICATION_ORIGIN) {
+    return { kind: "unsafe", externalHref: null, internalTarget: null };
+  }
+  return { kind: "internal", externalHref: null, internalTarget: normalized };
+}
+
+function fallbackInternalHref(base: string, target: string | null): string | null {
+  if (target === null || !target.startsWith("/") || target.startsWith("//")) {
+    return null;
+  }
+  const hashIndex = target.indexOf("#");
+  const hash = hashIndex === -1 ? "" : target.slice(hashIndex);
+  const withoutHash = hashIndex === -1 ? target : target.slice(0, hashIndex);
+  const queryIndex = withoutHash.indexOf("?");
+  const search = queryIndex === -1 ? "" : withoutHash.slice(queryIndex);
+  const path = queryIndex === -1 ? withoutHash : withoutHash.slice(0, queryIndex);
+  return `${base}${canonicalizePath(path)}${search}${hash}`;
 }
 
 function internalsFor(router: IRouter): RouterInternals {
@@ -135,6 +207,7 @@ function computeInternalState(
   target: RouteTarget,
   current: RouteLocation | null,
   exactQuery: boolean,
+  fallbackHref: string | null,
 ): LinkState {
   let location: RouteLocation | null;
   try {
@@ -143,7 +216,7 @@ function computeInternalState(
     location = null;
   }
   const href = location === null
-    ? typeof target === "string" ? target : null
+    ? fallbackHref
     : `${router.base}${location.fullPath}`;
   if (current === null || location === null) {
     return { href, active: false, exact: false };
@@ -241,12 +314,14 @@ export function Link(props: LinkProps): Node {
         ? { href: info.externalHref, active: false, exact: false }
         : INACTIVE_STATE;
     }
+    const internalTarget: RouteTarget = info.internalTarget ?? value;
     return computeInternalState(
       router,
       internals,
-      value,
+      internalTarget,
       internals.route(),
       exactQuery,
+      fallbackInternalHref(router.base, info.internalTarget),
     );
   });
 
@@ -290,10 +365,11 @@ export function Link(props: LinkProps): Node {
       }
       started = true;
       const value = target();
-      if (inspectTarget(value).kind !== "internal") {
+      const info = inspectTarget(value);
+      if (info.kind !== "internal") {
         return;
       }
-      void router.prefetch(value).catch(() => {});
+      void router.prefetch(info.internalTarget ?? value).catch(() => {});
     };
     if (prefetchMode === "visible") {
       if (typeof IntersectionObserver === "function") {
@@ -331,13 +407,15 @@ export function Link(props: LinkProps): Node {
       return;
     }
     const value = target();
-    if (inspectTarget(value).kind !== "internal") {
+    const info = inspectTarget(value);
+    if (info.kind !== "internal") {
       return;
     }
     event.preventDefault();
+    const navigationTarget = info.internalTarget ?? value;
     const navigation = props.replace === true
-      ? router.replace(value)
-      : router.push(value);
+      ? router.replace(navigationTarget)
+      : router.push(navigationTarget);
     void navigation.catch(() => {});
   });
 

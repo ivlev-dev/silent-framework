@@ -59,7 +59,7 @@ describe("Уведомления deep-мутаторов только по из�
   });
 
   it("copyWithin совпадает с нативным на отрицательных и выходящих индексах", () => {
-    const cases: Array<{ state: number[]; args: [number, number?, number?] }> = [
+    const cases: Array<{ state: number[]; args: [number, number, number?] }> = [
       { state: [1, 2, 3, 4, 5], args: [-2, 0] },
       { state: [1, 2, 3, 4, 5], args: [0, -2] },
       { state: [1, 2, 3], args: [1, 0, 100] },
@@ -113,6 +113,47 @@ describe("Уведомления deep-мутаторов только по из�
     state.fill(5);
     expect(Object.keys(state)).toEqual(["0", "1", "2"]);
     expect(state).toEqual([5, 5, 5]);
+  });
+});
+
+describe("Разреженные массивы: sort/reverse меняют набор ключей", () => {
+  it("sort сообщает Object.keys о переходе hole → own", () => {
+    const state = deepReactive<number[]>([]);
+    state.length = 4;
+    state[1] = 2;
+    state[3] = 1;
+    const snapshots: string[][] = [];
+    createRenderEffect(() => {
+      snapshots.push(Object.keys(state));
+    });
+
+    expect(snapshots).toEqual([["1", "3"]]);
+    state.sort((left, right) => left - right);
+    flushSync();
+
+    expect(Object.keys(state)).toEqual(["0", "1"]);
+    expect(snapshots).toEqual([
+      ["1", "3"],
+      ["0", "1"],
+    ]);
+    expect(state[0]).toBe(1);
+    expect(state[1]).toBe(2);
+  });
+
+  it("reverse разреженного массива будит подписчиков набора ключей", () => {
+    const state = deepReactive<number[]>([]);
+    state.length = 2;
+    state[0] = 1;
+    const snapshots: string[][] = [];
+    createRenderEffect(() => {
+      snapshots.push(Object.keys(state));
+    });
+
+    state.reverse();
+    flushSync();
+    expect(Object.keys(state)).toEqual(["1"]);
+    expect(snapshots).toEqual([["0"], ["1"]]);
+    expect(state[1]).toBe(1);
   });
 });
 

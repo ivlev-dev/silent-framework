@@ -335,6 +335,42 @@ class Collections {
     );
   });
 
+  it("сериализует Record с литеральными ключами как object", () => {
+    const fields = fieldsFor(`
+class RecordKeys {
+  accessor statuses: Record<"draft" | "published", number> = { draft: 0, published: 0 };
+  accessor single: Record<"only", string> = { only: "" };
+  accessor numeric: Record<1 | 2, boolean> = { 1: true, 2: false };
+  accessor dynamic: Record<string, number> = {};
+  accessor numericDynamic: Record<number, number> = {};
+}
+`);
+    expect(fields).toBe(
+      '"statuses": ["object",{"draft":"number","published":"number"}], '
+      + '"single": ["object",{"only":"string"}], '
+      + '"numeric": ["object",{"1":"boolean","2":"boolean"}], '
+      + '"dynamic": ["record","number"], "numericDynamic": ["record","number"]',
+    );
+  });
+
+  it("валидирует Record с литеральными ключами как объект с обязательными полями", () => {
+    const source = `
+class KeyedRecord {
+  accessor statuses: Record<"draft" | "published", number> = { draft: 0, published: 0 };
+}
+`;
+    const { KeyedRecord } = executeSource(source, ["KeyedRecord"]);
+    expect(validate(entity(KeyedRecord, {
+      statuses: { draft: 1, published: 2 },
+    })).valid).toBe(true);
+    expect(validate(entity(KeyedRecord, {
+      statuses: { draft: 1 },
+    })).valid).toBe(false);
+    expect(validate(entity(KeyedRecord, {
+      statuses: { draft: 1, published: "x" },
+    })).valid).toBe(false);
+  });
+
   it("распознаёт встроенные классы и вложенные классы", () => {
     const fields = fieldsFor(`
 class Inner {

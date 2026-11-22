@@ -80,8 +80,11 @@ export class FormWizard {
     if (this.disposed) {
       return false;
     }
-    const valid = this.validateOnStep ? await this.validateStep() : true;
-    if (!valid) {
+    const startIndex = this.currentIndex;
+    const valid = this.validateOnStep
+      ? await this.validateStep(startIndex)
+      : true;
+    if (!valid || this.disposed || this.currentIndex !== startIndex) {
       return false;
     }
     if (!this.isLast) {
@@ -108,11 +111,18 @@ export class FormWizard {
     if (!Number.isInteger(index) || index < 0 || index >= this.stepList.length) {
       return false;
     }
-    if (index > this.currentIndex && this.validateOnStep) {
-      const valid = await this.validateStep();
-      if (!valid) {
+    const startIndex = this.currentIndex;
+    if (index === startIndex) {
+      return true;
+    }
+    if (index > startIndex && this.validateOnStep) {
+      const valid = await this.validateStep(startIndex);
+      if (!valid || this.disposed || this.currentIndex !== startIndex) {
         return false;
       }
+    }
+    if (this.disposed) {
+      return false;
     }
     this.currentIndex = index;
     return true;

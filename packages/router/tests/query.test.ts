@@ -166,6 +166,15 @@ describe("runtime-схема query", () => {
     expect(router.route?.name).toBe("nested-child");
   });
 
+  it("сохраняет ключи __proto__ и constructor как данные", () => {
+    const query = parseQuery("?__proto__=value&constructor=first&constructor=second");
+    expect(Object.getPrototypeOf(query)).toBeNull();
+    expect(Object.prototype.hasOwnProperty.call(query, "__proto__")).toBe(true);
+    expect(query["__proto__"]).toBe("value");
+    expect(Object.prototype.hasOwnProperty.call(query, "constructor")).toBe(true);
+    expect(query["constructor"]).toEqual(["first", "second"]);
+  });
+
   it("сериализует числа, boolean и массивы и переживает roundtrip", () => {
     const query = {
       page: 2,

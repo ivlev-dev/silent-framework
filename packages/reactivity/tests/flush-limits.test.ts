@@ -3,7 +3,9 @@ import {
   createEffect,
   createRenderEffect,
   createSignal,
+  createSignalHandle,
   flushSync,
+  getReactivityStats,
   setEffectErrorHandler,
 } from "../src/index";
 
@@ -97,6 +99,28 @@ describe("лимит итераций flush", () => {
       const errorsAfterFirstFlush = capture.errors.length;
       expect(() => flushSync()).not.toThrow();
       expect(capture.errors).toHaveLength(errorsAfterFirstFlush);
+    } finally {
+      capture.restore();
+    }
+  });
+
+  it("снимает подписки и счётчик activeEffects у runaway-эффекта", () => {
+    const capture = captureErrors();
+    try {
+      const source = createSignalHandle(0);
+      const before = getReactivityStats();
+      createEffect(() => {
+        const current = source.read();
+        if (current < 10_000) {
+          source.write(current + 1);
+        }
+      });
+
+      expect(() => flushSync()).not.toThrow();
+      expect(capture.errors).toHaveLength(1);
+      expect(source.hasObservers()).toBe(false);
+      expect(getReactivityStats().activeEffects).toBe(before.activeEffects);
+      expect(getReactivityStats().pendingEffects).toBe(0);
     } finally {
       capture.restore();
     }

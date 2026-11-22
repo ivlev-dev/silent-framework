@@ -436,6 +436,42 @@ function enumValuesOfSymbol(type: ts.Type, checker: ts.TypeChecker): readonly (s
   return null;
 }
 
+function literalPropertyKey(type: ts.Type, checker: ts.TypeChecker): string | null {
+  const flags = type.flags;
+  if ((flags & ts.TypeFlags.StringLiteral) !== 0) {
+    return (type as ts.StringLiteralType).value;
+  }
+  if ((flags & ts.TypeFlags.NumberLiteral) !== 0) {
+    return String((type as ts.NumberLiteralType).value);
+  }
+  if ((flags & ts.TypeFlags.EnumLiteral) !== 0) {
+    const value = enumValueOf(type, checker);
+    return value === undefined ? null : String(value);
+  }
+  return null;
+}
+
+// Record<union литеральных ключей, V> описывает объект с фиксированным
+// набором полей, а не произвольный словарь. Если все ключи — литералы,
+// сериализуем его как object, чтобы проверялись имена и обязательность
+// полей; иначе оставляем record<string, V>.
+function recordKeyNames(type: ts.Type, checker: ts.TypeChecker): readonly string[] | null {
+  const members = (type.flags & ts.TypeFlags.Union) !== 0
+    ? (type as ts.UnionType).types
+    : [type];
+  const names: string[] = [];
+  for (const member of members) {
+    const name = literalPropertyKey(member, checker);
+    if (name === null) {
+      return null;
+    }
+    if (!names.includes(name)) {
+      names.push(name);
+    }
+  }
+  return names.length === 0 ? null : names;
+}
+
 function stripUndefined(node: SchemaNode): SchemaNode {
   return node.kind === "optional" ? node.inner : node;
 }
@@ -960,6 +996,13 @@ function serializeObject(
     if (valueSchema === null) {
       reportUnsupported(state, state.path, valueType);
       return { kind: "record", value: wildcardNode() };
+    }
+    const keyNames = recordKeyNames(args[0]!, state.checker);
+    if (keyNames !== null) {
+      return {
+        kind: "object",
+        fields: keyNames.map((name) => ({ name, schema: valueSchema })),
+      };
     }
     return { kind: "record", value: valueSchema };
   }

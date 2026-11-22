@@ -17,6 +17,12 @@ interface ComputedRecord {
 class ReactiveStoreImpl implements ReactiveStore {
   private disposedFlag = false;
   readonly fieldSignals = new Map<PropertyKey, SignalHandle<unknown>>();
+  /**
+   * Значения, записанные в поля, которые ещё никто не читал. Сигнал на запись
+   * не создаётся (аллокационная оптимизация), но copyReactiveState должен
+   * перенести и такие поля, иначе set без get теряется при пересоздании VM.
+   */
+  readonly writeOnlyFields = new Map<PropertyKey, unknown>();
   readonly computeds = new Map<PropertyKey, ComputedRecord>();
   readonly cleanups: (() => void)[] = [];
 
@@ -38,6 +44,7 @@ class ReactiveStoreImpl implements ReactiveStore {
     }
     this.computeds.clear();
     this.fieldSignals.clear();
+    this.writeOnlyFields.clear();
   }
 }
 
@@ -60,6 +67,8 @@ function getFieldSignal(
     return existing;
   }
   const signal = createSignalHandle<unknown>(getRaw());
+  // Значение уже прочитано из raw; отдельная запись write-only больше не нужна.
+  store.writeOnlyFields.delete(key);
   store.fieldSignals.set(key, signal);
   return signal;
 }
@@ -111,6 +120,8 @@ export function writeField<T>(
   const signal = store.fieldSignals.get(key);
   if (signal !== undefined) {
     signal.write(raw);
+  } else {
+    store.writeOnlyFields.set(key, raw);
   }
   return value;
 }
@@ -138,6 +149,18 @@ export function copyReactiveState(source: object, target: object): void {
     } else {
       targetStore.fieldSignals.set(key, createSignalHandle(value));
     }
+    targetStore.writeOnlyFields.delete(key);
+  }
+  // Поля, записанные без чтения, не имеют сигнала. Переносим последнее
+  // записанное значение, иначе set() без get() теряется при recreation.
+  for (const [key, value] of sourceStore.writeOnlyFields) {
+    const existing = targetStore.fieldSignals.get(key);
+    if (existing !== undefined) {
+      existing.write(value);
+    } else {
+      targetStore.fieldSignals.set(key, createSignalHandle(value));
+    }
+    targetStore.writeOnlyFields.delete(key);
   }
 }
 
