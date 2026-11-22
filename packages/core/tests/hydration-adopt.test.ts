@@ -4,9 +4,9 @@ import {
   component,
   createComponent,
   whenIdle,
-  type AnyComponent,
   type ComponentResult,
 } from "../src/component.js";
+import type { AnyComponent } from "../src/types.js";
 import { For, Show } from "../src/control-flow.js";
 import { Suspense, lazy } from "../src/suspense.js";
 import {
@@ -77,9 +77,9 @@ async function renderServer(
   }
 }
 
-function holeParent(template: { node: Node; holes: readonly Comment[] }, index: number): Node {
+function holeParent(template: TemplateClone, index: number): Node {
   const hole = template.holes[index];
-  return hole?.parentNode ?? template.node;
+  return (hole?.parentNode as Node | undefined) ?? template.node;
 }
 
 const count = createSignal(0);
@@ -584,8 +584,8 @@ describe("гидрация с сохранением узлов", () => {
     if (captured === null) {
       throw new Error("template was not created");
     }
-    expect(captured.holes.length).toBe(1);
-    expect(captured.attrs.length).toBe(0);
+    expect((captured as TemplateClone | null)?.holes.length).toBe(1);
+    expect((captured as TemplateClone | null)?.attrs.length).toBe(0);
     expect(target.innerHTML.includes("data-silent-")).toBe(false);
     handle.dispose();
   });

@@ -170,6 +170,32 @@ function resolve(value: unknown): unknown {
   return current;
 }
 
+function serverListItem(value: unknown): unknown {
+  const type = typeof value;
+  if (
+    value === null
+    || value === undefined
+    || type === "string"
+    || type === "number"
+    || type === "bigint"
+    || type === "boolean"
+  ) {
+    return value;
+  }
+  if (
+    value instanceof Node
+    && !(value instanceof DocumentFragment)
+    && isMetadataFree(value)
+  ) {
+    return value;
+  }
+  const nodes = extractMetadata(collectNodes(value as Children));
+  if (nodes.length === 0) {
+    return "";
+  }
+  return nodes.length === 1 ? nodes[0] : nodes;
+}
+
 function renderIndexServer<T>(props: IndexProps<T>): Node {
   const hasFallback = "fallback" in props;
   const fallback = (): unknown => props.fallback;
@@ -180,7 +206,7 @@ function renderIndexServer<T>(props: IndexProps<T>): Node {
   if (backend?.createRaw !== undefined) {
     if (items.length === 0) {
       const out = hasFallback
-        ? serializeServerValue(resolve(fallback())) + LIST_END_MARKER
+        ? serializeServerValue(serverListItem(resolve(fallback()))) + LIST_END_MARKER
         : LIST_END_MARKER;
       return backend.createRaw(out) as Node;
     }
@@ -191,7 +217,9 @@ function renderIndexServer<T>(props: IndexProps<T>): Node {
       currentIndex = position;
       const item = items[position] as T;
       out += ITEM_MARKER;
-      out += serializeServerValue(props.children(() => item, indexOf));
+      out += serializeServerValue(
+        serverListItem(props.children(() => item, indexOf)),
+      );
     }
     out += LIST_END_MARKER;
     return backend.createRaw(out) as Node;
@@ -204,12 +232,12 @@ function renderIndexServer<T>(props: IndexProps<T>): Node {
     for (let position = 0; position < total; position += 1) {
       currentIndex = position;
       const item = items[position] as T;
-      values[position] = props.children(() => item, indexOf);
+      values[position] = serverListItem(props.children(() => item, indexOf));
     }
     let parts: string[];
     if (total === 0) {
       if (hasFallback) {
-        values.push(resolve(fallback()));
+        values.push(serverListItem(resolve(fallback())));
         parts = ["", LIST_END_MARKER];
       } else {
         parts = [LIST_END_MARKER];

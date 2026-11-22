@@ -50,7 +50,7 @@ function createAsyncApp(label: string, capture: AsyncCapture[]): AnyComponent {
       };
       await Promise.resolve();
       const container = getRuntimeOptions().container;
-      const request = container === undefined ? "" : await container.resolve(requestToken);
+      const request = container === undefined ? "" : await container.resolve<string>(requestToken);
       capture.push({
         outer,
         probeId,
@@ -196,7 +196,7 @@ describe("SSR context: AsyncLocalStorage", () => {
       expect(pendingAtStart).toBe(0);
       expect(ownStore).not.toBeNull();
       expect(ownStore).not.toBe(foreignStore);
-      expect(ownStore?.active).toBe(false);
+      expect((ownStore as RuntimeContextStore | null)?.active).toBe(false);
     } finally {
       foreignStore.pending.clear();
     }
@@ -214,11 +214,11 @@ describe("SSR context: AsyncLocalStorage", () => {
     await renderToString(View as unknown as AnyComponent);
     await renderToString(View as unknown as AnyComponent);
 
-    expect(store?.active).toBe(false);
-    expect(store?.metadata).toBeNull();
-    expect(store?.stream).toBeNull();
-    expect(store?.pending.size).toBe(0);
-    expect(store?.idCount).toBe(0);
+    expect((store as RuntimeContextStore | null)?.active).toBe(false);
+    expect((store as RuntimeContextStore | null)?.metadata).toBeNull();
+    expect((store as RuntimeContextStore | null)?.stream).toBeNull();
+    expect((store as RuntimeContextStore | null)?.pending.size).toBe(0);
+    expect((store as RuntimeContextStore | null)?.idCount).toBe(0);
 
     expect(getRuntimeContextStore()).toBeNull();
     expect(getRuntimeOptions().container).toBeUndefined();

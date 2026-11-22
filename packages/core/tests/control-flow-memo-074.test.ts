@@ -27,7 +27,7 @@ function row(value: string): HTMLElement {
 
 function idsOf(host: HTMLElement): string[] {
   return Array.from(host.querySelectorAll("[data-id]")).map(
-    (element) => element.dataset.id ?? "",
+    (element) => (element as HTMLElement).dataset.id ?? "",
   );
 }
 
@@ -240,6 +240,7 @@ describe("For и Index: нормализация each", () => {
 
   it("For рендерит текстовые строки", () => {
     const host = install(
+      // @ts-expect-error For поддерживает строковые children в рантайме, типы требуют Node.
       For({ each: ["a", "b"], children: (item: string) => item }),
     );
     expect(host.textContent).toBe("ab");

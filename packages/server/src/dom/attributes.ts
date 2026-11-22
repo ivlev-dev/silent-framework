@@ -1,4 +1,9 @@
 import type { DomAttr, DomAttributes } from "./types.js";
+import {
+  isSafeAttributeName,
+  isSafeUrlAttributeValue,
+  isUrlAttributeName,
+} from "./attribute-name.js";
 
 interface MutableAttr {
   readonly name: string;
@@ -26,6 +31,13 @@ export class AttributesImpl implements DomAttributes {
   }
 
   set(name: string, value: string): void {
+    if (!isSafeAttributeName(name)) {
+      return;
+    }
+    if (isUrlAttributeName(name) && !isSafeUrlAttributeValue(name, value)) {
+      this.delete(name);
+      return;
+    }
     const entry = this.entries.find((item) => item.name === name);
     if (entry !== undefined) {
       entry.value = value;

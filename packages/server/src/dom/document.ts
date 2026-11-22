@@ -270,12 +270,26 @@ export function installDomGlobals(
   defineNodeConstants();
   const saved = captureGlobals();
   const writable = saved.every((entry) => entry.writable);
-  if (writable) {
-    installWritable(document);
-  } else {
-    installDefined(document, saved);
-  }
   const shape = options.keepShape === true;
+  try {
+    if (writable) {
+      installWritable(document);
+    } else {
+      installDefined(document, saved);
+    }
+  } catch (error) {
+    // Частичная установка не должна оставлять глобалы в изменённом виде.
+    try {
+      if (writable) {
+        restoreWritable(saved, shape);
+      } else {
+        restoreDefined(saved);
+      }
+    } catch {
+      // Восстановление не должно маскировать исходную ошибку установки.
+    }
+    throw error;
+  }
   let armed = true;
   return (): void => {
     if (!armed) {

@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
+import {
+  createRenderEffect,
+  createSignal,
+  flushSync,
+  setEffectErrorHandler,
+} from "@ivlev-dev/silent-reactivity";
 import { mount } from "../src/mount.js";
 import { hydrate } from "../src/hydrate.js";
+import { insert } from "../src/dom.js";
 import { component } from "../src/component-lite.js";
 import {
   ViewRuntimeUnavailableError,
@@ -110,5 +117,56 @@ describe("light-путь", () => {
     expect(target.innerHTML).toBe(
       "<!--silent-view-->child<!--silent-view-end-->",
     );
+  });
+
+  it("ошибка ре-рендера сохраняет старый DOM и его эффекты", async () => {
+    setComponentCreator(null);
+    const [text, setText] = createSignal("a");
+    const [suffix, setSuffix] = createSignal("!");
+    const errors: unknown[] = [];
+    const previousHandler = setEffectErrorHandler((error) => {
+      errors.push(error);
+    });
+
+    function Marker(props: { readonly text: string }): HTMLElement {
+      const element = document.createElement("span");
+      element.textContent = props.text;
+      createRenderEffect(() => {
+        element.dataset.suffix = suffix();
+      });
+      if (props.text === "boom") {
+        throw new Error("render failed");
+      }
+      return element;
+    }
+
+    function App(): HTMLElement {
+      const element = document.createElement("div");
+      insert(element, () =>
+        component(Marker as unknown as AnyComponent, { text: text() }),
+      );
+      return element;
+    }
+
+    try {
+      const target = host();
+      await mount(target, asComponent(() => App()));
+      expect(target.textContent).toBe("a");
+
+      setText("boom");
+      flushSync();
+      expect(errors.some((error) => String(error).includes("render failed"))).toBe(
+        true,
+      );
+      // Старый DOM остаётся, а его render-root не освобождён.
+      expect(target.textContent).toBe("a");
+      expect(target.innerHTML).not.toContain("boom");
+
+      setSuffix("?");
+      flushSync();
+      expect(target.querySelector("span")?.dataset.suffix).toBe("?");
+    } finally {
+      setEffectErrorHandler(previousHandler);
+    }
   });
 });

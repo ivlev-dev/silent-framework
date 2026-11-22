@@ -97,7 +97,7 @@ describe("публичная поверхность pool", () => {
         return;
       }
       worker.sendError(
-        (message as { id: number }).id,
+        (message as unknown as { id: number }).id,
         new RenderReentrancyError(),
       );
     };

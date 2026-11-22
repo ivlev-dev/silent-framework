@@ -82,11 +82,11 @@ describe("шаблон, единственный корень которого �
             children: (item: string) => {
               const clone = rootTemplate();
               const hole = holeOf(clone);
-              insert(hole.parentNode ?? clone.node, () => item, hole);
+              insert((hole.parentNode as Node | undefined) ?? clone.node, () => item, hole);
               return clone.node;
             },
           }),
-        null,
+        undefined,
       );
       return disposeRoot;
     });

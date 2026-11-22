@@ -387,3 +387,82 @@ describe("Head: гидрация", () => {
     expect(document.head.querySelectorAll("style#ssr-style")).toHaveLength(1);
   });
 });
+
+describe("Head: безопасность имён атрибутов", () => {
+  it("не пропускает breakout и on*-атрибуты из meta", async () => {
+    function Page(): Node {
+      Head({
+        title: "safe",
+        meta: [
+          {
+            name: "description",
+            content: "ok",
+            "x><script>alert(1)</script><meta y": "z",
+            onload: "alert(2)",
+          },
+        ],
+      });
+      return templateHoles("<main>x</main>")().node;
+    }
+
+    await mountPage(Page as unknown as AnyComponent);
+
+    expect(document.head.querySelector("script")).toBeNull();
+    expect(document.head.innerHTML).not.toContain("alert(");
+    expect(metas("description")[0]?.getAttribute("content")).toBe("ok");
+    expect(document.head.querySelector("meta")?.hasAttribute("onload")).toBe(false);
+  });
+
+  it("сохраняет валидные data-*, aria-* и namespace-атрибуты", async () => {
+    function Page(): Node {
+      Head({
+        meta: [
+          {
+            name: "x",
+            content: "y",
+            "data-custom": "1",
+            "aria-label": "label",
+            "xml:lang": "ru",
+          },
+        ],
+      });
+      return templateHoles("<main>x</main>")().node;
+    }
+
+    await mountPage(Page as unknown as AnyComponent);
+
+    const meta = document.head.querySelector('meta[name="x"]');
+    expect(meta?.getAttribute("data-custom")).toBe("1");
+    expect(meta?.getAttribute("aria-label")).toBe("label");
+    expect(meta?.getAttribute("xml:lang")).toBe("ru");
+  });
+
+  it("нормализует camelCase и namespace-атрибуты, отбрасывает события", async () => {
+    function Page(): Node {
+      Head({
+        meta: [
+          {
+            name: "camel",
+            content: "y",
+            xlinkHref: "#icon",
+            "aria-Label": "label",
+            "aria-Description": "desc",
+            onClick: "alert(1)",
+          },
+        ],
+      });
+      return templateHoles("<main>x</main>")().node;
+    }
+
+    await mountPage(Page as unknown as AnyComponent);
+
+    const meta = document.head.querySelector('meta[name="camel"]');
+    expect(meta?.getAttribute("xlink:href")).toBe("#icon");
+    expect(meta?.getAttribute("aria-label")).toBe("label");
+    expect(meta?.getAttribute("aria-description")).toBe("desc");
+    expect(meta?.hasAttribute("xlink-href")).toBe(false);
+    expect(meta?.hasAttribute("aria--label")).toBe(false);
+    expect(meta?.hasAttribute("onclick")).toBe(false);
+    expect(meta?.hasAttribute("on-click")).toBe(false);
+  });
+});

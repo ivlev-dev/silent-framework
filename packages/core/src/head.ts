@@ -1,6 +1,12 @@
 import { createRenderEffect, onCleanup } from "@ivlev-dev/silent-reactivity";
 import type { Children } from "./jsx.js";
 import { collectNodes } from "./dom.js";
+import {
+  isEventAttributeName,
+  isSafeAttributeName,
+  isSafeUrlAttributeValue,
+  isUrlAttributeName,
+} from "./attribute-name.js";
 import { getMetadataCollector, hoistNode } from "./metadata.js";
 
 export type HeadValue<T> = T | (() => T | null | undefined) | null | undefined;
@@ -75,7 +81,12 @@ const ATTRIBUTE_ALIASES: Readonly<Record<string, string>> = {
   imageSizes: "imagesizes",
   imageSrcSet: "imagesrcset",
   referrerPolicy: "referrerpolicy",
+  xlinkHref: "xlink:href",
+  xmlLang: "xml:lang",
+  xmlSpace: "xml:space",
 };
+
+const PREFIXED_ATTRIBUTE = /^(?:aria-|data-|xlink:|xml:)/i;
 
 const ATTRS = Symbol("silent.head.attrs");
 
@@ -132,13 +143,21 @@ function staticValue(value: HeadValue<string> | undefined): string | null {
   return String(value);
 }
 
-function attributeName(key: string): string {
+function attributeName(key: string): string | null {
   const alias = ATTRIBUTE_ALIASES[key];
   if (alias !== undefined) {
     return alias;
   }
+  // `onClick` — событие, а не атрибут: в Head ему не место.
+  if (isEventAttributeName(key)) {
+    return null;
+  }
   if (!/[A-Z]/.test(key)) {
     return key;
+  }
+  // `aria-Label` → `aria-label`, `xlink:Href` → `xlink:href`.
+  if (PREFIXED_ATTRIBUTE.test(key)) {
+    return key.toLowerCase();
   }
   return key.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`);
 }
@@ -149,11 +168,15 @@ function readAttributes(source: Readonly<Record<string, unknown>>): Record<strin
     if (key === "css") {
       continue;
     }
+    const name = attributeName(key);
+    if (name === null || !isSafeAttributeName(name)) {
+      continue;
+    }
     const value = typeof raw === "function" ? (raw as () => unknown)() : raw;
     if (value === null || value === undefined) {
       continue;
     }
-    result[attributeName(key)] = String(value);
+    result[name] = String(value);
   }
   return result;
 }
@@ -285,6 +308,13 @@ function applySpec(element: Element, spec: HeadSpec): void {
   }
   const next = new Set<string>();
   for (const [name, value] of Object.entries(attrs)) {
+    if (!isSafeAttributeName(name)) {
+      continue;
+    }
+    if (isUrlAttributeName(name) && !isSafeUrlAttributeValue(name, value)) {
+      element.removeAttribute(name);
+      continue;
+    }
     next.add(name);
     if (element.getAttribute(name) !== value) {
       element.setAttribute(name, value);

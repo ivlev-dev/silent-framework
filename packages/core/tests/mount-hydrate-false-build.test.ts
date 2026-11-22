@@ -26,11 +26,11 @@ describe("сборка приложения с hydrate: false", () => {
     if (hole === undefined) {
       throw new Error("не найдена дыра шаблона");
     }
-    insert(hole.parentNode ?? root, () => "вставка", hole);
+    insert((hole.parentNode as Node | undefined) ?? root, () => "вставка", hole);
 
     expect(root.getAttribute("title")).toBe(label);
     expect((clone.attrs[1] as HTMLTextAreaElement).value).toBe(value);
-    expect(hole.parentNode?.textContent).toBe("вставка");
+    expect((hole.parentNode as Node | null)?.textContent).toBe("вставка");
   });
 
   it("не обходит дерево статического шаблона (негоцированный false)", () => {

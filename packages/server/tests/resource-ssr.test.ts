@@ -114,6 +114,50 @@ describe("SSR Resource", () => {
     expect(html).toBe("<div><p>shared-data</p><p>shared-data</p></div>");
   });
 
+  it("не переиспользует общий кэш между SSR-рендерами без явного cache", async () => {
+    let calls = 0;
+    const fetcher = vi.fn(async () => {
+      calls += 1;
+      return calls === 1 ? "secret-for-alice" : "secret-for-bob";
+    });
+
+    function View(): Node {
+      const resource = createResource(fetcher, { key: "user" });
+      return textView(resource);
+    }
+
+    const first = await renderToString(View as unknown as AnyComponent, {});
+    const second = await renderToString(View as unknown as AnyComponent, {});
+
+    expect(first.html).toBe("<p>secret-for-alice</p>");
+    expect(second.html).toBe("<p>secret-for-bob</p>");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("дедуплицирует ресурсы внутри одного SSR-рендера без явного cache", async () => {
+    let release: (value: string) => void = () => {};
+    const gate = new Promise<string>((resolve) => {
+      release = resolve;
+    });
+    const fetcher = vi.fn(() => gate);
+
+    function View(): Node {
+      const first = createResource(fetcher, { key: "same-render" });
+      const second = createResource(fetcher, { key: "same-render" });
+      const wrapper = document.createElement("div");
+      wrapper.appendChild(textView(first));
+      wrapper.appendChild(textView(second));
+      return wrapper;
+    }
+
+    const pending = renderToString(View as unknown as AnyComponent, {});
+    release("scoped-data");
+    const { html } = await pending;
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(html).toBe("<div><p>scoped-data</p><p>scoped-data</p></div>");
+  });
+
   it("Suspense на сервере дожидается ресурса", async () => {
     function View(): Node {
       const resource = createResource(async () => "suspense-data");

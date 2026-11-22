@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createRoot, createSignal, flushSync, onCleanup } from "@ivlev-dev/silent-reactivity";
 import {
   NODE_DISPOSER,
+  applyProps,
   attachDisposer,
   attr,
+  createElement,
   disposeNode,
   dynamic,
   effect,
@@ -207,7 +209,7 @@ describe("text", () => {
         inner = String(next);
       },
     });
-    const [value, setValue] = createSignal("1");
+    const [value, setValue] = createSignal<string | number | null>("1");
     text(node, value);
     expect(inner).toBe("1");
     expect(writes).toBe(0);
@@ -248,7 +250,7 @@ describe("attr", () => {
   it("использует свойства для value/checked/selected/disabled", () => {
     const input = document.createElement("input");
     document.body.appendChild(input);
-    const [value, setValue] = createSignal("x");
+    const [value, setValue] = createSignal<string | null>("x");
     attr(input, "value", value);
     expect(input.value).toBe("x");
     setValue(null);
@@ -271,7 +273,7 @@ describe("attr", () => {
 
   it("обрабатывает булевые и обычные атрибуты", () => {
     const [hidden, setHidden] = createSignal(true);
-    const [label, setLabel] = createSignal("small");
+    const [label, setLabel] = createSignal<string | null>("small");
     const element = document.createElement("div");
     document.body.appendChild(element);
     attr(element, "hidden", hidden);
@@ -471,6 +473,51 @@ describe("spread", () => {
       ["b", null],
     ]);
   });
+
+  it("игнорирует неизвестные on* и не роняет рендер", () => {
+    const element = document.createElement("button");
+    document.body.appendChild(element);
+    let clicks = 0;
+    const [props, setProps] = createSignal<Record<string, unknown>>({
+      onFooBar: () => {
+        throw new Error("неизвестный обработчик не должен вызываться");
+      },
+      onUnknownEvent: () => undefined,
+      onClick: () => {
+        clicks += 1;
+      },
+      title: "ok",
+    });
+
+    expect(() => spread(element, () => props())).not.toThrow();
+    expect(element.getAttribute("title")).toBe("ok");
+    expect(element.hasAttribute("onfoobar")).toBe(false);
+    expect(element.hasAttribute("onunknownevent")).toBe(false);
+
+    click(element);
+    expect(clicks).toBe(1);
+
+    expect(() => {
+      setProps({ title: "ok" });
+      flushSync();
+    }).not.toThrow();
+    click(element);
+    expect(clicks).toBe(1);
+  });
+
+  it("applyProps игнорирует неизвестные on*", () => {
+    const element = document.createElement("div");
+
+    expect(() =>
+      applyProps(element, {
+        onFooBar: () => undefined,
+        onClick: () => undefined,
+        title: "ok",
+      }),
+    ).not.toThrow();
+    expect(element.getAttribute("title")).toBe("ok");
+    expect(element.hasAttribute("onfoobar")).toBe(false);
+  });
 });
 
 describe("on", () => {
@@ -562,7 +609,7 @@ describe("on", () => {
     document.body.appendChild(outer);
     const calls: string[] = [];
     on(outer, "onClick", () => () => calls.push("outer"));
-    on(inner, "onClick", () => (event) => {
+    on(inner, "onClick", () => (event: Event) => {
       calls.push("inner");
       event.stopPropagation();
     });
@@ -681,7 +728,7 @@ describe("effect", () => {
 
 describe("fragment", () => {
   it("вставляет реактивное содержимое и живёт в DOM", async () => {
-    const [value, setValue] = createSignal("a");
+    const [value, setValue] = createSignal<string | number>("a");
     const fragmentNode = fragment(value);
     expect(fragmentNode).toBeInstanceOf(DocumentFragment);
     const host = document.createElement("div");
@@ -699,10 +746,10 @@ describe("fragment", () => {
 
 describe("dynamic", () => {
   it("создаёт элементы по строковому тегу", () => {
-    const element = dynamic(() => "div", { class: "box" });
+    const element = dynamic(() => "div", { class: "box" }) as HTMLElement;
     expect(element.tagName).toBe("DIV");
     expect(element.getAttribute("class")).toBe("box");
-    const withChildren = dynamic(() => "section", { children: "hello" });
+    const withChildren = dynamic(() => "section", { children: "hello" }) as HTMLElement;
     expect(withChildren.textContent).toBe("hello");
   });
 
@@ -717,11 +764,28 @@ describe("dynamic", () => {
   });
 
   it("SVG создаётся через createElementNS", () => {
-    const svg = dynamic(() => "svg", {});
+    const svg = dynamic(() => "svg", {}) as Element;
     expect(svg.namespaceURI).toBe(SVG_NS);
-    const path = dynamic(() => "path", { d: "M0 0" });
+    const path = dynamic(() => "path", { d: "M0 0" }) as Element;
     expect(path.namespaceURI).toBe(SVG_NS);
     expect((path as SVGElement).tagName.toLowerCase()).toBe("path");
+  });
+
+  it("отклоняет breakout через имя тега", () => {
+    expect(() => dynamic(() => 'div><script>alert(1)</script>', {})).toThrow(
+      /Недопустимое имя тега/,
+    );
+    expect(() => createElement("img src=x onerror=alert(1)")).toThrow(
+      /Недопустимое имя тега/,
+    );
+    expect(() => createElement("div/onmouseover")).toThrow(/Недопустимое имя тега/);
+  });
+
+  it("разрешает кастомные элементы и SVG-теги", () => {
+    const custom = dynamic(() => "my-widget", {}) as HTMLElement;
+    expect(custom.localName).toBe("my-widget");
+    const gradient = dynamic(() => "linearGradient", {}) as Element;
+    expect(gradient.namespaceURI).toBe(SVG_NS);
   });
 });
 
@@ -748,7 +812,7 @@ describe("jsx-runtime", () => {
   });
 
   it("создаёт DOM для строкового тега", () => {
-    const element = jsx("section", { id: "root", children: "hello" });
+    const element = jsx("section", { id: "root", children: "hello" }) as HTMLElement;
     expect(element.tagName).toBe("SECTION");
     expect(element.getAttribute("id")).toBe("root");
     expect(element.textContent).toBe("hello");
@@ -760,7 +824,7 @@ describe("jsx-runtime", () => {
       received = props;
       return document.createElement("b");
     };
-    const element = jsx(Component, { label: "yes" });
+    const element = jsx(Component, { label: "yes" }) as HTMLElement;
     expect(element.tagName).toBe("B");
     expect(received?.["label"]).toBe("yes");
   });
@@ -974,5 +1038,75 @@ describe("parseEventName", () => {
 
   it("оставляет нестандартные имена без изменений", () => {
     expect(parseEventName("on:CustomEvent")).toEqual({ event: "CustomEvent", capture: false });
+  });
+});
+
+describe("безопасные имена атрибутов", () => {
+  it("attr отбрасывает breakout и события, но сохраняет data-* и aria-*", () => {
+    const element = document.createElement("div");
+    attr(element, "x onmouseover=alert(1) y", () => "z");
+    attr(element, "onerror", () => "alert(1)");
+    attr(element, "data-x", () => "1");
+    attr(element, "aria-label", () => "a");
+
+    expect(element.getAttribute("data-x")).toBe("1");
+    expect(element.getAttribute("aria-label")).toBe("a");
+    expect(element.hasAttribute("onmouseover")).toBe(false);
+    expect(element.hasAttribute("onerror")).toBe(false);
+    expect(element.attributes).toHaveLength(2);
+  });
+
+  it("spread отбрасывает breakout и non-function on*", () => {
+    const element = document.createElement("button");
+    document.body.appendChild(element);
+    let clicks = 0;
+    spread(element, () => ({
+      "x onmouseover=alert(1) y": "z",
+      onerror: "alert(1)",
+      onload: "alert(2)",
+      ontoggle: "alert(3)",
+      onClick: () => {
+        clicks += 1;
+      },
+      title: "ok",
+      "data-x": "1",
+      "aria-label": "a",
+    }));
+
+    expect(element.getAttribute("title")).toBe("ok");
+    expect(element.getAttribute("data-x")).toBe("1");
+    expect(element.getAttribute("aria-label")).toBe("a");
+    expect(element.hasAttribute("onmouseover")).toBe(false);
+    expect(element.hasAttribute("onerror")).toBe(false);
+    expect(element.hasAttribute("onload")).toBe(false);
+    expect(element.hasAttribute("ontoggle")).toBe(false);
+    click(element);
+    expect(clicks).toBe(1);
+  });
+
+  it("applyProps отбрасывает breakout и не превращает on* в атрибуты", () => {
+    const element = document.createElement("div");
+    applyProps(element, {
+      "x onmouseover=alert(1) y": "z",
+      onerror: "alert(1)",
+      onload: "alert(2)",
+      ontoggle: "alert(3)",
+      "data-x": "1",
+      "aria-label": "a",
+    });
+
+    expect(element.getAttribute("data-x")).toBe("1");
+    expect(element.getAttribute("aria-label")).toBe("a");
+    expect(element.hasAttribute("onerror")).toBe(false);
+    expect(element.hasAttribute("onload")).toBe(false);
+    expect(element.hasAttribute("ontoggle")).toBe(false);
+    expect(element.hasAttribute("onmouseover")).toBe(false);
+  });
+
+  it("сохраняет xlink:href у SVG", () => {
+    const use = document.createElementNS(SVG_NS, "use");
+    attr(use, "xlink:href", () => "#icon");
+
+    expect(use.getAttribute("xlink:href")).toBe("#icon");
   });
 });

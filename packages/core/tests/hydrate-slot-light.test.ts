@@ -21,7 +21,7 @@ function AppView(this: { vm: AppVM }): Node {
   void this.vm;
   const root = appTemplate();
   insert(
-    root.holes[0]?.parentNode ?? root.node,
+    (root.holes[0]?.parentNode as Node | undefined) ?? root.node,
     () => LightChild(),
     root.holes[0],
   );

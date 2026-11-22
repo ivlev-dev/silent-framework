@@ -4,14 +4,17 @@ import { templateHoles, type TemplatePlan } from "../src/dom.js";
 
 function countAttributeReads(run: () => void): number {
   const descriptor = Object.getOwnPropertyDescriptor(Element.prototype, "attributes");
-  const original = descriptor?.get;
+  if (descriptor === undefined) {
+    throw new Error("Element.prototype.attributes недоступен для подсчёта");
+  }
+  const original = descriptor.get;
   if (original === undefined) {
     throw new Error("Element.prototype.attributes недоступен для подсчёта");
   }
   let reads = 0;
   Object.defineProperty(Element.prototype, "attributes", {
     configurable: true,
-    enumerable: descriptor?.enumerable ?? true,
+    enumerable: descriptor.enumerable ?? true,
     get(this: Element) {
       reads += 1;
       return original.call(this);
@@ -42,7 +45,7 @@ describe("клиентский mount шаблона: части ищутся п�
     )();
 
     expect(clone.holes).toHaveLength(1);
-    expect(clone.holes[0]?.data).toBe("silent-hole-0");
+    expect((clone.holes[0] as Comment).data).toBe("silent-hole-0");
     expect(clone.attrs).toHaveLength(0);
   });
 
@@ -53,7 +56,7 @@ describe("клиентский mount шаблона: части ищутся п�
     );
 
     expect(countAttributeReads(() => template())).toBe(0);
-    expect(template().holes[0]?.data).toBe("silent-hole-0");
+    expect((template().holes[0] as Comment).data).toBe("silent-hole-0");
   });
 
   it("не обходит дерево при пустом плане", () => {

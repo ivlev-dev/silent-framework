@@ -250,6 +250,36 @@ function markStableSlots(
 const ITEM_MARKER = `<!--${ITEM}-->`;
 const LIST_END_MARKER = `<!--${LIST_END}-->`;
 
+/**
+ * Готовит значение элемента списка к серверной сериализации: `<title>`,
+ * `<meta>` и `<link>` должны уходить в head, а не в тело списка.
+ */
+function serverListItem(value: unknown): unknown {
+  const type = typeof value;
+  if (
+    value === null
+    || value === undefined
+    || type === "string"
+    || type === "number"
+    || type === "bigint"
+    || type === "boolean"
+  ) {
+    return value;
+  }
+  if (
+    value instanceof Node
+    && !(value instanceof DocumentFragment)
+    && isMetadataFree(value)
+  ) {
+    return value;
+  }
+  const nodes = extractMetadata(collectNodes(value as Children));
+  if (nodes.length === 0) {
+    return "";
+  }
+  return nodes.length === 1 ? nodes[0] : nodes;
+}
+
 function renderForServer<T>(props: ForProps<T>): Node {
   const hasFallback = "fallback" in props;
   const fallback = (): unknown => props.fallback;
@@ -260,7 +290,7 @@ function renderForServer<T>(props: ForProps<T>): Node {
   if (backend?.createRaw !== undefined) {
     if (items.length === 0) {
       const out = hasFallback
-        ? serializeServerValue(resolve(fallback())) + LIST_END_MARKER
+        ? serializeServerValue(serverListItem(resolve(fallback()))) + LIST_END_MARKER
         : LIST_END_MARKER;
       return backend.createRaw(out) as Node;
     }
@@ -270,7 +300,9 @@ function renderForServer<T>(props: ForProps<T>): Node {
     for (let position = 0; position < items.length; position += 1) {
       currentIndex = position;
       out += ITEM_MARKER;
-      out += serializeServerValue(props.children(items[position] as T, indexOf));
+      out += serializeServerValue(
+        serverListItem(props.children(items[position] as T, indexOf)),
+      );
     }
     out += LIST_END_MARKER;
     return backend.createRaw(out) as Node;
@@ -282,12 +314,12 @@ function renderForServer<T>(props: ForProps<T>): Node {
     const indexOf = (): number => currentIndex;
     for (let position = 0; position < total; position += 1) {
       currentIndex = position;
-      values[position] = props.children(items[position] as T, indexOf);
+      values[position] = serverListItem(props.children(items[position] as T, indexOf));
     }
     let parts: string[];
     if (total === 0) {
       if (hasFallback) {
-        values.push(resolve(fallback()));
+        values.push(serverListItem(resolve(fallback())));
         parts = ["", LIST_END_MARKER];
       } else {
         parts = [LIST_END_MARKER];

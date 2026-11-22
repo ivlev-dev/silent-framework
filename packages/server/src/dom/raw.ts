@@ -1,7 +1,13 @@
 import { normalizeStyle, type StyleInput } from "@ivlev-dev/silent-core";
 import { NODE_TEXT } from "./types.js";
 import { NodeImpl } from "./node.js";
-import { escapeAttribute, escapeText } from "./serializer.js";
+import { escapeAttribute, escapeRawText, escapeText } from "./serializer.js";
+import {
+  isSafeAttributeName,
+  isSafeUrlAttributeValue,
+  isUrlAttributeName,
+  sanitizeStyleText,
+} from "./attribute-name.js";
 import { pushValue } from "./serialize-value.js";
 
 export interface RawHole {
@@ -206,26 +212,37 @@ function attributeText(value: unknown): string {
   return escapeAttribute(String(value));
 }
 
+function isStringBooleanAttribute(name: string): boolean {
+  const normalized = name.toLowerCase();
+  return normalized.startsWith("aria-") || normalized.startsWith("data-");
+}
+
 function serializeAttribute(name: string, value: unknown): string | true | null {
-  if (value === null || value === undefined || value === false) {
+  if (!isSafeAttributeName(name)) {
     return null;
+  }
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (value === false) {
+    // Для aria-*/data-* отсутствие атрибута не равно `false`.
+    return isStringBooleanAttribute(name) ? `${name}="false"` : null;
   }
   if (value === true) {
     return BOOLEAN_ATTRIBUTES.has(name) ? true : `${name}="true"`;
+  }
+  if (isUrlAttributeName(name) && !isSafeUrlAttributeValue(name, String(value))) {
+    return null;
   }
   if (name === "class" || name === "className") {
     const text = attributeText(value);
     return text === "" ? null : `class="${text}"`;
   }
-  if (name === "style" && typeof value === "object") {
-    const declarations = normalizeStyle(value as StyleInput);
-    if (declarations === "") {
-      return null;
-    }
-    const text = declarations.endsWith(";")
-      ? declarations.slice(0, -1)
-      : declarations;
-    return `style="${escapeAttribute(text)}"`;
+  if (name === "style") {
+    const text = typeof value === "object"
+      ? normalizeStyle(value as StyleInput).replace(/;$/, "")
+      : sanitizeStyleText(String(value)).replace(/;$/, "");
+    return text === "" ? null : `style="${escapeAttribute(text)}"`;
   }
   return `${name}="${attributeText(value)}"`;
 }
@@ -239,14 +256,6 @@ class RawSlot {
 }
 
 export type RawContentMode = "text" | "raw" | "html";
-
-function rawText(value: string, pattern: RegExp | null): string {
-  const safe = value.indexOf("<!--") === -1 ? value : value.replace(/<!--/g, "<\\!--");
-  if (pattern === null) {
-    return safe;
-  }
-  return safe.replace(pattern, (match) => "<\\/" + match.slice(2));
-}
 
 function staticAttributeText(name: string, value: unknown): string {
   if (value === null || value === undefined || value === false) {
@@ -330,7 +339,7 @@ export class RawAttr {
   private readonly content: RawHole | undefined;
   private readonly mode: RawContentMode;
   private readonly tag: string | undefined;
-  private readonly rawPattern: RegExp | null;
+  private readonly rawTag: string | null;
   private readonly statics: Map<string, RawHole> | undefined;
   private readonly values: Map<string, string>;
   private readonly boolean: Set<string>;
@@ -348,10 +357,8 @@ export class RawAttr {
     this.mode = mode;
     this.tag = tag;
     this.statics = statics;
-    this.rawPattern =
-      mode === "raw" && rawTag !== undefined && rawTag !== ""
-        ? new RegExp("</" + rawTag, "gi")
-        : null;
+    this.rawTag =
+      mode === "raw" && rawTag !== undefined && rawTag !== "" ? rawTag : null;
     this.values = new Map<string, string>();
     this.boolean = new Set<string>();
   }
@@ -406,10 +413,25 @@ export class RawAttr {
           ? value
           : String(value);
     if (this.mode === "raw") {
-      content.set(rawText(text, this.rawPattern));
+      content.set(escapeRawText(this.rawTag, text));
       return;
     }
     content.set(escapeText(text));
+  }
+
+  removeAttribute(name: string): void {
+    const key = name === "className" ? "class" : name;
+    const statics = this.statics;
+    if (statics !== undefined) {
+      const staticHole = statics.get(key);
+      if (staticHole !== undefined) {
+        staticHole.set("");
+        return;
+      }
+    }
+    this.values.delete(name);
+    this.boolean.delete(name);
+    this.refreshAttributes();
   }
 
   private setRawAttribute(name: string, value: unknown): void {
@@ -424,6 +446,10 @@ export class RawAttr {
       this.boolean.delete(name);
       this.values.set(name, serialized);
     }
+    this.refreshAttributes();
+  }
+
+  private refreshAttributes(): void {
     let out = "";
     for (const part of this.boolean) {
       out += " " + part;

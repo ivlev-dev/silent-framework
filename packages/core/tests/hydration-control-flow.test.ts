@@ -34,7 +34,6 @@ describe("гидрация управляющих конструкций", () =>
     class VM {}
     function View(this: { vm: VM }): Node {
       return Switch({
-        when: true,
         children: () =>
           Match({
             when: true,

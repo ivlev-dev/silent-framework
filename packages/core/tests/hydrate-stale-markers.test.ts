@@ -41,11 +41,12 @@ function attachMeta(target: unknown, vm: unknown): void {
 async function renderServer(app: AnyComponent): Promise<string> {
   setServerMode(true);
   try {
-    let result: ReturnType<typeof createComponent> | null = null;
+    const slot: { result: ReturnType<typeof createComponent> | null } = { result: null };
     createRoot(() => {
-      result = createComponent(app, {});
+      slot.result = createComponent(app, {});
       return null;
     });
+    const result = slot.result;
     if (result === null) {
       throw new Error("компонент не создан");
     }

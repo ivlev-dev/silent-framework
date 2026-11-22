@@ -5,9 +5,8 @@ import {
   setDefaultPreloader,
   setErrorHandler,
   whenIdle,
-  type AnyComponent,
-  type Preloader,
 } from "../src/component";
+import type { AnyComponent, Preloader } from "../src/types";
 import { mount } from "../src/mount";
 import { lazy, Suspense } from "../src/suspense";
 import { container, DI_CREATE } from "@ivlev-dev/silent-di";

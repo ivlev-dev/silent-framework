@@ -167,7 +167,6 @@ interface LightInstance {
   readonly entries: LightNodeEntry[];
   owner: Owner | null;
   disposed: boolean;
-  rootDispose: (() => void) | null;
   renderRootDispose: (() => void) | null;
   readonly disposeMarker: () => void;
   updateProps(props: Record<string, unknown>): void;
@@ -391,32 +390,37 @@ function refreshLightInstance(instance: LightInstance, initial: boolean): void {
     focus = captureFocus(previousEntries);
   }
 
+  // Предыдущий render-root живёт до успешного построения нового: если
+  // рендер бросит исключение, старый DOM останется с живыми эффектами.
+  const previousRoot = initial ? null : instance.renderRootDispose;
+  let nextRootDispose: (() => void) | null = null;
+  let owner: Owner | null = null;
   let output: unknown = null;
-  if (!initial) {
-    const previousRoot = instance.renderRootDispose;
-    instance.renderRootDispose = null;
-    previousRoot?.();
+  let built: LightBuilt;
+  try {
+    runWithOwner(null, () => {
+      createRoot((dispose) => {
+        nextRootDispose = dispose;
+        owner = getOwner();
+        adoptContextValues(owner, instance.contextValues);
+        const render = (): unknown =>
+          (instance.fn as unknown as (values: Record<string, unknown>) => unknown)(
+            instance.props.value,
+          );
+        output = hasRuntimeOptions(instance.options)
+          ? withRuntimeOptions(instance.options, render)
+          : render();
+        return null;
+      });
+    });
+    built = buildLightOutput(instance, output, initial);
+  } catch (error) {
+    // Частично созданные эффекты нового корня снимаем; старый корень и его
+    // DOM не трогали, поэтому откат не нужен.
+    (nextRootDispose as (() => void) | null)?.();
+    throw error;
   }
 
-  let owner: Owner | null = null;
-  runWithOwner(null, () => {
-    createRoot((dispose) => {
-      instance.renderRootDispose = dispose;
-      owner = getOwner();
-      adoptContextValues(owner, instance.contextValues);
-      const render = (): unknown =>
-        (instance.fn as unknown as (values: Record<string, unknown>) => unknown)(
-          instance.props.value,
-        );
-      output = hasRuntimeOptions(instance.options)
-        ? withRuntimeOptions(instance.options, render)
-        : render();
-      return null;
-    });
-  });
-  instance.owner = owner;
-
-  const built = buildLightOutput(instance, output, initial);
   if (!initial) {
     const parent = anchor === null ? null : anchor.parentNode;
     if (parent !== null) {
@@ -442,8 +446,13 @@ function refreshLightInstance(instance: LightInstance, initial: boolean): void {
   }
   instance.node = built.node;
   instance.single = built.single;
+  instance.owner = owner;
+  instance.renderRootDispose = nextRootDispose;
   registerLightUpdaters(instance);
   if (!initial) {
+    // Новый DOM уже вставлен, старые узлы сняты — только теперь можно гасить
+    // эффекты предыдущего корня.
+    previousRoot?.();
     restoreFocus(focus, built.nodes);
   }
 }
@@ -456,7 +465,6 @@ function buildLightInstance(
 ): LightInstance {
   const inheritedContext = captureContextValues();
   const propsProxy = createPropsProxy(props);
-  let instanceRootDispose: (() => void) | null = null;
 
   let resolveDisposed: (() => void) | null = null;
   let disposedGate: Promise<void> | null = null;
@@ -485,7 +493,6 @@ function buildLightInstance(
     entries: [],
     owner: null,
     disposed: false,
-    rootDispose: instanceRootDispose,
     renderRootDispose: null,
     disposeMarker: () => instance.dispose(),
     updateProps(next: Record<string, unknown>): void {
@@ -507,9 +514,6 @@ function buildLightInstance(
       const disposeRender = instance.renderRootDispose;
       instance.renderRootDispose = null;
       disposeRender?.();
-      const disposeRoot = instance.rootDispose;
-      instance.rootDispose = null;
-      disposeRoot?.();
       for (const entry of instance.entries) {
         disposeLightEntry(entry);
       }

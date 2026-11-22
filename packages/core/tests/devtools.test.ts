@@ -284,10 +284,10 @@ describe("утечки DevTools", () => {
       result.dispose();
     }
     await mountAndDispose();
-    for (let attempt = 0; attempt < 30 && markerRef?.deref() !== undefined; attempt += 1) {
+    for (let attempt = 0; attempt < 30 && (markerRef as WeakRef<object> | null)?.deref() !== undefined; attempt += 1) {
       gc?.({ type: "major", execution: "async" });
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    expect(markerRef?.deref()).toBeUndefined();
+    expect((markerRef as WeakRef<object> | null)?.deref()).toBeUndefined();
   });
 });

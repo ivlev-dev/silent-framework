@@ -22,6 +22,7 @@ export interface DomHydrationRuntime {
     root: Node,
     plan: TemplatePlan,
     out: { holes: Comment[]; attrs: Element[] },
+    fresh?: Node | null,
   ): void;
 }
 
@@ -99,6 +100,7 @@ export function adoptPartsPlan(
   root: Node,
   plan: TemplatePlan,
   out: { holes: Comment[]; attrs: Element[] },
+  fresh?: Node | null,
 ): void {
-  requireRuntime().adoptPartsPlan(root, plan, out);
+  requireRuntime().adoptPartsPlan(root, plan, out, fresh);
 }

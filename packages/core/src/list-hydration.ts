@@ -63,6 +63,9 @@ function preseed<T, S extends ListItemHandle>(
     }
     fallbackSeed = collectBetween(outer.start, endAnchor);
   }
+  if (items.length === 0 && !hasFallback && outer.start.nextSibling !== endAnchor) {
+    return mismatch("лишние элементы списка");
+  }
   let cursor: Node | null = items.length === 0 ? endAnchor : outer.start.nextSibling;
   let position = 0;
   const children = untrack(() => props.children);
@@ -89,6 +92,9 @@ function preseed<T, S extends ListItemHandle>(
       cursor = node;
     }
   });
+  if (cursor !== endAnchor) {
+    return mismatch("не найден конец списка");
+  }
   if (position !== items.length) {
     return mismatch("число элементов списка не совпало");
   }

@@ -64,7 +64,7 @@ describe("ErrorBoundary", () => {
       ErrorBoundary({
         fallback: (error) => label(`err:${(error as Error).message}`),
         children: () => {
-          getRuntimeOptions().onError?.(new Error("async"));
+          getRuntimeOptions().onError?.(new Error("async"), (() => label("child")) as AnyComponent);
           return label("ok");
         },
       }),

@@ -171,7 +171,10 @@ response.end();
 | `onChunk(chunk)` | Каждый фактически записанный чанк тела. |
 | `chunkSize` | Максимальный размер чанка; по умолчанию 16 КиБ. Патчи также режутся по этому лимиту. |
 | `nonce` | Nonce для inline-runtime и скриптов патчей (CSP). |
-| `signal` | Отмена доставки. Рендер завершается и освобождает ресурсы, но новые чанки не пишутся. |
+| `signal` | Внешняя отмена: рендер и доставка прекращаются, поток завершается `AbortError`, сессия и очередь SSR освобождаются. |
+| `reader.cancel()` | Штатная отмена читателем: рендер прерывается, очередь SSR отпускается, error-chunk не отправляется. |
+
+`reader.cancel()`, `break`/`return` в `for await` и `options.signal` останавливают рендер и отпускают очередь SSR, поэтому зависший ресурс не блокирует следующие рендеры. Разница: `options.signal` дополнительно завершает поток ошибкой `AbortError`; `reader.cancel()` считается штатным закрытием. Отмена после завершения — no-op. Без отмены и без `timeoutMs` зависший стрим удерживает очередь до собственного завершения.
 
 Ограничения протокола:
 
@@ -180,7 +183,7 @@ response.end();
 - Inline-runtime требует разрешённых inline-скриптов или `nonce`. Без JS остаётся shell с fallback-содержимым.
 - Ошибка после отправки shell закрывает поток ошибкой: соединение обрывается, fallback остаётся видимым. Ошибки до shell отклоняют поток без отправки тела.
 - Backpressure не учитывается: чанки буферизуются в `ReadableStream`, пока читатель их не заберёт.
-- Поток удерживает внутреннюю очередь SSR до завершения рендера: другие `renderToString`/`renderToStream` ждут.
+- Поток удерживает внутреннюю очередь SSR до завершения рендера или отмены (`reader.cancel()`/`options.signal`): другие `renderToString`/`renderToStream` ждут.
 
 `renderToString` не изменился: он по-прежнему ждёт всё дерево и возвращает `{ html, head }` без служебных маркеров стриминга.
 
@@ -225,12 +228,12 @@ export function renderStream(
 
 | API | Назначение |
 | --- | --- |
-| `createRenderPool(entry, options?)` | Создаёт пул; entry — путь или `file:`/`data:` URL. |
+| `createRenderPool(entry, options?)` | Создаёт пул; entry — путь или `file:` URL (`data:` отклоняется). |
 | `pool.render(args, options?)` | Unary-рендер: `Promise<{ html, head }>`; `options.signal`/`timeoutMs`. |
 | `pool.renderStream(args, options?)` | Стриминг: сразу возвращает `StreamHandle`. |
 | `pool.ready()` | Поднимает воркеры и ждёт загрузки entry. |
 | `pool.stats()` | Состояние, очередь, счётчики задач и падений. |
-| `pool.close({ force?, timeoutMs? })` | Идемпотентное закрытие: очередь отклоняется, стримы отменяются, unary-задачи доигрываются. |
+| `pool.close({ force?, timeoutMs? })` | Идемпотентное закрытие: очередь отклоняется, стримы отменяются, unary-задачи доигрываются; `timeoutMs: 0` или `force: true` завершают воркеры сразу. |
 | `pool[Symbol.asyncDispose]()` | То же, что `close()`; работает с `await using`. |
 
 Опции: `workers` (по умолчанию `min(4, availableParallelism())`), `warmup` (`"lazy"`/`"eager"`), `timeoutMs` (30 с; ограничивает ожидание в очереди и отдельно — выполнение; таймаут очереди не завершает воркер), `idleTimeoutMs` (равен `timeoutMs`; продлевается на `head`/`shell`/чанках, на каждом чтении consumer'а и на `resume`, тикает и на паузе; `0` отключает только простой), `terminateGraceMs` (500 мс), `maxQueue` (`workers * 64`), `maxTasksPerWorker`, `name`, `env`, `execArgv`, `resourceLimits`, `onEvent`, `onError`.
@@ -239,9 +242,11 @@ export function renderStream(
 
 Ограничения:
 
-- entry должен быть собран Vite/`tsc`; `vite.ssrLoadModule` и dev-модули не поддерживаются;
+- entry должен быть собран Vite/`tsc`; `vite.ssrLoadModule`, dev-модули и `data:` URL не поддерживаются;
+- падение воркера до `ready` без оставшихся готовых воркеров сразу переводит пул в `failed` (`entry-load-failed`); если пул уже обслуживает запросы, boot-воркер рестартует; падения после `ready` рестартуют воркер, пока их не станет больше 5 за 30 с;
 - `singleton`-привязки DI, кэши и модульное состояние — per-worker, а `process.env` фиксируется при спавне воркера;
 - один job на воркер; вложенный `renderToString`/`renderToStream` внутри активного рендера запрещён;
+- аргументы проходят structured clone и бюджет 8 × 1024 × 1024 единиц / глубину 64; превышение даёт `args-not-cloneable`;
 - честного backpressure нет: `highWaterMark` (64 × 1024 символов) и `maxBufferedChars` (4 000 000) ограничивают буфер пула, а переполнение даёт `stream-overflow`;
 - финальный head после отправки `<head>` применить нельзя — используйте shell-head; `finalHead` годится для логов/трейлера;
 - `worker.terminate()` не выполняет `finally`, поэтому не полагайтесь на очистку в `finally` при таймауте/отмене.

@@ -23,7 +23,7 @@ function row(itemValue: Item): HTMLElement {
 }
 
 function idsOf(host: HTMLElement): string[] {
-  return Array.from(host.querySelectorAll("[data-id]")).map((element) => element.dataset.id ?? "");
+  return Array.from(host.querySelectorAll("[data-id]")).map((element) => (element as HTMLElement).dataset.id ?? "");
 }
 
 function install(node: Node): HTMLElement {
@@ -165,9 +165,9 @@ describe("For", () => {
     const host = install(container);
     const original = Node.prototype.insertBefore;
     let moves = 0;
-    Node.prototype.insertBefore = function (this: Node, node: Node, child: Node | null): Node {
+    Node.prototype.insertBefore = function <T extends Node>(this: Node, node: T, child: Node | null): T {
       moves += 1;
-      return original.call(this, node, child);
+      return original.call(this, node, child) as T;
     };
     try {
       setItems([a, b]);

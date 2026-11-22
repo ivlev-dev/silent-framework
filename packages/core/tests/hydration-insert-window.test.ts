@@ -30,7 +30,7 @@ describe("findInsertWindow", () => {
     const end = hole.previousSibling;
     const window = findInsertWindow(hole, parent);
     expect(window.end).toBe(end);
-    expect(window.start.data).toBe("silent-insert");
+    expect((window.start as Comment).data).toBe("silent-insert");
     expect(window.start.nextSibling).toBe(end?.previousSibling);
     expect(window.start.nextSibling?.nextSibling).toBe(end);
   });

@@ -1,3 +1,5 @@
+import { isSafeStyleProperty, isSafeStyleValue, splitStyleText } from "./safety.js";
+
 export type ClassDictionary = {
   readonly [name: string]: ClassNameValue;
 };
@@ -189,92 +191,10 @@ function isUnitlessProperty(property: string): boolean {
   return vendor !== null && UNITLESS_PROPERTIES.has(property.slice(vendor[0].length));
 }
 
-function splitStyleDeclarations(value: string): string[] {
-  const entries: string[] = [];
-  let start = 0;
-  let quote: string | null = null;
-  let depth = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    const char = value.charAt(index);
-    if (char === "\\") {
-      index += 1;
-      continue;
-    }
-    if (quote !== null) {
-      if (char === quote) {
-        quote = null;
-      }
-      continue;
-    }
-    if (char === "\"" || char === "'") {
-      quote = char;
-      continue;
-    }
-    if (char === "(") {
-      depth += 1;
-      continue;
-    }
-    if (char === ")") {
-      if (depth > 0) {
-        depth -= 1;
-      }
-      continue;
-    }
-    if (char === ";" && depth === 0) {
-      entries.push(value.slice(start, index));
-      start = index + 1;
-    }
-  }
-  entries.push(value.slice(start));
-  return entries;
-}
-
-function findStyleSeparator(entry: string): number {
-  let quote: string | null = null;
-  let depth = 0;
-  for (let index = 0; index < entry.length; index += 1) {
-    const char = entry.charAt(index);
-    if (char === "\\") {
-      index += 1;
-      continue;
-    }
-    if (quote !== null) {
-      if (char === quote) {
-        quote = null;
-      }
-      continue;
-    }
-    if (char === "\"" || char === "'") {
-      quote = char;
-      continue;
-    }
-    if (char === "(") {
-      depth += 1;
-      continue;
-    }
-    if (char === ")") {
-      if (depth > 0) {
-        depth -= 1;
-      }
-      continue;
-    }
-    if (char === ":" && depth === 0) {
-      return index;
-    }
-  }
-  return -1;
-}
-
 function parseStyleString(value: string): Array<[string, string]> {
   const entries: Array<[string, string]> = [];
-  for (const entry of splitStyleDeclarations(value)) {
-    const separator = findStyleSeparator(entry);
-    const rawKey = (separator === -1 ? entry : entry.slice(0, separator)).trim();
-    if (rawKey === "") {
-      continue;
-    }
-    const target = separator === -1 ? "" : entry.slice(separator + 1).trim();
-    entries.push([hyphenateStyleName(rawKey), target]);
+  for (const declaration of splitStyleText(value)) {
+    entries.push([hyphenateStyleName(declaration.name), declaration.value]);
   }
   return entries;
 }
@@ -285,6 +205,12 @@ function mergeStyle(value: StyleInput, out: Map<string, string>): void {
   }
   if (typeof value === "string") {
     for (const [key, target] of parseStyleString(value)) {
+      if (!isSafeStyleProperty(key)) {
+        continue;
+      }
+      if (target !== "" && !isSafeStyleValue(target)) {
+        continue;
+      }
       if (target === "") {
         out.delete(key);
       } else {
@@ -310,7 +236,14 @@ function mergeStyle(value: StyleInput, out: Map<string, string>): void {
       out.delete(property);
       continue;
     }
-    out.set(property, formatStyleValue(property, rawValue));
+    if (!isSafeStyleProperty(property)) {
+      continue;
+    }
+    const formatted = formatStyleValue(property, rawValue);
+    if (!isSafeStyleValue(formatted)) {
+      continue;
+    }
+    out.set(property, formatted);
   }
 }
 

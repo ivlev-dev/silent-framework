@@ -24,6 +24,10 @@ import {
   mismatch,
   withWindow,
 } from "./hydration-proxy.js";
+import {
+  getRuntimeContextStore,
+  type RuntimeContextStore,
+} from "./runtime-context-provider.js";
 
 
 declare const __SILENT_HYDRATE__: boolean | undefined;
@@ -43,7 +47,25 @@ interface BoundaryReporter {
 type EffectErrorHandler = (error: unknown, owner: Owner | null) => void;
 
 const activeBoundaries: BoundaryReporter[] = [];
+const scopedBoundaries = new WeakMap<RuntimeContextStore, BoundaryReporter[]>();
 let dispatcherInstalled = false;
+
+/**
+ * Список активных границ текущего рендера. В SSR-store границы одного
+ * запроса не должны перехватывать ошибки другого; на клиенте — общий список.
+ */
+function boundaryReporters(): BoundaryReporter[] {
+  const store = getRuntimeContextStore();
+  if (store === null) {
+    return activeBoundaries;
+  }
+  let reporters = scopedBoundaries.get(store);
+  if (reporters === undefined) {
+    reporters = [];
+    scopedBoundaries.set(store, reporters);
+  }
+  return reporters;
+}
 
 // Источник ошибки на уровне эффекта неизвестен, но глобальный обработчик
 // ожидает компонент вторым аргументом.
@@ -70,8 +92,9 @@ function ensureEffectDispatcher(): void {
       scoped(error);
       return;
     }
-    for (let index = activeBoundaries.length - 1; index >= 0; index -= 1) {
-      const reporter = activeBoundaries[index];
+    const reporters = boundaryReporters();
+    for (let index = reporters.length - 1; index >= 0; index -= 1) {
+      const reporter = reporters[index];
       if (reporter !== undefined && reporter.isActive() && reporter.report(error)) {
         return;
       }
@@ -84,12 +107,13 @@ function registerEffectReporter(reporter: BoundaryReporter): void {
   if (getOwner() === null) {
     return;
   }
-  activeBoundaries.push(reporter);
+  const reporters = boundaryReporters();
+  reporters.push(reporter);
   ensureEffectDispatcher();
   onCleanup(() => {
-    const index = activeBoundaries.indexOf(reporter);
+    const index = reporters.indexOf(reporter);
     if (index !== -1) {
-      activeBoundaries.splice(index, 1);
+      reporters.splice(index, 1);
     }
   });
 }

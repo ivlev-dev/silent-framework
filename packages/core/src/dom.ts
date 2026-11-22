@@ -8,7 +8,18 @@ import {
   type StyleInput,
 } from "./class-style.js";
 import { createEffectUnlessStatic } from "./static-effect.js";
+import {
+  isEventAttributeName,
+  isSafeAttributeName,
+  isSafeUrlAttributeValue,
+  isUrlAttributeName,
+  isValidAttributeName,
+} from "./attribute-name.js";
 import { extractMetadata, isMetadataElement, markMetadataFree } from "./metadata.js";
+import { getErrorHandler } from "./component-state.js";
+import { emitDevtoolsError } from "./devtools-events.js";
+import { isValidTagName } from "./safety.js";
+import type { AnyComponent } from "./types.js";
 import type { ServerHole } from "./server-backend.js";
 import {
   getServerBackend,
@@ -307,6 +318,12 @@ export function isServerMode(): boolean {
 }
 
 export const propertyNames = new Set<string>(["value", "checked", "selected", "disabled", "indeterminate"]);
+
+/** `aria-*` и `data-*` сериализуют `false` как строку `"false"`. */
+function isStringBooleanAttribute(name: string): boolean {
+  const normalized = name.toLowerCase();
+  return normalized.startsWith("aria-") || normalized.startsWith("data-");
+}
 
 export const booleanNames = new Set<string>([
   "hidden",
@@ -1222,6 +1239,9 @@ function applyServerStyle(server: ServerAttribute, value: unknown): void {
 }
 
 export function attr(el: Element, name: string, accessor: () => unknown): void {
+  if (!isSafeAttributeName(name)) {
+    return;
+  }
   const server = serverAttribute(el);
   if (server !== null) {
     createEffectUnlessStatic(() => {
@@ -1232,6 +1252,34 @@ export function attr(el: Element, name: string, accessor: () => unknown): void {
       }
       if (name === "style") {
         applyServerStyle(server, value);
+        return;
+      }
+      if (isUrlAttributeName(name) && !isSafeUrlAttributeValue(name, stringOf(value))) {
+        removeServerAttribute(server, name);
+        return;
+      }
+      if (value === false) {
+        if (isStringBooleanAttribute(name)) {
+          server.setAttribute(name, "false");
+          return;
+        }
+        if (propertyNames.has(name)) {
+          server.setAttribute(name, value);
+          return;
+        }
+        removeServerAttribute(server, name);
+        return;
+      }
+      if (value === true) {
+        if (booleanNames.has(name)) {
+          server.setAttribute(name, "");
+          return;
+        }
+        if (propertyNames.has(name)) {
+          server.setAttribute(name, value);
+          return;
+        }
+        server.setAttribute(name, "true");
         return;
       }
       server.setAttribute(name, value);
@@ -1283,6 +1331,9 @@ export function attr(el: Element, name: string, accessor: () => unknown): void {
 }
 
 export function applyAttr(el: Element, name: string, value: unknown, svg: boolean): void {
+  if (!isSafeAttributeName(name)) {
+    return;
+  }
   const server = serverAttribute(el);
   if (name === "class" || name === "className") {
     if (server !== null) {
@@ -1305,7 +1356,24 @@ export function applyAttr(el: Element, name: string, value: unknown, svg: boolea
     return;
   }
   const target = svg ? svgAttributeTarget(name) : null;
+  if (isUrlAttributeName(name) && !isSafeUrlAttributeValue(name, stringOf(value))) {
+    if (target === null) {
+      el.removeAttribute(name);
+    } else {
+      removeSvgAttribute(el, target);
+    }
+    return;
+  }
   if (value === null || value === undefined || value === false) {
+    if (value === false && isStringBooleanAttribute(name)) {
+      const text = "false";
+      if (target === null) {
+        el.setAttribute(name, text);
+      } else {
+        setSvgAttribute(el, target, text);
+      }
+      return;
+    }
     if (target === null) {
       el.removeAttribute(name);
     } else {
@@ -1452,7 +1520,8 @@ export function spread(el: Element, accessor: () => unknown): void {
           || key === "bindChecked"
           || key === "innerHTML"
           || key === "dangerouslySetInnerHTML"
-          || isEventName(key)
+          || isEventAttributeName(key)
+          || !isValidAttributeName(key)
         ) {
           continue;
         }
@@ -1504,7 +1573,7 @@ export function spread(el: Element, accessor: () => unknown): void {
       applyInnerHtml(el, null);
       return;
     }
-    if (isEventName(key)) {
+    if (isEventAttributeName(key)) {
       removeListener(el, key);
       return;
     }
@@ -1557,8 +1626,14 @@ export function spread(el: Element, accessor: () => unknown): void {
         applyInnerHtml(el, next);
         continue;
       }
-      if (isEventName(key)) {
+      if (isEventAttributeName(key)) {
+        if (tryResolveEventName(key) === null) {
+          continue;
+        }
         addListener(el, key, typeof next === "function" ? (next as EventListener) : null);
+        continue;
+      }
+      if (!isValidAttributeName(key)) {
         continue;
       }
       if (key === "class" || key === "className") {
@@ -2229,20 +2304,6 @@ function createHolder(key: string, handler: EventListener | null): ListenerHolde
   return holder;
 }
 
-function isEventName(name: string): boolean {
-  if (name.startsWith("on:")) {
-    return true;
-  }
-  if (name.length <= 2 || !name.startsWith("on")) {
-    return false;
-  }
-  const code = name.charCodeAt(2);
-  if (code >= 65 && code <= 90) {
-    return true;
-  }
-  const rest = name.slice(2).toLowerCase();
-  return DOM_EVENT_NAMES.has(DOM_EVENT_ALIASES.get(rest) ?? rest);
-}
 
 export function parseEventName(name: string): { event: string; capture: boolean } {
   const parsed = resolveEventName(name);
@@ -2259,6 +2320,19 @@ function resolveEventName(name: string): ParsedEvent {
     eventNameCache.set(name, parsed);
   }
   return parsed;
+}
+
+/**
+ * Как `resolveEventName`, но неизвестное/некорректное имя даёт `null`.
+ * Нужен для динамических props (`spread`, `applyProps`): один случайный
+ * `onFooBar` не должен ронять рендер, в отличие от явного `on()`.
+ */
+function tryResolveEventName(name: string): ParsedEvent | null {
+  try {
+    return resolveEventName(name);
+  } catch {
+    return null;
+  }
 }
 
 const DOM_EVENT_NAMES: ReadonlySet<string> = new Set([
@@ -2387,6 +2461,28 @@ function isUpperCode(code: number): boolean {
 
 const EVENT_NAME = /^[a-z][a-z0-9-]*$/;
 
+const UNKNOWN_EVENT_COMPONENT: AnyComponent = () => null;
+
+function reportDelegatedError(error: unknown): void {
+  const name = error instanceof Error ? error.name : "Error";
+  const message = error instanceof Error ? error.message : String(error);
+  try {
+    emitDevtoolsError({
+      name: null,
+      moduleId: null,
+      phase: "event",
+      message: `${name}: ${message}`,
+    });
+  } catch {
+    // Devtools не должны ломать доставку события.
+  }
+  try {
+    getErrorHandler()(error, UNKNOWN_EVENT_COMPONENT);
+  } catch {
+    // Ошибка глобального обработчика не должна прерывать всплытие.
+  }
+}
+
 function ensureDelegated(event: string, key: string): void {
   if (delegatedInstalled.has(key)) {
     return;
@@ -2416,7 +2512,9 @@ function dispatchDelegated(event: Event, key: string): void {
             });
             try {
               handler.call(node, event);
-            } catch {}
+            } catch (error) {
+              reportDelegatedError(error);
+            }
             if (event.cancelBubble) {
               return;
             }
@@ -2481,7 +2579,14 @@ export function addListener(el: Element, name: string, handler: EventListener | 
 }
 
 export function removeListener(el: Element, name: string): void {
-  const { event, capture, key } = resolveEventName(name);
+  let parsed: ParsedEvent;
+  try {
+    parsed = resolveEventName(name);
+  } catch {
+    // Неизвестное событие не могло быть навешено — удалять нечего.
+    return;
+  }
+  const { event, capture, key } = parsed;
   const holders = listenerRegistry.get(el);
   if (holders === undefined) {
     return;
@@ -2587,6 +2692,9 @@ export function dynamic(tag: () => string, props: Record<string, unknown>): Node
 }
 
 export function createElement(tag: string): Element {
+  if (!isValidTagName(tag)) {
+    throw new Error(`Недопустимое имя тега: "${tag}"`);
+  }
   if (SVG_TAG.test(tag)) {
     return document.createElementNS("http://www.w3.org/2000/svg", tag);
   }
@@ -2618,12 +2726,17 @@ export function applyProps(el: Element, props: Record<string, unknown> | undefin
       applyElementRef(el, value);
       continue;
     }
-    if (key === "innerHTML" || key === "dangerouslySetInnerHTML") {
-      applyInnerHtml(el, value);
+    if (isEventAttributeName(key)) {
+      if (typeof value === "function" && tryResolveEventName(key) !== null) {
+        on(el, key, () => value);
+      }
       continue;
     }
-    if (isEventName(key)) {
-      on(el, key, () => value);
+    if (!isValidAttributeName(key)) {
+      continue;
+    }
+    if (key === "innerHTML" || key === "dangerouslySetInnerHTML") {
+      applyInnerHtml(el, value);
       continue;
     }
     if (typeof value === "function") {

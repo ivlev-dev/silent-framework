@@ -7,6 +7,10 @@ import {
 } from "@ivlev-dev/silent-reactivity";
 import { getCurrentBoundary, type AsyncBoundary } from "./boundary.js";
 import { trackAsyncWork } from "./component-state.js";
+import {
+  getRuntimeContextStore,
+  type RuntimeContextStore,
+} from "./runtime-context-provider.js";
 
 export type ResourceStatus = "idle" | "pending" | "success" | "error";
 
@@ -19,6 +23,15 @@ export type ResourceFetcher<T> = (
   context: ResourceFetchContext,
 ) => T | Promise<T>;
 
+/**
+ * Опции `createResource`.
+ *
+ * Кэширование по `key`: клиент без явного `cache` использует общий модульный
+ * кэш (`cacheTime` по умолчанию `Infinity`); активный SSR-рендер получает
+ * отдельный кэш на запрос. Явный `cache: ResourceCache` используется и на
+ * сервере (осознанный обмен данными между запросами), `cache: false` или
+ * `cacheTime: 0` отключают кэш и in-flight дедупликацию.
+ */
 export interface ResourceOptions<T, K = unknown> {
   readonly key?: K | (() => K) | undefined;
   readonly initialValue?: T | undefined;
@@ -38,9 +51,15 @@ export interface Resource<T> {
   readonly error: Accessor<unknown>;
   readonly pending: Accessor<boolean>;
   readonly status: Accessor<ResourceStatus>;
+  /** Завершается отклонением, если текущий запрос завершился ошибкой. */
   readonly ready: Promise<void>;
   readonly key: Accessor<unknown>;
   read(): T | undefined;
+  /**
+   * Запускает запрос. Промис отклоняется ошибкой fetcher'а (после записи в
+   * `error`/`status` и вызова `onError`); данные последнего успешного
+   * запроса при этом сохраняются.
+   */
   refetch(): Promise<T | undefined>;
   set(value: T): void;
   mutate(updater: (previous: T | undefined) => T): void;
@@ -59,6 +78,11 @@ const RESOLVED_READY: Promise<void> = /*#__PURE__*/ Promise.resolve();
 
 function noop(): void {}
 
+/**
+ * Кэш ресурсов: записи по ключу плюс in-flight промисы для дедупликации.
+ * Экземпляр можно передать в `createResource(..., { cache })`, чтобы осознанно
+ * разделять данные между рендерами/запросами.
+ */
 export class ResourceCache {
   private readonly entries = new Map<unknown, CacheEntry>();
   private readonly inflight = new Map<unknown, Promise<unknown>>();
@@ -114,7 +138,31 @@ export class ResourceCache {
   }
 }
 
+/**
+ * Общий кэш клиентского рантайма. На сервере без явного `options.cache`
+ * не используется: иначе данные одного запроса попадали бы в другой.
+ */
 export const sharedResourceCache = /*#__PURE__*/ new ResourceCache();
+
+/**
+ * Кэши, привязанные к store одного SSR-рендера. WeakMap не продлевает жизнь
+ * store и не требует ручной очистки: записи исчезают вместе с рендером.
+ */
+const serverResourceCaches = /*#__PURE__*/ new WeakMap<RuntimeContextStore, ResourceCache>();
+
+function serverRenderStore(): RuntimeContextStore | null {
+  const store = getRuntimeContextStore();
+  return store !== null && store.server ? store : null;
+}
+
+function scopedServerCache(store: RuntimeContextStore): ResourceCache {
+  let cache = serverResourceCaches.get(store);
+  if (cache === undefined) {
+    cache = new ResourceCache();
+    serverResourceCaches.set(store, cache);
+  }
+  return cache;
+}
 
 export function createResourceCache(): ResourceCache {
   return new ResourceCache();
@@ -124,6 +172,17 @@ export function clearResourceCache(cache: ResourceCache = sharedResourceCache): 
   cache.clear();
 }
 
+/**
+ * Создаёт ресурс с асинхронными данными.
+ *
+ * Кэширование по `key`:
+ * - клиент: общий `sharedResourceCache`, `cacheTime` по умолчанию `Infinity`;
+ * - сервер (активный SSR-контекст): кэш текущего рендера, поэтому одинаковые
+ *   ключи дедуплицируются внутри запроса, но не между запросами;
+ * - явный `options.cache` (`ResourceCache`) используется и на сервере — это
+ *   единственный способ осознанно разделить данные между SSR-запросами;
+ * - `cache: false` или `cacheTime: 0` отключают кэш и in-flight дедупликацию.
+ */
 export function createResource<T, K = unknown>(
   fetcher: (context: ResourceFetchContext) => T | Promise<T>,
   options: ResourceOptions<T, K> = {},
@@ -137,9 +196,15 @@ export function createResource<T, K = unknown>(
   );
 
   const cacheTime = options.cacheTime ?? Number.POSITIVE_INFINITY;
-  const caching = options.cache !== false && cacheTime > 0;
-  const cache: ResourceCache =
-    options.cache instanceof ResourceCache ? options.cache : sharedResourceCache;
+  const serverStore = serverRenderStore();
+  const cache: ResourceCache | null =
+    options.cache === false || !(cacheTime > 0)
+      ? null
+      : options.cache instanceof ResourceCache
+        ? options.cache
+        : serverStore !== null
+          ? scopedServerCache(serverStore)
+          : sharedResourceCache;
   const dedupe = options.dedupe !== false;
   const immediate = options.immediate !== false;
   const boundary =
@@ -184,7 +249,7 @@ export function createResource<T, K = unknown>(
   function commitValue(key: unknown, value: T): void {
     setErrorSignal(NO_ERROR);
     setData(value);
-    if (hasKey(key) && caching) {
+    if (hasKey(key) && cache !== null) {
       cache.set(key, value);
     }
   }
@@ -233,7 +298,7 @@ export function createResource<T, K = unknown>(
             return dataSignal();
           }
           commitError(failure);
-          return dataSignal();
+          throw failure;
         },
       )
       .finally(() => {
@@ -277,7 +342,7 @@ export function createResource<T, K = unknown>(
     });
     const tracked = trackAsyncWork(promise, controller.signal);
     boundary?.register(tracked.then(noop, noop));
-    if (hasKey(key) && caching && dedupe) {
+    if (hasKey(key) && cache !== null && dedupe) {
       cache.trackInflight(key, promise);
     }
     return promise;
@@ -306,7 +371,7 @@ export function createResource<T, K = unknown>(
       return activePromise;
     }
     supersede();
-    if (hasKey(key) && caching) {
+    if (hasKey(key) && cache !== null) {
       const cached = cache.read<T>(key);
       if (cached !== undefined) {
         if (!expired(cached.at)) {
@@ -383,7 +448,7 @@ export function createResource<T, K = unknown>(
     status,
     get ready(): Promise<void> {
       const active = activePromise;
-      return active === null ? RESOLVED_READY : active.then(noop, noop);
+      return active === null ? RESOLVED_READY : active.then(() => undefined);
     },
     key: keySignal,
     read,
@@ -403,17 +468,17 @@ export function createResource<T, K = unknown>(
         primed = true;
         previousKey = key;
         if (immediate) {
-          void refetch();
+          void refetch().catch(noop);
         }
         return;
       }
       if (!Object.is(key, previousKey)) {
         previousKey = key;
-        void refetch();
+        void refetch().catch(noop);
       }
     });
   } else if (immediate) {
-    void refetch();
+    void refetch().catch(noop);
   }
 
   if (options.disposeOnCleanup !== false) {

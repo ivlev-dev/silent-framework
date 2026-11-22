@@ -15,7 +15,7 @@ function View(this: { vm: ViewModel }): HTMLElement {
   element.textContent = "view";
   return element;
 }
-(View as Record<PropertyKey, unknown>)[VIEW] = { vm: ViewModel, name: "View" };
+(View as unknown as Record<PropertyKey, unknown>)[VIEW] = { vm: ViewModel, name: "View" };
 
 function Light(): HTMLElement {
   const element = document.createElement("i");

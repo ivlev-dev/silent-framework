@@ -1,6 +1,7 @@
 import { HTML_NAMESPACE, NODE_COMMENT, NODE_DOCUMENT_FRAGMENT, NODE_ELEMENT, NODE_TEXT } from "./types.js";
 import type { DomNode } from "./types.js";
 import { ElementImpl, TextImpl } from "./node.js";
+import { isSafeAttributeName } from "./attribute-name.js";
 import { forEachChunk } from "../chunk.js";
 
 const VOID_ELEMENTS: ReadonlySet<string> = new Set([
@@ -21,6 +22,8 @@ const VOID_ELEMENTS: ReadonlySet<string> = new Set([
 ]);
 
 const RAW_TEXT_ELEMENTS: ReadonlySet<string> = new Set(["script", "style"]);
+
+const TAG_NAME = /^[A-Za-z][A-Za-z0-9-]*$/;
 
 const ESCAPE_TEXT = /[&<>]/;
 const ESCAPE_ATTRIBUTE = /[&<>"]/;
@@ -85,17 +88,58 @@ export function escapeAttribute(value: string): string {
   return value.replace(REPLACE_ATTRIBUTE, replaceAttribute);
 }
 
+const RAW_TEXT_PATTERNS = new Map<string, RegExp>();
+const RAW_TEXT_SPECIAL = /[.*+?^${}()|[\]\\]/g;
+
+function rawTextPattern(tag: string): RegExp {
+  const cached = RAW_TEXT_PATTERNS.get(tag);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const key = tag.toLowerCase();
+  let pattern = RAW_TEXT_PATTERNS.get(key);
+  if (pattern === undefined) {
+    const escaped = key.replace(RAW_TEXT_SPECIAL, "\\$&");
+    pattern = new RegExp("</" + escaped + "(?=[\\s/>]|$)", "gi");
+    RAW_TEXT_PATTERNS.set(key, pattern);
+  }
+  if (key !== tag) {
+    RAW_TEXT_PATTERNS.set(tag, pattern);
+  }
+  return pattern;
+}
+
+/**
+ * Нейтрализует закрывающий тег внутри raw-text элементов (`<style>`,
+ * `<script>`): `</script` → `<\/script` (регистр, пробелы, `/` и `>` после
+ * имени учитываются). `<!--` намеренно не трогаем: он ломает JSON/CSS, а
+ * legacy comment state не позволяет закрыть элемент, пока все закрывающие
+ * теги нейтрализованы. `tag === null` — нечего нейтрализовать.
+ */
+export function escapeRawText(tag: string | null, value: string): string {
+  if (tag === null || tag === "") {
+    return value;
+  }
+  return value.replace(rawTextPattern(tag), (match) => "<\\/" + match.slice(2));
+}
+
 function pushAttributes(element: ElementImpl, parts: PartSink): void {
   if (element.attributeCount === 0) {
     return;
   }
   for (const attribute of element.attributes) {
+    if (!isSafeAttributeName(attribute.name)) {
+      continue;
+    }
     parts.push(" ", attribute.name, '="', escapeAttribute(attribute.value), '"');
   }
 }
 
 function pushElement(element: ElementImpl, parts: PartSink, markers: boolean): void {
   const tag = element.localName;
+  if (!TAG_NAME.test(tag)) {
+    throw new Error(`Недопустимое имя тега: "${tag}"`);
+  }
   parts.push("<", tag);
   pushAttributes(element, parts);
   parts.push(">");
@@ -105,8 +149,17 @@ function pushElement(element: ElementImpl, parts: PartSink, markers: boolean): v
   if (element.namespaceURI === HTML_NAMESPACE && tag === "select") {
     element.syncSelectOptions();
   }
-  if (element.namespaceURI === HTML_NAMESPACE && RAW_TEXT_ELEMENTS.has(tag)) {
-    pushRawChildren(element, parts, markers);
+  const templateContent =
+    element.namespaceURI === HTML_NAMESPACE && tag === "template"
+      ? (element as unknown as { content?: DomNode }).content
+      : undefined;
+  if (templateContent !== undefined) {
+    // `<template>` хранит разметку в `content`; childNodes сериализуем для
+    // совместимости с мини-DOM, который может наполнять их напрямую.
+    pushChildren(element, parts, markers);
+    pushChildren(templateContent, parts, markers);
+  } else if (element.namespaceURI === HTML_NAMESPACE && RAW_TEXT_ELEMENTS.has(tag)) {
+    pushRawChildren(element, parts, markers, tag);
   } else {
     pushChildren(element, parts, markers);
   }
@@ -167,10 +220,15 @@ function pushChildren(node: DomNode, parts: PartSink, markers: boolean): void {
   }
 }
 
-function pushRawChildren(node: DomNode, parts: PartSink, markers: boolean): void {
+function pushRawChildren(
+  node: DomNode,
+  parts: PartSink,
+  markers: boolean,
+  tag: string,
+): void {
   for (const child of node.childNodes) {
     if (child.nodeType === NODE_TEXT && child instanceof TextImpl) {
-      parts.push(child.data);
+      parts.push(escapeRawText(tag, child.data));
       continue;
     }
     pushNode(child, parts, markers);

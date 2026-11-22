@@ -2,6 +2,10 @@ import { createRoot, getOwner, type Owner } from "@ivlev-dev/silent-reactivity";
 import { collectNodes } from "./dom.js";
 import { registerContextLink } from "./context-link.js";
 import type { Children } from "./jsx.js";
+import {
+  getRuntimeContextStore,
+  type RuntimeContextStore,
+} from "./runtime-context-provider.js";
 
 const NO_DEFAULT: unique symbol = Symbol("silent.context.none");
 const MISSING: unique symbol = Symbol("silent.context.missing");
@@ -64,6 +68,26 @@ function registry(): ContextRegistry {
     host[REGISTRY_KEY] = found;
   }
   return found;
+}
+
+/**
+ * Стек provide-фреймов текущего рендера. Внутри per-render store (SSR/ALS)
+ * фреймы не должны быть видны соседнему async-рендеру; на клиенте остаётся
+ * общий стек в реестре.
+ */
+const scopedFrames = new WeakMap<RuntimeContextStore, ContextFrame[]>();
+
+function currentFrames(state: ContextRegistry): ContextFrame[] {
+  const store = getRuntimeContextStore();
+  if (store === null) {
+    return state.frames;
+  }
+  let frames = scopedFrames.get(store);
+  if (frames === undefined) {
+    frames = [];
+    scopedFrames.set(store, frames);
+  }
+  return frames;
 }
 
 function nodeOf(owner: Owner): OwnerNodeLink | null {
@@ -182,17 +206,18 @@ export class Context<T> {
 
   provide<R>(value: T, fn: () => R): R {
     const state = registry();
+    const frames = currentFrames(state);
     const frame: ContextFrame = { context: this, value };
-    state.frames.push(frame);
+    frames.push(frame);
     try {
       return createRoot(() => {
         bindOwnerValue(state, getOwner(), this, value);
         return fn();
       });
     } finally {
-      const index = state.frames.lastIndexOf(frame);
+      const index = frames.lastIndexOf(frame);
       if (index !== -1) {
-        state.frames.splice(index, 1);
+        frames.splice(index, 1);
       }
     }
   }
@@ -208,7 +233,7 @@ export class Context<T> {
 
   #resolve(): Resolution<T> {
     const state = registry();
-    const frames = state.frames;
+    const frames = currentFrames(state);
     for (let index = frames.length - 1; index >= 0; index -= 1) {
       const frame = frames[index];
       if (frame !== undefined && frame.context === this) {
@@ -256,7 +281,8 @@ export function Provider<T>(props: ProviderProps<T>): Node {
 
 export function captureContextValues(): Map<object, unknown> | null {
   const state = registry();
-  if (!state.hasScopes && state.frames.length === 0) {
+  const frames = currentFrames(state);
+  if (!state.hasScopes && frames.length === 0) {
     return null;
   }
   const captured = new Map<object, unknown>();
@@ -288,7 +314,7 @@ export function captureContextValues(): Map<object, unknown> | null {
       }
     }
   }
-  for (const frame of state.frames) {
+  for (const frame of frames) {
     captured.set(frame.context, frame.value);
   }
   return captured.size === 0 ? null : captured;

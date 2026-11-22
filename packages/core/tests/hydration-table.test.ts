@@ -26,7 +26,7 @@ function host(markup = ""): HTMLElement {
 
 function holeParent(template: TemplateClone, index: number): Node {
   const hole = template.holes[index];
-  return hole?.parentNode ?? template.node;
+  return (hole?.parentNode as Node | undefined) ?? template.node;
 }
 
 async function renderServer(app: AnyComponent): Promise<string> {

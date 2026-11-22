@@ -110,11 +110,11 @@ describe("createResource: состояние", () => {
   });
 
   it("set и mutate обновляют данные и сбрасывают ошибку", async () => {
-    const resource = createResource(async () => {
+    const resource = createResource<string>(async () => {
       throw new Error("boom");
     });
 
-    await resource.ready;
+    await resource.ready.catch(() => undefined);
     expect(resource.status()).toBe("error");
 
     resource.set("manual");
@@ -152,7 +152,7 @@ describe("createResource: ошибки", () => {
       throw failure;
     }, { onError });
 
-    await resource.ready;
+    await resource.ready.catch(() => undefined);
 
     expect(resource.error()).toBe(failure);
     expect(resource.status()).toBe("error");
@@ -166,7 +166,7 @@ describe("createResource: ошибки", () => {
       throw new Error("soft");
     });
 
-    await resource.ready;
+    await resource.ready.catch(() => undefined);
 
     expect(() => resource.read()).not.toThrow();
     expect(resource.read()).toBeUndefined();
@@ -178,7 +178,7 @@ describe("createResource: ошибки", () => {
       throw failure;
     }, { throwOnError: true });
 
-    await resource.ready;
+    await resource.ready.catch(() => undefined);
 
     expect(() => resource.read()).toThrow(failure);
   });
@@ -194,10 +194,28 @@ describe("createResource: ошибки", () => {
 
     await resource.ready;
     shouldFail = true;
-    await resource.refetch();
+    await expect(resource.refetch()).rejects.toThrow("late");
 
     expect(resource.data()).toBe("ok");
     expect(resource.status()).toBe("error");
+  });
+
+  it("refetch и ready отклоняются при ошибке fetcher'а", async () => {
+    const failure = new Error("refetch-fail");
+    const resource = createResource(async () => {
+      throw failure;
+    });
+
+    await expect(resource.ready).rejects.toBe(failure);
+
+    let caught: unknown = null;
+    try {
+      await resource.refetch();
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBe(failure);
+    expect(resource.error()).toBe(failure);
   });
 });
 
@@ -232,6 +250,27 @@ describe("createResource: dedupe и кэш", () => {
     expect(second.data()).toBe("cached");
     expect(second.status()).toBe("success");
     expect(second.pending()).toBe(false);
+  });
+
+  it("клиент без явного cache использует общий кэш по умолчанию", async () => {
+    const firstFetcher = vi.fn(async () => "client-cached");
+    const first = createResource(firstFetcher, { key: "client-default" });
+    await first.ready;
+
+    const secondFetcher = vi.fn(async () => "should-not-run");
+    const second = createResource(secondFetcher, { key: "client-default" });
+
+    expect(second.data()).toBe("client-cached");
+    expect(second.status()).toBe("success");
+    expect(secondFetcher).not.toHaveBeenCalled();
+
+    clearResourceCache();
+    const thirdFetcher = vi.fn(async () => "after-clear");
+    const third = createResource(thirdFetcher, { key: "client-default" });
+    await third.ready;
+
+    expect(third.data()).toBe("after-clear");
+    expect(thirdFetcher).toHaveBeenCalledTimes(1);
   });
 
   it("дедуплицирует in-flight между ресурсами с общим ключом", async () => {

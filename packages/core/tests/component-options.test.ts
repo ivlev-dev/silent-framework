@@ -5,8 +5,8 @@ import {
   setErrorHandler,
   whenIdle,
   withRuntimeOptions,
-  type AnyComponent,
 } from "../src/component";
+import type { AnyComponent } from "../src/types";
 import { createRoot, getOwner, runWithOwner } from "@ivlev-dev/silent-reactivity";
 import { disposeNode } from "../src/dom";
 import { Container, DI_CREATE } from "@ivlev-dev/silent-di";

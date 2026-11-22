@@ -8,6 +8,11 @@ import {
 } from "./types.js";
 import type { DomCharacterData, DomDocument, DomDocumentFragment, DomElement, DomNode } from "./types.js";
 import { AttributesImpl } from "./attributes.js";
+import {
+  isSafeAttributeName,
+  isSafeUrlAttributeValue,
+  isUrlAttributeName,
+} from "./attribute-name.js";
 import { StyleImpl } from "./style.js";
 import { serializeChildren } from "./serializer.js";
 
@@ -20,6 +25,24 @@ export function setInnerHtmlParser(parser: InnerHtmlParser): void {
 }
 
 const NO_CHILDREN: NodeImpl[] = [];
+
+const NAMESPACE_PREFIXES: ReadonlyMap<string, string> = new Map([
+  ["http://www.w3.org/1999/xlink", "xlink"],
+  ["http://www.w3.org/XML/1998/namespace", "xml"],
+  ["http://www.w3.org/2000/xmlns/", "xmlns"],
+]);
+
+/**
+ * Мини-DOM не хранит namespace по-настоящему: приводим qualified name к
+ * префиксной форме, которую понимает `setAttribute`/`removeAttribute`.
+ */
+function qualifiedName(namespace: string | null, name: string): string {
+  if (name.indexOf(":") !== -1) {
+    return name;
+  }
+  const prefix = namespace === null ? undefined : NAMESPACE_PREFIXES.get(namespace);
+  return prefix === undefined ? name : `${prefix}:${name}`;
+}
 
 export class NodeImpl implements DomNode {
   readonly nodeType: number;
@@ -269,7 +292,14 @@ export class ElementImpl extends NodeImpl implements DomElement {
   }
 
   setAttribute(name: string, value: string): void {
+    if (!isSafeAttributeName(name)) {
+      return;
+    }
     const normalized = this.normalizeName(name);
+    if (isUrlAttributeName(name) && !isSafeUrlAttributeValue(name, String(value))) {
+      this.attributesValue?.delete(normalized);
+      return;
+    }
     if (normalized === "value" && this.tagName === "SELECT") {
       this.valueState = String(value);
       this.selectValueSet = true;
@@ -284,6 +314,14 @@ export class ElementImpl extends NodeImpl implements DomElement {
 
   hasAttribute(name: string): boolean {
     return this.attributesValue?.has(this.normalizeName(name)) ?? false;
+  }
+
+  setAttributeNS(namespace: string | null, name: string, value: string): void {
+    this.setAttribute(qualifiedName(namespace, name), value);
+  }
+
+  removeAttributeNS(namespace: string | null, name: string): void {
+    this.removeAttribute(qualifiedName(namespace, name));
   }
 
   removeAttribute(name: string): void {

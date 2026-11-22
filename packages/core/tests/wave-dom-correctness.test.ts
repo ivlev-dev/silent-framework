@@ -150,8 +150,8 @@ describe("style: независимые биндинги", () => {
   it("не затирают ключи друг друга", () => {
     const element = document.createElement("div");
     document.body.appendChild(element);
-    const [color, setColor] = createSignal({ color: "red" });
-    const [margin, setMargin] = createSignal({ margin: "1px" });
+    const [color, setColor] = createSignal<Record<string, string>>({ color: "red" });
+    const [margin, setMargin] = createSignal<Record<string, string>>({ margin: "1px" });
     style(element, () => color());
     style(element, () => margin());
 
@@ -176,7 +176,7 @@ describe("style: независимые биндинги", () => {
     const [props, setProps] = createSignal<Record<string, unknown>>({
       style: { color: "red" },
     });
-    const [margin, setMargin] = createSignal({ margin: "1px" });
+    const [margin, setMargin] = createSignal<Record<string, string>>({ margin: "1px" });
     spread(element, () => props());
     style(element, () => margin());
 
@@ -197,8 +197,8 @@ describe("style: независимые биндинги", () => {
   it("не конфликтует с attr(style)", () => {
     const element = document.createElement("div");
     document.body.appendChild(element);
-    const [base, setBase] = createSignal({ color: "red" });
-    const [custom, setCustom] = createSignal({ margin: "1px" });
+    const [base, setBase] = createSignal<Record<string, string>>({ color: "red" });
+    const [custom, setCustom] = createSignal<Record<string, string>>({ margin: "1px" });
     attr(element, "style", () => base());
     style(element, () => custom());
 

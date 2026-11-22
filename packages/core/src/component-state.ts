@@ -247,15 +247,80 @@ export function callHook(target: object, name: string, ...args: unknown[]): void
 
 let readyNodes = 0;
 let readyTraversals = 0;
+let readyEpoch = 0;
+
+const READY_COUNT = Symbol.for("silent.ready.count");
+const READY_VERSION = Symbol.for("silent.ready.version");
+const READY_CACHE = Symbol.for("silent.ready.cache");
+const readyNodeSet = new Set<Node>();
+
+interface ReadyCountHost {
+  [READY_COUNT]?: number;
+  [READY_VERSION]?: number;
+  [READY_CACHE]?: ReadyCacheEntry;
+}
+
+interface ReadyCacheEntry {
+  readonly version: number;
+  readonly epoch: number;
+  readonly promise: Promise<void>;
+}
+
+/**
+ * Обновляет счётчик ready-узлов по цепочке предков и инкрементирует версию:
+ * getReady может пропустить поддерево без ready-узлов и переиспользовать
+ * ранее собранный промис, пока в поддереве ничего не менялось.
+ */
+function touchReadyPath(node: Node, delta: number): void {
+  readyEpoch += 1;
+  let current: Node | null = node;
+  while (current !== null) {
+    const host = current as ReadyCountHost;
+    host[READY_VERSION] = (host[READY_VERSION] ?? 0) + 1;
+    const count = (host[READY_COUNT] ?? 0) + delta;
+    if (count > 0) {
+      host[READY_COUNT] = count;
+    } else {
+      delete host[READY_COUNT];
+    }
+    current = current.parentNode;
+  }
+}
+
+/**
+ * Узлы можно переносить между фрагментами после setReady (например,
+ * flattening списка компонентов), поэтому счётчик предков может быть
+ * неактуален. Проверяем вхождение по самим ready-узлам — их обычно немного.
+ */
+function subtreeHasReady(node: Node): boolean {
+  if (readyNodeSet.size === 0) {
+    return false;
+  }
+  for (const candidate of readyNodeSet) {
+    let current: Node | null = candidate;
+    while (current !== null) {
+      if (current === node) {
+        return true;
+      }
+      current = current.parentNode;
+    }
+  }
+  return false;
+}
 
 export function setReady(node: Node, ready: Promise<void>): void {
   const host = node as ReadyHost;
   if (host[COMPONENT_READY] === undefined) {
     readyNodes += 1;
+    readyNodeSet.add(node);
+    touchReadyPath(node, 1);
     const owner = getOwner();
     if (owner !== null) {
       onCleanup(() => clearReady(node));
     }
+  } else {
+    // Промис заменён — собранный ранее aggregate недействителен.
+    touchReadyPath(node, 0);
   }
   host[COMPONENT_READY] = ready;
 }
@@ -270,9 +335,11 @@ export function clearReady(node: Node): void {
     return;
   }
   delete host[COMPONENT_READY];
+  readyNodeSet.delete(node);
   if (readyNodes > 0) {
     readyNodes -= 1;
   }
+  touchReadyPath(node, -1);
 }
 
 /** Внутренняя диагностика для тестов: размер учёта ready и число обходов. */
@@ -320,16 +387,32 @@ export function getReady(node: Node): Promise<void> {
   if (readyNodes === 0) {
     return RESOLVED_READY;
   }
+  const host = node as ReadyCountHost;
+  if ((host[READY_COUNT] ?? 0) === 0 && !subtreeHasReady(node)) {
+    return RESOLVED_READY;
+  }
+  const version = host[READY_VERSION] ?? 0;
+  const cache = host[READY_CACHE];
+  if (
+    cache !== undefined &&
+    cache.version === version &&
+    cache.epoch === readyEpoch
+  ) {
+    return cache.promise;
+  }
   readyTraversals += 1;
   const promises: Promise<void>[] = [];
   collectReady(node, promises, new Set<Node>());
+  let promise: Promise<void>;
   if (promises.length === 0) {
-    return RESOLVED_READY;
+    promise = RESOLVED_READY;
+  } else if (promises.length === 1) {
+    promise = promises[0] ?? RESOLVED_READY;
+  } else {
+    promise = Promise.all(promises).then(() => undefined);
   }
-  if (promises.length === 1) {
-    return promises[0] ?? RESOLVED_READY;
-  }
-  return Promise.all(promises).then(() => undefined);
+  host[READY_CACHE] = { version, epoch: readyEpoch, promise };
+  return promise;
 }
 
 export async function whenSettled(node: Node): Promise<void> {

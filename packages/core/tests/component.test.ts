@@ -142,7 +142,7 @@ describe("component runtime", () => {
     attachMeta(ContextCounter, ContextVM, Preloader);
     const target = host();
     await mount(target, ContextCounter, { props: { count: 5 } });
-    expect(captured?.props).toEqual({ count: 5 });
+    expect((captured as ComponentContext<CounterProps> | null)?.props).toEqual({ count: 5 });
     expect(target.textContent).toBe("5:5");
   });
 
@@ -156,7 +156,7 @@ describe("component runtime", () => {
       element.textContent = this.vm.value;
       return element;
     } as unknown as AnyComponent;
-    (TokenCounter as Record<PropertyKey, unknown>)[VIEW] = { vm: token, name: "TokenCounter" };
+    (TokenCounter as unknown as Record<PropertyKey, unknown>)[VIEW] = { vm: token, name: "TokenCounter" };
     const scope = container.createScope("test");
     scope.bind(token, () => new TokenVM());
     const target = host();

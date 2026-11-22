@@ -4,8 +4,8 @@ import { createRoot, createSignal, flushSync } from "@ivlev-dev/silent-reactivit
 import {
   createComponent,
   whenIdle,
-  type AnyComponent,
 } from "../src/component";
+import type { AnyComponent } from "../src/types";
 import { For } from "../src/control-flow";
 import { bindValue, setServerMode, templateHoles } from "../src/dom";
 import { hydrate } from "../src/hydrate";

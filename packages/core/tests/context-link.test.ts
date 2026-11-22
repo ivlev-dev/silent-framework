@@ -21,6 +21,6 @@ describe("context-link", () => {
     });
 
     expect(captured).not.toBeNull();
-    expect(captured?.get(context)).toBe("value");
+    expect((captured as Map<object, unknown> | null)?.get(context)).toBe("value");
   });
 });

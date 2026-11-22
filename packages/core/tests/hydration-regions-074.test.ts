@@ -4,8 +4,8 @@ import { createRoot, createSignal, flushSync } from "@ivlev-dev/silent-reactivit
 import {
   createComponent,
   whenIdle,
-  type AnyComponent,
 } from "../src/component";
+import type { AnyComponent } from "../src/types";
 import { For, Show } from "../src/control-flow";
 import { insert, setServerMode, templateHoles, type TemplateClone } from "../src/dom";
 import { ErrorBoundary } from "../src/error-boundary";
@@ -30,7 +30,7 @@ function host(markup = ""): HTMLElement {
 
 function holeParent(template: TemplateClone, index: number): Node {
   const hole = template.holes[index];
-  return hole?.parentNode ?? template.node;
+  return (hole?.parentNode as Node | undefined) ?? template.node;
 }
 
 function attachMeta(component: unknown, vm: unknown): void {
@@ -156,6 +156,7 @@ describe("гидрация регионов с корнем управляюще
       void this.vm;
       return For({
         each: items[0],
+        // @ts-expect-error For поддерживает строковые children в рантайме, типы требуют Node.
         children: (item: { name: string }) => item.name,
       });
     }
@@ -421,6 +422,7 @@ describe("вложенные регионы", () => {
       void this.vm;
       return For({
         each: items[0],
+        // @ts-expect-error For поддерживает строковые children в рантайме, типы требуют Node.
         children: (item: { name: string }) =>
           item.name === "b"
             ? createComponent(ItemView as unknown as AnyComponent, { item }).node
@@ -448,6 +450,7 @@ describe("SSR-паритет списков", () => {
     void this.vm;
     return For({
       each: source[0] as unknown as string[],
+      // @ts-expect-error For поддерживает строковые children в рантайме, типы требуют Node.
       children: (item: string) => item,
     });
   }

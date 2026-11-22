@@ -76,7 +76,7 @@ describe("raw-text SSR", () => {
     );
   });
 
-  it("нейтрализует <!-- в raw-text и не съедает следующий элемент", async () => {
+  it("сохраняет <!-- в raw-text и нейтрализует только закрывающий тег", async () => {
     const view = (): Node => {
       const template = templateHoles(
         '<script data-silent-a-0="" data-silent-text=""></script><p>after</p>',
@@ -90,7 +90,7 @@ describe("raw-text SSR", () => {
     };
 
     const html = await render(view);
-    expect(html).toContain("<\\!--<script>alert(1)<\\/script>");
+    expect(html).toContain("<!--<script>alert(1)<\\/script>");
     expect(html).toContain("</script><p>after</p>");
 
     const nodes = parseHtmlFragment(createDocument(), html);

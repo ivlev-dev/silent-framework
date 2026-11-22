@@ -37,7 +37,46 @@ const DEFAULT_CHUNK_SIZE = 16 * 1024;
 
 interface StreamState {
   cancelled: boolean;
+  finished: boolean;
   controller: ReadableStreamDefaultController<string> | null;
+  /** Внутренний abort: отмена читателя должна прервать рендер и освободить очередь. */
+  readonly abort: AbortController;
+}
+
+/**
+ * Комбинирует пользовательский и внутренний сигналы отмены.
+ * `AbortSignal.any` не подходит: он оставляет слушателей на долгоживущем
+ * пользовательском сигнале после завершения конкретного рендера.
+ */
+function combineSignals(
+  external: AbortSignal | undefined,
+  internal: AbortSignal,
+): { readonly signal: AbortSignal; dispose(): void } {
+  if (external === undefined) {
+    return { signal: internal, dispose: () => void 0 };
+  }
+  const controller = new AbortController();
+  const onExternal = (): void => {
+    controller.abort(external.reason);
+    dispose();
+  };
+  const onInternal = (): void => {
+    controller.abort(internal.reason);
+    dispose();
+  };
+  const dispose = (): void => {
+    external.removeEventListener("abort", onExternal);
+    internal.removeEventListener("abort", onInternal);
+  };
+  if (external.aborted) {
+    controller.abort(external.reason);
+  } else if (internal.aborted) {
+    controller.abort(internal.reason);
+  } else {
+    external.addEventListener("abort", onExternal, { once: true });
+    internal.addEventListener("abort", onInternal, { once: true });
+  }
+  return { signal: controller.signal, dispose };
 }
 
 export function renderToStream(
@@ -52,28 +91,45 @@ export function renderToStream(
     options.chunkSize !== undefined && options.chunkSize > 0
       ? options.chunkSize
       : DEFAULT_CHUNK_SIZE;
-  const state: StreamState = { cancelled: false, controller: null };
+  const state: StreamState = {
+    cancelled: false,
+    finished: false,
+    controller: null,
+    abort: new AbortController(),
+  };
 
   return new ReadableStream<string>({
     start(controller): void {
       state.controller = controller;
-      void enqueueRenderTask(async () => {
+      const task = enqueueRenderTask(async () => {
         if (!hasRuntimeContextProvider()) {
           await ensureRuntimeContext();
         }
         await runStream(app, options, chunkSize, state);
-      }).catch((error: unknown) => {
-        if (!state.cancelled) {
-          try {
-            controller.error(error);
-          } catch {
-            void error;
-          }
-        }
       });
+      void task.then(
+        () => {
+          state.finished = true;
+        },
+        (error: unknown) => {
+          state.finished = true;
+          if (!state.cancelled) {
+            try {
+              controller.error(error);
+            } catch {
+              void error;
+            }
+          }
+        },
+      );
     },
     cancel(): void {
+      // Идемпотентно: повторная отмена и отмена после завершения — no-op.
+      if (state.cancelled || state.finished) {
+        return;
+      }
       state.cancelled = true;
+      state.abort.abort();
     },
   });
 }
@@ -84,7 +140,12 @@ async function runStream(
   chunkSize: number,
   state: StreamState,
 ): Promise<void> {
+  if (state.cancelled) {
+    state.finished = true;
+    return;
+  }
   const markers = options.markers !== false;
+  const combined = combineSignals(options.signal, state.abort.signal);
   const abortStream = (): void => {
     state.cancelled = true;
     try {
@@ -95,6 +156,8 @@ async function runStream(
   };
   if (options.signal?.aborted === true) {
     abortStream();
+    combined.dispose();
+    state.finished = true;
     return;
   }
   options.signal?.addEventListener("abort", abortStream, { once: true });
@@ -145,8 +208,21 @@ async function runStream(
 
   let settleChain: Promise<void> = Promise.resolve();
   let pendingSettles = 0;
+  /**
+   * После отмены/ошибки рендера сессия освобождается, поэтому отложенные
+   * settle-задачи не должны трогать её DOM и сериализатор: иначе дорогая работа
+   * выполнялась бы по освобождённым ресурсам и могла бы пересечься со следующим
+   * рендером в глобальной очереди.
+   */
+  let settleStopped = false;
+
+  const isStopped = (): boolean =>
+    state.cancelled || state.finished || settleStopped;
 
   const settleRegion = (id: number, start: Comment, end: Comment): void => {
+    if (isStopped()) {
+      return;
+    }
     try {
       flushSync();
       const html = serializeBetween(
@@ -165,11 +241,19 @@ async function runStream(
   };
 
   const scheduleSettle = (id: number, start: Comment, end: Comment): void => {
+    if (isStopped()) {
+      // Маркеры остаются в отброшенном дереве: удалять их значило бы мутировать
+      // DOM уже освобождённой сессии.
+      return;
+    }
     pendingSettles += 1;
     settleChain = settleChain.then(async () => {
       await Promise.resolve();
-      settleRegion(id, start, end);
-      pendingSettles -= 1;
+      try {
+        settleRegion(id, start, end);
+      } finally {
+        pendingSettles -= 1;
+      }
     });
   };
 
@@ -195,6 +279,9 @@ async function runStream(
             return;
           }
           settled = true;
+          if (isStopped()) {
+            return;
+          }
           if (!shellEmitted) {
             removeNode(start as unknown as DomNode);
             removeNode(end as unknown as DomNode);
@@ -233,12 +320,26 @@ async function runStream(
       shellEmitted = true;
 
       await settleRender(active.result, {
-        signal: options.signal,
+        // Внутренний сигнал (cancel читателя) дополняет пользовательский:
+        // без него зависший ресурс держал бы глобальную очередь рендеров.
+        signal: combined.signal,
         timeoutMs: options.timeoutMs,
       });
+      if (state.cancelled) {
+        return;
+      }
       await drainSettles();
+      if (state.cancelled) {
+        return;
+      }
       flushSync();
+      if (state.cancelled) {
+        return;
+      }
       await drainSettles();
+      if (state.cancelled) {
+        return;
+      }
       active.throwIfFailed();
 
       if (patchFailed) {
@@ -257,6 +358,18 @@ async function runStream(
     streamError = error;
   } finally {
     options.signal?.removeEventListener("abort", abortStream);
+    combined.dispose();
+    if (state.cancelled || streamFailed || patchFailed) {
+      // Останавливаем отложенную settle-работу до dispose сессии.
+      settleStopped = true;
+    }
+    // Сливаем очередь settle-задач до освобождения сессии: после остановки они
+    // ничего не делают, но ни одна не должна работать по её DOM.
+    try {
+      await drainSettles();
+    } catch {
+      // Ошибки settle-задач уже учтены через patchFailed; dispose важнее.
+    }
     try {
       session?.dispose();
     } catch (error) {
@@ -268,15 +381,19 @@ async function runStream(
   }
 
   if (state.cancelled) {
+    state.finished = true;
     return;
   }
   if (streamFailed) {
+    state.finished = true;
     state.controller?.error(streamError);
     return;
   }
   if (patchFailed) {
+    state.finished = true;
     state.controller?.error(patchError);
     return;
   }
+  state.finished = true;
   state.controller?.close();
 }

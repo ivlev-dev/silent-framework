@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createRoot, createSignal, flushSync } from "@ivlev-dev/silent-reactivity";
 import { createComponent, whenIdle as waitIdle } from "../src/component.js";
-import { insert, setServerMode, templateHoles } from "../src/dom.js";
+import { insert, setServerMode, templateHoles, type TemplateClone } from "../src/dom.js";
 import { hydrate } from "../src/hydrate.js";
 import { lazy } from "../src/suspense.js";
 import type { HydrationMismatchError } from "../src/hydration.js";
@@ -14,8 +14,8 @@ const handles: MountHandle[] = [];
 
 const [clicks, setClicks] = createSignal(0);
 
-function holeParent(template: { node: Node; holes: readonly Node[] }, index: number): Node {
-  return template.holes[index]?.parentNode ?? template.node;
+function holeParent(template: TemplateClone, index: number): Node {
+  return (template.holes[index]?.parentNode as Node | undefined) ?? template.node;
 }
 
 function attachMeta(target: unknown, vm: unknown): void {
@@ -61,11 +61,12 @@ attachMeta(ClientLazyView, ClientLazyVM);
 async function renderServer(app: AnyComponent): Promise<string> {
   setServerMode(true);
   try {
-    let result: ReturnType<typeof createComponent> | null = null;
+    const slot: { result: ReturnType<typeof createComponent> | null } = { result: null };
     createRoot(() => {
-      result = createComponent(app, {});
+      slot.result = createComponent(app, {});
       return null;
     });
+    const result = slot.result;
     if (result === null) {
       throw new Error("компонент не создан");
     }

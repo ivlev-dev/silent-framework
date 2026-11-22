@@ -33,6 +33,7 @@ import {
   markClientNodes,
   mergeTopLevelMetadata,
   mismatch,
+  pruneStaleAttributes,
   registerInsertStart,
   shapeMatches,
   stripHydrationMarkers,
@@ -603,6 +604,7 @@ export function adoptPartsPlan(
   root: Node,
   plan: TemplatePlan,
   out: { holes: Comment[]; attrs: Element[] },
+  fresh?: Node | null,
 ): void {
   const holes: Comment[] =
     plan.holes.length === 0 ? NO_HOLES : new Array<Comment>(plan.holes.length);
@@ -617,6 +619,9 @@ export function adoptPartsPlan(
     }
   }
   if (tryAdoptPartsPlan(root, plan, holes, attrs, stripText)) {
+    if (fresh !== undefined && fresh !== null) {
+      pruneStaleAttributes(fresh, root);
+    }
     stripHydrationMarkers(root);
     out.holes = holes;
     out.attrs = attrs;
@@ -629,6 +634,10 @@ export function adoptPartsPlan(
   ) {
     return mismatch("шаблон не совпал с серверной разметкой");
   }
+  if (fresh !== undefined && fresh !== null) {
+    pruneStaleAttributes(fresh, root);
+  }
+  stripHydrationMarkers(root);
   out.holes = collected.holes;
   out.attrs = collected.attrs;
   for (const hole of out.holes) {
@@ -1026,7 +1035,11 @@ export function hydrateTemplate(source: TemplateHydrationSource): TemplateClone 
       holes: NO_HOLES,
       attrs: NO_ATTRIBUTES,
     };
-    adoptPartsPlan(node, providedPlan, clone);
+    const parsed = source.parse();
+    const fresh = parsed.rootCount === 1
+      ? (parsed.singleRoot ?? parsed.content)
+      : parsed.content;
+    adoptPartsPlan(node, providedPlan, clone, fresh);
     return clone;
   }
   const current = source.parse();
@@ -1039,7 +1052,8 @@ export function hydrateTemplate(source: TemplateHydrationSource): TemplateClone 
       markMetadataFree(empty);
       return { node: empty, holes: NO_HOLES, attrs: NO_ATTRIBUTES };
     }
-    const expected = collectPartsMany([source.cloneNode()]);
+    const fresh = source.cloneNode();
+    const expected = collectPartsMany([fresh]);
     if (rootCount === 1) {
       const node = claimNext();
       if (node === null) {
@@ -1053,9 +1067,13 @@ export function hydrateTemplate(source: TemplateHydrationSource): TemplateClone 
       ) {
         return mismatch("шаблон не совпал с серверной разметкой");
       }
+      pruneStaleAttributes(fresh, node);
       return { node, ...collected };
     }
     const claimed: Node[] = [];
+    const freshRoots =
+      fresh instanceof DocumentFragment ? Array.from(fresh.childNodes) : [fresh];
+    let freshIndex = 0;
     let cursor = current.content.firstChild;
     while (cursor !== null) {
       const next = cursor.nextSibling;
@@ -1064,6 +1082,11 @@ export function hydrateTemplate(source: TemplateHydrationSource): TemplateClone 
         return mismatch("шаблон не совпал с серверной разметкой");
       }
       markMetadataFree(node);
+      const freshRoot = freshRoots[freshIndex];
+      if (freshRoot !== undefined) {
+        pruneStaleAttributes(freshRoot, node);
+      }
+      freshIndex += 1;
       claimedNodes.add(node);
       claimed.push(node);
       cursor = next;
@@ -1099,6 +1122,7 @@ export function hydrateTemplate(source: TemplateHydrationSource): TemplateClone 
     if (node === null || !shapeMatches(root, node, true, simple)) {
       return mismatch("шаблон не совпал с серверной разметкой");
     }
+    pruneStaleAttributes(root, node);
     mergeTopLevelMetadata(root, node);
     claimedNodes.add(node);
     claimed.push(node);

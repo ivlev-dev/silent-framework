@@ -173,6 +173,7 @@ describe("disposeNode: строки For", () => {
     const host = install(
       For({
         each: items,
+        // @ts-expect-error For сериализует массивы/строки/фрагменты, типы требуют Node.
         children: (value: string) => [textRow(value), " ", textRow(`${value}2`)],
       }),
     );
@@ -258,6 +259,7 @@ describe("disposeNode: строки For", () => {
     const host = install(
       For({
         each: items,
+        // @ts-expect-error For принимает null как пустой слот в рантайме, типы требуют Node.
         children: (value: string) => (value === "" ? null : textRow(value)),
       }),
     );

@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from "vitest";
 import { createRoot, createSignal, flushSync } from "@ivlev-dev/silent-reactivity";
-import { applyProps, bindChecked, bindSource, bindValue } from "../src/dom";
+import { applyProps, bindChecked, bindSource, bindValue, type BindSetter } from "../src/dom";
+
+// bindValue/bindChecked принимают BindSetter<unknown>; текущие сигналы типизированы
+// уже, поэтому приводим сеттер явно, не ослабляя типы сигнала.
+function setterFor<T>(setter: (value: T) => void): BindSetter<unknown> {
+  return setter as BindSetter<unknown>;
+}
 
 function input(type: string = "text"): HTMLInputElement {
   const element = document.createElement("input");
@@ -39,7 +45,7 @@ describe("bindValue: input", () => {
     const element = input();
 
     createRoot(() => {
-      bindValue(element, value, setValue);
+      bindValue(element, value, setterFor(setValue));
     });
 
     typeInto(element, "abc");
@@ -53,7 +59,7 @@ describe("bindValue: input", () => {
     const element = input();
 
     createRoot(() => {
-      bindValue(element, value, setValue);
+      bindValue(element, value, setterFor(setValue));
     });
     element.setSelectionRange(1, 2);
     element.focus();
@@ -114,7 +120,7 @@ describe("bindValue: input", () => {
     const element = input();
 
     createRoot(() => {
-      bindValue(element, value, setValue);
+      bindValue(element, value, setterFor(setValue));
     });
 
     element.dispatchEvent(new CompositionEvent("compositionstart"));
@@ -133,7 +139,7 @@ describe("bindValue: input", () => {
     const element = input();
 
     createRoot(() => {
-      bindValue(element, value, setValue);
+      bindValue(element, value, setterFor(setValue));
     });
 
     element.dispatchEvent(new CompositionEvent("compositionstart"));
@@ -152,7 +158,7 @@ describe("bindValue: input", () => {
     const element = input("checkbox");
 
     createRoot(() => {
-      bindValue(element, value, setValue);
+      bindValue(element, value, setterFor(setValue));
     });
     element.checked = true;
     element.dispatchEvent(new Event("input", { bubbles: true }));
@@ -167,7 +173,7 @@ describe("bindValue: input", () => {
     document.body.appendChild(element);
 
     createRoot(() => {
-      bindValue(element, value, setValue);
+      bindValue(element, value, setterFor(setValue));
     });
     expect(element.value).toBe("text");
 
@@ -212,7 +218,7 @@ describe("bindValue: select", () => {
     }
 
     createRoot(() => {
-      bindValue(select, value, setValue);
+      bindValue(select, value, setterFor(setValue));
     });
     expect(select.value).toBe("a");
 
@@ -239,7 +245,7 @@ describe("bindValue: select", () => {
     }
 
     createRoot(() => {
-      bindValue(select, value, setValue);
+      bindValue(select, value, setterFor(setValue));
     });
     expect(
       Array.from(select.options)
@@ -276,7 +282,7 @@ describe("bindChecked", () => {
     const element = input("checkbox");
 
     createRoot(() => {
-      bindChecked(element, checked, setChecked);
+      bindChecked(element, checked, setterFor(setChecked));
     });
     element.checked = true;
     element.dispatchEvent(new Event("change", { bubbles: true }));
@@ -310,7 +316,7 @@ describe("bindChecked", () => {
     const element = input("checkbox");
 
     createRoot(() => {
-      bindChecked(element, state, setState);
+      bindChecked(element, state, setterFor(setState));
     });
     element.checked = true;
     element.dispatchEvent(new Event("change", { bubbles: true }));
@@ -326,7 +332,7 @@ describe("bindChecked", () => {
     const element = input("radio");
 
     createRoot(() => {
-      bindChecked(element, checked, setChecked);
+      bindChecked(element, checked, setterFor(setChecked));
     });
     element.checked = false;
     element.dispatchEvent(new Event("change", { bubbles: true }));

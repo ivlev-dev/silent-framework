@@ -286,6 +286,33 @@ function isDebugEnabled(): boolean {
   );
 }
 
+function errorDetails(error: unknown): {
+  readonly name: string;
+  readonly message: string;
+  readonly code?: string;
+} {
+  if (typeof error === "object" && error !== null) {
+    const candidate = error as { name?: unknown; message?: unknown; code?: unknown };
+    return {
+      name: typeof candidate.name === "string" ? candidate.name : "Error",
+      message: typeof candidate.message === "string" ? candidate.message : String(error),
+      ...(typeof candidate.code === "string" ? { code: candidate.code } : {}),
+    };
+  }
+  return {
+    name: "Error",
+    message: String(error),
+  };
+}
+
+function infoDetails(info: PoolErrorInfo): Record<string, unknown> {
+  return {
+    source: info.source,
+    ...(info.workerId !== undefined ? { workerId: info.workerId } : {}),
+    ...(info.event !== undefined ? { event: info.event.type } : {}),
+  };
+}
+
 function reasonText(reason: unknown): string | undefined {
   if (reason === undefined) {
     return undefined;
@@ -307,7 +334,132 @@ function isAbortError(error: unknown): boolean {
   return candidate.name === "AbortError" || candidate.code === "aborted";
 }
 
+const MAX_ARGS_UNITS = 8 * 1024 * 1024;
+const MAX_ARGS_DEPTH = 64;
+
+function argsLimitFailure(args: readonly unknown[]): PoolError | null {
+  const seen = new WeakSet<object>();
+  let units = 0;
+
+  const charge = (amount: number): boolean => {
+    units += amount;
+    return units <= MAX_ARGS_UNITS;
+  };
+
+  const visit = (value: unknown, depth: number): boolean => {
+    if (depth > MAX_ARGS_DEPTH) {
+      return false;
+    }
+    const type = typeof value;
+    if (value === null || value === undefined) {
+      return charge(4);
+    }
+    if (type === "string") {
+      return charge((value as string).length);
+    }
+    if (type === "number" || type === "boolean") {
+      return charge(8);
+    }
+    if (type === "bigint") {
+      return charge(String(value).length);
+    }
+    if (type !== "object") {
+      // Функции/символы отклонит structuredClone с DataCloneError.
+      return true;
+    }
+    const object = value as object;
+    if (seen.has(object)) {
+      return true;
+    }
+    seen.add(object);
+    if (ArrayBuffer.isView(object)) {
+      return charge((object as ArrayBufferView).byteLength);
+    }
+    if (object instanceof ArrayBuffer) {
+      return charge(object.byteLength);
+    }
+    if (object instanceof Date || object instanceof RegExp) {
+      return charge(16);
+    }
+    if (object instanceof Map) {
+      for (const [key, item] of object) {
+        if (!visit(key, depth + 1) || !visit(item, depth + 1)) {
+          return false;
+        }
+      }
+      return true;
+    }
+    if (object instanceof Set) {
+      for (const item of object) {
+        if (!visit(item, depth + 1)) {
+          return false;
+        }
+      }
+      return true;
+    }
+    return visitOwnProperties(object, depth);
+  };
+
+  // Обходим только собственные дескрипторы: getters не вызываются (их вызов
+  // остаётся на structuredClone, чей throw ловится в dataCloneFailure).
+  const visitOwnProperties = (object: object, depth: number): boolean => {
+    for (const key of Reflect.ownKeys(object)) {
+      if (typeof key === "symbol") {
+        // structuredClone игнорирует символьные ключи; считаем для запаса.
+        if (!charge(8)) {
+          return false;
+        }
+        continue;
+      }
+      if (!charge(key.length)) {
+        return false;
+      }
+      const descriptor = Reflect.getOwnPropertyDescriptor(object, key);
+      if (descriptor === undefined) {
+        continue;
+      }
+      if (!("value" in descriptor)) {
+        // Accessor: сам getter не трогаем, иначе аргумент может бросить
+        // синхронно ещё до создания job.
+        if (!charge(8)) {
+          return false;
+        }
+        continue;
+      }
+      if (!visit(descriptor.value, depth + 1)) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  try {
+    for (const arg of args) {
+      if (!visit(arg, 0)) {
+        return new PoolError(
+          "args-not-cloneable",
+          `Аргументы рендера превышают лимит (${MAX_ARGS_UNITS} единиц / глубина ${MAX_ARGS_DEPTH})`,
+        );
+      }
+    }
+  } catch (error) {
+    // Proxy/getter может бросить из ownKeys, дескриптора или итератора Map/Set.
+    // Контракт render()/renderStream() — только Promise/StreamHandle, поэтому
+    // синхронный throw превращаем в PoolError.
+    return new PoolError(
+      "args-not-cloneable",
+      "Не удалось проанализировать аргументы рендера",
+      { cause: error },
+    );
+  }
+  return null;
+}
+
 function dataCloneFailure(args: readonly unknown[]): PoolError | null {
+  const limit = argsLimitFailure(args);
+  if (limit !== null) {
+    return limit;
+  }
   try {
     structuredClone(args);
     return null;
@@ -348,7 +500,13 @@ function isBareSpecifier(entry: string): boolean {
 
 function resolveEntryUrl(entry: string | URL): string {
   if (entry instanceof URL) {
-    if (entry.protocol !== "file:" && entry.protocol !== "data:") {
+    if (entry.protocol === "data:") {
+      throw new PoolError(
+        "entry-load-failed",
+        "data: entry запрещён: передайте file: URL или путь к файлу",
+      );
+    }
+    if (entry.protocol !== "file:") {
       throw new PoolError(
         "entry-load-failed",
         `Неподдерживаемый протокол entry: ${entry.protocol}; используйте file: URL или путь`,
@@ -356,7 +514,13 @@ function resolveEntryUrl(entry: string | URL): string {
     }
     return entry.href;
   }
-  if (entry.startsWith("file:") || entry.startsWith("data:")) {
+  if (entry.startsWith("data:")) {
+    throw new PoolError(
+      "entry-load-failed",
+      "data: entry запрещён: передайте file: URL или путь к файлу",
+    );
+  }
+  if (entry.startsWith("file:")) {
     try {
       return new URL(entry).href;
     } catch (error) {
@@ -470,6 +634,10 @@ interface StreamJob extends BaseJob {
   terminal: "end" | "error" | "aborted" | null;
   ending: boolean;
   streamClosed: boolean;
+  /** Тело успешно закрыто через `controller.close()` — только тогда `done` успешен. */
+  bodyClosed: boolean;
+  summary: StreamSummary | null;
+  doneSettled: boolean;
   port: MessagePort | null;
   timer: Timer | null;
   idleTimer: Timer | null;
@@ -717,6 +885,9 @@ class RenderPoolImplementation<
       terminal: null,
       ending: false,
       streamClosed: false,
+      bodyClosed: false,
+      summary: null,
+      doneSettled: false,
       port: null,
       timer: null,
       queueTimer: null,
@@ -783,9 +954,20 @@ class RenderPoolImplementation<
     const pending = this.slots
       .filter((slot) => !slot.ready && !slot.dead)
       .map((slot) => slot.boot.promise);
-    await Promise.all(pending);
+    const results = await Promise.allSettled(pending);
     if (this.stateValue === "failed" && this.failure !== null) {
       throw this.failure;
+    }
+    if (!this.slots.some((slot) => slot.ready && !slot.dead)) {
+      for (const result of results) {
+        if (result.status === "rejected") {
+          throw result.reason;
+        }
+      }
+      throw new PoolError(
+        "worker-start-failed",
+        "Ни один воркер пула не завершил boot",
+      );
     }
   }
 
@@ -864,13 +1046,20 @@ class RenderPoolImplementation<
 
     const timeoutMs = options.timeoutMs ?? this.config.timeoutMs;
     let timer: Timer | null = null;
-    if (!force && timeoutMs > 0) {
-      timer = setTimeout(() => {
+    if (!force) {
+      if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+        // timeoutMs: 0 — «не ждать»: завершаем воркеры немедленно.
         for (const slot of [...this.slots]) {
           this.terminateSlot(slot);
         }
-      }, timeoutMs);
-      unref(timer);
+      } else {
+        timer = setTimeout(() => {
+          for (const slot of [...this.slots]) {
+            this.terminateSlot(slot);
+          }
+        }, timeoutMs);
+        unref(timer);
+      }
     }
 
     this.closePromise = (async (): Promise<void> => {
@@ -1218,13 +1407,33 @@ class RenderPoolImplementation<
       return;
     }
     if (!slot.ready && !slot.expectedExit) {
-      this.failPool(
-        new PoolError(
-          "entry-load-failed",
-          `Воркер #${slot.id} не смог загрузить entry`,
-          { cause: slot.bootError },
-        ),
+      const hasLiveReady = this.slots.some(
+        (current) => current.ready && !current.dead,
       );
+      if (!hasLiveReady) {
+        this.failPool(
+          new PoolError(
+            "entry-load-failed",
+            `Воркер #${slot.id} не смог загрузить entry`,
+            { cause: slot.bootError },
+          ),
+        );
+        return;
+      }
+      // Дополнительный воркер упал на boot, но пул уже обслуживает запросы:
+      // рестартим его по общим правилам, а не валим весь пул.
+      this.counters.deaths += 1;
+      if (!this.recordCrash()) {
+        return;
+      }
+      this.emit({
+        type: "worker:restart",
+        workerId: slot.id,
+        reason: `boot exit ${code}`,
+      });
+      this.debug("worker restart", { workerId: slot.id, code });
+      this.ensureWorkers(this.config.workers);
+      this.pump();
       return;
     }
     if (slot.expectedExit) {
@@ -1588,7 +1797,8 @@ class RenderPoolImplementation<
     job.terminal = "end";
     job.ending = true;
     this.clearStreamTimers(job);
-    this.removeAbort(job);
+    // Abort-listener остаётся до закрытия тела: отмена по signal в этом окне
+    // должна отклонять `done`, а не оставлять его висеть.
     const summary: StreamSummary = {
       head: job.firstHead,
       finalHead: job.lastHead,
@@ -1598,7 +1808,7 @@ class RenderPoolImplementation<
       workerId: job.workerId,
     };
     job.finalHead.resolve(job.lastHead);
-    job.done.resolve(summary);
+    job.summary = summary;
     this.counters.completed += 1;
     this.emit({
       type: "job:finish",
@@ -1608,10 +1818,28 @@ class RenderPoolImplementation<
       durationMs: summary.durationMs,
     });
     this.flushStream(job);
+    // `done` резолвится только из closeBody, когда тело реально закрыто и
+    // недоставленных чанков не осталось: потребитель, не читавший тело,
+    // не должен видеть успех раньше времени.
+    this.resolveStreamDone(job);
     this.closeStreamPort(job);
     slot.job = null;
     job.slot = null;
     this.completeTask(slot);
+  }
+
+  private resolveStreamDone(job: StreamJob): void {
+    if (
+      job.doneSettled ||
+      job.terminal !== "end" ||
+      job.summary === null ||
+      !job.bodyClosed ||
+      job.pending.length > 0
+    ) {
+      return;
+    }
+    job.doneSettled = true;
+    job.done.resolve(job.summary);
   }
 
   private finishStreamWithoutHead(job: StreamJob): void {
@@ -1687,6 +1915,40 @@ class RenderPoolImplementation<
     }
   }
 
+  /**
+   * Отмена уже завершившегося (`end`) стрима, тело которого не дочитано.
+   * Воркер уже свободен, а чанки лежат в буфере пула: отдаём ошибку в тело и
+   * `done`, выбрасываем буфер — успешный `done` здесь был бы ложью.
+   */
+  private discardEndedStream(
+    job: StreamJob,
+    error: unknown,
+    outcome: "failed" | "timeout" | "abort",
+  ): void {
+    job.terminal = outcome === "failed" ? "error" : "aborted";
+    job.ending = false;
+    job.pending.length = 0;
+    job.pendingChars = 0;
+    job.paused = false;
+    this.removeAbort(job);
+    this.errorStream(job, error);
+    job.done.reject(error);
+    if (outcome === "timeout") {
+      this.counters.timedOut += 1;
+      return;
+    }
+    if (outcome === "abort") {
+      this.counters.aborted += 1;
+      const reason = reasonText(error);
+      this.emit({
+        type: "job:abort",
+        jobId: job.id,
+        kind: "stream",
+        ...(reason !== undefined ? { reason } : {}),
+      });
+    }
+  }
+
   private abortStream(
     job: StreamJob,
     error: PoolError,
@@ -1696,6 +1958,11 @@ class RenderPoolImplementation<
     closeBody = false,
   ): void {
     if (job.terminal !== null) {
+      if (job.terminal === "end" && !job.doneSettled) {
+        // `end` уже пришёл, но тело не дочитано: успешный `done` недопустим,
+        // иначе потребитель увидит успех, а недоставленные чанки потеряются.
+        this.discardEndedStream(job, error, outcome);
+      }
       return;
     }
     if (job.startedAt === null) {
@@ -2335,6 +2602,9 @@ class RenderPoolImplementation<
     } catch {
       // Поток уже закрыт/отменён.
     }
+    job.bodyClosed = true;
+    this.removeAbort(job);
+    this.resolveStreamDone(job);
   }
 
   private closeStreamPort(job: StreamJob): void {
@@ -2403,7 +2673,8 @@ class RenderPoolImplementation<
     const handler = this.config.onError;
     if (handler === undefined) {
       if (isDebugEnabled()) {
-        console.debug(`[${this.config.name}] error`, error, info);
+        // Только name/message/code: в debug-лог не должны попадать props/PII.
+        console.debug(`[${this.config.name}] error`, errorDetails(error), infoDetails(info));
       }
       return;
     }
@@ -2411,7 +2682,7 @@ class RenderPoolImplementation<
       handler(error, info);
     } catch (failure) {
       if (isDebugEnabled()) {
-        console.debug(`[${this.config.name}] onError failed`, failure);
+        console.debug(`[${this.config.name}] onError failed`, errorDetails(failure));
       }
     }
   }

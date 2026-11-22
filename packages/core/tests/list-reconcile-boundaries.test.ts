@@ -30,7 +30,7 @@ function rowNode(row: Row): Node {
   if (hole === undefined) {
     throw new Error("нет дыры");
   }
-  insert(hole.parentNode ?? clone.node, () => row.label, hole);
+  insert((hole.parentNode as Node | undefined) ?? clone.node, () => row.label, hole);
   return clone.node;
 }
 

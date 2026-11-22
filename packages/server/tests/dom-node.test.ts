@@ -271,6 +271,22 @@ describe("NodeImpl", () => {
     expect(comment.cloneNode() instanceof CommentImpl).toBe(true);
   });
 
+  it("поддерживает setAttributeNS/removeAttributeNS через префикс", () => {
+    const use = new SvgElementImpl("use");
+    const xlink = "http://www.w3.org/1999/xlink";
+
+    use.setAttributeNS(xlink, "xlink:href", "#icon");
+    use.setAttributeNS(xlink, "href", "#other");
+    use.setAttributeNS("http://www.w3.org/XML/1998/namespace", "lang", "ru");
+
+    expect(use.getAttribute("xlink:href")).toBe("#other");
+    expect(use.getAttribute("xml:lang")).toBe("ru");
+
+    use.removeAttributeNS(xlink, "href");
+    expect(use.hasAttribute("xlink:href")).toBe(false);
+    expect(use.hasAttribute("xml:lang")).toBe(true);
+  });
+
   it("различает элементы и прочие узлы", () => {
     const element = new ElementImpl("div");
     const svg = new SvgElementImpl("svg");

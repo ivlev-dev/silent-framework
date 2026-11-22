@@ -20,7 +20,7 @@ describe("templateHoles в клиентском mount", () => {
     const clone = template();
 
     expect(clone.holes).toHaveLength(1);
-    expect(clone.holes[0]?.data).toBe("silent-hole-0");
+    expect((clone.holes[0] as Comment).data).toBe("silent-hole-0");
     expect(clone.attrs).toHaveLength(1);
     expect(clone.attrs[0]?.tagName).toBe("SPAN");
     expect(clone.attrs[0]?.hasAttribute("data-silent-a-0")).toBe(false);

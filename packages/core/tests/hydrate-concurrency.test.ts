@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { container, DI_CREATE } from "@ivlev-dev/silent-di";
-import { insert, templateHoles } from "../src/dom.js";
+import { insert, templateHoles, type TemplateClone } from "../src/dom.js";
 import { hydrate } from "../src/hydrate.js";
 import { isHydrating, type HydrationMismatchError } from "../src/hydration.js";
 import type { MountHandle } from "../src/mount.js";
@@ -30,8 +30,8 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
   return { promise, resolve };
 }
 
-function holeParent(template: { node: Node; holes: readonly Node[] }, index: number): Node {
-  return template.holes[index]?.parentNode ?? template.node;
+function holeParent(template: TemplateClone, index: number): Node {
+  return (template.holes[index]?.parentNode as Node | undefined) ?? template.node;
 }
 
 function makeView(getValue: (vm: { value: string }) => string) {

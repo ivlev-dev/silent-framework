@@ -132,11 +132,19 @@ function hoist(node: Element): void {
   }
 }
 
-function registerAsset(node: Element): () => void {
-  if (typeof document === "undefined" || document.head === null) {
-    return () => {};
+function headElement(): HTMLElement | null {
+  if (typeof document === "undefined") {
+    return null;
   }
   const head = document.head;
+  return head === null || head === undefined ? null : head;
+}
+
+function registerAsset(node: Element): () => void {
+  const head = headElement();
+  if (head === null) {
+    return () => {};
+  }
   if (node.parentNode !== head) {
     head.appendChild(node);
   }
@@ -169,10 +177,10 @@ function registerTitle(node: Element): () => void {
 }
 
 function syncTitles(): void {
-  if (typeof document === "undefined" || document.head === null) {
+  const head = headElement();
+  if (head === null) {
     return;
   }
-  const head = document.head;
   if (foreignTitles === null) {
     foreignTitles = [];
     for (const child of Array.from(head.children)) {

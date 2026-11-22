@@ -72,11 +72,11 @@ describe("SSR context: teardown", () => {
 
     // Контекст закрыт сразу после reject.
     expect(ownStore).not.toBeNull();
-    expect(ownStore?.active).toBe(false);
-    expect(ownStore?.pending.size).toBe(0);
-    expect(ownStore?.options).toEqual({});
-    expect(ownStore?.metadata).toBeNull();
-    expect(ownStore?.stream).toBeNull();
+    expect((ownStore as RuntimeContextStore | null)?.active).toBe(false);
+    expect((ownStore as RuntimeContextStore | null)?.pending.size).toBe(0);
+    expect((ownStore as RuntimeContextStore | null)?.options).toEqual({});
+    expect((ownStore as RuntimeContextStore | null)?.metadata).toBeNull();
+    expect((ownStore as RuntimeContextStore | null)?.stream).toBeNull();
     expect(getRuntimeContextStore()).toBeNull();
     expect(getRuntimeOptions()).toEqual({});
     expect(isServerMode()).toBe(false);
@@ -137,8 +137,8 @@ describe("SSR context: teardown", () => {
     ).rejects.toMatchObject({ name: "AbortError" });
 
     expect(ownStore).not.toBeNull();
-    expect(ownStore?.active).toBe(false);
-    expect(ownStore?.pending.size).toBe(0);
+    expect((ownStore as RuntimeContextStore | null)?.active).toBe(false);
+    expect((ownStore as RuntimeContextStore | null)?.pending.size).toBe(0);
     expect(getRuntimeContextStore()).toBeNull();
     expect(getRuntimeOptions()).toEqual({});
     expect(isServerMode()).toBe(false);

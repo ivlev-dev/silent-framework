@@ -61,7 +61,7 @@ describe("Portal: ожидание target", () => {
     function View(this: { vm: VM }): Node {
       return Portal({ target: "#missing-target", children: label("hydrated") });
     }
-    (View as Record<PropertyKey, unknown>)[VIEW] = { vm: VM, name: "Test" };
+    (View as unknown as Record<PropertyKey, unknown>)[VIEW] = { vm: VM, name: "Test" };
     const target = host(
       "<!--silent-view--><!--silent-portal--><!--silent-view-end-->",
     );
@@ -108,7 +108,7 @@ describe("Portal: ожидание target", () => {
     expect(target.querySelector("span")).toBeNull();
     expect(marker).not.toBeNull();
 
-    document.body.appendChild(marker as Node);
+    document.body.appendChild(marker as unknown as Node);
     await tick();
     flushSync();
 

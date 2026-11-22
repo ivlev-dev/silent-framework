@@ -1,3 +1,8 @@
+import {
+  isEventAttributeName,
+  isSafeUrlAttributeValue,
+  isUrlAttributeName,
+} from "./attribute-name.js";
 import { isMetadataElement } from "./metadata.js";
 import {
   HydrationMismatchError,
@@ -284,25 +289,53 @@ function stripElementMarkers(element: Element): void {
   }
 }
 
+interface MarkerFrame {
+  readonly node: Node;
+  readonly inInsertRegion: boolean;
+}
+
 /**
  * Снимает оставшиеся серверные маркеры (`data-silent-a-*`, `data-silent-text`)
  * с адоптированного поддерева. Серверная разметка от старого деплоя может
  * содержать больше маркеров, чем клиентский план; если их не снять, они
  * навсегда утекут в outerHTML и CSS-селекторы.
+ *
+ * Регионы вставки пропускаются: внутри них лежит разметка вложенных
+ * компонентов, которые гидрируются позже и ещё должны найти свои
+ * `data-silent-a-*` (как и в `pruneStaleAttributes`).
  */
 export function stripHydrationMarkers(root: Node): void {
-  const stack: Node[] = [root];
+  const stack: MarkerFrame[] = [{ node: root, inInsertRegion: false }];
   while (stack.length > 0) {
-    const node = stack.pop()!;
-    if (node.nodeType === Node.ELEMENT_NODE) {
+    const frame = stack.pop()!;
+    const node = frame.node;
+    if (!frame.inInsertRegion && node.nodeType === Node.ELEMENT_NODE) {
       stripElementMarkers(node as Element);
     }
+    let depth = 0;
     let child = node.firstChild;
     while (child !== null) {
-      if (child.nodeType === Node.ELEMENT_NODE) {
-        stack.push(child);
+      const next = child.nextSibling;
+      let skip = false;
+      if (child.nodeType === Node.COMMENT_NODE) {
+        const data = (child as Comment).data;
+        if (data === INSERT_START) {
+          depth += 1;
+          skip = true;
+        } else if (data === INSERT_END) {
+          if (depth > 0) {
+            depth -= 1;
+          }
+          skip = true;
+        }
       }
-      child = child.nextSibling;
+      if (!skip && child.nodeType === Node.ELEMENT_NODE) {
+        stack.push({
+          node: child,
+          inInsertRegion: frame.inInsertRegion || depth > 0,
+        });
+      }
+      child = next;
     }
   }
 }
@@ -317,14 +350,169 @@ export function staleAttributes(fresh: Element, claimed: Element): string[] {
       continue;
     }
     const name = attribute.name;
-    if (name.startsWith("data-silent-a-")) {
+    if (name.startsWith("data-silent-")) {
       continue;
     }
-    if (attribute.value !== fresh.getAttribute(name)) {
+    if (fresh.getAttribute(name) === null) {
       stale.push(name);
     }
   }
   return stale;
+}
+
+function isExecutableAttribute(name: string, value: string): boolean {
+  if (isEventAttributeName(name)) {
+    return true;
+  }
+  const lower = name.toLowerCase();
+  if (lower === "srcdoc") {
+    return true;
+  }
+  return isUrlAttributeName(lower) && !isSafeUrlAttributeValue(lower, value);
+}
+
+/**
+ * Ищет в свежем шаблоне атрибут, соответствующий claimed-атрибуту с учётом
+ * namespace и регистра имени. HTML-парсер нормализует имена, но разметку
+ * могли собрать вручную (`setAttributeNS`), поэтому сравниваем и без учёта
+ * регистра — только в пределах того же namespace.
+ */
+function freshAttributeNode(fresh: Element, attribute: Attr): Attr | null {
+  const namespace = attribute.namespaceURI;
+  if (namespace !== null && namespace !== "") {
+    // Namespace-атрибуты (`xlink:href`) сопоставляем только с тем же
+    // namespace: одноимённый plain-атрибут — другой атрибут.
+    return fresh.getAttributeNodeNS(namespace, attribute.localName);
+  }
+  const direct = fresh.getAttributeNode(attribute.name);
+  if (direct !== null && (direct.namespaceURI === null || direct.namespaceURI === "")) {
+    return direct;
+  }
+  const lower = attribute.name.toLowerCase();
+  const attributes = fresh.attributes;
+  for (let index = 0; index < attributes.length; index += 1) {
+    const candidate = attributes.item(index);
+    if (candidate === null) {
+      continue;
+    }
+    if (candidate.namespaceURI !== null && candidate.namespaceURI !== "") {
+      continue;
+    }
+    if (candidate.name.toLowerCase() === lower) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function matchesFreshAttribute(fresh: Element, attribute: Attr): boolean {
+  const candidate = freshAttributeNode(fresh, attribute);
+  return candidate !== null && candidate.value === attribute.value;
+}
+
+/**
+ * Удаляет с адоптированного элемента исполняемые атрибуты, которых нет в
+ * клиентском шаблоне (инъецированный `onerror`, опасный `href`/`srcdoc`).
+ *
+ * Атрибут сохраняется, только если ровно такой же (имя с учётом namespace и
+ * регистра + значение) есть в свежем клиентском шаблоне: значит, он написан
+ * разработчиком, а не подменён в серверной разметке. Это не даёт регрессии
+ * для легитимных `srcdoc`, `data:` и `blob:` URL. Прочие статические
+ * атрибуты считаются доверенными: они приходят из той же серверной разметки,
+ * а полное сравнение с шаблоном на plan-пути стоило бы разбора `<template>`
+ * на каждой гидрации. Серверные маркеры `data-silent-*` снимаются отдельно
+ * через `stripHydrationMarkers`.
+ */
+export function removeStaleAttributes(fresh: Element, claimed: Element): void {
+  const attributes = claimed.attributes;
+  for (let index = attributes.length - 1; index >= 0; index -= 1) {
+    const attribute = attributes.item(index);
+    if (attribute === null) {
+      continue;
+    }
+    const name = attribute.name;
+    if (name.startsWith("data-silent-")) {
+      continue;
+    }
+    if (!isExecutableAttribute(name, attribute.value)) {
+      continue;
+    }
+    if (matchesFreshAttribute(fresh, attribute)) {
+      continue;
+    }
+    claimed.removeAttributeNode(attribute);
+  }
+}
+
+function significantChildNodes(node: Node, skipInsertRegions: boolean): Node[] {
+  if (!skipInsertRegions) {
+    const children: Node[] = [];
+    let child = node.firstChild;
+    while (child !== null) {
+      children.push(child);
+      child = child.nextSibling;
+    }
+    return children;
+  }
+  const children: Node[] = [];
+  let depth = 0;
+  let child = node.firstChild;
+  while (child !== null) {
+    const next = child.nextSibling;
+    if (child.nodeType === Node.COMMENT_NODE) {
+      const data = (child as Comment).data;
+      if (data === INSERT_START) {
+        depth += 1;
+        child = next;
+        continue;
+      }
+      if (data === INSERT_END) {
+        if (depth > 0) {
+          depth -= 1;
+        }
+        child = next;
+        continue;
+      }
+    }
+    if (depth === 0) {
+      children.push(child);
+    }
+    child = next;
+  }
+  return children;
+}
+
+/**
+ * Best-effort парное удаление stale-атрибутов. Структуры серверной и
+ * клиентской разметки совпадают, поэтому элементы сопоставляются по
+ * значимым детям; при расхождении обход ветки прекращается, чтобы не снять
+ * атрибуты у чужого узла.
+ */
+export function pruneStaleAttributes(fresh: Node, claimed: Node): void {
+  if (fresh === claimed) {
+    return;
+  }
+  if (fresh.nodeType === Node.ELEMENT_NODE && claimed.nodeType === Node.ELEMENT_NODE) {
+    const left = fresh as Element;
+    const right = claimed as Element;
+    if (left.tagName !== right.tagName || left.namespaceURI !== right.namespaceURI) {
+      return;
+    }
+    removeStaleAttributes(left, right);
+  } else if (fresh.nodeType !== claimed.nodeType) {
+    return;
+  }
+  const freshChildren = significantChildNodes(fresh, true);
+  const claimedChildren = significantChildNodes(claimed, true);
+  const length = Math.min(freshChildren.length, claimedChildren.length);
+  for (let index = 0; index < length; index += 1) {
+    const left = freshChildren[index];
+    const right = claimedChildren[index];
+    if (left === undefined || right === undefined) {
+      break;
+    }
+    pruneStaleAttributes(left, right);
+  }
 }
 
 function childrenMatch(
@@ -447,6 +635,11 @@ export function shapeMatches(
     }
     if (!attributesMatch(left, right, strict)) {
       return false;
+    }
+    if (!strict && left !== right) {
+      // Серверная разметка могла быть изменена до гидратации: атрибуты,
+      // которых нет в клиентском шаблоне, не должны пережить адоптацию.
+      removeStaleAttributes(left, right);
     }
     return childrenMatch(left, right, ignoreTopMetadata, simpleFresh, strict);
   }

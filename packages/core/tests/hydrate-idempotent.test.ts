@@ -6,6 +6,7 @@ import {
   setServerMode,
   templateHoles,
   type TemplatePlan,
+  type TemplateClone,
 } from "../src/dom.js";
 import { createComponent, whenIdle as waitIdle } from "../src/component.js";
 import { hydrate } from "../src/hydrate.js";
@@ -38,8 +39,8 @@ function attachMeta(target: unknown, vm: unknown): void {
   (target as Record<PropertyKey, unknown>)[VIEW] = { vm, name: "Idempotent" };
 }
 
-function holeParent(template: { node: Node; holes: readonly Node[] }, index: number): Node {
-  return template.holes[index]?.parentNode ?? template.node;
+function holeParent(template: TemplateClone, index: number): Node {
+  return (template.holes[index]?.parentNode as Node | undefined) ?? template.node;
 }
 
 const value = createSignal("hydrated");
@@ -66,11 +67,12 @@ attachMeta(IdempotentView, IdempotentVM);
 async function renderServer(app: AnyComponent): Promise<string> {
   setServerMode(true);
   try {
-    let result: ReturnType<typeof createComponent> | null = null;
+    const slot: { result: ReturnType<typeof createComponent> | null } = { result: null };
     createRoot(() => {
-      result = createComponent(app, {});
+      slot.result = createComponent(app, {});
       return null;
     });
+    const result = slot.result;
     if (result === null) {
       throw new Error("компонент не создан");
     }
