@@ -1,4 +1,4 @@
-import { builtinModules } from "node:module";
+import { builtinModules, isBuiltin } from "node:module";
 import * as path from "node:path";
 import MagicString from "magic-string";
 import ts from "typescript";
@@ -365,17 +365,22 @@ function programWatchFiles(entry: ProgramEntry): readonly string[] {
   return [...files];
 }
 
+const NODE_PREFIX = "node:";
 const BARE_BUILTIN_MODULES: ReadonlySet<string> = new Set(
-  builtinModules.filter((name) => !name.startsWith("node:")),
+  builtinModules.filter((name) => !name.startsWith(NODE_PREFIX)),
 );
 const PREFIXED_BUILTIN_MODULES: ReadonlySet<string> = new Set(
-  builtinModules.filter((name) => name.startsWith("node:")),
+  builtinModules.filter((name) => name.startsWith(NODE_PREFIX)),
 );
 
 function isBuiltinModule(moduleName: string): boolean {
-  if (moduleName.startsWith("node:")) {
+  // builtinModules не содержит prefix-only модулей (node:test, node:sqlite, node:sea)
+  // на Node 22–24, поэтому основной источник правды — isBuiltin (Node 18.6+).
+  if (isBuiltin(moduleName)) return true;
+  // Fallback для остальных случаев и старых запусков.
+  if (moduleName.startsWith(NODE_PREFIX)) {
     return PREFIXED_BUILTIN_MODULES.has(moduleName)
-      || BARE_BUILTIN_MODULES.has(moduleName.slice(5));
+      || BARE_BUILTIN_MODULES.has(moduleName.slice(NODE_PREFIX.length));
   }
   return BARE_BUILTIN_MODULES.has(moduleName);
 }

@@ -1,4 +1,5 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { isBuiltin } from "node:module";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -880,6 +881,16 @@ describe("validation()", () => {
     expect(code).toMatch(
       /import \* as __silent_validation_\d+ from ["']node:events["'];/,
     );
+  });
+
+  it("полагается на isBuiltin для только-префиксных builtin-модулей", () => {
+    // node:test доступен только с префиксом и на Node 22 отсутствует в builtinModules,
+    // поэтому плагин обязан опираться на isBuiltin, а не на список builtinModules.
+    expect(isBuiltin("node:test")).toBe(true);
+    expect(isBuiltin("test")).toBe(false);
+    expect(isBuiltin("fs")).toBe(true);
+    expect(isBuiltin("node:fs")).toBe(true);
+    expect(isBuiltin("node:events")).toBe(true);
   });
 
   it("не считает bare-имена только-префиксных builtin внешними модулями", () => {
