@@ -265,7 +265,7 @@ val restored = UserCodec.decode(bytes)
 | --- | --- | --- |
 | TS | `packages/protocol` (`@ivlev-dev/silent-protocol`) | encode/decode, все wire-типы, bitmap, oneof, Date/bigint/typed arrays, generic + static codecs |
 | TS build | `packages/protocol-vite` (`@ivlev-dev/silent-protocol-vite`) | схема и статические кодеки из TS-класса, декораторы, oneof, наследование |
-| Rust | `crates/silent-protocol` + `crates/silent-protocol-macros` | `#[derive(SilentProto)]`, примитивы, коллекции, oneof, лимиты |
+| Rust | `silent-protocol` + `silent-protocol-macros` (crates.io `0.14`) | `#[derive(SilentProto)]`, примитивы, коллекции, oneof, лимиты |
 | Kotlin | `kotlin/protocol` + `kotlin/ksp-processor` | JVM/Android, KSP-кодеки, `Instant`, коллекции, oneof |
 
 Кросс-языковые векторы: `protocol/vectors/` и тесты `cross-vector`/`cross_language`/`CrossLanguageTest` (TS, Rust, Kotlin дают одинаковые байты). Отпечатки схемы (`schema_hash`/`schemaFingerprint`) сейчас имеют разные форматы и не сравниваются между языками; источник истины для совместимости — бинарные векторы.

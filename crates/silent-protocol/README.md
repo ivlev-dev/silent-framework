@@ -15,13 +15,13 @@
 
 ## Установка
 
-Крейты пока не опубликованы на crates.io (версия `0.13.1`), поэтому
+Крейты опубликованы на crates.io (`0.14.0`), поэтому
 подключайте их из репозитория. Закрепляйте тег или rev, чтобы сборка была
 воспроизводимой.
 
 ```toml
 [dependencies]
-silent-protocol = { git = "https://github.com/ivlev-dev/silent-framework", tag = "v0.13.1" }
+silent-protocol = "0.14"
 ```
 
 Из локальной копии репозитория:
@@ -42,7 +42,7 @@ bytes = "1"
 
 ```toml
 [dependencies]
-silent-protocol = "0.13"
+silent-protocol = "0.14"
 ```
 
 Крейт `silent-protocol-macros` подключать отдельно не нужно: derive-макрос

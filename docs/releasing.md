@@ -83,7 +83,7 @@
 
 Пакеты `@ivlev-dev/silent-protocol` и `@ivlev-dev/silent-protocol-vite` публикуются в npm вместе с остальными (`pnpm -r publish`). Rust-крейты `silent-protocol`/`silent-protocol-macros` и Kotlin-артефакты `dev.ivlev.silent:silent-protocol`/`silent-protocol-ksp` в этот workflow не входят:
 
-- Rust: `cargo publish -p silent-protocol-macros` затем `cargo publish -p silent-protocol` (нужен `CARGO_REGISTRY_TOKEN`; координаты проверяются отдельно).
+- Rust: `cargo publish -p silent-protocol-macros` затем `cargo publish -p silent-protocol` (нужен `CARGO_REGISTRY_TOKEN`). Версия `0.14.0` уже опубликована на crates.io.
 - Kotlin: `pnpm publish:maven` (нужны `MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`, `GPG_PRIVATE_KEY`, подтверждённый namespace и публичный ключ на keyserver). Скрипт подписывает, собирает bundle и загружает в Central Portal; см. `kotlin/README.md`.
 
 Версия Kotlin задаётся в `kotlin/gradle.properties` (`protocolVersion`) и должна совпадать с версией пакетов.

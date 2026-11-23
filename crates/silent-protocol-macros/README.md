@@ -6,7 +6,7 @@ Proc-macro-крейт для [`silent-protocol`](https://github.com/ivlev-dev/si
 
 ```toml
 [dependencies]
-silent-protocol = { git = "https://github.com/ivlev-dev/silent-framework", tag = "v0.13.1" }
+silent-protocol = "0.14"
 ```
 
 ## Что генерируется
