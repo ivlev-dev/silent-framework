@@ -2,6 +2,8 @@ export const PROTOCOL_SCHEMA: symbol = Symbol.for("silent.protocol.schema");
 
 export const PROTOCOL_OPTIONS: symbol = Symbol.for("silent.protocol.options");
 
+export const PROTOCOL_CODEC: unique symbol = Symbol.for("silent.protocol.codec");
+
 export const SCHEMA_VERSION = 1;
 
 export const DEFAULT_MAX_DEPTH = 256;

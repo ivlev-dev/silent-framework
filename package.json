@@ -47,6 +47,7 @@
     "version:bump": "node scripts/version.mjs",
     "version:check": "node scripts/verify-versions.mjs",
     "published:check": "node scripts/verify-published.mjs",
+    "bench:protocol": "node scripts/bench-cpus.mjs node --expose-gc scripts/bench-protocol.mjs",
     "bench:guard": "node scripts/bench-cpus.mjs node scripts/bench-guard.mjs",
     "bench:validation": "node scripts/bench-cpus.mjs node scripts/bench-validation.mjs",
     "bench:validation-build": "node scripts/bench-cpus.mjs node scripts/bench-validation-build.mjs",

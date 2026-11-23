@@ -1,5 +1,5 @@
 import { ProtocolError, schemaError } from "./errors.js";
-import { Reader } from "./reader.js";
+import { Reader, pathWith, type PathPart } from "./reader.js";
 import { Writer } from "./writer.js";
 import {
   classLabel,
@@ -9,7 +9,11 @@ import {
   type NormalizedSchema,
   type NormalizedVariant,
 } from "./schema.js";
-import type { TypeSchema, WireTypeName } from "./types.js";
+import {
+  PROTOCOL_CODEC,
+  type TypeSchema,
+  type WireTypeName,
+} from "./types.js";
 
 type OptionalType = readonly ["optional", TypeSchema];
 
@@ -64,48 +68,125 @@ export interface ValueCodec {
 }
 
 export class EncodeContext {
-  private readonly maxDepth: number;
-  private readonly ancestors = new Set<object>();
-  private depth = 0;
+  private maxDepth: number;
+  private ancestors: object[] = [];
+  private depth = -1;
 
   public constructor(maxDepth: number) {
     this.maxDepth = maxDepth;
   }
 
+  public reset(maxDepth: number): void {
+    this.maxDepth = maxDepth;
+    this.depth = -1;
+    this.ancestors.length = 0;
+  }
+
   public enter(value: object, path: string): void {
-    if (this.ancestors.has(value)) {
-      throw new ProtocolError("cycle", "обнаружен цикл объектов", path);
+    const ancestors = this.ancestors;
+    for (let index = 0; index < ancestors.length; index += 1) {
+      if (ancestors[index] === value) {
+        throw new ProtocolError("cycle", "обнаружен цикл объектов", path);
+      }
     }
     if (this.depth >= this.maxDepth) {
       throw new ProtocolError("depth", `превышен лимит глубины ${this.maxDepth}`, path);
     }
     this.depth += 1;
-    this.ancestors.add(value);
+    ancestors.push(value);
   }
 
-  public leave(value: object): void {
-    this.ancestors.delete(value);
+  public leave(_value: object): void {
+    this.ancestors.pop();
     this.depth -= 1;
   }
 }
 
 export class DecodeContext {
-  private readonly maxDepth: number;
-  private depth = 0;
+  private maxDepth: number;
+  private depth = -1;
 
   public constructor(maxDepth: number) {
     this.maxDepth = maxDepth;
   }
 
-  public enter(path: string): void {
+  public reset(maxDepth: number): void {
+    this.maxDepth = maxDepth;
+    this.depth = -1;
+  }
+
+  public enter(path: string, part?: PathPart, index?: number): void {
     if (this.depth >= this.maxDepth) {
-      throw new ProtocolError("depth", `превышен лимит глубины ${this.maxDepth}`, path);
+      throw new ProtocolError(
+        "depth",
+        `превышен лимит глубины ${this.maxDepth}`,
+        pathWith(path, part, index),
+      );
     }
     this.depth += 1;
   }
 
   public leave(): void {
     this.depth -= 1;
+  }
+}
+
+export interface StaticCodec<T extends object = object> {
+  write(value: T, writer: Writer, context: EncodeContext, path: string): void;
+  read(reader: Reader, context: DecodeContext, path: string): T;
+}
+
+function staticCodecFor(ctor: Function): StaticCodec | undefined {
+  const candidate = (ctor as unknown as Record<symbol, unknown>)[PROTOCOL_CODEC];
+  if (candidate === undefined || candidate === null) {
+    return undefined;
+  }
+  if (typeof candidate !== "object") {
+    throw schemaError("статический кодек должен быть объектом", classLabel(ctor));
+  }
+  const codec = candidate as Partial<StaticCodec>;
+  if (typeof codec.write !== "function" || typeof codec.read !== "function") {
+    throw schemaError("статический кодек требует write и read", classLabel(ctor));
+  }
+  return codec as StaticCodec;
+}
+
+export function writeMessage(
+  ctor: Function,
+  value: object,
+  writer: Writer,
+  context: EncodeContext,
+  path: string,
+): void {
+  const codec = staticCodecFor(ctor);
+  context.enter(value, path);
+  try {
+    if (codec !== undefined) {
+      codec.write(value, writer, context, path);
+      return;
+    }
+    encodeMessage(codecFor(ctor), writer, value, context, path);
+  } finally {
+    context.leave(value);
+  }
+}
+
+export function readMessage<T extends object>(
+  ctor: new () => T,
+  reader: Reader,
+  context: DecodeContext,
+  path: string,
+): T {
+  const codec = staticCodecFor(ctor);
+  context.enter(path);
+  try {
+    if (codec !== undefined) {
+      return codec.read(reader, context, path) as T;
+    }
+    const target = new ctor();
+    return decodeMessage(codecFor(ctor), reader, target, context, path) as T;
+  } finally {
+    context.leave();
   }
 }
 
@@ -817,25 +898,11 @@ function classCodec(getter: () => Function): ValueCodec {
       if (typeof value !== "object" || value === null) {
         throw valueError("ожидался объект", path);
       }
-      const ctor = resolveConstructor(getter, path);
-      const message = codecFor(ctor);
-      context.enter(value, path);
-      try {
-        encodeMessage(message, writer, value, context, path);
-      } finally {
-        context.leave(value);
-      }
+      writeMessage(resolveConstructor(getter, path), value, writer, context, path);
     },
     decode(reader, context, path) {
-      const ctor = resolveConstructor(getter, path);
-      const target = construct(ctor);
-      const message = codecFor(ctor);
-      context.enter(path);
-      try {
-        return decodeMessage(message, reader, target, context, path);
-      } finally {
-        context.leave();
-      }
+      const ctor = resolveConstructor(getter, path) as new () => object;
+      return readMessage(ctor, reader, context, path);
     },
   };
 }
@@ -846,11 +913,6 @@ function resolveConstructor(getter: () => Function, path: string): Function {
     throw schemaError("class-тип должен возвращать конструктор", path);
   }
   return ctor;
-}
-
-function construct(ctor: Function): object {
-  const target = ctor as new (...args: never[]) => object;
-  return new target();
 }
 
 function arrayCodec(element: TypeSchema): ValueCodec {
@@ -866,12 +928,21 @@ function arrayCodec(element: TypeSchema): ValueCodec {
       try {
         writer.varint(value.length);
         if (optional) {
-          writer.bitmap(value.map((item) => !isAbsent(item)));
+          if (value.length <= 32) {
+            let mask = 0;
+            for (let index = 0; index < value.length; index += 1) {
+              if (!isAbsent(value[index])) mask |= 1 << index;
+            }
+            writer.bitmapMask(mask, value.length);
+          } else {
+            writer.bitmap(value.map((item) => !isAbsent(item)));
+          }
         }
-        value.forEach((item, index) => {
-          if (optional && isAbsent(item)) return;
+        for (let index = 0; index < value.length; index += 1) {
+          const item = value[index];
+          if (optional && isAbsent(item)) continue;
           codec.encode(writer, item, context, `${path}[${index}]`);
-        });
+        }
       } finally {
         context.leave(value);
       }
@@ -882,6 +953,15 @@ function arrayCodec(element: TypeSchema): ValueCodec {
         const count = reader.readLength(path);
         const items: unknown[] = new Array<unknown>(count);
         if (optional) {
+          if (count <= 32) {
+            const mask = reader.bitmapMask(count, path);
+            for (let index = 0; index < count; index += 1) {
+              items[index] = (mask & (1 << index)) !== 0
+                ? codec.decode(reader, context, `${path}[${index}]`)
+                : undefined;
+            }
+            return items;
+          }
           const bits = reader.bitmap(count, path);
           for (let index = 0; index < count; index += 1) {
             items[index] = bits[index] === true
@@ -922,11 +1002,23 @@ function tupleCodec(elements: readonly TypeSchema[], parentPath: string): ValueC
       context.enter(value, path);
       try {
         if (optional) {
-          const bits: boolean[] = [];
-          codecs.forEach((slot, index) => {
-            if (slot.optional) bits.push(!isAbsent(value[index]));
-          });
-          writer.bitmap(bits);
+          if (optionalCount <= 32) {
+            let mask = 0;
+            let bit = 0;
+            for (let index = 0; index < codecs.length; index += 1) {
+              const slot = codecs[index] as { readonly optional: boolean };
+              if (!slot.optional) continue;
+              if (!isAbsent(value[index])) mask |= 1 << bit;
+              bit += 1;
+            }
+            writer.bitmapMask(mask, optionalCount);
+          } else {
+            const bits: boolean[] = [];
+            codecs.forEach((slot, index) => {
+              if (slot.optional) bits.push(!isAbsent(value[index]));
+            });
+            writer.bitmap(bits);
+          }
         }
         codecs.forEach((slot, index) => {
           const item = value[index];
@@ -940,11 +1032,16 @@ function tupleCodec(elements: readonly TypeSchema[], parentPath: string): ValueC
     decode(reader, context, path) {
       context.enter(path);
       try {
-        const bits = optional ? reader.bitmap(optionalCount, path) : undefined;
+        const mask = optional && optionalCount <= 32
+          ? reader.bitmapMask(optionalCount, path)
+          : undefined;
+        const bits = optionalCount > 32 ? reader.bitmap(optionalCount, path) : undefined;
         let bitIndex = 0;
         return codecs.map((slot, index) => {
           if (slot.optional) {
-            const present = bits?.[bitIndex] === true;
+            const present = mask !== undefined
+              ? (mask & (1 << bitIndex)) !== 0
+              : bits?.[bitIndex] === true;
             bitIndex += 1;
             if (!present) return undefined;
           }
@@ -1254,6 +1351,196 @@ function isAbsent(value: unknown): boolean {
   return value === undefined || value === null;
 }
 
+type SortKey = number | string;
+
+function compareSortKeys(left: SortKey, right: SortKey): number {
+  if (typeof left === "number" && typeof right === "number") {
+    return left - right;
+  }
+  return compareUtf8(String(left), String(right));
+}
+
+export function writeArray<T>(
+  items: readonly T[],
+  writer: Writer,
+  context: EncodeContext,
+  path: string,
+  writeItem: (item: T, index: number) => void,
+): void {
+  context.enter(items, path);
+  try {
+    writer.varint(items.length);
+    for (let index = 0; index < items.length; index += 1) {
+      writeItem(items[index] as T, index);
+    }
+  } finally {
+    context.leave(items);
+  }
+}
+
+export function writeOptionalArray<T>(
+  items: readonly (T | undefined)[],
+  writer: Writer,
+  context: EncodeContext,
+  path: string,
+  writeItem: (item: T, index: number) => void,
+): void {
+  context.enter(items, path);
+  try {
+    writer.varint(items.length);
+    const count = items.length;
+    if (count <= 32) {
+      let mask = 0;
+      for (let index = 0; index < count; index += 1) {
+        if (!isAbsent(items[index])) mask |= 1 << index;
+      }
+      writer.bitmapMask(mask, count);
+    } else {
+      writer.bitmap(items.map((item) => !isAbsent(item)));
+    }
+    for (let index = 0; index < count; index += 1) {
+      const item = items[index];
+      if (isAbsent(item)) continue;
+      writeItem(item as T, index);
+    }
+  } finally {
+    context.leave(items);
+  }
+}
+
+export function readArray<T>(
+  reader: Reader,
+  context: DecodeContext,
+  path: string,
+  readItem: (index: number) => T,
+  part?: PathPart,
+): T[] {
+  context.enter(path, part);
+  try {
+    const count = reader.readLength(path, part);
+    const items: T[] = new Array<T>(count);
+    for (let index = 0; index < count; index += 1) {
+      items[index] = readItem(index);
+    }
+    return items;
+  } finally {
+    context.leave();
+  }
+}
+
+export function readOptionalArray<T>(
+  reader: Reader,
+  context: DecodeContext,
+  path: string,
+  readItem: (index: number) => T,
+  part?: PathPart,
+): (T | undefined)[] {
+  context.enter(path, part);
+  try {
+    const count = reader.readLength(path, part);
+    if (count <= 32) {
+      const mask = reader.bitmapMask(count, path, part);
+      const items: (T | undefined)[] = new Array<T | undefined>(count);
+      for (let index = 0; index < count; index += 1) {
+        items[index] = (mask & (1 << index)) !== 0 ? readItem(index) : undefined;
+      }
+      return items;
+    }
+    const bits = reader.bitmap(count, path, part);
+    const items: (T | undefined)[] = new Array<T | undefined>(count);
+    for (let index = 0; index < count; index += 1) {
+      items[index] = bits[index] === true ? readItem(index) : undefined;
+    }
+    return items;
+  } finally {
+    context.leave();
+  }
+}
+
+export function writeMap<K, V>(
+  map: ReadonlyMap<K, V>,
+  writer: Writer,
+  context: EncodeContext,
+  path: string,
+  sortKey: (key: K) => number | string,
+  writeKey: (key: K) => void,
+  writeValue: (value: V) => void,
+): void {
+  context.enter(map, path);
+  try {
+    const entries = [...map.entries()].sort((left, right) =>
+      compareSortKeys(sortKey(left[0]), sortKey(right[0])));
+    writer.varint(entries.length);
+    for (const [key, entryValue] of entries) {
+      writeKey(key);
+      writeValue(entryValue);
+    }
+  } finally {
+    context.leave(map);
+  }
+}
+
+export function readMap<K, V>(
+  reader: Reader,
+  context: DecodeContext,
+  path: string,
+  readKey: () => K,
+  readValue: () => V,
+): Map<K, V> {
+  context.enter(path);
+  try {
+    const count = reader.readLength(path);
+    const result = new Map<K, V>();
+    for (let index = 0; index < count; index += 1) {
+      const key = readKey();
+      result.set(key, readValue());
+    }
+    return result;
+  } finally {
+    context.leave();
+  }
+}
+
+export function writeSet<T>(
+  set: ReadonlySet<T>,
+  writer: Writer,
+  context: EncodeContext,
+  path: string,
+  sortKey: (value: T) => number | string,
+  writeValue: (value: T) => void,
+): void {
+  context.enter(set, path);
+  try {
+    const items = [...set].sort((left, right) =>
+      compareSortKeys(sortKey(left), sortKey(right)));
+    writer.varint(items.length);
+    for (const item of items) {
+      writeValue(item);
+    }
+  } finally {
+    context.leave(set);
+  }
+}
+
+export function readSet<T>(
+  reader: Reader,
+  context: DecodeContext,
+  path: string,
+  readValue: () => T,
+): Set<T> {
+  context.enter(path);
+  try {
+    const count = reader.readLength(path);
+    const result = new Set<T>();
+    for (let index = 0; index < count; index += 1) {
+      result.add(readValue());
+    }
+    return result;
+  } finally {
+    context.leave();
+  }
+}
+
 function fieldValue(target: object, name: string): unknown {
   return (target as Record<string, unknown>)[name];
 }
@@ -1285,13 +1572,24 @@ function encodeMessage(
   path: string,
 ): void {
   if (message.optionalCount > 0) {
-    const bits: boolean[] = [];
-    for (const entry of message.entries) {
-      if (entry.kind === "field" && entry.optional) {
-        bits.push(!isAbsent(fieldValue(value, entry.name)));
+    if (message.optionalCount <= 32) {
+      let mask = 0;
+      let bit = 0;
+      for (const entry of message.entries) {
+        if (entry.kind !== "field" || !entry.optional) continue;
+        if (!isAbsent(fieldValue(value, entry.name))) mask |= 1 << bit;
+        bit += 1;
       }
+      writer.bitmapMask(mask, message.optionalCount);
+    } else {
+      const bits: boolean[] = [];
+      for (const entry of message.entries) {
+        if (entry.kind === "field" && entry.optional) {
+          bits.push(!isAbsent(fieldValue(value, entry.name)));
+        }
+      }
+      writer.bitmap(bits);
     }
-    writer.bitmap(bits);
   }
   for (const entry of message.entries) {
     if (entry.kind === "oneof") {
@@ -1353,7 +1651,10 @@ function decodeMessage(
   context: DecodeContext,
   path: string,
 ): object {
-  const bits = message.optionalCount > 0
+  const mask = message.optionalCount > 0 && message.optionalCount <= 32
+    ? reader.bitmapMask(message.optionalCount, path)
+    : undefined;
+  const bits = message.optionalCount > 32
     ? reader.bitmap(message.optionalCount, path)
     : undefined;
   let optionalIndex = 0;
@@ -1363,7 +1664,9 @@ function decodeMessage(
       continue;
     }
     if (entry.optional) {
-      const present = bits?.[optionalIndex] === true;
+      const present = mask !== undefined
+        ? (mask & (1 << optionalIndex)) !== 0
+        : bits?.[optionalIndex] === true;
       optionalIndex += 1;
       if (!present) {
         assign(target, entry.name, undefined, `${path}.${entry.name}`);
@@ -1404,6 +1707,13 @@ function decodeOneof(
   assign(target, variant.field, payload, `${path}.${variant.field}`);
 }
 
+const POOL_CAPACITY_LIMIT = 64 * 1024;
+
+let writerPool: Writer | undefined;
+let encoderContextPool: EncodeContext | undefined;
+let readerPool: Reader | undefined;
+let decoderContextPool: DecodeContext | undefined;
+
 export function encodeValue(
   value: object,
   maxSize: number,
@@ -1413,11 +1723,23 @@ export function encodeValue(
   if (typeof ctor !== "function") {
     throw new ProtocolError("schema", "не удалось определить конструктор значения");
   }
-  const message = codecFor(ctor);
-  const writer = new Writer(maxSize);
-  const context = new EncodeContext(maxDepth);
-  encodeMessage(message, writer, value, context, classLabel(ctor));
-  return writer.finish();
+  const writer = writerPool ?? new Writer(maxSize);
+  writerPool = undefined;
+  writer.reset(maxSize);
+  const context = encoderContextPool ?? new EncodeContext(maxDepth);
+  encoderContextPool = undefined;
+  context.reset(maxDepth);
+  try {
+    writeMessage(ctor, value, writer, context, classLabel(ctor));
+    return writer.finish();
+  } finally {
+    if (writer.capacity <= POOL_CAPACITY_LIMIT && writerPool === undefined) {
+      writerPool = writer;
+    }
+    if (encoderContextPool === undefined) {
+      encoderContextPool = context;
+    }
+  }
 }
 
 export function decodeValue<T extends object>(
@@ -1427,16 +1749,32 @@ export function decodeValue<T extends object>(
   maxDepth: number,
   allowTrailing: boolean,
 ): T {
-  const reader = new Reader(bytes, maxSize);
-  const target = new ctor();
-  const message = codecFor(ctor);
-  const context = new DecodeContext(maxDepth);
-  decodeMessage(message, reader, target, context, classLabel(ctor));
-  if (!allowTrailing && reader.remaining > 0) {
-    throw new ProtocolError(
-      "trailing",
-      `после сообщения осталось ${reader.remaining} байт`,
-    );
+  let reader = readerPool;
+  if (reader === undefined) {
+    reader = new Reader(bytes, maxSize);
+  } else {
+    readerPool = undefined;
+    reader.reset(bytes, maxSize);
   }
-  return target;
+  const context = decoderContextPool ?? new DecodeContext(maxDepth);
+  decoderContextPool = undefined;
+  context.reset(maxDepth);
+  try {
+    const target = readMessage(ctor, reader, context, classLabel(ctor));
+    if (!allowTrailing && reader.remaining > 0) {
+      throw new ProtocolError(
+        "trailing",
+        `после сообщения осталось ${reader.remaining} байт`,
+      );
+    }
+    return target;
+  } finally {
+    if (readerPool === undefined) {
+      reader.release();
+      readerPool = reader;
+    }
+    if (decoderContextPool === undefined) {
+      decoderContextPool = context;
+    }
+  }
 }

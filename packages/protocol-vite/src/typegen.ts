@@ -19,6 +19,21 @@ export type ProtocolPrimitive =
 
 export type ProtocolLiteral = string | number | boolean | null;
 
+export type BytesView = "uint8" | "arraybuffer" | "view";
+
+export type ProtocolHelperName =
+  | "writeMessage"
+  | "readMessage"
+  | "writeArray"
+  | "writeOptionalArray"
+  | "readArray"
+  | "readOptionalArray"
+  | "writeMap"
+  | "readMap"
+  | "writeSet"
+  | "readSet"
+  | "ProtocolError";
+
 export type ProtocolTypeSchema =
   | ProtocolPrimitive
   | readonly ["literal", ProtocolLiteral]
@@ -31,13 +46,18 @@ export type ProtocolTypeSchema =
   | readonly ["optional", ProtocolTypeSchema];
 
 export type SchemaNode =
-  | { readonly kind: "primitive"; readonly name: ProtocolPrimitive }
+  | { readonly kind: "primitive"; readonly name: ProtocolPrimitive; readonly bytesView?: BytesView }
   | { readonly kind: "literal"; readonly value: ProtocolLiteral }
   | { readonly kind: "enum"; readonly values: readonly (string | number)[] }
   | { readonly kind: "class"; readonly reference: string }
   | { readonly kind: "array"; readonly element: SchemaNode }
   | { readonly kind: "tuple"; readonly elements: readonly SchemaNode[] }
-  | { readonly kind: "map"; readonly key: SchemaNode; readonly value: SchemaNode }
+  | {
+      readonly kind: "map";
+      readonly key: SchemaNode;
+      readonly value: SchemaNode;
+      readonly record?: true;
+    }
   | { readonly kind: "set"; readonly element: SchemaNode }
   | { readonly kind: "optional"; readonly inner: SchemaNode };
 
@@ -65,6 +85,7 @@ export interface ProtocolBlock {
   readonly className: string;
   readonly fields: readonly ProtocolFieldSchema[];
   readonly oneofs: readonly ProtocolOneofSchema[];
+  readonly helpers: readonly ProtocolHelperName[];
 }
 
 export interface ProtocolCodegenOptions {
@@ -136,9 +157,16 @@ type SerializeResult =
   | null;
 
 const SCHEMA_KEY = "silent.protocol.schema";
+const CODEC_KEY = "silent.protocol.codec";
+const HELPER_PREFIX = "__silent_protocol_";
+export const PROTOCOL_MODULE = "@ivlev-dev/silent-protocol";
 const MAX_DEPTH = 64;
 const INDENT_UNIT = "  ";
 const UTF8_ENCODER = new TextEncoder();
+
+export function protocolHelperAlias(name: ProtocolHelperName): string {
+  return `${HELPER_PREFIX}${name}`;
+}
 
 const BYTES_NAMES: ReadonlySet<string> = new Set([
   "Uint8Array",
@@ -184,8 +212,10 @@ const KNOWN_DECORATORS: ReadonlySet<string> = new Set([
   "OneOf",
 ]);
 
-function primitive(name: ProtocolPrimitive): SchemaNode {
-  return { kind: "primitive", name };
+function primitive(name: ProtocolPrimitive, bytesView?: BytesView): SchemaNode {
+  return bytesView === undefined
+    ? { kind: "primitive", name }
+    : { kind: "primitive", name, bytesView };
 }
 
 function utf8Compare(left: string, right: string): number {
@@ -658,10 +688,15 @@ function serializeObject(type: ts.Type, state: SerializeState): SchemaNode | nul
   }
   const names = typeNamesOf(type, state.checker);
   const args = typeArgumentsOf(type, state.checker);
-  for (const name of names) {
-    if (BYTES_NAMES.has(name) && isBuiltinTypeName(type, name, state.checker)) {
-      return primitive("bytes");
+  const bytesName = names.find(
+    (name) => BYTES_NAMES.has(name) && isBuiltinTypeName(type, name, state.checker),
+  );
+  if (bytesName !== undefined) {
+    if (bytesName === "Uint8Array" || bytesName === "Buffer") {
+      return primitive("bytes", "uint8");
     }
+    if (bytesName === "ArrayBuffer") return primitive("bytes", "arraybuffer");
+    return primitive("bytes", "view");
   }
   if (names.some((name) => name === "Date" && isBuiltinTypeName(type, name, state.checker))) {
     return primitive("date");
@@ -740,7 +775,7 @@ function serializeObject(type: ts.Type, state: SerializeState): SchemaNode | nul
     }
     const serialized = serializeType(value, state);
     if (serialized === null) return null;
-    return { kind: "map", key: primitive("string"), value: serialized.node };
+    return { kind: "map", key: primitive("string"), value: serialized.node, record: true };
   }
   for (const name of names) {
     if (UNSUPPORTED_NAMES.has(name) && isBuiltinTypeName(type, name, state.checker)) {
@@ -759,7 +794,7 @@ function serializeObject(type: ts.Type, state: SerializeState): SchemaNode | nul
   if (properties.length === 0 && stringIndex !== undefined) {
     const serialized = serializeType(stringIndex, state);
     if (serialized === null) return null;
-    return { kind: "map", key: primitive("string"), value: serialized.node };
+    return { kind: "map", key: primitive("string"), value: serialized.node, record: true };
   }
   return reportTypeUnsupported(
     state,
@@ -1023,6 +1058,695 @@ function renderOneof(oneof: ProtocolOneofSchema): string {
   return `{ kind: "oneof", name: ${JSON.stringify(oneof.name)}, enum: () => ${oneof.enumReference}, variants: [${oneof.variants.map(renderVariant).join(", ")}] }`;
 }
 
+function renderLiteral(value: ProtocolLiteral): string {
+  return JSON.stringify(value) ?? "null";
+}
+
+interface CodecEmit {
+  readonly lines: string[];
+  readonly helpers: Set<ProtocolHelperName>;
+  level: number;
+  supported: boolean;
+  counter: number;
+}
+
+function codecLine(state: CodecEmit, text: string): void {
+  state.lines.push(`${INDENT_UNIT.repeat(state.level)}${text}`);
+}
+
+function codecHelper(state: CodecEmit, name: ProtocolHelperName): string {
+  state.helpers.add(name);
+  return protocolHelperAlias(name);
+}
+
+function codecUnsupported(state: CodecEmit): void {
+  state.supported = false;
+}
+
+function fieldAccess(name: string): string {
+  return `value[${JSON.stringify(name)}]`;
+}
+
+function pathAt(base: string, name: string): string {
+  return `${base} + ${JSON.stringify(`.${name}`)}`;
+}
+
+function itemPath(base: string): string {
+  return `${base} + "[" + index + "]"`;
+}
+
+function presence(expression: string): string {
+  return `${expression} !== undefined && ${expression} !== null`;
+}
+
+function bytesEncode(node: SchemaNode & { readonly kind: "primitive" }, valueExpr: string): string {
+  switch (node.bytesView) {
+    case "arraybuffer":
+      return `writer.bytes(new Uint8Array(${valueExpr}));`;
+    case "view":
+      return `writer.bytes(new Uint8Array(${valueExpr}.buffer, ${valueExpr}.byteOffset, ${valueExpr}.byteLength));`;
+    default:
+      return `writer.bytes(${valueExpr});`;
+  }
+}
+
+function primitiveEncodeLine(node: SchemaNode & { readonly kind: "primitive" }, valueExpr: string): string {
+  switch (node.name) {
+    case "bool":
+      return `writer.bool(${valueExpr});`;
+    case "int32":
+    case "int64":
+    case "bigint":
+      return `writer.zigzag(${valueExpr});`;
+    case "uint32":
+    case "uint64":
+      return `writer.varint(${valueExpr});`;
+    case "float32":
+      return `writer.float32(${valueExpr});`;
+    case "float64":
+      return `writer.float64(${valueExpr});`;
+    case "fixed32":
+      return `writer.fixed32(${valueExpr});`;
+    case "fixed64":
+      return `writer.fixed64(${valueExpr});`;
+    case "string":
+      return `writer.string(${valueExpr});`;
+    case "bytes":
+      return bytesEncode(node, valueExpr);
+    case "date":
+      return `writer.zigzag(${valueExpr}.getTime());`;
+  }
+}
+
+function primitiveDecodeExpression(
+  node: SchemaNode & { readonly kind: "primitive" },
+  pathExpr: string,
+  part?: string,
+  index?: string,
+): string {
+  const suffix = part === undefined
+    ? ""
+    : index === undefined ? `, ${part}` : `, ${part}, ${index}`;
+  switch (node.name) {
+    case "bool":
+      return `reader.bool(${pathExpr}${suffix})`;
+    case "int32":
+      return `reader.zigzagNumber(${pathExpr}${suffix})`;
+    case "uint32":
+      return `reader.varintNumber(${pathExpr}, 0xffffffff${suffix})`;
+    case "int64":
+    case "bigint":
+      return `reader.zigzag(${pathExpr}${suffix})`;
+    case "uint64":
+      return `reader.varint(${pathExpr}${suffix})`;
+    case "float32":
+      return `reader.float32(${pathExpr}${suffix})`;
+    case "float64":
+      return `reader.float64(${pathExpr}${suffix})`;
+    case "fixed32":
+      return `reader.fixed32(${pathExpr}${suffix})`;
+    case "fixed64":
+      return `reader.fixed64(${pathExpr}${suffix})`;
+    case "string":
+      return `reader.string(${pathExpr}${suffix})`;
+    case "bytes":
+      return `reader.bytes(${pathExpr}${suffix})`;
+    case "date":
+      return `new Date(reader.zigzagNumber(${pathExpr}${suffix}))`;
+  }
+}
+
+function isStringEnum(node: SchemaNode): node is SchemaNode & { readonly kind: "enum" } {
+  return node.kind === "enum" && node.values.every((value) => typeof value === "string");
+}
+
+function isNumericEnum(node: SchemaNode): node is SchemaNode & { readonly kind: "enum" } {
+  return node.kind === "enum" && node.values.every((value) => typeof value === "number");
+}
+
+function enumValuesLiteral(node: SchemaNode & { readonly kind: "enum" }): string {
+  return `[${node.values.map((value) => JSON.stringify(value)).join(", ")}]`;
+}
+
+interface MapKeyPlan {
+  readonly sortKey: string;
+  readonly write: string;
+  readonly decode: (pathExpr: string) => string;
+}
+
+function mapKeyPlan(node: SchemaNode): MapKeyPlan | null {
+  if (node.kind === "enum") {
+    if (!isNumericEnum(node)) return null;
+    return {
+      sortKey: "(key) => key",
+      write: "writer.varint(key);",
+      decode: (pathExpr) => `reader.varintNumber(${pathExpr}, 0x7fffffff)`,
+    };
+  }
+  if (node.kind !== "primitive") return null;
+  switch (node.name) {
+    case "string":
+      return {
+        sortKey: "(key) => key",
+        write: "writer.string(key);",
+        decode: (pathExpr) => `reader.string(${pathExpr})`,
+      };
+    case "bool":
+      return {
+        sortKey: "(key) => (key ? 1 : 0)",
+        write: "writer.bool(key);",
+        decode: (pathExpr) => `reader.bool(${pathExpr})`,
+      };
+    case "int32":
+      return {
+        sortKey: "(key) => key",
+        write: "writer.zigzag(key);",
+        decode: (pathExpr) => `reader.zigzagNumber(${pathExpr})`,
+      };
+    case "uint32":
+      return {
+        sortKey: "(key) => key",
+        write: "writer.varint(key);",
+        decode: (pathExpr) => `reader.varintNumber(${pathExpr}, 0xffffffff)`,
+      };
+    case "fixed32":
+      return {
+        sortKey: "(key) => key",
+        write: "writer.fixed32(key);",
+        decode: (pathExpr) => `reader.fixed32(${pathExpr})`,
+      };
+    default:
+      return null;
+  }
+}
+
+function setSortKey(node: SchemaNode): string | null {
+  if (node.kind === "enum") {
+    if (isNumericEnum(node)) return "(entryValue) => entryValue";
+    if (isStringEnum(node)) return `(entryValue) => ${enumValuesLiteral(node)}.indexOf(entryValue)`;
+    return null;
+  }
+  if (node.kind !== "primitive") return null;
+  switch (node.name) {
+    case "string":
+    case "int32":
+    case "uint32":
+    case "float64":
+    case "fixed32":
+      return "(entryValue) => entryValue";
+    case "bool":
+      return "(entryValue) => (entryValue ? 1 : 0)";
+    case "date":
+      return "(entryValue) => entryValue.getTime()";
+    default:
+      return null;
+  }
+}
+
+function emitEncode(
+  state: CodecEmit,
+  node: SchemaNode,
+  valueExpr: string,
+  pathExpr: string,
+): void {
+  if (!state.supported) return;
+  switch (node.kind) {
+    case "primitive": {
+      codecLine(state, primitiveEncodeLine(node, valueExpr));
+      return;
+    }
+    case "literal": {
+      const literal = renderLiteral(node.value);
+      codecHelper(state, "ProtocolError");
+      codecLine(state, `if (!Object.is(${valueExpr}, ${literal})) {`);
+      state.level += 1;
+      codecLine(
+        state,
+        `throw new ${protocolHelperAlias("ProtocolError")}("value", ${JSON.stringify(`ожидался литерал ${String(node.value)}`)}, ${pathExpr});`,
+      );
+      state.level -= 1;
+      codecLine(state, "}");
+      return;
+    }
+    case "enum": {
+      if (isStringEnum(node)) {
+        codecLine(state, `writer.varint(${enumValuesLiteral(node)}.indexOf(${valueExpr}));`);
+        return;
+      }
+      codecLine(state, `writer.varint(${valueExpr});`);
+      return;
+    }
+    case "class": {
+      const helper = codecHelper(state, "writeMessage");
+      codecLine(state, `${helper}(${node.reference}, ${valueExpr}, writer, context, ${pathExpr});`);
+      return;
+    }
+    case "array": {
+      const optional = node.element.kind === "optional";
+      const inner = optional ? node.element.inner : node.element;
+      const helper = codecHelper(state, optional ? "writeOptionalArray" : "writeArray");
+      codecLine(state, `${helper}(${valueExpr}, writer, context, ${pathExpr}, (item, index) => {`);
+      state.level += 1;
+      emitEncode(state, inner, "item", itemPath(pathExpr));
+      state.level -= 1;
+      codecLine(state, "});");
+      return;
+    }
+    case "tuple": {
+      const optionalSlots = node.elements
+        .map((element, index) => ({ element, index }))
+        .filter((slot) => slot.element.kind === "optional");
+      codecLine(state, `context.enter(${valueExpr}, ${pathExpr});`);
+      codecLine(state, "try {");
+      state.level += 1;
+      if (optionalSlots.length > 0) {
+        if (optionalSlots.length <= 32) {
+          const bits = optionalSlots
+            .map((slot, index) => `(${presence(`${valueExpr}[${slot.index}]`)} ? ${1 << index} : 0)`)
+            .join(" | ");
+          codecLine(state, `writer.bitmapMask(${bits}, ${optionalSlots.length});`);
+        } else {
+          const bits = optionalSlots
+            .map((slot) => presence(`${valueExpr}[${slot.index}]`))
+            .join(", ");
+          codecLine(state, `writer.bitmap([${bits}]);`);
+        }
+      }
+      node.elements.forEach((element, index) => {
+        const slotValue = `${valueExpr}[${index}]`;
+        if (element.kind === "optional") {
+          codecLine(state, `if (${presence(slotValue)}) {`);
+          state.level += 1;
+          emitEncode(state, element.inner, slotValue, `${pathExpr} + "[${index}]"`);
+          state.level -= 1;
+          codecLine(state, "}");
+          return;
+        }
+        emitEncode(state, element, slotValue, `${pathExpr} + "[${index}]"`);
+      });
+      state.level -= 1;
+      codecLine(state, "} finally {");
+      state.level += 1;
+      codecLine(state, `context.leave(${valueExpr});`);
+      state.level -= 1;
+      codecLine(state, "}");
+      return;
+    }
+    case "map": {
+      if (node.value.kind === "optional") {
+        codecUnsupported(state);
+        return;
+      }
+      const key = mapKeyPlan(node.key);
+      if (key === null) {
+        codecUnsupported(state);
+        return;
+      }
+      let mapExpr = valueExpr;
+      if (node.record === true) {
+        const local = `__record${state.counter}`;
+        state.counter += 1;
+        codecLine(
+          state,
+          `const ${local} = ${valueExpr} instanceof Map ? ${valueExpr} : new Map(Object.entries(${valueExpr}));`,
+        );
+        mapExpr = local;
+      }
+      const helper = codecHelper(state, "writeMap");
+      codecLine(state, `${helper}(${mapExpr}, writer, context, ${pathExpr}, ${key.sortKey}, (key) => {`);
+      state.level += 1;
+      codecLine(state, key.write);
+      state.level -= 1;
+      codecLine(state, "}, (entryValue) => {");
+      state.level += 1;
+      emitEncode(state, node.value, "entryValue", `${pathExpr} + ".values"`);
+      state.level -= 1;
+      codecLine(state, "});");
+      return;
+    }
+    case "set": {
+      const sortKey = setSortKey(node.element);
+      if (sortKey === null) {
+        codecUnsupported(state);
+        return;
+      }
+      const helper = codecHelper(state, "writeSet");
+      codecLine(state, `${helper}(${valueExpr}, writer, context, ${pathExpr}, ${sortKey}, (entryValue) => {`);
+      state.level += 1;
+      emitEncode(state, node.element, "entryValue", `${pathExpr} + "[]"`);
+      state.level -= 1;
+      codecLine(state, "});");
+      return;
+    }
+    case "optional": {
+      emitEncode(state, node.inner, valueExpr, pathExpr);
+      return;
+    }
+  }
+}
+
+function tupleDecodeExpression(
+  state: CodecEmit,
+  node: SchemaNode & { readonly kind: "tuple" },
+  pathExpr: string,
+): string {
+  const local = `__tuple${state.counter}`;
+  const bits = `${local}Bits`;
+  state.counter += 1;
+  const base = state.level;
+  const pad = (extra: number): string => INDENT_UNIT.repeat(base + extra);
+  const lines: string[] = [];
+  lines.push("(() => {");
+  lines.push(`${pad(1)}context.enter(${pathExpr});`);
+  lines.push(`${pad(1)}try {`);
+  lines.push(`${pad(2)}const ${local} = new Array(${node.elements.length});`);
+  const optionalSlots = node.elements
+    .map((element, index) => ({ element, index }))
+    .filter((slot) => slot.element.kind === "optional");
+  if (optionalSlots.length > 0) {
+    const maskBits = optionalSlots.length <= 32;
+    lines.push(`${pad(2)}const ${bits} = reader.${maskBits ? `bitmapMask(${optionalSlots.length}, ${pathExpr})` : `bitmap(${optionalSlots.length}, ${pathExpr})`};`);
+  }
+  node.elements.forEach((element, index) => {
+    if (element.kind === "optional") {
+      const bit = optionalSlots.findIndex((slot) => slot.index === index);
+      const test = optionalSlots.length <= 32
+        ? `(${bits} & ${1 << bit}) !== 0`
+        : `${bits}[${bit}] === true`;
+      lines.push(`${pad(2)}if (${test}) {`);
+      lines.push(`${pad(3)}${local}[${index}] = ${emitDecodeExpression(state, element.inner, `${pathExpr} + "[${index}]"`)};`);
+      lines.push(`${pad(2)}} else {`);
+      lines.push(`${pad(3)}${local}[${index}] = undefined;`);
+      lines.push(`${pad(2)}}`);
+      return;
+    }
+    lines.push(`${pad(2)}${local}[${index}] = ${emitDecodeExpression(state, element, `${pathExpr} + "[${index}]"`)};`);
+  });
+  lines.push(`${pad(2)}return ${local};`);
+  lines.push(`${pad(1)}} finally {`);
+  lines.push(`${pad(2)}context.leave();`);
+  lines.push(`${pad(1)}}`);
+  lines.push(`${pad(0)}})()`);
+  return lines.join("\n");
+}
+
+function enumDecodeExpression(
+  node: SchemaNode & { readonly kind: "enum" },
+  pathExpr: string,
+  part?: string,
+  index?: string,
+): string {
+  const suffix = part === undefined
+    ? ""
+    : index === undefined ? `, ${part}` : `, ${part}, ${index}`;
+  if (isStringEnum(node)) {
+    return `${enumValuesLiteral(node)}[reader.varintNumber(${pathExpr}, 0x7fffffff${suffix})]`;
+  }
+  return `reader.varintNumber(${pathExpr}, 0x7fffffff${suffix})`;
+}
+
+function emitFieldDecode(
+  state: CodecEmit,
+  node: SchemaNode,
+  basePathExpr: string,
+  fieldName: string,
+): string {
+  if (!state.supported) return "undefined";
+  const part = JSON.stringify(`.${fieldName}`);
+  if (node.kind === "primitive") {
+    return primitiveDecodeExpression(node, basePathExpr, part);
+  }
+  if (node.kind === "enum") {
+    return enumDecodeExpression(node, basePathExpr, part);
+  }
+  if (node.kind === "array") {
+    const optional = node.element.kind === "optional";
+    const inner = optional ? node.element.inner : node.element;
+    const helper = codecHelper(state, optional ? "readOptionalArray" : "readArray");
+    const element = inner.kind === "primitive"
+      ? primitiveDecodeExpression(inner, basePathExpr, part, "index")
+      : inner.kind === "enum"
+        ? enumDecodeExpression(inner, basePathExpr, part, "index")
+        : emitDecodeExpression(state, inner, itemPath(pathAt(basePathExpr, fieldName)));
+    return `${helper}(reader, context, ${basePathExpr}, (index) => ${element}, ${part})`;
+  }
+  return emitDecodeExpression(state, node, pathAt(basePathExpr, fieldName));
+}
+
+function emitDecodeExpression(state: CodecEmit, node: SchemaNode, pathExpr: string): string {
+  if (!state.supported) return "undefined";
+  switch (node.kind) {
+    case "primitive":
+      return primitiveDecodeExpression(node, pathExpr);
+    case "literal":
+      return renderLiteral(node.value);
+    case "enum":
+      return enumDecodeExpression(node, pathExpr);
+    case "class": {
+      const helper = codecHelper(state, "readMessage");
+      return `${helper}(${node.reference}, reader, context, ${pathExpr})`;
+    }
+    case "array": {
+      const optional = node.element.kind === "optional";
+      const inner = optional ? node.element.inner : node.element;
+      const item = emitDecodeExpression(state, inner, itemPath(pathExpr));
+      const helper = codecHelper(state, optional ? "readOptionalArray" : "readArray");
+      return `${helper}(reader, context, ${pathExpr}, (index) => ${item})`;
+    }
+    case "tuple":
+      return tupleDecodeExpression(state, node, pathExpr);
+    case "map": {
+      if (node.value.kind === "optional") {
+        codecUnsupported(state);
+        return "undefined";
+      }
+      const key = mapKeyPlan(node.key);
+      if (key === null) {
+        codecUnsupported(state);
+        return "undefined";
+      }
+      const value = emitDecodeExpression(state, node.value, `${pathExpr} + ".values"`);
+      const helper = codecHelper(state, "readMap");
+      return `${helper}(reader, context, ${pathExpr}, () => ${key.decode(`${pathExpr} + ".keys"`)}, () => ${value})`;
+    }
+    case "set": {
+      if (setSortKey(node.element) === null) {
+        codecUnsupported(state);
+        return "undefined";
+      }
+      const item = emitDecodeExpression(state, node.element, `${pathExpr} + "[]"`);
+      const helper = codecHelper(state, "readSet");
+      return `${helper}(reader, context, ${pathExpr}, () => ${item})`;
+    }
+    case "optional":
+      return emitDecodeExpression(state, node.inner, pathExpr);
+  }
+}
+
+function emitOneofEncode(
+  state: CodecEmit,
+  oneof: ProtocolOneofSchema,
+  pathExpr: string,
+): void {
+  const discriminator = fieldAccess(oneof.name);
+  codecHelper(state, "ProtocolError");
+  codecLine(state, `if (typeof ${discriminator} !== "number" || !Number.isInteger(${discriminator})) {`);
+  state.level += 1;
+  codecLine(
+    state,
+    `throw new ${protocolHelperAlias("ProtocolError")}("oneof", ${JSON.stringify(`дискриминатор ${oneof.name} должен быть целым числом`)}, ${pathAt(pathExpr, oneof.name)});`,
+  );
+  state.level -= 1;
+  codecLine(state, "}");
+  codecLine(state, `switch (${discriminator}) {`);
+  for (const variant of oneof.variants) {
+    codecLine(state, `case ${JSON.stringify(variant.value)}: {`);
+    state.level += 1;
+    for (const other of oneof.variants) {
+      if (other.field === variant.field) continue;
+      const otherValue = fieldAccess(other.field);
+      codecLine(state, `if (${presence(otherValue)}) {`);
+      state.level += 1;
+      codecLine(
+        state,
+        `throw new ${protocolHelperAlias("ProtocolError")}("oneof", ${JSON.stringify(`установлено более одного варианта oneof ${oneof.name}`)}, ${pathAt(pathExpr, other.field)});`,
+      );
+      state.level -= 1;
+      codecLine(state, "}");
+    }
+    const unit = variant.type.kind === "literal";
+    const payload = fieldAccess(variant.field);
+    if (!unit) {
+      codecLine(state, `if (${payload} === undefined || ${payload} === null) {`);
+      state.level += 1;
+      codecLine(
+        state,
+        `throw new ${protocolHelperAlias("ProtocolError")}("oneof", ${JSON.stringify(`вариант ${variant.field} не имеет значения`)}, ${pathAt(pathExpr, variant.field)});`,
+      );
+      state.level -= 1;
+      codecLine(state, "}");
+    }
+    codecLine(state, `writer.varint(${JSON.stringify(variant.value)});`);
+    if (!unit) {
+      emitEncode(state, variant.type, payload, pathAt(pathExpr, variant.field));
+    }
+    codecLine(state, "break;");
+    state.level -= 1;
+    codecLine(state, "}");
+  }
+  codecLine(state, "default:");
+  state.level += 1;
+  codecLine(
+    state,
+    `throw new ${protocolHelperAlias("ProtocolError")}("unknown_enum", ${JSON.stringify(`неизвестное значение oneof ${oneof.name}`)}, ${pathAt(pathExpr, oneof.name)});`,
+  );
+  state.level -= 1;
+  codecLine(state, "}");
+}
+
+function emitOneofDecode(
+  state: CodecEmit,
+  oneof: ProtocolOneofSchema,
+  pathExpr: string,
+): void {
+  const local = `__oneof${state.counter}`;
+  state.counter += 1;
+  for (const variant of oneof.variants) {
+    codecLine(state, `${fieldAccess(variant.field)} = undefined;`);
+  }
+  codecLine(state, `const ${local} = reader.varintNumber(${pathAt(pathExpr, oneof.name)}, 0x7fffffff);`);
+  codecLine(state, `${fieldAccess(oneof.name)} = ${local};`);
+  codecLine(state, `switch (${local}) {`);
+  for (const variant of oneof.variants) {
+    codecLine(state, `case ${JSON.stringify(variant.value)}: {`);
+    state.level += 1;
+    const target = fieldAccess(variant.field);
+    if (variant.type.kind === "literal") {
+      codecLine(state, `${target} = ${renderLiteral(variant.type.value)};`);
+    } else {
+      codecLine(state, `${target} = ${emitFieldDecode(state, variant.type, pathExpr, variant.field)};`);
+    }
+    codecLine(state, "break;");
+    state.level -= 1;
+    codecLine(state, "}");
+  }
+  codecHelper(state, "ProtocolError");
+  codecLine(state, "default:");
+  state.level += 1;
+  codecLine(
+    state,
+    `throw new ${protocolHelperAlias("ProtocolError")}("unknown_enum", ${JSON.stringify(`неизвестное значение oneof ${oneof.name}`)}, ${pathAt(pathExpr, oneof.name)});`,
+  );
+  state.level -= 1;
+  codecLine(state, "}");
+}
+
+interface CodecEntry {
+  readonly field: ProtocolFieldSchema | null;
+  readonly oneof: ProtocolOneofSchema | null;
+}
+
+interface CodecBuild {
+  readonly write: readonly string[];
+  readonly read: readonly string[];
+  readonly helpers: readonly ProtocolHelperName[];
+}
+
+function buildCodec(entries: readonly CodecEntry[]): CodecBuild | null {
+  const helpers = new Set<ProtocolHelperName>();
+  const optionalCount = entries.reduce(
+    (count, entry) => count + (entry.field?.optional === true ? 1 : 0),
+    0,
+  );
+  const encode: CodecEmit = { lines: [], helpers, level: 0, supported: true, counter: 0 };
+  if (optionalCount > 0) {
+    const optionalEntries = entries.filter((entry) => entry.field?.optional === true);
+    if (optionalCount <= 32) {
+      const bits = optionalEntries
+        .map((entry, index) => `(${presence(fieldAccess(entry.field!.name))} ? ${1 << index} : 0)`)
+        .join(" | ");
+      codecLine(encode, `writer.bitmapMask(${bits}, ${optionalCount});`);
+    } else {
+      const bits = optionalEntries.map((entry) => presence(fieldAccess(entry.field!.name)));
+      codecLine(encode, `writer.bitmap([${bits.join(", ")}]);`);
+    }
+  }
+  for (const entry of entries) {
+    if (entry.field !== null) {
+      const field = entry.field;
+      const value = fieldAccess(field.name);
+      const path = pathAt("path", field.name);
+      if (field.optional) {
+        codecLine(encode, `if (${presence(value)}) {`);
+        encode.level += 1;
+        emitEncode(encode, field.type, value, path);
+        encode.level -= 1;
+        codecLine(encode, "}");
+        continue;
+      }
+      emitEncode(encode, field.type, value, path);
+      continue;
+    }
+    if (entry.oneof !== null) emitOneofEncode(encode, entry.oneof, "path");
+  }
+  if (!encode.supported) return null;
+  const decode: CodecEmit = { lines: [], helpers, level: 0, supported: true, counter: 0 };
+  const maskBits = optionalCount > 0 && optionalCount <= 32;
+  if (optionalCount > 0) {
+    codecLine(
+      decode,
+      `const bits = ${maskBits ? `reader.bitmapMask(${optionalCount}, path)` : `reader.bitmap(${optionalCount}, path)`};`,
+    );
+  }
+  let optionalIndex = 0;
+  for (const entry of entries) {
+    if (entry.field !== null) {
+      const field = entry.field;
+      const target = fieldAccess(field.name);
+      if (field.optional) {
+        const bit = optionalIndex;
+        optionalIndex += 1;
+        codecLine(
+          decode,
+          maskBits ? `if ((bits & ${1 << bit}) !== 0) {` : `if (bits[${bit}] === true) {`,
+        );
+        decode.level += 1;
+        codecLine(decode, `${target} = ${emitFieldDecode(decode, field.type, "path", field.name)};`);
+        decode.level -= 1;
+        codecLine(decode, "} else {");
+        decode.level += 1;
+        codecLine(decode, `${target} = undefined;`);
+        decode.level -= 1;
+        codecLine(decode, "}");
+        continue;
+      }
+      codecLine(decode, `${target} = ${emitFieldDecode(decode, field.type, "path", field.name)};`);
+      continue;
+    }
+    if (entry.oneof !== null) emitOneofDecode(decode, entry.oneof, "path");
+  }
+  if (!decode.supported) return null;
+  codecLine(decode, "return value;");
+  const order: readonly ProtocolHelperName[] = [
+    "writeMessage",
+    "readMessage",
+    "writeArray",
+    "writeOptionalArray",
+    "readArray",
+    "readOptionalArray",
+    "writeMap",
+    "readMap",
+    "writeSet",
+    "readSet",
+    "ProtocolError",
+  ];
+  return {
+    write: encode.lines,
+    read: decode.lines,
+    helpers: order.filter((name) => helpers.has(name)),
+  };
+}
+
 function closingPosition(
   sourceFile: ts.SourceFile,
   declaration: ClassLikeDeclaration,
@@ -1061,29 +1785,50 @@ function buildBlock(
   declaration: ClassLikeDeclaration,
   entries: readonly SchemaEntryRender[],
   oneofs: readonly ProtocolOneofSchema[],
-): { readonly position: number; readonly code: string } {
+  codec: CodecBuild | null,
+): { readonly position: number; readonly code: string; readonly helpers: readonly ProtocolHelperName[] } {
   const position = closingPosition(sourceFile, declaration);
   const indentation = blockIndentation(sourceFile, position, declaration);
   const newline = sourceFile.text.includes("\r\n") ? "\r\n" : "\n";
   const inner = `${indentation.closing}${INDENT_UNIT}${INDENT_UNIT}`;
   const deep = `${inner}${INDENT_UNIT}`;
-  const body: string[] = [];
-  body.push(`${inner}version: 1,`);
-  body.push(`${inner}fields: [`);
-  for (const entry of entries) body.push(`${deep}${entry.render()},`);
-  body.push(`${inner}],`);
-  body.push(`${inner}oneofs: [`);
-  for (const oneof of oneofs) body.push(`${deep}${renderOneof(oneof)},`);
-  body.push(`${inner}],`);
-  const code = [
-    `${indentation.lead}${INDENT_UNIT}static {`,
-    `${inner}this[Symbol.for(${JSON.stringify(SCHEMA_KEY)})] = {`,
-    ...body,
-    `${inner}};`,
-    `${indentation.closing}${INDENT_UNIT}}`,
-    `${indentation.closing}`,
-  ].join(newline);
-  return { position, code };
+  const methodLine = `${inner}${INDENT_UNIT}`;
+  const codecLineIndent = `${methodLine}${INDENT_UNIT}`;
+  const schemaBody: string[] = [];
+  schemaBody.push(`${inner}version: 1,`);
+  schemaBody.push(`${inner}fields: [`);
+  for (const entry of entries) schemaBody.push(`${deep}${entry.render()},`);
+  schemaBody.push(`${inner}],`);
+  schemaBody.push(`${inner}oneofs: [`);
+  for (const oneof of oneofs) schemaBody.push(`${deep}${renderOneof(oneof)},`);
+  schemaBody.push(`${inner}],`);
+  const body: string[] = [`${indentation.lead}${INDENT_UNIT}static {`];
+  if (codec === null) {
+    body.push(`${inner}this[Symbol.for(${JSON.stringify(SCHEMA_KEY)})] = {`);
+    body.push(...schemaBody);
+    body.push(`${inner}};`);
+  } else {
+    body.push(`${inner}const __protoCtor = this;`);
+    body.push(`${inner}this[Symbol.for(${JSON.stringify(CODEC_KEY)})] = {`);
+    body.push(`${methodLine}write(value, writer, context, path) {`);
+    for (const line of codec.write) body.push(`${codecLineIndent}${line}`);
+    body.push(`${methodLine}},`);
+    body.push(`${methodLine}read(reader, context, path) {`);
+    body.push(`${codecLineIndent}const value = new __protoCtor();`);
+    for (const line of codec.read) body.push(`${codecLineIndent}${line}`);
+    body.push(`${methodLine}},`);
+    body.push(`${inner}};`);
+    body.push(`${inner}this[Symbol.for(${JSON.stringify(SCHEMA_KEY)})] = {`);
+    body.push(...schemaBody);
+    body.push(`${inner}};`);
+  }
+  body.push(`${indentation.closing}${INDENT_UNIT}}`);
+  body.push(`${indentation.closing}`);
+  return {
+    position,
+    code: body.join(newline),
+    helpers: codec?.helpers ?? [],
+  };
 }
 
 function collectClasses(node: ts.Node, classes: ClassLikeDeclaration[]): void {
@@ -1259,7 +2004,7 @@ export function generateProtocolBlocks(
       declaration.getStart(sourceFile),
       declaration.getEnd(),
     );
-    if (declarationText.includes(SCHEMA_KEY)) continue;
+    if (declarationText.includes(SCHEMA_KEY) || declarationText.includes(CODEC_KEY)) continue;
     const raw = collectFields(declaration, checker);
     if (raw.length === 0) continue;
     const state: SerializeState = {
@@ -1332,7 +2077,8 @@ export function generateProtocolBlocks(
       }
     }
     if (orderedFields.length === 0 && orderedOneofs.length === 0) continue;
-    const block = buildBlock(sourceFile, declaration, renders, orderedOneofs);
+    const codec = buildCodec(entries);
+    const block = buildBlock(sourceFile, declaration, renders, orderedOneofs, codec);
     blocks.push({
       ...block,
       className,

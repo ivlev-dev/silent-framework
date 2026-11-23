@@ -2,7 +2,7 @@ import * as path from "node:path";
 import MagicString from "magic-string";
 import ts from "typescript";
 import type { Plugin, ViteDevServer } from "vite";
-import { generateProtocolBlocks } from "./typegen.js";
+import { generateProtocolBlocks, protocolHelperAlias, PROTOCOL_MODULE } from "./typegen.js";
 import type { RuntimeRefResult } from "./runtime-ref.js";
 import { createRuntimeRefResolver } from "./runtime-ref.js";
 
@@ -403,12 +403,20 @@ export function protocol(options: ProtocolPluginOptions = {}): Plugin {
           const pattern = new RegExp(`\\b${entryImport.alias}\\b`);
           return pattern.test(body);
         });
+        const newline = sourceFile.text.includes("\r\n") ? "\r\n" : "\n";
         if (usedImports.length > 0) {
-          const newline = sourceFile.text.includes("\r\n") ? "\r\n" : "\n";
           const statements = usedImports
             .map((entryImport) => `import * as ${entryImport.alias} from ${JSON.stringify(entryImport.module)};`)
             .join(newline);
           magic.appendLeft(importInsertionPosition(code), `${statements}${newline}`);
+        }
+        const helpers = [...new Set(blocks.flatMap((block) => block.helpers))];
+        if (helpers.length > 0) {
+          const specifiers = helpers
+            .map((name) => `${name} as ${protocolHelperAlias(name)}`)
+            .join(", ");
+          const statement = `import { ${specifiers} } from ${JSON.stringify(PROTOCOL_MODULE)};`;
+          magic.appendLeft(importInsertionPosition(code), `${statement}${newline}`);
         }
         return {
           code: magic.toString(),

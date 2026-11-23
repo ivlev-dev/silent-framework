@@ -149,6 +149,14 @@ const buildProject = async (directory: string, plugins: readonly Plugin[], entry
     configFile: false,
     logLevel: "silent",
     plugins: [...plugins],
+    resolve: {
+      alias: {
+        "@ivlev-dev/silent-protocol": path.resolve(
+          import.meta.dirname,
+          "../../protocol/src/index.ts",
+        ),
+      },
+    },
     build: {
       write: true,
       minify: false,
@@ -181,6 +189,7 @@ describe("protocol()", () => {
     expect(code).toMatch(/name: "name"/);
     expect(code).toMatch(/\["class",\(\)=>__silent_protocol_\d+\.Address\]/);
     expect(code).toMatch(/import \* as __silent_protocol_\d+ from ["']\.\/b["'];/);
+    expect(code).toMatch(/import \{ [^}]*writeMessage as __silent_protocol_writeMessage[^}]*\} from ["']@ivlev-dev\/silent-protocol["'];/);
     expect(code).toMatch(/oneofs: \[/);
   });
 
@@ -271,6 +280,14 @@ describe("protocol()", () => {
       /Symbol\.for\(["']silent\.protocol\.schema["']\)/g,
     );
     expect(schemas).toHaveLength(2);
+    const codecs = (first as TransformOutput).code.match(
+      /Symbol\.for\(["']silent\.protocol\.codec["']\)/g,
+    );
+    expect(codecs).toHaveLength(2);
+    const helperImports = (first as TransformOutput).code.match(
+      /from ["']@ivlev-dev\/silent-protocol["'];/g,
+    );
+    expect(helperImports).toHaveLength(1);
   });
 
   it("пропускает ?raw, ?url и .d.ts", () => {

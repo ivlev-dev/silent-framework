@@ -263,8 +263,8 @@ val restored = UserCodec.decode(bytes)
 
 | Язык | Пакет/крейт | Статус |
 | --- | --- | --- |
-| TS | `packages/protocol` (`@ivlev-dev/silent-protocol`) | encode/decode, все wire-типы, bitmap, oneof, Date/bigint/typed arrays |
-| TS build | `packages/protocol-vite` (`@ivlev-dev/silent-protocol-vite`) | схема из TS-класса, декораторы, oneof, наследование |
+| TS | `packages/protocol` (`@ivlev-dev/silent-protocol`) | encode/decode, все wire-типы, bitmap, oneof, Date/bigint/typed arrays, generic + static codecs |
+| TS build | `packages/protocol-vite` (`@ivlev-dev/silent-protocol-vite`) | схема и статические кодеки из TS-класса, декораторы, oneof, наследование |
 | Rust | `crates/silent-protocol` + `crates/silent-protocol-macros` | `#[derive(SilentProto)]`, примитивы, коллекции, oneof, лимиты |
 | Kotlin | `kotlin/protocol` + `kotlin/ksp-processor` | JVM/Android, KSP-кодеки, `Instant`, коллекции, oneof |
 
@@ -275,3 +275,26 @@ val restored = UserCodec.decode(bytes)
 - Rust: `Vec<u8>` трактуется как bytes; enum-поля вне oneof требуют `#[proto(enum_type)]`; нет tuple/литералов схемы и fixed-size массивов.
 - Kotlin: одна oneof-группа на класс; `@OneOf` принимает числовой wire-код (не enum-entry); поддерживаются только свойства primary-конструктора; кодек генерируется KSP.
 - TS-плагин: union без дискриминатора, `any`/`unknown`, rest-кортежи и строковые enum в oneof не поддерживаются; numeric index-signature не разворачивается.
+
+## Статические кодеки
+
+Плагин `protocol()` вставляет в класс не только схему, но и готовые `write`/`read` в static block:
+
+```ts
+this[Symbol.for("silent.protocol.codec")] = {
+  write(value, writer, context, path) { ... },
+  read(reader, context, path) { ... },
+};
+```
+
+`@ivlev-dev/silent-protocol` использует кодек, если он есть, иначе generic-кодек по схеме. Generic остаётся для ручных `defineProtocol` и классов без сгенерированного кодека.
+
+Замер `pnpm bench:protocol` (Node 26, модель 8 полей, 72 B, JSON 157 B):
+
+| Операция | static | generic | JSON |
+| --- | ---: | ---: | ---: |
+| encode | ~768k ops/s, 52.8 MB/s | ~546k, 37.5 MB/s | stringify ~456k, 68.3 MB/s |
+| decode | ~857k ops/s, 58.9 MB/s | ~523k, 35.9 MB/s | parse ~859k, 128.6 MB/s |
+| alloc | 553 B/op | — | 498 B/op |
+
+Static encode быстрее `JSON.stringify` примерно в 1.7×; decode — на уровне `JSON.parse`. Байты static и generic совпадают, формат не меняется.

@@ -76,6 +76,14 @@ describe("protocol() + runtime", () => {
       root: directory,
       configFile: false,
       logLevel: "silent",
+      resolve: {
+        alias: {
+          "@ivlev-dev/silent-protocol": path.resolve(
+            import.meta.dirname,
+            "../../protocol/src/index.ts",
+          ),
+        },
+      },
       plugins: [protocol()],
       build: {
         write: true,

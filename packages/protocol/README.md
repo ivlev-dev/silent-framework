@@ -41,7 +41,8 @@ const restored = decode(User, bytes);
 - `Date`, `bigint`, `Uint8Array`/`ArrayBuffer`, typed arrays.
 - Детерминированная сортировка map/set и полей; лимиты глубины/размера; обнаружение циклов.
 - Опциональная интеграция с `@ivlev-dev/silent-validation` через `encode(value, { validate: true })`.
-- Быстрый путь без рефлексии: кодеки кешируются по конструктору.
+- Статические кодеки из `protocol()` и generic fallback; кеш по конструктору, без рефлексии в горячем пути.
+- Бенчмарк: `pnpm bench:protocol` (static/generic/JSON).
 
 ## Ограничения
 

@@ -412,6 +412,7 @@ pnpm bench:vm
 pnpm bench:alloc
 pnpm bench:validation
 pnpm bench:validation-build
+pnpm bench:protocol
 pnpm published:check
 pnpm consumer:check
 pnpm test:e2e

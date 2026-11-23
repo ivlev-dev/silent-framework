@@ -8,6 +8,12 @@
 
 ## Unreleased
 
+### Протокол
+
+- Добавлена генерация статических кодеков в `@ivlev-dev/silent-protocol-vite`: encode/decode без обхода схемы, generic-кодек остаётся fallback для ручных схем.
+- Оптимизирован горячий путь TS-рантайма: пул Writer/Reader/контекстов, быстрые varint/zigzag, ASCII/UTF-8 строки, битовые маски, ленивые пути ошибок. Static encode ~768k ops/s (быстрее `JSON.stringify` ~1.7×), static decode ~857k ops/s на уровне `JSON.parse`; аллокации encode 2200 → 553 B/op.
+- Добавлен `pnpm bench:protocol` (static/generic/JSON) и общий кросс-языковой вектор TS/Rust/Kotlin.
+
 ## 0.12.0
 
 ### Гидрация и сборка
