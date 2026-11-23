@@ -5,7 +5,7 @@ plugins {
     signing
 }
 
-group = "dev.ivlev.silent"
+group = "io.github.ivlev-dev"
 version = providers.gradleProperty("protocolVersion").getOrElse("0.14.0")
 
 kotlin {
