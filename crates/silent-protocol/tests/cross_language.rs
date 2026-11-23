@@ -1,5 +1,5 @@
-use std::collections::BTreeSet;
 use silent_protocol::SilentProto;
+use std::collections::BTreeSet;
 
 const HEX: &str = "01010cd09cd0bed181d0bad0b2d0b090aa0c3c80a0abfef9621075736572406578616d706c652e636f6d9693d89fee47044976616e020561646d696e047573657200000000000029400201610162";
 
