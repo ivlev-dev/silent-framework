@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const dirs = ["reactivity", "di", "core", "swc", "vite", "server", "router", "validation", "validation-vite", "form", "silent"];
+const dirs = ["reactivity", "di", "core", "swc", "vite", "server", "router", "validation", "validation-vite", "protocol", "protocol-vite", "form", "silent"];
 const attempts = Number(process.env.PUBLISH_ATTEMPTS ?? "30");
 const delayMs = Number(process.env.PUBLISH_DELAY_MS ?? "15000");
 const timeoutMs = Number(process.env.PUBLISH_TIMEOUT_MS ?? "15000");

@@ -13,6 +13,8 @@
 - `@ivlev-dev/silent-router` — опциональный router: `IRouter`, route-классы `Route`, `Link`, `RouterView`, browser/memory history, guards/loaders, DI-доставка и SSR.
 - `@ivlev-dev/silent-validation` — опциональная валидация: stage-3 accessor-декораторы, правила, i18n и рантайм-проверка схем.
 - `@ivlev-dev/silent-validation-vite` — Vite-плагин `validation()`: генерирует схемы из TS-типов для потомков `ValidationModel`.
+- `@ivlev-dev/silent-protocol` — бинарный протокол: схема из класса, encode/decode без имён полей.
+- `@ivlev-dev/silent-protocol-vite` — Vite-плагин `protocol()`: схема из TS-типов.
 - `@ivlev-dev/silent-form` — опциональные реактивные формы: `Form` поверх `ValidationModel`, `@Field`/`@FormField`, вложенные формы, `FormArray`, wizard, dirty-guard и `uploadField`. Зависит от `core`, `reactivity` и `validation`; в метапакет не входит.
 - `@ivlev-dev/silent` — метапакет: ставит `core`, `di`, `reactivity`, `router`, `swc` и `vite` одной зависимостью (`server`, `form`, `validation` и `validation-vite` — отдельно).
 

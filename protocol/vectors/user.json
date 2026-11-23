@@ -1,0 +1,17 @@
+{
+  "name": "user",
+  "description": "Общий вектор: примитивы, nested, optional bitmap, bigint, Date, Set, array, float64",
+  "hex": "01010cd09cd0bed181d0bad0b2d0b090aa0c3c80a0abfef9621075736572406578616d706c652e636f6d9693d89fee47044976616e020561646d696e047573657200000000000029400201610162",
+  "fields": {
+    "active": true,
+    "address": { "city": "Москва", "zip": 101000 },
+    "age": 30,
+    "createdAt": 1700000000000,
+    "email": "user@example.com",
+    "id": "1234567890123",
+    "name": "Ivan",
+    "roles": ["admin", "user"],
+    "score": 12.5,
+    "tags": ["a", "b"]
+  }
+}

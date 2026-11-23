@@ -21,6 +21,7 @@
 - Опциональный `@ivlev-dev/silent-router`: класс `Router`, компоненты `Link`/`RouterView`, guards/loaders и memory history для SSR.
 - Опциональный `@ivlev-dev/silent-validation`: декораторы + валидация из TS-типов через Vite-плагин `@ivlev-dev/silent-validation-vite` (`@Required`, `@IsEmail`, `@Min` — всего 51 правило, `accessor`-поля без дублирования типов), кастомные сообщения, встроенные ru/en и интеграция с i18n.
 - Опциональный `@ivlev-dev/silent-form`: реактивные формы на тех же `accessor`-декораторах — метаданные полей (`@Label`, `@Placeholder`, `@Hint`, `@Required`), вложенные формы, серверные ошибки и асинхронная готовность полей.
+- Опциональный `@ivlev-dev/silent-protocol`: бинарный протокол вместо JSON — схема из класса, без имён полей, bitmap optional, oneof, массивы/map/set/nested; TS, Rust и Kotlin.
 - Справочник API с автопроверкой полноты (`pnpm api:check`).
 
 ## Установка
@@ -47,6 +48,9 @@ pnpm add @ivlev-dev/silent-validation
 pnpm add -D @ivlev-dev/silent-validation-vite
 # для форм:
 pnpm add @ivlev-dev/silent-form
+# протокол:
+pnpm add @ivlev-dev/silent-protocol
+pnpm add -D @ivlev-dev/silent-protocol-vite
 ```
 
 ```ts
@@ -385,6 +389,7 @@ silent({
 - [Роутер](./docs/guides/router.md)
 - [Миграция с SolidJS](./docs/guides/migration-from-solid.md)
 - [Справочник API](./docs/api/index.md)
+- [Протокол](./docs/protocol.md)
 - Примеры: [`examples/counter`](./examples/counter) (счётчик, ViewModel, DI, списки и HMR), [`examples/todo`](./examples/todo) (задачи: VM + DI-хранилище, keyed-список, фильтры, localStorage), [`examples/router`](./examples/router) (роутер: route-классы, typed query, lazy-маршруты, prefetch и DI), [`examples/forms`](./examples/forms) (формы: вложенная форма адреса, метаданные полей, серверная ошибка и асинхронная готовность) и [`examples/ssr-counter`](./examples/ssr-counter) (SSR и гидрация)
 
 ## Разработка

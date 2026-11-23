@@ -59,11 +59,11 @@
    ```
 
 7. Что делает CI (`.github/workflows/release.yml`, запуск по тегу `v*`):
-   - проверяет совпадение тега с версиями всех 11 пакетов и что `pnpm-lock.yaml` не разошёлся с диапазонами (`pnpm version:check`);
+   - проверяет совпадение тега с версиями всех 13 пакетов и что `pnpm-lock.yaml` не разошёлся с диапазонами (`pnpm version:check`);
    - собирает нативные бинарники для Linux x64 (`x86_64-unknown-linux-gnu`) и Windows x64 (`x86_64-pc-windows-msvc`); остальные платформы требуют локальной сборки;
    - прогоняет `build`, `typecheck`, `cargo fmt`, `cargo test`, `pnpm test`, `pnpm api:check`, `pnpm pack:check`, `pnpm install:check`;
    - публикует пакеты в npm (требуется секрет `NPM_TOKEN`);
-   - проверяет, что все 11 пакетов имеют опубликованную версию (`pnpm published:check`; до 30 попыток по 15 с — npm отдаёт обновление не сразу). `dist-tag` `latest` не проверяется, а только печатается в логе рядом с версией.
+   - проверяет, что все 13 пакетов имеют опубликованную версию (`pnpm published:check`; до 30 попыток по 15 с — npm отдаёт обновление не сразу). `dist-tag` `latest` не проверяется, а только печатается в логе рядом с версией.
 
    Параметры `published:check` задаются переменными окружения: `PUBLISH_ATTEMPTS` (по умолчанию `30`), `PUBLISH_DELAY_MS` (пауза между попытками, `15000`) и `PUBLISH_TIMEOUT_MS` (таймаут запроса к реестру, `15000`).
 
@@ -81,7 +81,7 @@
 
 ## Требования к релизу
 
-- Версия одна во всех 11 пакетах `packages/{core,di,reactivity,server,router,validation,validation-vite,form,silent,swc,vite}/package.json` и в `Cargo.toml` (`[workspace.package] version`).
+- Версия одна во всех 13 пакетах `packages/{core,di,reactivity,server,router,validation,validation-vite,protocol,protocol-vite,form,silent,swc,vite}/package.json` и в `Cargo.toml` (`[workspace.package] version`).
 - `pnpm-lock.yaml` обновлён тем же bump'ом и проходит `pnpm install --frozen-lockfile`.
 - `pnpm version:check` зелёный.
 - `pnpm api:check` зелёный.
@@ -93,6 +93,6 @@
 - Забыли обновить версию в `Cargo.toml`.
 - Забыли закоммитить `pnpm-lock.yaml` после bump — `pnpm install --frozen-lockfile` в release CI падает.
 - Тег не совпадает с версией в `package.json` (CI прервёт релиз).
-- Обновили не все 11 пакетов или часть версий осталась старой.
+- Обновили не все 13 пакетов или часть версий осталась старой.
 - Забыли пересчитать диапазоны `>=0.X.0 <0.(X+1).0` после `minor`-бампа (это делает `pnpm version:bump`).
 - Выпустили `server` без парного `core` (или наоборот): сервер использует внутренний subpath core, которого может не быть в опубликованной версии.

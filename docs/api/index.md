@@ -22,6 +22,8 @@
 | `@ivlev-dev/silent-validation` | [validation.md](./validation.md) | классовая валидация: декораторы, схемы из TS-типов, i18n |
 | `@ivlev-dev/silent-validation-vite` | [validation-vite.md](./validation-vite.md) | Vite-плагин генерации схем валидации |
 | `@ivlev-dev/silent-form` | [form.md](./form.md) | реактивные формы: `@Field`, метаданные полей, вложенные формы, серверные ошибки |
+| `@ivlev-dev/silent-protocol` | [protocol.md](../protocol.md) | бинарный протокол: схема из класса, encode/decode, oneof |
+| `@ivlev-dev/silent-protocol-vite` | [protocol.md](../protocol.md) | Vite-плагин схем протокола |
 | `@ivlev-dev/silent` | [getting-started.md](../getting-started.md) | метапакет: рантайм и плагин одной установкой |
 
 ## Гайды

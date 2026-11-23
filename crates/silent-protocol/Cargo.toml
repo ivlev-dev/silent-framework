@@ -1,0 +1,9 @@
+[package]
+name = "silent-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bytes = "1"
+silent-protocol-macros = { path = "../silent-protocol-macros" }

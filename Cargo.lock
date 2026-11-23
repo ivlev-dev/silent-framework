@@ -1369,6 +1369,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "silent-protocol"
+version = "0.13.1"
+dependencies = [
+ "bytes",
+ "silent-protocol-macros",
+]
+
+[[package]]
+name = "silent-protocol-macros"
+version = "0.13.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "silent-transform"
 version = "0.13.1"
 dependencies = [
