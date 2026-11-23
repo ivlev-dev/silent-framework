@@ -4,6 +4,9 @@ plugins {
     `maven-publish`
 }
 
+group = "dev.ivlev.silent"
+version = providers.gradleProperty("protocolVersion").getOrElse("0.13.1")
+
 kotlin {
     jvmToolchain(21)
 }
@@ -31,4 +34,23 @@ tasks.register<JavaExec>("bench") {
     description = "Замер кодирования/декодирования протокола и JSON"
     classpath = sourceSets.test.get().runtimeClasspath
     mainClass.set("dev.ivlev.silent.protocol.BenchMainKt")
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            artifactId = "silent-protocol"
+            from(components["java"])
+            pom {
+                name.set("silent-protocol")
+                description.set("Silent Protocol runtime, wire primitives and codec API for Kotlin/JVM")
+                licenses {
+                    license {
+                        name.set("MIT")
+                        url.set("https://opensource.org/licenses/MIT")
+                    }
+                }
+            }
+        }
+    }
 }

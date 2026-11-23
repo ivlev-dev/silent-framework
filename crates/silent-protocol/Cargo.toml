@@ -3,6 +3,11 @@ name = "silent-protocol"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Binary Silent protocol for Rust: derive-based schema, compact wire format, bitmap optionals, collections and oneof"
+repository = "https://github.com/ivlev-dev/silent-framework"
+readme = "README.md"
+keywords = ["serialization", "protocol", "encoding", "binary", "derive"]
+categories = ["encoding", "data-structures"]
 
 [dependencies]
 bytes = "1"

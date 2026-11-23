@@ -79,6 +79,15 @@
 - [ ] `pnpm test:ssr` и `pnpm test:e2e` зелёные.
 - [ ] `core` и `server` выпускаются парой: сервер импортирует внутренний subpath core (`@ivlev-dev/silent-core/runtime-context-provider`), одного совпадения peer-диапазона недостаточно.
 
+## Протокол
+
+Пакеты `@ivlev-dev/silent-protocol` и `@ivlev-dev/silent-protocol-vite` публикуются в npm вместе с остальными (`pnpm -r publish`). Rust-крейты `silent-protocol`/`silent-protocol-macros` и Kotlin-артефакты `dev.ivlev.silent:silent-protocol`/`silent-protocol-ksp` в этот workflow не входят:
+
+- Rust: `cargo publish -p silent-protocol-macros` затем `cargo publish -p silent-protocol` (нужен `CARGO_REGISTRY_TOKEN`; координаты проверяются отдельно).
+- Kotlin: `cd kotlin && gradle :protocol:publishToMavenLocal` для локальной проверки; для Maven Central нужны OSSRH/Central Portal, GPG-подпись и sources/javadoc (см. `kotlin/README.md`).
+
+Версия Kotlin задаётся в `kotlin/gradle.properties` (`protocolVersion`) и должна совпадать с версией пакетов.
+
 ## Требования к релизу
 
 - Версия одна во всех 13 пакетах `packages/{core,di,reactivity,server,router,validation,validation-vite,protocol,protocol-vite,form,silent,swc,vite}/package.json` и в `Cargo.toml` (`[workspace.package] version`).

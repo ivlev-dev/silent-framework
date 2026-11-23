@@ -3,6 +3,15 @@ name = "silent-protocol-macros"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Derive macro implementing the Silent binary protocol for Rust structs and enums"
+repository = "https://github.com/ivlev-dev/silent-framework"
+readme = "README.md"
+keywords = ["serialization", "protocol", "derive", "proc-macro", "encoding"]
+categories = [
+  "development-tools",
+  "development-tools::procedural-macro-helpers",
+  "encoding"
+]
 
 [lib]
 proc-macro = true

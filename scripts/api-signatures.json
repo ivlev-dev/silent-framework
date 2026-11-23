@@ -1131,6 +1131,391 @@
         "signature": "export interface WizardOptions { /** Валидировать текущий шаг перед движением вперёд. По умолчанию `true`. */ readonly validateStep?: boolean; }"
       }
     },
+    "@ivlev-dev/silent-protocol": {
+      "compareUtf8": {
+        "kind": "function",
+        "type": "(a: string, b: string) => number",
+        "signature": "export declare function compareUtf8(a: string, b: string): number;"
+      },
+      "decode": {
+        "kind": "function",
+        "type": "<T extends object>(ctor: new (...args: never[]) => T, bytes: Uint8Array, options?: DecodeOptions) => T",
+        "signature": "export declare function decode<T extends object>(ctor: new (...args: never[]) => T, bytes: Uint8Array, options?: DecodeOptions): T;"
+      },
+      "DecodeContext": {
+        "kind": "class",
+        "signature": "export declare class DecodeContext { constructor(maxDepth: number); reset(maxDepth: number): void; enter(path: string, part?: PathPart, index?: number): void; leave(): void; }"
+      },
+      "DecodeOptions": {
+        "kind": "interface",
+        "signature": "export interface DecodeOptions { readonly validate?: boolean | ValidateHook | undefined; readonly maxSize?: number | undefined; readonly maxDepth?: number | undefined; readonly allowTrailing?: boolean | undefined; }"
+      },
+      "DEFAULT_MAX_DEPTH": {
+        "kind": "variable",
+        "type": "256",
+        "signature": "export declare const DEFAULT_MAX_DEPTH = 256;"
+      },
+      "DEFAULT_MAX_SIZE": {
+        "kind": "variable",
+        "type": "number",
+        "signature": "export declare const DEFAULT_MAX_SIZE: number;"
+      },
+      "defineProtocol": {
+        "kind": "function",
+        "type": "<T extends object>(ctor: new (...args: never[]) => T, schema: SchemaInput) => void",
+        "signature": "export declare function defineProtocol<T extends object>(ctor: new (...args: never[]) => T, schema: SchemaInput): void;"
+      },
+      "encode": {
+        "kind": "function",
+        "type": "(value: object, options?: EncodeOptions) => Uint8Array",
+        "signature": "export declare function encode(value: object, options?: EncodeOptions): Uint8Array;"
+      },
+      "EncodeContext": {
+        "kind": "class",
+        "signature": "export declare class EncodeContext { constructor(maxDepth: number); reset(maxDepth: number): void; enter(value: object, path: string): void; leave(_value: object): void; }"
+      },
+      "EncodeOptions": {
+        "kind": "interface",
+        "signature": "export interface EncodeOptions { readonly validate?: boolean | ValidateHook | undefined; readonly maxSize?: number | undefined; readonly maxDepth?: number | undefined; }"
+      },
+      "EpochMillis": {
+        "kind": "function",
+        "type": "() => ProtocolAccessorDecorator",
+        "signature": "export declare function EpochMillis(): ProtocolAccessorDecorator;"
+      },
+      "FieldEntry": {
+        "kind": "type",
+        "signature": "export type FieldEntry = FieldSchema & { readonly kind: \"field\"; };"
+      },
+      "FieldOptions": {
+        "kind": "interface",
+        "signature": "export interface FieldOptions { readonly wire?: WireTypeName | undefined; readonly oneof?: number | undefined; }"
+      },
+      "FieldSchema": {
+        "kind": "interface",
+        "signature": "export interface FieldSchema { readonly name: string; readonly type: TypeSchema; readonly optional?: boolean | undefined; }"
+      },
+      "Fixed32": {
+        "kind": "function",
+        "type": "() => ProtocolAccessorDecorator",
+        "signature": "export declare function Fixed32(): ProtocolAccessorDecorator;"
+      },
+      "Fixed64": {
+        "kind": "function",
+        "type": "() => ProtocolAccessorDecorator",
+        "signature": "export declare function Fixed64(): ProtocolAccessorDecorator;"
+      },
+      "Float32": {
+        "kind": "function",
+        "type": "() => ProtocolAccessorDecorator",
+        "signature": "export declare function Float32(): ProtocolAccessorDecorator;"
+      },
+      "getSchema": {
+        "kind": "function",
+        "type": "(ctor: Function) => NormalizedSchema",
+        "signature": "export declare function getSchema(ctor: Function): NormalizedSchema;"
+      },
+      "Int32": {
+        "kind": "function",
+        "type": "() => ProtocolAccessorDecorator",
+        "signature": "export declare function Int32(): ProtocolAccessorDecorator;"
+      },
+      "Int64": {
+        "kind": "function",
+        "type": "() => ProtocolAccessorDecorator",
+        "signature": "export declare function Int64(): ProtocolAccessorDecorator;"
+      },
+      "LiteralValue": {
+        "kind": "type",
+        "signature": "export type LiteralValue = string | number | boolean | null;"
+      },
+      "NormalizedField": {
+        "kind": "interface",
+        "signature": "export interface NormalizedField { readonly name: string; readonly type: TypeSchema; readonly optional: boolean; readonly wire: WireTypeName | undefined; }"
+      },
+      "NormalizedOneof": {
+        "kind": "interface",
+        "signature": "export interface NormalizedOneof { readonly name: string; readonly enum: () => object; readonly variants: readonly NormalizedVariant[]; }"
+      },
+      "NormalizedSchema": {
+        "kind": "interface",
+        "signature": "export interface NormalizedSchema { readonly fields: readonly NormalizedField[]; readonly oneofs: readonly NormalizedOneof[]; }"
+      },
+      "NormalizedVariant": {
+        "kind": "interface",
+        "signature": "export interface NormalizedVariant { readonly value: number; readonly field: string; readonly type: TypeSchema; readonly wire: WireTypeName | undefined; }"
+      },
+      "OneOf": {
+        "kind": "function",
+        "type": "(value: number) => ProtocolAccessorDecorator",
+        "signature": "export declare function OneOf(value: number): ProtocolAccessorDecorator;"
+      },
+      "OneofDefinition": {
+        "kind": "interface",
+        "signature": "export interface OneofDefinition { readonly name: string; readonly enum: () => object; readonly variants: readonly VariantDefinition[]; }"
+      },
+      "OneofEntry": {
+        "kind": "type",
+        "signature": "export type OneofEntry = OneofSchema & { readonly kind: \"oneof\"; };"
+      },
+      "OneofSchema": {
+        "kind": "interface",
+        "signature": "export interface OneofSchema { readonly name: string; readonly enum: () => object; readonly variants: readonly Variant[]; }"
+      },
+      "PathPart": {
+        "kind": "type",
+        "signature": "export type PathPart = string | number;"
+      },
+      "pathWith": {
+        "kind": "function",
+        "type": "(path: string, part?: PathPart, index?: number) => string",
+        "signature": "export declare function pathWith(path: string, part?: PathPart, index?: number): string;"
+      },
+      "PrimitiveType": {
+        "kind": "type",
+        "signature": "export type PrimitiveType = \"bool\" | \"int32\" | \"uint32\" | \"int64\" | \"uint64\" | \"float32\" | \"float64\" | \"fixed32\" | \"fixed64\" | \"string\" | \"bytes\" | \"date\" | \"bigint\" | \"epochMillis\" | \"null\";"
+      },
+      "PROTOCOL_CODEC": {
+        "kind": "variable",
+        "type": "typeof PROTOCOL_CODEC",
+        "signature": "export declare const PROTOCOL_CODEC: unique symbol;"
+      },
+      "PROTOCOL_OPTIONS": {
+        "kind": "variable",
+        "type": "symbol",
+        "signature": "export declare const PROTOCOL_OPTIONS: symbol;"
+      },
+      "PROTOCOL_SCHEMA": {
+        "kind": "variable",
+        "type": "symbol",
+        "signature": "export declare const PROTOCOL_SCHEMA: symbol;"
+      },
+      "ProtocolAccessorDecorator": {
+        "kind": "type",
+        "signature": "export type ProtocolAccessorDecorator = <C extends object, V>(value: ClassAccessorDecoratorTarget<C, V>, context: ClassAccessorDecoratorContext<C, V>) => void;"
+      },
+      "ProtocolConstructor": {
+        "kind": "type",
+        "signature": "export type ProtocolConstructor<T extends object = object> = new (...args: never[]) => T;"
+      },
+      "ProtocolError": {
+        "kind": "class",
+        "signature": "export declare class ProtocolError extends Error { readonly code: ProtocolErrorCode; readonly path: string | undefined; constructor(code: ProtocolErrorCode, message: string, path?: string); }"
+      },
+      "ProtocolErrorCode": {
+        "kind": "type",
+        "signature": "export type ProtocolErrorCode = \"truncated\" | \"invalid_varint\" | \"schema\" | \"depth\" | \"cycle\" | \"range\" | \"unknown_enum\" | \"trailing\" | \"size\" | \"validation\" | \"value\" | \"oneof\";"
+      },
+      "ProtocolModel": {
+        "kind": "class",
+        "signature": "export declare class ProtocolModel {}"
+      },
+      "readArray": {
+        "kind": "function",
+        "type": "<T>(reader: Reader, context: DecodeContext, path: string, readItem: (index: number) => T, part?: PathPart) => T[]",
+        "signature": "export declare function readArray<T>(reader: Reader, context: DecodeContext, path: string, readItem: (index: number) => T, part?: PathPart): T[];"
+      },
+      "Reader": {
+        "kind": "class",
+        "signature": "export declare class Reader { offset: number; constructor(bytes: Uint8Array, maxSize: number); reset(bytes: Uint8Array, maxSize: number): void; release(): void; get remaining(): number; byte(path: string, part?: PathPart, index?: number): number; bool(path: string, part?: PathPart, index?: number): boolean; varint(path: string, part?: PathPart, index?: number): bigint; varintNumber(path: string, max: number, part?: PathPart, index?: number): number; zigzag(path: string, part?: PathPart, index?: number): bigint; zigzagNumber(path: string, part?: PathPart, index?: number): number; fixed32(path: string, part?: PathPart, index?: number): number; fixed64(path: string, part?: PathPart, index?: number): bigint; float32(path: string, part?: PathPart, index?: number): number; float64(path: string, part?: PathPart, index?: number): number; readLength(path: string, part?: PathPart, index?: number): number; bytes(path: string, part?: PathPart, index?: number): Uint8Array; string(path: string, part?: PathPart, index?: number): string; bitmap(count: number, path: string, part?: PathPart, index?: number): boolean[]; bitmapMask(count: number, path: string, part?: PathPart, index?: number): number; }"
+      },
+      "readMap": {
+        "kind": "function",
+        "type": "<K, V>(reader: Reader, context: DecodeContext, path: string, readKey: () => K, readValue: () => V) => Map<K, V>",
+        "signature": "export declare function readMap<K, V>(reader: Reader, context: DecodeContext, path: string, readKey: () => K, readValue: () => V): Map<K, V>;"
+      },
+      "readMessage": {
+        "kind": "function",
+        "type": "<T extends object>(ctor: new () => T, reader: Reader, context: DecodeContext, path: string) => T",
+        "signature": "export declare function readMessage<T extends object>(ctor: new () => T, reader: Reader, context: DecodeContext, path: string): T;"
+      },
+      "readOptionalArray": {
+        "kind": "function",
+        "type": "<T>(reader: Reader, context: DecodeContext, path: string, readItem: (index: number) => T, part?: PathPart) => (T | undefined)[]",
+        "signature": "export declare function readOptionalArray<T>(reader: Reader, context: DecodeContext, path: string, readItem: (index: number) => T, part?: PathPart): (T | undefined)[];"
+      },
+      "readSet": {
+        "kind": "function",
+        "type": "<T>(reader: Reader, context: DecodeContext, path: string, readValue: () => T) => Set<T>",
+        "signature": "export declare function readSet<T>(reader: Reader, context: DecodeContext, path: string, readValue: () => T): Set<T>;"
+      },
+      "registerFieldOption": {
+        "kind": "function",
+        "type": "(ctor: Function, field: string, options: FieldOptions) => void",
+        "signature": "export declare function registerFieldOption(ctor: Function, field: string, options: FieldOptions): void;"
+      },
+      "Schema": {
+        "kind": "type",
+        "signature": "export type Schema = readonly SchemaEntry[] | SchemaObject;"
+      },
+      "SCHEMA_VERSION": {
+        "kind": "variable",
+        "type": "1",
+        "signature": "export declare const SCHEMA_VERSION = 1;"
+      },
+      "SchemaDefinition": {
+        "kind": "interface",
+        "signature": "export interface SchemaDefinition { readonly version?: number | undefined; readonly fields: readonly FieldSchema[] | Readonly<Record<string, TypeSchema>>; readonly oneofs?: readonly OneofDefinition[] | undefined; }"
+      },
+      "SchemaEntry": {
+        "kind": "type",
+        "signature": "export type SchemaEntry = FieldEntry | OneofEntry;"
+      },
+      "SchemaInput": {
+        "kind": "type",
+        "signature": "export type SchemaInput = readonly SchemaEntry[] | SchemaDefinition;"
+      },
+      "SchemaObject": {
+        "kind": "interface",
+        "signature": "export interface SchemaObject { readonly version?: number | undefined; readonly fields: readonly FieldSchema[] | Readonly<Record<string, TypeSchema>>; readonly oneofs?: readonly OneofSchema[] | undefined; }"
+      },
+      "StaticCodec": {
+        "kind": "interface",
+        "signature": "export interface StaticCodec<T extends object = object> { write(value: T, writer: Writer, context: EncodeContext, path: string): void; read(reader: Reader, context: DecodeContext, path: string): T; }"
+      },
+      "TypeSchema": {
+        "kind": "type",
+        "signature": "export type TypeSchema = PrimitiveType | readonly [\"literal\", LiteralValue] | readonly [\"enum\", readonly (string | number)[]] | readonly [\"class\", () => Function] | readonly [\"array\", TypeSchema] | readonly [\"tuple\", readonly TypeSchema[]] | readonly [\"map\", TypeSchema, TypeSchema] | readonly [\"set\", TypeSchema] | readonly [\"record\", TypeSchema] | readonly [\"optional\", TypeSchema] | null;"
+      },
+      "Uint32": {
+        "kind": "function",
+        "type": "() => ProtocolAccessorDecorator",
+        "signature": "export declare function Uint32(): ProtocolAccessorDecorator;"
+      },
+      "Uint64": {
+        "kind": "function",
+        "type": "() => ProtocolAccessorDecorator",
+        "signature": "export declare function Uint64(): ProtocolAccessorDecorator;"
+      },
+      "ValidateHook": {
+        "kind": "type",
+        "signature": "export type ValidateHook = (value: object) => ValidateResult;"
+      },
+      "ValidateResult": {
+        "kind": "type",
+        "signature": "export type ValidateResult = boolean | { readonly valid: boolean; readonly errors?: readonly unknown[] | undefined; };"
+      },
+      "VALIDATION_HOOK": {
+        "kind": "variable",
+        "type": "symbol",
+        "signature": "export declare const VALIDATION_HOOK: symbol;"
+      },
+      "Variant": {
+        "kind": "interface",
+        "signature": "export interface Variant { readonly value: number; readonly field: string; readonly type: TypeSchema; }"
+      },
+      "VariantDefinition": {
+        "kind": "interface",
+        "signature": "export interface VariantDefinition { readonly value: number; readonly field: string; readonly type?: TypeSchema | undefined; }"
+      },
+      "WireTypeName": {
+        "kind": "type",
+        "signature": "export type WireTypeName = \"int32\" | \"uint32\" | \"int64\" | \"uint64\" | \"float32\" | \"fixed32\" | \"fixed64\" | \"epochMillis\";"
+      },
+      "writeArray": {
+        "kind": "function",
+        "type": "<T>(items: readonly T[], writer: Writer, context: EncodeContext, path: string, writeItem: (item: T, index: number) => void) => void",
+        "signature": "export declare function writeArray<T>(items: readonly T[], writer: Writer, context: EncodeContext, path: string, writeItem: (item: T, index: number) => void): void;"
+      },
+      "writeMap": {
+        "kind": "function",
+        "type": "<K, V>(map: ReadonlyMap<K, V>, writer: Writer, context: EncodeContext, path: string, sortKey: (key: K) => number | string, writeKey: (key: K) => void, writeValue: (value: V) => void) => void",
+        "signature": "export declare function writeMap<K, V>(map: ReadonlyMap<K, V>, writer: Writer, context: EncodeContext, path: string, sortKey: (key: K) => number | string, writeKey: (key: K) => void, writeValue: (value: V) => void): void;"
+      },
+      "writeMessage": {
+        "kind": "function",
+        "type": "(ctor: Function, value: object, writer: Writer, context: EncodeContext, path: string) => void",
+        "signature": "export declare function writeMessage(ctor: Function, value: object, writer: Writer, context: EncodeContext, path: string): void;"
+      },
+      "writeOptionalArray": {
+        "kind": "function",
+        "type": "<T>(items: readonly (T | undefined)[], writer: Writer, context: EncodeContext, path: string, writeItem: (item: T, index: number) => void) => void",
+        "signature": "export declare function writeOptionalArray<T>(items: readonly (T | undefined)[], writer: Writer, context: EncodeContext, path: string, writeItem: (item: T, index: number) => void): void;"
+      },
+      "Writer": {
+        "kind": "class",
+        "signature": "export declare class Writer { constructor(maxSize: number); get size(): number; get capacity(): number; reset(maxSize: number): void; byte(value: number): void; bool(value: boolean): void; varint(value: number | bigint): void; zigzag(value: number | bigint): void; fixed32(value: number): void; fixed64(value: bigint): void; float32(value: number): void; float64(value: number): void; raw(bytes: Uint8Array): void; bytes(value: Uint8Array): void; string(value: string): void; bitmap(bits: readonly boolean[]): void; bitmapMask(mask: number, count: number): void; finish(): Uint8Array; }"
+      },
+      "writeSet": {
+        "kind": "function",
+        "type": "<T>(set: ReadonlySet<T>, writer: Writer, context: EncodeContext, path: string, sortKey: (value: T) => number | string, writeValue: (value: T) => void) => void",
+        "signature": "export declare function writeSet<T>(set: ReadonlySet<T>, writer: Writer, context: EncodeContext, path: string, sortKey: (value: T) => number | string, writeValue: (value: T) => void): void;"
+      }
+    },
+    "@ivlev-dev/silent-protocol-vite": {
+      "BytesView": {
+        "kind": "type",
+        "signature": "export type BytesView = \"uint8\" | \"arraybuffer\" | \"view\";"
+      },
+      "generateProtocolBlocks": {
+        "kind": "function",
+        "type": "(options: ProtocolCodegenOptions) => readonly ProtocolBlock[]",
+        "signature": "export declare function generateProtocolBlocks(options: ProtocolCodegenOptions): readonly ProtocolBlock[];"
+      },
+      "protocol": {
+        "kind": "function",
+        "type": "(options?: ProtocolPluginOptions) => Plugin",
+        "signature": "export declare function protocol(options?: ProtocolPluginOptions): Plugin;"
+      },
+      "PROTOCOL_MODULE": {
+        "kind": "variable",
+        "type": "\"@ivlev-dev/silent-protocol\"",
+        "signature": "export declare const PROTOCOL_MODULE = \"@ivlev-dev/silent-protocol\";"
+      },
+      "ProtocolBlock": {
+        "kind": "interface",
+        "signature": "export interface ProtocolBlock { readonly position: number; readonly code: string; readonly className: string; readonly fields: readonly ProtocolFieldSchema[]; readonly oneofs: readonly ProtocolOneofSchema[]; readonly helpers: readonly ProtocolHelperName[]; }"
+      },
+      "ProtocolCodegenOptions": {
+        "kind": "interface",
+        "signature": "export interface ProtocolCodegenOptions { readonly sourceFile: ts.SourceFile; readonly checker: ts.TypeChecker; readonly runtimeRef: RuntimeRefResolver[\"runtimeRef\"]; readonly diagnostics?: ((message: string) => void) | undefined; readonly strict?: boolean | undefined; readonly shouldGenerate?: ((declaration: ts.ClassDeclaration | ts.ClassExpression) => boolean) | undefined; }"
+      },
+      "ProtocolDiagnostics": {
+        "kind": "type",
+        "signature": "export type ProtocolDiagnostics = (message: string) => void;"
+      },
+      "ProtocolFieldSchema": {
+        "kind": "interface",
+        "signature": "export interface ProtocolFieldSchema { readonly name: string; readonly type: SchemaNode; readonly optional: boolean; }"
+      },
+      "protocolHelperAlias": {
+        "kind": "function",
+        "type": "(name: ProtocolHelperName) => string",
+        "signature": "export declare function protocolHelperAlias(name: ProtocolHelperName): string;"
+      },
+      "ProtocolHelperName": {
+        "kind": "type",
+        "signature": "export type ProtocolHelperName = \"writeMessage\" | \"readMessage\" | \"writeArray\" | \"writeOptionalArray\" | \"readArray\" | \"readOptionalArray\" | \"writeMap\" | \"readMap\" | \"writeSet\" | \"readSet\" | \"ProtocolError\";"
+      },
+      "ProtocolLiteral": {
+        "kind": "type",
+        "signature": "export type ProtocolLiteral = string | number | boolean | null;"
+      },
+      "ProtocolOneofSchema": {
+        "kind": "interface",
+        "signature": "export interface ProtocolOneofSchema { readonly name: string; readonly enumReference: string; readonly variants: readonly ProtocolVariantSchema[]; }"
+      },
+      "ProtocolPluginOptions": {
+        "kind": "interface",
+        "signature": "export interface ProtocolPluginOptions { readonly include?: RegExp; readonly exclude?: RegExp; readonly tsconfig?: string; readonly strict?: boolean; readonly diagnostics?: boolean | ProtocolDiagnostics; }"
+      },
+      "ProtocolPrimitive": {
+        "kind": "type",
+        "signature": "export type ProtocolPrimitive = \"bool\" | \"int32\" | \"uint32\" | \"int64\" | \"uint64\" | \"float32\" | \"float64\" | \"fixed32\" | \"fixed64\" | \"string\" | \"bytes\" | \"date\" | \"bigint\";"
+      },
+      "ProtocolTypeSchema": {
+        "kind": "type",
+        "signature": "export type ProtocolTypeSchema = ProtocolPrimitive | readonly [\"literal\", ProtocolLiteral] | readonly [\"enum\", readonly (string | number)[]] | readonly [\"class\", () => Function] | readonly [\"array\", ProtocolTypeSchema] | readonly [\"tuple\", readonly ProtocolTypeSchema[]] | readonly [\"map\", ProtocolTypeSchema, ProtocolTypeSchema] | readonly [\"set\", ProtocolTypeSchema] | readonly [\"optional\", ProtocolTypeSchema];"
+      },
+      "ProtocolVariantSchema": {
+        "kind": "interface",
+        "signature": "export interface ProtocolVariantSchema { readonly value: string | number; readonly field: string; readonly type: SchemaNode; }"
+      },
+      "SchemaNode": {
+        "kind": "type",
+        "signature": "export type SchemaNode = { readonly kind: \"primitive\"; readonly name: ProtocolPrimitive; readonly bytesView?: BytesView; } | { readonly kind: \"literal\"; readonly value: ProtocolLiteral; } | { readonly kind: \"enum\"; readonly values: readonly (string | number)[]; } | { readonly kind: \"class\"; readonly reference: string; } | { readonly kind: \"array\"; readonly element: SchemaNode; } | { readonly kind: \"tuple\"; readonly elements: readonly SchemaNode[]; } | { readonly kind: \"map\"; readonly key: SchemaNode; readonly value: SchemaNode; readonly record?: true; } | { readonly kind: \"set\"; readonly element: SchemaNode; } | { readonly kind: \"optional\"; readonly inner: SchemaNode; };"
+      }
+    },
     "@ivlev-dev/silent-reactivity": {
       "Accessor": {
         "kind": "type",

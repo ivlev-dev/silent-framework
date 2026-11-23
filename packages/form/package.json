@@ -1,6 +1,6 @@
 {
   "name": "@ivlev-dev/silent-form",
-  "version": "0.13.1",
+  "version": "0.14.0",
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.js",
@@ -20,9 +20,9 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@ivlev-dev/silent-core": ">=0.13.0 <0.14.0",
-    "@ivlev-dev/silent-reactivity": ">=0.13.0 <0.14.0",
-    "@ivlev-dev/silent-validation": ">=0.13.0 <0.14.0"
+    "@ivlev-dev/silent-core": ">=0.14.0 <0.15.0",
+    "@ivlev-dev/silent-reactivity": ">=0.14.0 <0.15.0",
+    "@ivlev-dev/silent-validation": ">=0.14.0 <0.15.0"
   },
   "devDependencies": {
     "@ivlev-dev/silent-core": "workspace:*",

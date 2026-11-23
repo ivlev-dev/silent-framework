@@ -1,54 +1,90 @@
+/// Тип поля или варианта в описании схемы.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SchemaType {
+    /// `bool`: один байт 0/1.
     Bool,
+    /// `i32`: zigzag varint.
     Int32,
+    /// `u32`: varint.
     Uint32,
+    /// `i64`: zigzag varint.
     Int64,
+    /// `u64`: varint.
     Uint64,
+    /// `f32`: IEEE 754, 4 байта little-endian.
     Float32,
+    /// `f64`: IEEE 754, 8 байт little-endian.
     Float64,
+    /// `u32` фиксированной ширины, 4 байта little-endian.
     Fixed32,
+    /// `u64` фиксированной ширины, 8 байт little-endian.
     Fixed64,
+    /// UTF-8 строка с varint-длиной.
     String,
+    /// Сырые байты с varint-длиной.
     Bytes,
+    /// Дата в epoch milliseconds (`i64` zigzag varint).
     Date,
+    /// Единичное значение без payload.
     Unit,
+    /// Enum-тип с указанным именем.
     Enum(&'static str),
+    /// Вложенное сообщение с указанным именем типа.
     Message(&'static str),
+    /// Массив элементов.
     Array(Box<SchemaType>),
+    /// Map с типами ключа и значения.
     Map(Box<SchemaType>, Box<SchemaType>),
+    /// Множество элементов.
     Set(Box<SchemaType>),
+    /// Optional-значение, вынесенное в bitmap.
     Optional(Box<SchemaType>),
 }
 
+/// Поле сообщения в описании схемы.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SchemaField {
+    /// Имя поля протокола (с учётом `#[proto(rename)]`).
     pub name: &'static str,
+    /// Тип поля без внешнего `Optional`.
     pub ty: SchemaType,
+    /// Признак optional-поля (бит в bitmap).
     pub optional: bool,
 }
 
+/// Вариант oneof-группы.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SchemaVariant {
+    /// Wire-значение enum-дискриминатора.
     pub value: u32,
+    /// Имя поля-варианта.
     pub field: &'static str,
+    /// Тип payload варианта.
     pub ty: SchemaType,
 }
 
+/// oneof-группа в описании схемы.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SchemaOneOf {
+    /// Имя поля-дискриминатора (позиция группы в сообщении).
     pub name: &'static str,
+    /// Имя enum-типа дискриминатора.
     pub enum_name: &'static str,
+    /// Варианты, отсортированные по wire-значению.
     pub variants: Vec<SchemaVariant>,
 }
 
+/// Элемент описания сообщения: обычное поле или oneof-группа.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SchemaEntry {
+    /// Обычное поле.
     Field(SchemaField),
+    /// oneof-группа, занимающая позицию поля-дискриминатора.
     OneOf(SchemaOneOf),
 }
 
 impl SchemaEntry {
+    /// Возвращает имя поля или oneof-группы.
     pub fn name(&self) -> &'static str {
         match self {
             Self::Field(field) => field.name,
@@ -107,6 +143,23 @@ fn render_type(ty: &SchemaType, out: &mut String) {
     }
 }
 
+/// Возвращает каноническое текстовое представление схемы.
+///
+/// Формат строк стабилен и используется для отпечатка: поля идут как
+/// `field|<имя>|<тип>|<0|1>`, oneof — как
+/// `oneof|<имя>|<enum>|<value>:<поле>:<тип>...` с вариантами по возрастанию
+/// значения. Каждая строка завершается `\n`.
+///
+/// ```
+/// use silent_protocol::{canonical, SchemaEntry, SchemaField, SchemaType};
+///
+/// let entries = vec![SchemaEntry::Field(SchemaField {
+///     name: "id",
+///     ty: SchemaType::Int64,
+///     optional: false,
+/// })];
+/// assert_eq!(canonical(&entries), "field|id|int64|0\n");
+/// ```
 pub fn canonical(entries: &[SchemaEntry]) -> String {
     let mut out = String::new();
     for entry in entries {
@@ -141,6 +194,11 @@ pub fn canonical(entries: &[SchemaEntry]) -> String {
     out
 }
 
+/// Возвращает 64-битный отпечаток схемы (FNV-1a по [`canonical`]).
+///
+/// Отпечаток детерминирован для одинаковых имён полей и типов и не зависит
+/// от имени Rust-структуры. Формат отпечатка отличается от TS и Kotlin;
+/// для межъязыковой совместимости используйте бинарные векторы.
 pub fn fingerprint(entries: &[SchemaEntry]) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325u64;
     for byte in canonical(entries).bytes() {

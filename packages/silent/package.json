@@ -1,6 +1,6 @@
 {
   "name": "@ivlev-dev/silent",
-  "version": "0.13.1",
+  "version": "0.14.0",
   "type": "module",
   "sideEffects": false,
   "main": "./index.js",
@@ -10,12 +10,12 @@
     "index.d.ts"
   ],
   "dependencies": {
-    "@ivlev-dev/silent-core": ">=0.13.0 <0.14.0",
-    "@ivlev-dev/silent-di": ">=0.13.0 <0.14.0",
-    "@ivlev-dev/silent-reactivity": ">=0.13.0 <0.14.0",
-    "@ivlev-dev/silent-router": ">=0.13.0 <0.14.0",
-    "@ivlev-dev/silent-swc": ">=0.13.0 <0.14.0",
-    "@ivlev-dev/silent-vite": ">=0.13.0 <0.14.0"
+    "@ivlev-dev/silent-core": ">=0.14.0 <0.15.0",
+    "@ivlev-dev/silent-di": ">=0.14.0 <0.15.0",
+    "@ivlev-dev/silent-reactivity": ">=0.14.0 <0.15.0",
+    "@ivlev-dev/silent-router": ">=0.14.0 <0.15.0",
+    "@ivlev-dev/silent-swc": ">=0.14.0 <0.15.0",
+    "@ivlev-dev/silent-vite": ">=0.14.0 <0.15.0"
   },
   "peerDependencies": {
     "vite": ">=8"

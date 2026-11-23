@@ -68,7 +68,7 @@ export default defineConfig({
 
 При установке метапакета плагин доступен и оттуда: `import { silent } from "@ivlev-dev/silent"`. Оттуда же реэкспортируется роутер: `import { Router, RouterView, Link } from "@ivlev-dev/silent"`.
 
-В библиотечных пакетах внутренние `@ivlev-dev/silent-*` объявлены как peer-зависимости с диапазоном `>=0.12.0 <0.13.0` (метапакет ставит их как обычные зависимости): патч-версии совместимы, а `0.13.0` требует согласованного обновления. npm 7+ и pnpm ставят такие peer-зависимости автоматически.
+В библиотечных пакетах внутренние `@ivlev-dev/silent-*` объявлены как peer-зависимости с диапазоном `>=0.14.0 <0.15.0` (метапакет ставит их как обычные зависимости): патч-версии совместимы, а `0.15.0` требует согласованного обновления. npm 7+ и pnpm ставят такие peer-зависимости автоматически.
 
 По умолчанию плагин компилирует TS/TSX с `target: "es2024"`, включает source maps и HMR.
 
@@ -117,6 +117,32 @@ await form.onSubmit((submitted) => api.login(submitted.values))();
 ```
 
 `getFieldProps` отдаёт реактивные `value`, `label`, `placeholder`, `hint`, `error`, `isReady`, `isValid`, `isValidating` и обработчики `onInput`/`onChange`/`onBlur`, а также DOM-`id` по умолчанию `${className}-${path}` (`LoginForm-email`). Имя класса может измениться при минификации, поэтому для стабильных id (минификация, SSR) задавайте `formId`: `new LoginForm({ formId: "login" })` даёт `login-email`. Вложенные формы подключаются через `@FormField()` — значения, ошибки и готовность агрегируются, пути типизированы (`address.city`); серверные ошибки ставятся `setFieldErrors` и снимаются при изменении значения. Подробнее — [`docs/api/form.md`](./docs/api/form.md), полный пример — [`examples/forms`](./examples/forms).
+
+## Протокол
+
+`@ivlev-dev/silent-protocol` — бинарный формат вместо JSON: схема — сам класс, на wire нет имён полей, значения идут в порядке сортировки по имени.
+
+```ts
+import { decode, encode, ProtocolModel } from "@ivlev-dev/silent-protocol";
+
+class Address extends ProtocolModel {
+  public accessor city: string = "";
+  public accessor zip: number = 0;
+}
+
+class User extends ProtocolModel {
+  public accessor name: string = "";
+  public accessor age: number = 0;
+  public accessor address: Address = new Address();
+  public accessor email: string | undefined = undefined;
+}
+
+const user = new User();
+const bytes = encode(user);
+const restored = decode(User, bytes);
+```
+
+Схема и статические кодеки генерируются плагином `protocol()` из `@ivlev-dev/silent-protocol-vite`; поддерживаются массивы, map/set, вложенные классы, optional/bitmap, oneof через enum, `Date`, `bigint` и typed arrays. Тот же формат реализован в Rust и Kotlin. Подробнее — [`docs/protocol.md`](./docs/protocol.md).
 
 ## Компонент и ViewModel
 
@@ -424,11 +450,11 @@ pnpm deprecate:legacy --dry-run
 
 ## Релиз
 
-Все пакеты `@ivlev-dev/silent-*` версионируются синхронно (сейчас `0.12.0`). Внутренние зависимости записаны диапазоном `>=0.12.0 <0.13.0`. Правила и пошаговый процесс — [docs/releasing.md](./docs/releasing.md). Релиз запускается тегом:
+Все пакеты `@ivlev-dev/silent-*` версионируются синхронно (сейчас `0.14.0`). Внутренние зависимости записаны диапазоном `>=0.14.0 <0.15.0`. Правила и пошаговый процесс — [docs/releasing.md](./docs/releasing.md). Релиз запускается тегом:
 
 ```bash
-git tag v0.12.0
-git push origin v0.12.0
+git tag v0.14.0
+git push origin v0.14.0
 ```
 
 GitHub Actions `Release` соберёт нативные бинарники под Linux/Windows, прогонит тесты, проверит совпадение тега и версий, соберёт пакеты и опубликует их в npm. Для публикации нужен секрет репозитория `NPM_TOKEN`. Локальная проверка установки из tarball'ов — `pnpm install:check`.
