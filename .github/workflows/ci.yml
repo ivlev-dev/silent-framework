@@ -146,3 +146,24 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build:tsc
       - run: pnpm typecheck
+
+  # PHP-реализация протокола: атрибуты + рефлексия, без внешних зависимостей.
+  # Тесты — plain runner (php tests/run.php), поэтому PHPUnit и `composer install`
+  # не нужны; `composer validate` проверяет только манифест.
+  php:
+    name: php
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: php
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer
+          coverage: none
+      - run: composer validate --strict
+      - run: find src tests -name '*.php' -print0 | xargs -0 -n1 php -l
+      - run: php tests/run.php

@@ -1,0 +1,17 @@
+{
+  "name": "ivlev-dev/silent-protocol",
+  "description": "Silent Protocol for PHP: attributes + reflection, byte-compatible with the TS/Rust/Kotlin implementations",
+  "type": "library",
+  "license": "MIT",
+  "require": {
+    "php": ">=8.2"
+  },
+  "autoload": {
+    "psr-4": {
+      "Ivlev\\Silent\\Protocol\\": "src/"
+    }
+  },
+  "scripts": {
+    "test": "php tests/run.php"
+  }
+}

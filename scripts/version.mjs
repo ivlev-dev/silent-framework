@@ -6,6 +6,10 @@ import { fileURLToPath } from "node:url";
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const packages = ["reactivity", "di", "core", "swc", "vite", "server", "router", "validation", "validation-vite", "protocol", "protocol-vite", "form", "silent"];
 const semverPattern = /^(\d+)\.(\d+)\.(\d+)$/;
+const phpProtocolPath = "php/src/Protocol.php";
+// Единственная версия в PHP-пакете: composer.json поле `version` не содержит
+// (Packagist берёт версию из тега), поэтому синхронизируем константу вручную.
+const phpVersionPattern = /(public const VERSION = ')(\d+\.\d+\.\d+)(';)/;
 
 function fail(message) {
   console.error(message);
@@ -58,6 +62,22 @@ function writeCargoVersion(version) {
   writeText("Cargo.toml", lines.join(eol));
 }
 
+function readPhpVersion() {
+  const match = readText(phpProtocolPath).match(phpVersionPattern);
+  if (match === null) {
+    fail(`В ${phpProtocolPath} не найден public const VERSION = 'X.Y.Z';`);
+  }
+  return match[2];
+}
+
+function writePhpVersion(version) {
+  const text = readText(phpProtocolPath);
+  if (!phpVersionPattern.test(text)) {
+    fail(`В ${phpProtocolPath} не найден public const VERSION = 'X.Y.Z';`);
+  }
+  writeText(phpProtocolPath, text.replace(phpVersionPattern, `$1${version}$3`));
+}
+
 function readCurrentVersion() {
   const cargo = readCargoVersion().version;
   const mismatches = [];
@@ -66,6 +86,10 @@ function readCurrentVersion() {
     if (manifest.version !== cargo) {
       mismatches.push(`${manifestPath(name)}: ${manifest.version} != ${cargo}`);
     }
+  }
+  const phpVersion = readPhpVersion();
+  if (phpVersion !== cargo) {
+    mismatches.push(`${phpProtocolPath}: ${phpVersion} != ${cargo}`);
   }
   if (mismatches.length > 0) {
     console.warn(
@@ -271,6 +295,7 @@ if (options.dryRun) {
     }
   }
   console.log(`Cargo.toml: ${currentVersion} -> ${nextVersion}`);
+  console.log(`${phpProtocolPath}: ${currentVersion} -> ${nextVersion}`);
   console.log("pnpm-lock.yaml: будет обновлён через pnpm install --lockfile-only");
   console.log(
     changelog.changed
@@ -282,6 +307,7 @@ if (options.dryRun) {
 
 writePackages(nextVersion);
 writeCargoVersion(nextVersion);
+writePhpVersion(nextVersion);
 if (changelog.changed) {
   writeText("CHANGELOG.md", changelog.text);
 }

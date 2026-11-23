@@ -21,7 +21,7 @@
 - Опциональный `@ivlev-dev/silent-router`: класс `Router`, компоненты `Link`/`RouterView`, guards/loaders и memory history для SSR.
 - Опциональный `@ivlev-dev/silent-validation`: декораторы + валидация из TS-типов через Vite-плагин `@ivlev-dev/silent-validation-vite` (`@Required`, `@IsEmail`, `@Min` — всего 51 правило, `accessor`-поля без дублирования типов), кастомные сообщения, встроенные ru/en и интеграция с i18n.
 - Опциональный `@ivlev-dev/silent-form`: реактивные формы на тех же `accessor`-декораторах — метаданные полей (`@Label`, `@Placeholder`, `@Hint`, `@Required`), вложенные формы, серверные ошибки и асинхронная готовность полей.
-- Опциональный `@ivlev-dev/silent-protocol`: бинарный протокол вместо JSON — схема из класса, без имён полей, bitmap optional, oneof, массивы/map/set/nested; TS, Rust и Kotlin.
+- Опциональный `@ivlev-dev/silent-protocol`: бинарный протокол вместо JSON — схема из класса, без имён полей, bitmap optional, oneof, массивы/map/set/nested; TS, Rust, Kotlin и PHP.
 - Справочник API с автопроверкой полноты (`pnpm api:check`).
 
 ## Установка
@@ -142,7 +142,7 @@ const bytes = encode(user);
 const restored = decode(User, bytes);
 ```
 
-Схема и статические кодеки генерируются плагином `protocol()` из `@ivlev-dev/silent-protocol-vite`; поддерживаются массивы, map/set, вложенные классы, optional/bitmap, oneof через enum, `Date`, `bigint` и typed arrays. Тот же формат реализован в Rust и Kotlin. Подробнее — [`docs/protocol.md`](./docs/protocol.md).
+Схема и статические кодеки генерируются плагином `protocol()` из `@ivlev-dev/silent-protocol-vite`; поддерживаются массивы, map/set, вложенные классы, optional/bitmap, oneof через enum, `Date`, `bigint` и typed arrays. Тот же формат реализован в Rust, Kotlin и PHP (атрибуты + рефлексия, [`php/README.md`](./php/README.md)). Подробнее — [`docs/protocol.md`](./docs/protocol.md).
 
 ## Компонент и ViewModel
 

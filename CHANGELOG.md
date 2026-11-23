@@ -10,6 +10,10 @@
 
 ## Unreleased
 
+### Протокол
+
+- Добавлен PHP-пакет `ivlev-dev/silent-protocol`: атрибуты + рефлексия, примитивы, коллекции, oneof, `DateTime`, enum и лимиты, байт-совместимые с TS/Rust/Kotlin. 62 теста в plain-runner (`php/tests/run.php`), общий вектор `protocol/vectors/user.json` читается из JSON; в CI добавлен job `php` (синтаксис, `composer validate`, тесты), версия `Protocol::VERSION` синхронизируется `scripts/version.mjs` и проверяется `scripts/verify-versions.mjs`.
+
 ## 0.12.0
 
 ### Гидрация и сборка

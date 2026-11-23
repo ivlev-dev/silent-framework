@@ -9,3 +9,4 @@ coverage
 reference/
 .playwright-mcp/
 packages/swc/native/
+php/vendor/

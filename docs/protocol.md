@@ -4,11 +4,11 @@
 
 ## Цели
 
-- Класс в TS, Rust или Kotlin является схемой.
+- Класс в TS, Rust, Kotlin или PHP является схемой.
 - Поля кодируются в порядке сортировки по имени, порядок объявления не важен.
 - Нет имён полей и числовых тегов; только значения и bitmap присутствия.
-- Один и тот же бинарный формат в TS, Rust и Kotlin.
-- Нет рефлексии в горячем пути: TS-кодеки кешируются/генерируются, Rust — derive, Kotlin — KSP.
+- Один и тот же бинарный формат в TS, Rust, Kotlin и PHP.
+- Нет рефлексии в горячем пути: TS-кодеки кешируются/генерируются, Rust — derive, Kotlin — KSP, PHP — рефлексия один раз при сборке схемы, дальше кеш.
 - Интеграция с `@ivlev-dev/silent-validation`: типы и декораторы не дублируются.
 
 ## Не цели v1
@@ -250,6 +250,73 @@ val restored = UserCodec.decode(bytes)
 - oneof — enum-дискриминатор + nullable-поля с `@OneOf(EventKind.Created)`.
 - Nullable-поля — bitmap.
 
+## PHP API (8.2+)
+
+```php
+use Ivlev\Silent\Protocol\Attributes\ArrayOf;
+use Ivlev\Silent\Protocol\Attributes\Int32;
+use Ivlev\Silent\Protocol\Attributes\OneOf;
+use Ivlev\Silent\Protocol\Attributes\Proto;
+use Ivlev\Silent\Protocol\Protocol;
+
+enum EventKind: int
+{
+    case Created = 1;
+}
+
+#[Proto]
+final class CreatedPayload
+{
+    public string $title = '';
+}
+
+#[Proto]
+final class User
+{
+    public string $email = '';
+    public int $age = 0;
+
+    #[Int32]
+    public int $score = 0;
+
+    #[ArrayOf('string')]
+    public array $tags = [];
+
+    // oneof: дискриминатор — int-backed enum, вариант — nullable-свойство.
+    public EventKind $kind = EventKind::Created;
+
+    #[OneOf(EventKind::Created)]
+    public ?CreatedPayload $created = null;
+
+    public ?string $nickname = null; // ?T — optional, бит в bitmap
+}
+
+$bytes = Protocol::encode($user);
+$restored = Protocol::decode(User::class, $bytes);
+```
+
+- Установка: `composer require ivlev-dev/silent-protocol` (PSR-4 `Ivlev\Silent\Protocol\`).
+- Схема собирается из атрибутов рефлексией один раз и кешируется по классу.
+- `int` по умолчанию — `int32`; `#[Int64]`/`#[BigInt]` — int64; `#[Uint32]`,
+  `#[Uint64]`, `#[Fixed32]`, `#[Fixed64]`, `#[Float32]`, `#[Bytes]`, `#[Date]` —
+  переопределения wire-типа.
+- Коллекции — `#[ArrayOf('int32')]`, `#[MapOf('string', 'uint32')]`,
+  `#[SetOf('string')]`, `#[Tuple('int32', '?string')]`, `#[RecordOf('uint32')]`;
+  префикс `?` в токене помечает optional-элемент.
+- `\DateTimeInterface` — epoch ms; int-backed `enum` — varint backing value.
+- `Protocol::schema()` отдаёт нормализованную схему; ошибки — единый
+  `ProtocolException` с `$errorCode` (`schema`, `value`, `range`, `truncated`,
+  `invalid_varint`, `utf8`, `bool`, `unknown_enum`, `oneof`, `cycle`, `depth`,
+  `size`, `trailing`) и `$path`.
+- Тесты: `php tests/run.php` — plain runner без PHPUnit и зависимостей.
+
+Ограничения PHP-реализации: `uint64`/`fixed64` больше `PHP_INT_MAX` не
+представимы (encode отвергает, decode бросает `range`); только int-backed
+`enum`; каждой oneof-группе нужен свой enum-тип дискриминатора; set
+пользовательских классов сортируется по закодированным байтам; строки —
+строгий UTF-8 (битые последовательности отвергаются и при encode, и при
+decode); валидации (`validate`) нет. Подробнее — [`php/README.md`](../php/README.md).
+
 ## Кросс-языковые векторы
 
 `protocol/vectors/` содержит пары «JSON-значение + hex» для всех типов. CI проверяет:
@@ -257,7 +324,8 @@ val restored = UserCodec.decode(bytes)
 1. TS кодирует → hex совпадает.
 2. Rust декодирует hex → JSON совпадает; Rust кодирует → hex совпадает.
 3. Kotlin декодирует/кодирует аналогично.
-4. Отпечаток схемы (sorted names + types) совпадает между языками.
+4. PHP декодирует/кодирует `protocol/vectors/user.json` тем же hex.
+5. Отпечаток схемы (sorted names + types) совпадает между языками.
 
 ## Реализации
 
@@ -267,14 +335,16 @@ val restored = UserCodec.decode(bytes)
 | TS build | `packages/protocol-vite` (`@ivlev-dev/silent-protocol-vite`) | схема и статические кодеки из TS-класса, декораторы, oneof, наследование |
 | Rust | `silent-protocol` + `silent-protocol-macros` (crates.io `0.14`) | `#[derive(SilentProto)]`, примитивы, коллекции, oneof, лимиты |
 | Kotlin | `kotlin/protocol` + `kotlin/ksp-processor` | JVM/Android, KSP-кодеки, `Instant`, коллекции, oneof |
+| PHP | `php/` (`ivlev-dev/silent-protocol`) | атрибуты + рефлексия, примитивы, коллекции, oneof, `DateTime`, enum, лимиты |
 
-Кросс-языковые векторы: `protocol/vectors/` и тесты `cross-vector`/`cross_language`/`CrossLanguageTest` (TS, Rust, Kotlin дают одинаковые байты). Отпечатки схемы (`schema_hash`/`schemaFingerprint`) сейчас имеют разные форматы и не сравниваются между языками; источник истины для совместимости — бинарные векторы.
+Кросс-языковые векторы: `protocol/vectors/` и тесты `cross-vector`/`cross_language`/`CrossLanguageTest` (TS, Rust, Kotlin и PHP дают одинаковые байты). Отпечатки схемы (`schema_hash`/`schemaFingerprint`) сейчас имеют разные форматы и не сравниваются между языками; источник истины для совместимости — бинарные векторы.
 
 ### Ограничения реализаций
 
 - Rust: `Vec<u8>` трактуется как bytes; enum-поля вне oneof требуют `#[proto(enum_type)]`; нет tuple/литералов схемы и fixed-size массивов.
 - Kotlin: одна oneof-группа на класс; `@OneOf` принимает числовой wire-код (не enum-entry); поддерживаются только свойства primary-конструктора; кодек генерируется KSP.
 - TS-плагин: union без дискриминатора, `any`/`unknown`, rest-кортежи и строковые enum в oneof не поддерживаются; numeric index-signature не разворачивается.
+- PHP: `uint64`/`fixed64` > `PHP_INT_MAX` не представимы; только int-backed enum; один дискриминатор на enum-тип; set классов — по закодированным байтам; строгий UTF-8; нет `validate`.
 
 ## Статические кодеки
 

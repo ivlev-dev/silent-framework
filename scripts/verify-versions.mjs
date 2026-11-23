@@ -4,6 +4,10 @@ import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const packages = ["reactivity", "di", "core", "swc", "vite", "server", "router", "validation", "validation-vite", "protocol", "protocol-vite", "form", "silent"];
+const phpProtocolPath = "php/src/Protocol.php";
+// Единственная версия в PHP-пакете: composer.json поле `version` не содержит
+// (Packagist берёт версию из тега), поэтому сверяем константу вручную.
+const phpVersionPattern = /public const VERSION = '(\d+\.\d+\.\d+)';/;
 
 function readText(relativePath) {
   return readFileSync(join(root, relativePath), "utf8");
@@ -31,6 +35,30 @@ function readCargoVersion() {
 
 function normalizeTag(tag) {
   return tag.replace(/^v/, "");
+}
+
+function readPhpVersion() {
+  const match = readText(phpProtocolPath).match(phpVersionPattern);
+  if (match === null) {
+    console.error(`В ${phpProtocolPath} не найден public const VERSION = 'X.Y.Z';`);
+    process.exit(1);
+  }
+  return match[1];
+}
+
+/**
+ * Для библиотеки версия берётся из git-тега: поле `version` в composer.json
+ * при публикации на Packagist игнорируется и только создаёт второй источник правды.
+ */
+function checkComposerManifest() {
+  const manifest = JSON.parse(readText("php/composer.json"));
+  if (Object.hasOwn(manifest, "version")) {
+    console.error(
+      "php/composer.json содержит поле version: уберите его — Packagist берёт версию из тега, "
+        + `а источник правды здесь — ${phpProtocolPath}.`,
+    );
+    process.exit(1);
+  }
 }
 
 function internalRange(version) {
@@ -77,6 +105,8 @@ for (const name of packages) {
   entries.push({ path, version: manifest.version });
 }
 entries.push({ path: "Cargo.toml", version: readCargoVersion() });
+entries.push({ path: phpProtocolPath, version: readPhpVersion() });
+checkComposerManifest();
 
 const versions = new Set(entries.map((entry) => entry.version));
 if (versions.size !== 1) {
