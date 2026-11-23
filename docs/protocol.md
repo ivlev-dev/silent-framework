@@ -289,12 +289,13 @@ this[Symbol.for("silent.protocol.codec")] = {
 
 `@ivlev-dev/silent-protocol` использует кодек, если он есть, иначе generic-кодек по схеме. Generic остаётся для ручных `defineProtocol` и классов без сгенерированного кодека.
 
-Замер `pnpm bench:protocol` (Node 26, модель 8 полей, 72 B, JSON 157 B):
+Замеры на одной модели `User` (8 полей, nested Address, optional email, bigint/Long id, int32 age/zip, string[], float64), 60 B binary:
 
-| Операция | static | generic | JSON |
+| Язык / режим | encode | decode | JSON baseline |
 | --- | ---: | ---: | ---: |
-| encode | ~768k ops/s, 52.8 MB/s | ~546k, 37.5 MB/s | stringify ~456k, 68.3 MB/s |
-| decode | ~857k ops/s, 58.9 MB/s | ~523k, 35.9 MB/s | parse ~859k, 128.6 MB/s |
-| alloc | 553 B/op | — | 498 B/op |
+| TS static | **1.56M ops/s**, 89 MB/s | **784k**, 45 MB/s | stringify 523k, parse 655k |
+| TS generic | 776k, 44 MB/s | 440k, 25 MB/s | — |
+| Rust release | **6.41M ops/s**, 385 MB/s | **7.97M**, 478 MB/s | serde_json 5.02M / 2.58M |
+| Kotlin JVM | **5.48M ops/s**, 329 MB/s | **5.91M**, 355 MB/s | Gson 69k / 81k |
 
-Static encode быстрее `JSON.stringify` примерно в 1.7×; decode — на уровне `JSON.parse`. Байты static и generic совпадают, формат не меняется.
+TS-аллокации: encode 633 B/op, decode 1080 B/op (было 2200/2722). Rust и Kotlin работают на скомпилированном коде и опережают TS в 4–8×; TS static encode/decode быстрее JSON на той же модели. Абсолютные числа зависят от машины и нагрузки; методика — `pnpm bench:protocol`, `cargo run --release -p silent-protocol --example bench`, `cd kotlin && gradle :protocol:bench`.

@@ -12,7 +12,7 @@
 
 - Добавлена генерация статических кодеков в `@ivlev-dev/silent-protocol-vite`: encode/decode без обхода схемы, generic-кодек остаётся fallback для ручных схем.
 - Оптимизирован горячий путь TS-рантайма: пул Writer/Reader/контекстов, быстрые varint/zigzag, ASCII/UTF-8 строки, битовые маски, ленивые пути ошибок. Static encode ~768k ops/s (быстрее `JSON.stringify` ~1.7×), static decode ~857k ops/s на уровне `JSON.parse`; аллокации encode 2200 → 553 B/op.
-- Добавлен `pnpm bench:protocol` (static/generic/JSON) и общий кросс-языковой вектор TS/Rust/Kotlin.
+- Добавлен `pnpm bench:protocol` (static/generic/JSON) и общий кросс-языковой вектор TS/Rust/Kotlin; замеры Rust (`cargo run --release -p silent-protocol --example bench`) и Kotlin (`gradle :protocol:bench`). Ориентиры на модели User 60 B: TS static 1.56M/0.78M ops/s, Rust 6.41M/7.97M, Kotlin 5.48M/5.91M.
 
 ## 0.12.0
 

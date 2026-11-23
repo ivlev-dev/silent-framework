@@ -42,7 +42,7 @@ const restored = decode(User, bytes);
 - Детерминированная сортировка map/set и полей; лимиты глубины/размера; обнаружение циклов.
 - Опциональная интеграция с `@ivlev-dev/silent-validation` через `encode(value, { validate: true })`.
 - Статические кодеки из `protocol()` и generic fallback; кеш по конструктору, без рефлексии в горячем пути.
-- Бенчмарк: `pnpm bench:protocol` (static/generic/JSON).
+- Бенчмарк: `pnpm bench:protocol` (static/generic/JSON). Ориентиры: static encode ~1.56M ops/s, decode ~0.78M на модели User (60 B); Rust/Kotlin — 5–8M ops/s.
 
 ## Ограничения
 

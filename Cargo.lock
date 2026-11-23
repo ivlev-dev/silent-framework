@@ -1373,6 +1373,8 @@ name = "silent-protocol"
 version = "0.13.1"
 dependencies = [
  "bytes",
+ "serde",
+ "serde_json",
  "silent-protocol-macros",
 ]
 

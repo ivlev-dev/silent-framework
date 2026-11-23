@@ -3,21 +3,24 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { build } from "vite";
 import { protocol } from "../packages/protocol-vite/dist/index.js";
+import { silent } from "../packages/vite/dist/index.js";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const BENCH_DIR = path.join(ROOT, "packages/protocol-vite/.tmp-bench-protocol");
 const SRC_DIR = path.join(BENCH_DIR, "src");
 
-const MODEL = `export class Address {
+const MODEL = `import { Int32 } from "@ivlev-dev/silent-protocol";
+
+export class Address {
   public city: string = "";
-  public zip: number = 0;
+  @Int32() public accessor zip: number = 0;
 }
 
 export class User {
   public id: bigint = 0n;
   public name: string = "";
   public email: string | undefined = undefined;
-  public age: number = 0;
+  @Int32() public accessor age: number = 0;
   public active: boolean = false;
   public address: Address = new Address();
   public tags: string[] = [];
@@ -96,7 +99,7 @@ async function prepare() {
     root: BENCH_DIR,
     configFile: false,
     logLevel: "silent",
-    plugins: [protocol()],
+    plugins: [silent({ hmr: false }), protocol()],
     build: {
       write: true,
       minify: false,
