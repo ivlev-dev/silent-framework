@@ -128,6 +128,18 @@ gradle :protocol:publishToMavenLocal :ksp-processor:publishToMavenLocal
 
 Артефакты появятся в `~/.m2/repository/dev/ivlev/silent/`. Репозитории с секретами в build-скриптах не настроены.
 
+### Публикация в Maven Central
+
+```bash
+export MAVEN_CENTRAL_USERNAME=...
+export MAVEN_CENTRAL_PASSWORD=...
+export GPG_PRIVATE_KEY="$(gpg --armor --export-secret-keys <key>)"
+export GPG_PASSPHRASE=""   # если ключ без пароля
+pnpm publish:maven
+```
+
+Скрипт собирает staging-repo, подписывает артефакты, упаковывает bundle, загружает в Central Portal (`publishingType=AUTOMATIC`) и ждёт `PUBLISHED`. Нужны подтверждённый namespace (`dev.ivlev.silent` или другой из аккаунта) и публичный GPG-ключ на keyserver.
+
 ### Что осталось для Maven Central
 
 - Добавить репозиторий Sonatype OSSRH (или Central Portal) и учётные данные из переменных окружения/`gradle.properties`, не из репозитория.

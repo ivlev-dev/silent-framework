@@ -51,7 +51,8 @@
     "bench:guard": "node scripts/bench-cpus.mjs node scripts/bench-guard.mjs",
     "bench:validation": "node scripts/bench-cpus.mjs node scripts/bench-validation.mjs",
     "bench:validation-build": "node scripts/bench-cpus.mjs node scripts/bench-validation-build.mjs",
-    "consumer:check": "node scripts/consumer-check.mjs"
+    "consumer:check": "node scripts/consumer-check.mjs",
+    "publish:maven": "node scripts/publish-maven-central.mjs"
   },
   "devDependencies": {
     "@napi-rs/cli": "^3.10.12",

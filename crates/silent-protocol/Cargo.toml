@@ -11,7 +11,7 @@ categories = ["encoding", "data-structures"]
 
 [dependencies]
 bytes = "1"
-silent-protocol-macros = { path = "../silent-protocol-macros" }
+silent-protocol-macros = { version = "0.14.0", path = "../silent-protocol-macros" }
 
 [dev-dependencies]
 serde = { version = "1", features = ["derive"] }
