@@ -32,6 +32,7 @@
     "For SSR, render with renderToString or renderToStream from @ivlev-dev/silent-server, put RenderResult.head into <head>, and hydrate on the client with hydrate() using the same props.",
     "In Vite SSR builds keep the runtime external via ssr.external: @ivlev-dev/silent-core, @ivlev-dev/silent-di, @ivlev-dev/silent-reactivity, @ivlev-dev/silent-server.",
     "Render <title>, <meta> and <link> from any component; the runtime hoists them into <head> (and into RenderResult.head during SSR). Elements with itemprop and content inside <svg> are not hoisted.",
-    "Requires Node.js >= 22, Vite >= 8, TypeScript 7 and ESM (type: module). Packages are ESM-only."
+    "Requires Node.js >= 22, Vite >= 8, TypeScript 7 and ESM (type: module). Packages are ESM-only.",
+    "UI components come from @ivlev-dev/silent-ui; import CSS only from its CSS entries (@ivlev-dev/silent-ui/styles.css, button.css, tokens.css, …), never from JS modules — a CSS import inside the package breaks Node-SSR. The package ships precompiled dist, so no extra Vite configuration is needed."
   ]
 }
