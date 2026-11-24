@@ -1,0 +1,144 @@
+/*
+ * Ползунок: нативный range, оформленный токенами.
+ * Трек и бегунок — переменные (--sui-slider-*), высота цели не ниже 44px,
+ * поэтому попасть по ползунку удобно и мышью, и пальцем.
+ */
+@layer sui.components {
+  .sui-slider {
+    --sui-slider-track-size: 0.375rem;
+    --sui-slider-thumb-size: 1.25rem;
+    --sui-slider-thumb-border: 2px;
+    --sui-slider-hit-size: var(--sui-touch-target);
+    --sui-slider-track-color: var(--sui-color-surface-container-highest);
+    --sui-slider-active-color: var(--sui-color-primary);
+    --sui-slider-thumb-color: var(--sui-color-surface-container-lowest);
+    --sui-slider-error-color: var(--sui-color-error);
+    --sui-slider-error-track-color: var(--sui-color-error-container);
+    --sui-slider-output-color: var(--sui-color-on-surface-variant);
+    --sui-slider-output-min-inline-size: 3rem;
+
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sui-space-2) var(--sui-space-3);
+    min-inline-size: 0;
+  }
+
+  .sui-slider__input {
+    flex: 1 1 8rem;
+    min-inline-size: 0;
+    block-size: var(--sui-slider-hit-size);
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
+    appearance: none;
+  }
+
+  /* WebKit/Blink */
+  .sui-slider__input::-webkit-slider-runnable-track {
+    block-size: var(--sui-slider-track-size);
+    border-radius: var(--sui-radius-full);
+    background-color: var(--sui-slider-track-color);
+  }
+
+  .sui-slider__input::-webkit-slider-thumb {
+    inline-size: var(--sui-slider-thumb-size);
+    block-size: var(--sui-slider-thumb-size);
+    margin-block-start: calc(
+      (var(--sui-slider-track-size) - var(--sui-slider-thumb-size)) / 2
+    );
+    border: var(--sui-slider-thumb-border) solid var(--sui-slider-active-color);
+    border-radius: var(--sui-radius-full);
+    background-color: var(--sui-slider-thumb-color);
+    appearance: none;
+  }
+
+  /* Firefox */
+  .sui-slider__input::-moz-range-track {
+    block-size: var(--sui-slider-track-size);
+    border-radius: var(--sui-radius-full);
+    background-color: var(--sui-slider-track-color);
+  }
+
+  .sui-slider__input::-moz-range-progress {
+    block-size: var(--sui-slider-track-size);
+    border-radius: var(--sui-radius-full);
+    background-color: var(--sui-slider-active-color);
+  }
+
+  .sui-slider__input::-moz-range-thumb {
+    inline-size: var(--sui-slider-thumb-size);
+    block-size: var(--sui-slider-thumb-size);
+    border: var(--sui-slider-thumb-border) solid var(--sui-slider-active-color);
+    border-radius: var(--sui-radius-full);
+    background-color: var(--sui-slider-thumb-color);
+  }
+
+  .sui-slider__input:focus-visible {
+    outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
+    outline-offset: calc(var(--sui-focus-ring-offset) * -1);
+    border-radius: var(--sui-radius-full);
+  }
+
+  .sui-slider__input:disabled {
+    cursor: not-allowed;
+    opacity: var(--sui-state-disabled);
+  }
+
+  .sui-slider[data-invalid] .sui-slider__input::-webkit-slider-runnable-track {
+    background-color: var(--sui-slider-error-track-color);
+  }
+
+  .sui-slider[data-invalid] .sui-slider__input::-webkit-slider-thumb {
+    border-color: var(--sui-slider-error-color);
+  }
+
+  .sui-slider[data-invalid] .sui-slider__input::-moz-range-track {
+    background-color: var(--sui-slider-error-track-color);
+  }
+
+  .sui-slider[data-invalid] .sui-slider__input::-moz-range-progress {
+    background-color: var(--sui-slider-error-color);
+  }
+
+  .sui-slider[data-invalid] .sui-slider__input::-moz-range-thumb {
+    border-color: var(--sui-slider-error-color);
+  }
+
+  .sui-slider[data-invalid] .sui-slider__input:focus-visible {
+    outline-color: var(--sui-slider-error-color);
+  }
+
+  .sui-slider[data-validating] {
+    cursor: progress;
+  }
+
+  .sui-slider[data-validating] .sui-slider__input::-webkit-slider-runnable-track {
+    animation: sui-slider-validating var(--sui-motion-long-2)
+      var(--sui-easing-standard) infinite alternate;
+  }
+
+  @keyframes sui-slider-validating {
+    from {
+      opacity: 1;
+    }
+
+    to {
+      opacity: 0.55;
+    }
+  }
+
+  .sui-slider__output {
+    flex: 0 0 auto;
+    min-inline-size: var(--sui-slider-output-min-inline-size);
+    margin-inline-start: auto;
+    color: var(--sui-slider-output-color);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-label-large-size);
+    line-height: var(--sui-type-label-large-line);
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+    overflow-wrap: anywhere;
+  }
+}

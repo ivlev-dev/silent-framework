@@ -1,0 +1,202 @@
+/*
+ * Прогресс: линейный трек и круговое кольцо. Определённое значение задаётся
+ * инлайновой шириной/`stroke-dashoffset`, indeterminate — CSS-анимацией,
+ * которая полностью отключается при `prefers-reduced-motion`.
+ */
+@layer sui.components {
+  .sui-progress {
+    --sui-progress-track-size: 0.25rem;
+    --sui-progress-color: var(--sui-color-primary);
+    --sui-progress-track-color: var(--sui-color-surface-container-highest);
+    --sui-progress-gap: var(--sui-space-1);
+
+    display: flex;
+    flex-direction: column;
+    gap: var(--sui-progress-gap, var(--sui-space-1));
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    color: var(--sui-progress-color, var(--sui-color-primary));
+    font-family: var(--sui-font-sans);
+  }
+
+  .sui-progress__header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--sui-space-2);
+    min-inline-size: 0;
+    color: var(--sui-color-on-surface);
+    font-size: var(--sui-type-label-medium-size);
+    line-height: var(--sui-type-label-medium-line);
+    font-weight: var(--sui-type-label-medium-weight);
+    letter-spacing: var(--sui-type-label-medium-tracking);
+  }
+
+  .sui-progress__label {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sui-progress__value {
+    flex: none;
+    color: var(--sui-color-on-surface-variant);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* --- linear ---------------------------------------------------------- */
+  .sui-progress__track {
+    display: block;
+    inline-size: 100%;
+    max-inline-size: 100%;
+    block-size: var(--sui-progress-track-size, 0.25rem);
+    overflow: hidden;
+    border-radius: var(--sui-radius-full);
+    background-color: var(--sui-progress-track-color, var(--sui-color-surface-container-highest));
+  }
+
+  .sui-progress__bar {
+    display: block;
+    block-size: 100%;
+    border-radius: inherit;
+    background-color: var(--sui-progress-color, var(--sui-color-primary));
+    transition: width var(--sui-motion-medium-2) var(--sui-easing-standard);
+  }
+
+  .sui-progress[data-size="sm"] {
+    --sui-progress-track-size: 0.125rem;
+  }
+
+  .sui-progress[data-size="md"] {
+    --sui-progress-track-size: 0.25rem;
+  }
+
+  .sui-progress[data-size="lg"] {
+    --sui-progress-track-size: 0.5rem;
+  }
+
+  /* --- circular -------------------------------------------------------- */
+  .sui-progress[data-variant="circular"] {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .sui-progress__ring {
+    display: block;
+    inline-size: 2.5rem;
+    block-size: auto;
+    max-inline-size: 100%;
+    transform: rotate(-90deg);
+  }
+
+  .sui-progress__circle-track,
+  .sui-progress__circle-value {
+    stroke-width: 3.5;
+  }
+
+  .sui-progress__circle-track {
+    stroke: var(--sui-progress-track-color, var(--sui-color-surface-container-highest));
+  }
+
+  .sui-progress__circle-value {
+    stroke: var(--sui-progress-color, var(--sui-color-primary));
+    stroke-linecap: round;
+    transition: stroke-dashoffset var(--sui-motion-medium-2) var(--sui-easing-standard);
+  }
+
+  .sui-progress[data-variant="circular"][data-size="sm"] .sui-progress__ring {
+    inline-size: 1.5rem;
+  }
+
+  .sui-progress[data-variant="circular"][data-size="md"] .sui-progress__ring {
+    inline-size: 2.5rem;
+  }
+
+  .sui-progress[data-variant="circular"][data-size="lg"] .sui-progress__ring {
+    inline-size: 4rem;
+  }
+
+  /* --- indeterminate --------------------------------------------------- */
+  .sui-progress[data-indeterminate] .sui-progress__bar {
+    inline-size: 40%;
+    animation: sui-progress-slide 1.4s var(--sui-easing-standard-decelerate) infinite;
+  }
+
+  /* RTL: полоса едет справа налево, а не «против» направления письма. */
+  .sui-progress[data-indeterminate]:dir(rtl) .sui-progress__bar {
+    animation-name: sui-progress-slide-rtl;
+  }
+
+  .sui-progress[data-variant="circular"][data-indeterminate] .sui-progress__ring {
+    animation: sui-progress-rotate 1.4s var(--sui-easing-linear) infinite;
+  }
+
+  .sui-progress[data-variant="circular"][data-indeterminate] .sui-progress__circle-value {
+    stroke-dasharray: 25 75;
+  }
+
+  @keyframes sui-progress-slide {
+    from {
+      transform: translateX(-100%);
+    }
+
+    to {
+      transform: translateX(250%);
+    }
+  }
+
+  @keyframes sui-progress-slide-rtl {
+    from {
+      transform: translateX(100%);
+    }
+
+    to {
+      transform: translateX(-250%);
+    }
+  }
+
+  @keyframes sui-progress-rotate {
+    to {
+      transform: rotate(270deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sui-progress__bar,
+    .sui-progress__circle-value {
+      transition: none;
+    }
+
+    .sui-progress[data-indeterminate] .sui-progress__bar {
+      inline-size: 100%;
+      animation: none;
+      opacity: 0.6;
+    }
+
+    .sui-progress[data-variant="circular"][data-indeterminate] .sui-progress__ring {
+      animation: none;
+    }
+
+    .sui-progress[data-variant="circular"][data-indeterminate] .sui-progress__circle-value {
+      stroke-dasharray: 100;
+      opacity: 0.6;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .sui-progress__track,
+    .sui-progress__circle-track {
+      border: 1px solid CanvasText;
+    }
+
+    .sui-progress__bar {
+      background-color: Highlight;
+    }
+
+    .sui-progress__circle-value {
+      stroke: Highlight;
+    }
+  }
+}

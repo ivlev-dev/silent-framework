@@ -1,0 +1,195 @@
+/*
+ * Радиогруппа: fieldset/legend, нативный input + кастомная точка.
+ * Вся строка пункта — цель нажатия не ниже touch-target; длинные подписи
+ * переносятся, описание выравнивается по тексту.
+ */
+@layer sui.components {
+  .sui-radio-group {
+    --sui-radio-size: var(--sui-icon-size-md);
+    --sui-radio-gap: var(--sui-space-2);
+    --sui-radio-item-gap: var(--sui-space-1);
+    --sui-radio-hit-size: var(--sui-touch-target);
+    --sui-radio-border-color: var(--sui-color-outline);
+    --sui-radio-accent-color: var(--sui-color-primary);
+    --sui-radio-error-color: var(--sui-color-error);
+    --sui-radio-hint-color: var(--sui-color-on-surface-variant);
+
+    display: flex;
+    flex-direction: column;
+    gap: var(--sui-radio-gap);
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    font-family: var(--sui-font-sans);
+    color: var(--sui-color-on-surface);
+  }
+
+  .sui-radio-group__legend {
+    padding: 0;
+    font-size: var(--sui-type-label-large-size);
+    line-height: var(--sui-type-label-large-line);
+    font-weight: var(--sui-type-label-large-weight);
+    letter-spacing: var(--sui-type-label-large-tracking);
+    overflow-wrap: anywhere;
+  }
+
+  .sui-radio-group__hint,
+  .sui-radio-group__error {
+    font-size: var(--sui-type-body-small-size);
+    line-height: var(--sui-type-body-small-line);
+    overflow-wrap: anywhere;
+  }
+
+  .sui-radio-group__hint {
+    color: var(--sui-radio-hint-color);
+  }
+
+  .sui-radio-group__error {
+    color: var(--sui-radio-error-color);
+  }
+
+  .sui-radio-group__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sui-radio-item-gap);
+    min-inline-size: 0;
+  }
+
+  .sui-radio-group[data-invalid] .sui-radio-group__legend {
+    color: var(--sui-radio-error-color);
+  }
+
+  .sui-radio-group[data-disabled] {
+    color: var(--sui-color-on-surface-muted);
+  }
+
+  .sui-radio-group[data-disabled] .sui-radio-group__legend,
+  .sui-radio-group[data-disabled] .sui-radio-group__hint,
+  .sui-radio-group[data-disabled] .sui-radio__label,
+  .sui-radio-group[data-disabled] .sui-radio__description {
+    color: var(--sui-color-on-surface-muted);
+  }
+
+  .sui-radio-group[data-disabled] .sui-radio__control {
+    opacity: var(--sui-state-disabled);
+  }
+
+  .sui-radio-group[data-readonly] .sui-radio {
+    cursor: default;
+  }
+
+  .sui-radio-group[data-validating] {
+    cursor: progress;
+  }
+
+  .sui-radio {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: var(--sui-radio-gap);
+    min-inline-size: 0;
+    min-block-size: var(--sui-radio-hit-size);
+    cursor: pointer;
+  }
+
+  .sui-radio[data-disabled] {
+    cursor: not-allowed;
+  }
+
+  .sui-radio__control {
+    position: relative;
+    display: inline-flex;
+    flex: none;
+    inline-size: var(--sui-radio-size);
+    block-size: var(--sui-radio-size);
+    margin-block-start: calc(
+      (
+          var(--sui-type-body-medium-size) * var(--sui-type-body-medium-line) -
+            var(--sui-radio-size)
+        ) /
+        2
+    );
+  }
+
+  .sui-radio__input {
+    position: absolute;
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: inherit;
+  }
+
+  .sui-radio__dot {
+    position: relative;
+    display: block;
+    box-sizing: border-box;
+    inline-size: 100%;
+    block-size: 100%;
+    border: 2px solid var(--sui-radio-border-color);
+    border-radius: var(--sui-radius-full);
+    transition: border-color var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  .sui-radio__dot::after {
+    content: "";
+    position: absolute;
+    inset: 20%;
+    border-radius: var(--sui-radius-full);
+    background-color: var(--sui-radio-accent-color);
+    opacity: 0;
+    transform: scale(0.5);
+    transition:
+      opacity var(--sui-motion-short-3) var(--sui-easing-standard),
+      transform var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  .sui-radio:hover .sui-radio__dot {
+    border-color: var(--sui-radio-accent-color);
+  }
+
+  .sui-radio__input:checked + .sui-radio__dot {
+    border-color: var(--sui-radio-accent-color);
+  }
+
+  .sui-radio__input:checked + .sui-radio__dot::after {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .sui-radio__input:focus-visible + .sui-radio__dot {
+    outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
+    outline-offset: var(--sui-focus-ring-offset);
+  }
+
+  .sui-radio__text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-inline-size: 0;
+  }
+
+  .sui-radio__label {
+    font-size: var(--sui-type-body-medium-size);
+    line-height: var(--sui-type-body-medium-line);
+    overflow-wrap: anywhere;
+  }
+
+  .sui-radio__description {
+    color: var(--sui-radio-hint-color);
+    font-size: var(--sui-type-body-small-size);
+    line-height: var(--sui-type-body-small-line);
+    overflow-wrap: anywhere;
+  }
+
+  .sui-radio-group[data-invalid] .sui-radio__dot,
+  .sui-radio-group[data-invalid] .sui-radio__input:checked + .sui-radio__dot,
+  .sui-radio-group[data-invalid] .sui-radio:hover .sui-radio__dot {
+    border-color: var(--sui-radio-error-color);
+  }
+
+  .sui-radio-group[data-invalid] .sui-radio__input:focus-visible + .sui-radio__dot {
+    outline-color: var(--sui-radio-error-color);
+  }
+}

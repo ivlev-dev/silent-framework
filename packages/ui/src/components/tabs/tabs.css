@@ -1,0 +1,233 @@
+/*
+ * Вкладки: roving tabindex, вертикальный режим, индикатор активной вкладки.
+ * Много вкладок — горизонтальный scroll со fade у краёв (data-overflow),
+ * активный индикатор — золото на navy-тексте.
+ */
+@layer sui.components {
+  .sui-tabs {
+    --sui-tabs-indicator: var(--sui-color-accent);
+    --sui-tabs-selected: var(--sui-color-primary);
+    --sui-tabs-fade: var(--sui-space-6);
+
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+  }
+
+  .sui-tabs__list {
+    display: flex;
+    align-items: stretch;
+    gap: var(--sui-space-1);
+    margin: 0;
+    padding: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-block-end: var(--sui-hairline) solid var(--sui-color-outline-variant);
+    overscroll-behavior-inline: contain;
+    scroll-padding-inline: var(--sui-space-2);
+    scrollbar-width: none;
+  }
+
+  .sui-tabs__list::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Fade только у реально переполненного края. */
+  .sui-tabs__list[data-overflow="start"] {
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      black var(--sui-tabs-fade)
+    );
+  }
+
+  .sui-tabs__list[data-overflow="end"] {
+    mask-image: linear-gradient(
+      to left,
+      transparent,
+      black var(--sui-tabs-fade)
+    );
+  }
+
+  .sui-tabs__list[data-overflow="both"] {
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      black var(--sui-tabs-fade),
+      black calc(100% - var(--sui-tabs-fade)),
+      transparent
+    );
+  }
+
+  :dir(rtl) .sui-tabs__list[data-overflow="start"] {
+    mask-image: linear-gradient(
+      to left,
+      transparent,
+      black var(--sui-tabs-fade)
+    );
+  }
+
+  :dir(rtl) .sui-tabs__list[data-overflow="end"] {
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      black var(--sui-tabs-fade)
+    );
+  }
+
+  .sui-tabs__tab {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sui-space-2);
+    flex: none;
+    min-block-size: calc(var(--sui-control-height-lg) * var(--sui-density));
+    padding-inline: var(--sui-space-4);
+    border: 0;
+    border-start-start-radius: var(--sui-radius-sm);
+    border-start-end-radius: var(--sui-radius-sm);
+    background-color: transparent;
+    color: var(--sui-color-on-surface-variant);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-label-large-size);
+    line-height: var(--sui-type-label-large-line);
+    font-weight: var(--sui-type-label-large-weight);
+    letter-spacing: var(--sui-type-label-large-tracking);
+    white-space: nowrap;
+    text-decoration: none;
+    cursor: pointer;
+    user-select: none;
+    scroll-snap-align: start;
+    -webkit-tap-highlight-color: transparent;
+    transition: color var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  .sui-tabs__tab::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: currentColor;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  .sui-tabs__tab:hover:not(:disabled)::before {
+    opacity: var(--sui-state-hover);
+  }
+
+  .sui-tabs__tab:active:not(:disabled)::before {
+    opacity: var(--sui-state-pressed);
+  }
+
+  .sui-tabs__tab::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    inset-block-end: 0;
+    block-size: max(2px, calc(var(--sui-hairline) * 3));
+    border-radius: var(--sui-radius-full) var(--sui-radius-full) 0 0;
+    background-color: var(--sui-tabs-indicator);
+    transform: scaleX(0);
+    transition: transform var(--sui-motion-short-3) var(--sui-easing-emphasized);
+  }
+
+  .sui-tabs__tab[data-selected] {
+    color: var(--sui-tabs-selected);
+  }
+
+  .sui-tabs__tab[data-selected]::after {
+    transform: scaleX(1);
+  }
+
+  .sui-tabs__tab:disabled {
+    cursor: not-allowed;
+    opacity: var(--sui-state-disabled);
+  }
+
+  .sui-tabs__tab:focus-visible {
+    outline-offset: calc(var(--sui-focus-ring-offset) * -1);
+  }
+
+  /* --- размеры --------------------------------------------------------- */
+  .sui-tabs[data-size="sm"] .sui-tabs__tab {
+    min-block-size: calc(var(--sui-control-height-sm) * var(--sui-density) + var(--sui-space-1));
+    padding-inline: var(--sui-space-3);
+    font-size: var(--sui-type-label-medium-size);
+    letter-spacing: var(--sui-type-label-medium-tracking);
+  }
+
+  .sui-tabs[data-size="lg"] .sui-tabs__tab {
+    min-block-size: calc(var(--sui-control-height-lg) * var(--sui-density) + var(--sui-space-2));
+    padding-inline: var(--sui-space-5);
+    font-size: var(--sui-type-title-small-size);
+  }
+
+  /* --- вертикальные вкладки ------------------------------------------- */
+  .sui-tabs[data-orientation="vertical"] {
+    flex-direction: row;
+    align-items: stretch;
+    gap: var(--sui-space-4);
+  }
+
+  .sui-tabs[data-orientation="vertical"] .sui-tabs__list {
+    flex-direction: column;
+    overflow: visible;
+    border-block-end: 0;
+    border-inline-end: var(--sui-hairline) solid var(--sui-color-outline-variant);
+  }
+
+  .sui-tabs[data-orientation="vertical"] .sui-tabs__tab {
+    justify-content: flex-start;
+    border-start-start-radius: var(--sui-radius-sm);
+    border-start-end-radius: 0;
+    border-end-start-radius: var(--sui-radius-sm);
+    border-end-end-radius: 0;
+  }
+
+  .sui-tabs[data-orientation="vertical"] .sui-tabs__tab::after {
+    inset-inline: auto 0;
+    inset-block: 0;
+    inline-size: max(2px, calc(var(--sui-hairline) * 3));
+    block-size: auto;
+    border-radius: var(--sui-radius-full) 0 0 var(--sui-radius-full);
+    transform: scaleY(0);
+  }
+
+  .sui-tabs[data-orientation="vertical"] .sui-tabs__tab[data-selected]::after {
+    transform: scaleY(1);
+  }
+
+  .sui-tabs__panel {
+    min-inline-size: 0;
+    padding-block-start: var(--sui-space-4);
+    color: var(--sui-color-on-surface);
+    overflow-wrap: anywhere;
+  }
+
+  .sui-tabs__panels {
+    min-inline-size: 0;
+  }
+
+  .sui-tabs[data-orientation="vertical"] .sui-tabs__panels {
+    flex: 1 1 auto;
+  }
+
+  .sui-tabs__panel[hidden] {
+    display: none;
+  }
+
+  .sui-tabs__panel:focus-visible {
+    outline-offset: calc(var(--sui-focus-ring-offset) * -1);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sui-tabs__tab,
+    .sui-tabs__tab::before,
+    .sui-tabs__tab::after {
+      transition: none;
+    }
+  }
+}

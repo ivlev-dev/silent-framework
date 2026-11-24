@@ -1,0 +1,189 @@
+/*
+ * Базовый слой: типографика документа, ссылки, фокус, selection, скроллбары,
+ * утилиты переполнения и reduced motion. Не задаёт цвета компонентам —
+ * только поверхность и читаемость текста.
+ */
+@layer sui.base {
+  :where(:root) {
+    font-family: var(--sui-font-sans);
+    font-size: 100%;
+    line-height: 1.6;
+    color: var(--sui-color-on-surface);
+    background-color: var(--sui-color-surface);
+    font-synthesis: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    scrollbar-color: var(--sui-color-outline) transparent;
+    scrollbar-width: thin;
+  }
+
+  :where(body) {
+    min-block-size: 100vh;
+    min-block-size: 100dvh;
+    text-wrap: pretty;
+  }
+
+  /* Сырые заголовки вне компонентов получают редакционный serif. */
+  :where(h1, h2, h3, h4, h5, h6) {
+    font-family: var(--sui-font-display);
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+
+  :where(p, li, dd, dt, figcaption, blockquote, td, th) {
+    overflow-wrap: break-word;
+  }
+
+  :where(p, li, figcaption, blockquote) {
+    text-wrap: pretty;
+  }
+
+  :where(a) {
+    color: var(--sui-color-primary);
+    text-decoration-line: underline;
+    text-decoration-thickness: 0.06em;
+    text-decoration-color: var(--sui-color-outline);
+    text-underline-offset: 0.18em;
+    transition: text-decoration-color var(--sui-motion-fast) var(--sui-easing-standard);
+  }
+
+  :where(a:hover) {
+    text-decoration-color: var(--sui-color-accent);
+  }
+
+  :where(code, kbd, samp, pre) {
+    font-family: var(--sui-font-mono);
+    font-size: 0.9375em;
+  }
+
+  :where(pre) {
+    overflow-x: auto;
+    padding: var(--sui-space-4);
+    border: var(--sui-hairline) solid var(--sui-color-outline-variant);
+    border-radius: var(--sui-radius-md);
+    background-color: var(--sui-color-surface-container-low);
+    overscroll-behavior-inline: contain;
+  }
+
+  ::selection {
+    background-color: var(--sui-color-accent);
+    color: var(--sui-color-on-accent);
+  }
+
+  /* Фокус виден только с клавиатуры, ring не сдвигает layout. */
+  :where(:focus-visible) {
+    outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
+    outline-offset: var(--sui-focus-ring-offset);
+  }
+
+  :where(:focus:not(:focus-visible)) {
+    outline: none;
+  }
+
+  /* Скроллбары: тонкие, в цветах палитры, не «системно-синие». */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: var(--sui-radius-full);
+    background-color: var(--sui-color-outline);
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--sui-color-on-surface-variant);
+  }
+
+  /* Провайдер конфигурации не должен влиять на раскладку. */
+  .sui-provider {
+    display: contents;
+  }
+
+  /* Hairline: 1 физический пиксель на high-DPI, не «жирнеет» на 1x. */
+  :where(hr) {
+    border: 0;
+    border-block-start: var(--sui-hairline) solid var(--sui-color-outline-variant);
+  }
+
+  /* Reduced motion: один раз на всю систему. */
+  @media (prefers-reduced-motion: reduce) {
+    :where(*, *::before, *::after) {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/*
+ * Утилиты — в последнем слое, чтобы осознанно переопределять компонентные
+ * стили (`sui-font-display` на `.sui-heading`, `sui-truncate` на `.sui-text`).
+ */
+@layer sui.overrides {
+  /*
+   * Display/headline — редакционный serif. Компонентные CSS уже используют
+   * `--sui-font-sans`; следующие проходы переведут их на `family` из
+   * `typeScale`. До этого override держит визуальный контракт шкалы.
+   */
+  :where(.sui-heading)[data-variant^="display"],
+  :where(.sui-heading)[data-variant^="headline"] {
+    font-family: var(--sui-font-display);
+  }
+
+  .sui-font-display { font-family: var(--sui-font-display); }
+  .sui-font-sans { font-family: var(--sui-font-sans); }
+  .sui-font-mono { font-family: var(--sui-font-mono); }
+
+  .sui-measure { max-inline-size: var(--sui-measure); }
+  .sui-measure-narrow { max-inline-size: var(--sui-measure-narrow); }
+
+  .sui-truncate {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sui-clamp-2,
+  .sui-clamp-3 {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .sui-clamp-2 { -webkit-line-clamp: 2; }
+  .sui-clamp-3 { -webkit-line-clamp: 3; }
+
+  .sui-break-words {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .sui-scroll-x {
+    max-inline-size: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  /* Safe-area для шелла/страницы; container уже учитывает inline-инсеты. */
+  .sui-safe-area-top { padding-block-start: env(safe-area-inset-top, 0px); }
+  .sui-safe-area-bottom { padding-block-end: env(safe-area-inset-bottom, 0px); }
+  .sui-safe-area-inline {
+    padding-inline-start: env(safe-area-inset-left, 0px);
+    padding-inline-end: env(safe-area-inset-right, 0px);
+  }
+}

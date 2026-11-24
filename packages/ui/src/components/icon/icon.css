@@ -1,0 +1,38 @@
+/* Иконка: размер — токен, цвет — currentColor, не сжимается в flex. */
+@layer sui.components {
+  .sui-icon {
+    --sui-icon-size: var(--sui-icon-size-md);
+
+    display: inline-block;
+    flex: none;
+    inline-size: var(--sui-icon-size, var(--sui-icon-size-md));
+    block-size: var(--sui-icon-size, var(--sui-icon-size-md));
+    /* Оптическое выравнивание по строке, а не по «коробке» глифа. */
+    vertical-align: -0.125em;
+    overflow: visible;
+    fill: currentColor;
+    color: inherit;
+  }
+
+  .sui-icon[data-size="sm"] {
+    --sui-icon-size: var(--sui-icon-size-sm);
+  }
+
+  .sui-icon[data-size="md"] {
+    --sui-icon-size: var(--sui-icon-size-md);
+  }
+
+  .sui-icon[data-size="lg"] {
+    --sui-icon-size: var(--sui-icon-size-lg);
+  }
+
+  .sui-icon[data-size="xl"] {
+    --sui-icon-size: 2rem;
+  }
+
+  @media (forced-colors: active) {
+    .sui-icon {
+      forced-color-adjust: auto;
+    }
+  }
+}

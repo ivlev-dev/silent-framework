@@ -1,0 +1,89 @@
+/*
+ * Tooltip: неинтерактивная подсказка на hover/focus. Панель inline-absolute,
+ * на сервере отсутствует; на touch не показывается (логика в компоненте).
+ * Ширина ограничена viewport, длинный текст переносится.
+ */
+@layer sui.components {
+  .sui-tooltip {
+    --sui-tooltip-surface: var(--sui-color-inverse-surface);
+    --sui-tooltip-color: var(--sui-color-inverse-on-surface);
+    --sui-tooltip-max-inline: 18rem;
+    --sui-tooltip-duration: var(--sui-motion-base);
+
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    min-inline-size: 0;
+  }
+
+  .sui-tooltip__panel {
+    position: absolute;
+    z-index: var(--sui-z-tooltip, 1200);
+    box-sizing: border-box;
+    width: max-content;
+    max-inline-size: min(
+      var(--sui-tooltip-max-inline),
+      calc(100vw - 2 * var(--sui-space-4))
+    );
+    padding: var(--sui-space-1) var(--sui-space-2);
+    border-radius: var(--sui-radius-sm);
+    background-color: var(--sui-tooltip-surface);
+    color: var(--sui-tooltip-color);
+    box-shadow: var(--sui-elevation-2);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-label-medium-size);
+    line-height: var(--sui-type-label-medium-line);
+    font-weight: var(--sui-type-label-medium-weight);
+    letter-spacing: var(--sui-type-label-medium-tracking);
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+    pointer-events: none;
+    animation: sui-tooltip-in var(--sui-tooltip-duration)
+      var(--sui-easing-standard) both;
+  }
+
+  .sui-tooltip__panel[hidden] {
+    display: none;
+  }
+
+  .sui-tooltip[data-placement="top"] .sui-tooltip__panel {
+    bottom: calc(100% + var(--sui-space-1));
+    inset-inline-start: 50%;
+    transform: translateX(-50%);
+  }
+
+  .sui-tooltip[data-placement="bottom"] .sui-tooltip__panel {
+    top: calc(100% + var(--sui-space-1));
+    inset-inline-start: 50%;
+    transform: translateX(-50%);
+  }
+
+  .sui-tooltip[data-placement="start"] .sui-tooltip__panel {
+    top: 50%;
+    inset-inline-end: calc(100% + var(--sui-space-1));
+    transform: translateY(-50%);
+  }
+
+  .sui-tooltip[data-placement="end"] .sui-tooltip__panel {
+    top: 50%;
+    inset-inline-start: calc(100% + var(--sui-space-1));
+    transform: translateY(-50%);
+  }
+
+  @keyframes sui-tooltip-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sui-tooltip__panel {
+      animation: none;
+    }
+  }
+}

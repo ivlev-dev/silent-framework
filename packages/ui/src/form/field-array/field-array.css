@@ -1,0 +1,212 @@
+/*
+ * Повторяемая группа полей: карточки строк + add/remove/move.
+ * В шапке карточки — номер по порядку и действия, поэтому длинные значения
+ * и подписи не выдавливают кнопки. На мобильном шапка остаётся сверху,
+ * поля идут в один столбец.
+ */
+@layer sui.components {
+  .sui-field-array {
+    --sui-field-array-gap: var(--sui-space-2);
+    --sui-field-array-items-gap: var(--sui-space-3);
+    --sui-field-array-item-padding: var(--sui-space-3);
+    --sui-field-array-item-radius: var(--sui-radius-md);
+    --sui-field-array-item-bg: var(--sui-color-surface-container-low);
+    --sui-field-array-item-border: var(--sui-color-outline-variant);
+    --sui-field-array-item-focus: var(--sui-color-primary);
+    --sui-field-array-index-bg: var(--sui-color-surface-container-high);
+    --sui-field-array-index-color: var(--sui-color-on-surface-variant);
+    --sui-field-array-action-size: var(--sui-touch-target);
+    --sui-field-array-action-color: var(--sui-color-on-surface-variant);
+    --sui-field-array-action-hover-bg: var(--sui-color-surface-container-high);
+    --sui-field-array-error-color: var(--sui-color-error);
+
+    display: flex;
+    flex-direction: column;
+    gap: var(--sui-field-array-gap);
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    font-family: var(--sui-font-sans);
+  }
+
+  .sui-field-array__legend {
+    padding: 0;
+    color: var(--sui-color-on-surface);
+    font-size: var(--sui-type-title-small-size);
+    line-height: var(--sui-type-title-small-line);
+    font-weight: var(--sui-type-title-small-weight);
+    overflow-wrap: anywhere;
+  }
+
+  .sui-field-array__hint,
+  .sui-field-array__error {
+    font-size: var(--sui-type-body-small-size);
+    line-height: var(--sui-type-body-small-line);
+    overflow-wrap: anywhere;
+  }
+
+  .sui-field-array__hint {
+    color: var(--sui-color-on-surface-variant);
+  }
+
+  .sui-field-array__error {
+    color: var(--sui-field-array-error-color);
+  }
+
+  .sui-field-array__items {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sui-field-array-items-gap);
+    min-inline-size: 0;
+  }
+
+  .sui-field-array__item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sui-space-3);
+    min-inline-size: 0;
+    padding: var(--sui-field-array-item-padding);
+    border: var(--sui-hairline) solid var(--sui-field-array-item-border);
+    border-radius: var(--sui-field-array-item-radius);
+    background-color: var(--sui-field-array-item-bg);
+    transition:
+      border-color var(--sui-motion-short-3) var(--sui-easing-standard),
+      box-shadow var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  .sui-field-array__item:focus-within {
+    border-color: var(--sui-field-array-item-focus);
+    box-shadow: 0 0 0 var(--sui-hairline) var(--sui-field-array-item-focus);
+  }
+
+  .sui-field-array__item-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sui-space-2);
+    min-inline-size: 0;
+  }
+
+  .sui-field-array__index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    min-inline-size: 1.75rem;
+    block-size: 1.75rem;
+    padding-inline: var(--sui-space-1);
+    border-radius: var(--sui-radius-full);
+    background-color: var(--sui-field-array-index-bg);
+    color: var(--sui-field-array-index-color);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-label-small-size);
+    line-height: var(--sui-type-label-small-line);
+    font-weight: var(--sui-type-label-small-weight);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .sui-field-array__fields {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sui-space-3);
+    min-inline-size: 0;
+  }
+
+  .sui-field-array__fields > * {
+    min-inline-size: 0;
+  }
+
+  .sui-field-array__actions {
+    display: flex;
+    flex: none;
+    gap: var(--sui-space-1);
+  }
+
+  .sui-field-array__action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: var(--sui-field-array-action-size);
+    block-size: var(--sui-field-array-action-size);
+    padding: 0;
+    border: var(--sui-hairline) solid transparent;
+    border-radius: var(--sui-radius-full);
+    background: transparent;
+    color: var(--sui-field-array-action-color);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-body-large-size);
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .sui-field-array__action:hover:not(:disabled) {
+    background-color: var(--sui-field-array-action-hover-bg);
+  }
+
+  .sui-field-array__action:focus-visible {
+    outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
+    outline-offset: calc(var(--sui-focus-ring-offset) * -1);
+  }
+
+  .sui-field-array__action[data-variant="danger"] {
+    color: var(--sui-field-array-error-color);
+  }
+
+  .sui-field-array__action:disabled {
+    cursor: not-allowed;
+    opacity: var(--sui-state-disabled);
+  }
+
+  .sui-field-array__footer {
+    display: flex;
+    justify-content: flex-start;
+  }
+
+  .sui-field-array__add {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-block-size: var(--sui-touch-target);
+    padding-inline: var(--sui-space-4);
+    border: var(--sui-hairline) solid var(--sui-color-outline-variant);
+    border-radius: var(--sui-radius-full);
+    background: transparent;
+    color: var(--sui-color-primary);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-label-large-size);
+    font-weight: var(--sui-type-label-large-weight);
+    letter-spacing: var(--sui-type-label-large-tracking);
+    cursor: pointer;
+  }
+
+  .sui-field-array__add:hover:not(:disabled) {
+    background-color: var(--sui-color-surface-container-high);
+  }
+
+  .sui-field-array__add:focus-visible {
+    outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
+    outline-offset: var(--sui-focus-ring-offset);
+  }
+
+  .sui-field-array__add:disabled {
+    cursor: not-allowed;
+    opacity: var(--sui-state-disabled);
+  }
+
+  .sui-field-array[data-disabled] {
+    opacity: var(--sui-state-disabled);
+  }
+
+  /* Узкий экран: карточка компактнее, кнопка добавления — на всю ширину. */
+  @media (max-width: 29.9375em) {
+    .sui-field-array__item {
+      --sui-field-array-item-padding: var(--sui-space-2);
+    }
+
+    .sui-field-array__add {
+      inline-size: 100%;
+    }
+  }
+}

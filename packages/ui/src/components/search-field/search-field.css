@@ -1,0 +1,180 @@
+/*
+ * Search field: рамку рисует контрол, Field — подпись и сообщения.
+ * Длинный запрос прокручивается внутри input и обрезается многоточием в покое;
+ * кнопка очистки не сжимается и на touch-устройствах имеет цель 44px.
+ */
+@layer sui.components {
+  .sui-search-field {
+    --sui-search-field-block-size: calc(
+      var(--sui-control-height-md) * var(--sui-density)
+    );
+    --sui-search-field-padding-inline: var(--sui-space-3);
+    --sui-search-field-gap: var(--sui-space-2);
+    --sui-search-field-radius: var(--sui-radius-full);
+    --sui-search-field-font-size: var(--sui-type-body-medium-size);
+    --sui-search-field-line-height: var(--sui-type-body-medium-line);
+    --sui-search-field-bg: var(--sui-color-surface-container-lowest);
+    --sui-search-field-border-color: var(--sui-color-outline-variant);
+    --sui-search-field-hover-color: var(--sui-color-outline);
+    --sui-search-field-focus-color: var(--sui-focus-ring-color);
+    --sui-search-field-icon-color: var(--sui-color-on-surface-variant);
+    --sui-search-field-placeholder-color: var(--sui-color-on-surface-muted);
+    --sui-search-field-clear-size: calc(
+      var(--sui-control-height-sm) * var(--sui-density)
+    );
+
+    display: flex;
+    align-items: center;
+    gap: var(--sui-search-field-gap);
+    box-sizing: border-box;
+    min-inline-size: 0;
+    block-size: var(--sui-search-field-block-size);
+    padding-inline: var(--sui-search-field-padding-inline);
+    border: var(--sui-hairline) solid var(--sui-search-field-border-color);
+    border-radius: var(--sui-search-field-radius);
+    background-color: var(--sui-search-field-bg);
+    color: var(--sui-color-on-surface);
+    transition:
+      border-color var(--sui-motion-short-3) var(--sui-easing-standard),
+      background-color var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  .sui-search-field:hover:not([data-disabled]):not([data-readonly]) {
+    border-color: var(--sui-search-field-hover-color);
+  }
+
+  .sui-search-field[data-invalid]:hover:not([data-disabled]):not([data-readonly]) {
+    border-color: var(--sui-color-error);
+  }
+
+  .sui-search-field:focus-within {
+    border-color: var(--sui-search-field-focus-color);
+    outline: var(--sui-focus-ring-width) solid var(--sui-search-field-focus-color);
+    outline-offset: calc(var(--sui-focus-ring-offset) * -1);
+  }
+
+  .sui-search-field[data-invalid] {
+    border-color: var(--sui-color-error);
+  }
+
+  .sui-search-field[data-invalid]:focus-within {
+    outline-color: var(--sui-color-error);
+  }
+
+  .sui-search-field[data-validating] {
+    cursor: progress;
+  }
+
+  .sui-search-field[data-disabled] {
+    background-color: var(--sui-color-surface-container);
+    opacity: var(--sui-state-disabled);
+    cursor: not-allowed;
+  }
+
+  .sui-search-field[data-readonly] {
+    background-color: transparent;
+  }
+
+  .sui-search-field[data-size="sm"] {
+    --sui-search-field-block-size: calc(
+      var(--sui-control-height-sm) * var(--sui-density)
+    );
+    --sui-search-field-padding-inline: var(--sui-space-2);
+    --sui-search-field-font-size: var(--sui-type-body-small-size);
+    --sui-search-field-line-height: var(--sui-type-body-small-line);
+  }
+
+  .sui-search-field[data-size="lg"] {
+    --sui-search-field-block-size: calc(
+      var(--sui-control-height-lg) * var(--sui-density)
+    );
+    --sui-search-field-padding-inline: var(--sui-space-4);
+    --sui-search-field-font-size: var(--sui-type-body-large-size);
+    --sui-search-field-line-height: var(--sui-type-body-large-line);
+  }
+
+  @media (pointer: coarse) {
+    .sui-search-field {
+      --sui-search-field-clear-size: var(--sui-touch-target);
+
+      min-block-size: var(--sui-touch-target-cozy);
+    }
+  }
+
+  .sui-search-field__icon,
+  .sui-search-field__clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+  }
+
+  .sui-search-field__icon {
+    color: var(--sui-search-field-icon-color);
+  }
+
+  .sui-search-field__icon .sui-icon {
+    inline-size: var(--sui-icon-size-md);
+    block-size: var(--sui-icon-size-md);
+  }
+
+  .sui-search-field__input {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-search-field-font-size);
+    line-height: var(--sui-search-field-line-height);
+    letter-spacing: var(--sui-type-body-medium-tracking);
+    appearance: none;
+    /* Длинный запрос не растягивает поле и не вылезает за пилюлю. */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Нативная кнопка очистки WebKit дублирует нашу — гасим её. */
+  .sui-search-field__input::-webkit-search-cancel-button {
+    display: none;
+  }
+
+  .sui-search-field__input:focus,
+  .sui-search-field__input:focus-visible {
+    outline: none;
+  }
+
+  .sui-search-field__input::placeholder {
+    color: var(--sui-search-field-placeholder-color);
+    opacity: 1;
+  }
+
+  .sui-search-field__input:disabled {
+    cursor: not-allowed;
+  }
+
+  .sui-search-field__clear {
+    inline-size: var(--sui-search-field-clear-size);
+    block-size: var(--sui-search-field-clear-size);
+    padding: 0;
+    border: 0;
+    border-radius: var(--sui-radius-full);
+    background: transparent;
+    color: var(--sui-search-field-icon-color);
+    cursor: pointer;
+  }
+
+  .sui-search-field__clear:hover {
+    background-color: var(--sui-color-surface-container-high);
+  }
+
+  .sui-search-field__clear:focus-visible {
+    outline: var(--sui-focus-ring-width) solid var(--sui-search-field-focus-color);
+    outline-offset: calc(var(--sui-focus-ring-offset) * -1);
+  }
+}

@@ -1,0 +1,98 @@
+/* Заголовки: уровень задаёт тег, вариант — размер и семейство. */
+@layer sui.components {
+  .sui-heading {
+    --sui-heading-max-inline: 100%;
+    --sui-heading-measure: var(--sui-measure);
+
+    margin: 0;
+    max-inline-size: var(--sui-heading-max-inline, 100%);
+    min-inline-size: 0;
+    font-family: var(--sui-font-sans);
+    color: var(--sui-color-on-surface);
+    text-wrap: balance;
+    overflow-wrap: break-word;
+    font-size: var(--sui-type-headline-medium-size);
+    line-height: var(--sui-type-headline-medium-line);
+    font-weight: var(--sui-type-headline-medium-weight);
+    letter-spacing: var(--sui-type-headline-medium-tracking);
+  }
+
+  /* Display/headline — редакционный serif, UI-title остаётся sans. */
+  .sui-heading[data-variant^="display"],
+  .sui-heading[data-variant^="headline"] {
+    font-family: var(--sui-font-display);
+  }
+
+  .sui-heading[data-variant="display-large"] {
+    font-size: var(--sui-type-display-large-size);
+    line-height: var(--sui-type-display-large-line);
+    font-weight: var(--sui-type-display-large-weight);
+    letter-spacing: var(--sui-type-display-large-tracking);
+    max-inline-size: var(--sui-heading-measure, var(--sui-measure));
+  }
+
+  .sui-heading[data-variant="display-medium"] {
+    font-size: var(--sui-type-display-medium-size);
+    line-height: var(--sui-type-display-medium-line);
+    font-weight: var(--sui-type-display-medium-weight);
+    letter-spacing: var(--sui-type-display-medium-tracking);
+    max-inline-size: var(--sui-heading-measure, var(--sui-measure));
+  }
+
+  .sui-heading[data-variant="display-small"] {
+    font-size: var(--sui-type-display-small-size);
+    line-height: var(--sui-type-display-small-line);
+    font-weight: var(--sui-type-display-small-weight);
+    letter-spacing: var(--sui-type-display-small-tracking);
+    max-inline-size: var(--sui-heading-measure, var(--sui-measure));
+  }
+
+  .sui-heading[data-variant="headline-large"] {
+    font-size: var(--sui-type-headline-large-size);
+    line-height: var(--sui-type-headline-large-line);
+    font-weight: var(--sui-type-headline-large-weight);
+    letter-spacing: var(--sui-type-headline-large-tracking);
+    max-inline-size: var(--sui-heading-measure, var(--sui-measure));
+  }
+
+  .sui-heading[data-variant="headline-medium"] {
+    font-size: var(--sui-type-headline-medium-size);
+    line-height: var(--sui-type-headline-medium-line);
+    font-weight: var(--sui-type-headline-medium-weight);
+    letter-spacing: var(--sui-type-headline-medium-tracking);
+    max-inline-size: var(--sui-heading-measure, var(--sui-measure));
+  }
+
+  .sui-heading[data-variant="headline-small"] {
+    font-size: var(--sui-type-headline-small-size);
+    line-height: var(--sui-type-headline-small-line);
+    font-weight: var(--sui-type-headline-small-weight);
+    letter-spacing: var(--sui-type-headline-small-tracking);
+    max-inline-size: var(--sui-heading-measure, var(--sui-measure));
+  }
+
+  .sui-heading[data-variant="title-large"] {
+    font-size: var(--sui-type-title-large-size);
+    line-height: var(--sui-type-title-large-line);
+    font-weight: var(--sui-type-title-large-weight);
+    letter-spacing: var(--sui-type-title-large-tracking);
+  }
+
+  .sui-heading[data-variant="title-medium"] {
+    font-size: var(--sui-type-title-medium-size);
+    line-height: var(--sui-type-title-medium-line);
+    font-weight: var(--sui-type-title-medium-weight);
+    letter-spacing: var(--sui-type-title-medium-tracking);
+  }
+
+  .sui-heading[data-variant="title-small"] {
+    font-size: var(--sui-type-title-small-size);
+    line-height: var(--sui-type-title-small-line);
+    font-weight: var(--sui-type-title-small-weight);
+    letter-spacing: var(--sui-type-title-small-tracking);
+  }
+
+  .sui-heading[data-tone="muted"] { color: var(--sui-color-on-surface-variant); }
+  .sui-heading[data-tone="primary"] { color: var(--sui-color-primary); }
+  .sui-heading[data-tone="inherit"] { color: inherit; }
+}

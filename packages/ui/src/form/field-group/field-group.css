@@ -1,0 +1,161 @@
+/*
+ * Группа полей и подвал формы.
+ *
+ * `FieldGroup` умеет сетку: `columns` даёт 1 колонку на мобильном, 2 с 600px и
+ * 3 с 840px. `FormActions` на узком экране растягивает кнопки на всю ширину,
+ * а со `sticky` прижимается к нижней кромке скроллящегося контейнера.
+ */
+@layer sui.components {
+  .sui-field-group {
+    --sui-field-group-gap: var(--sui-space-2);
+    --sui-field-group-body-gap: var(--sui-space-4);
+    --sui-field-group-column-gap: var(--sui-space-4);
+    --sui-field-group-row-gap: var(--sui-space-4);
+    --sui-field-group-max-inline-size: none;
+
+    display: flex;
+    flex-direction: column;
+    gap: var(--sui-field-group-gap);
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .sui-field-group[data-max-width] {
+    inline-size: 100%;
+    max-inline-size: var(--sui-field-group-max-inline-size);
+  }
+
+  .sui-field-group[data-max-width="narrow"] {
+    --sui-field-group-max-inline-size: 32rem;
+  }
+
+  .sui-field-group[data-max-width="default"] {
+    --sui-field-group-max-inline-size: 42rem;
+  }
+
+  .sui-field-group[data-max-width="none"] {
+    --sui-field-group-max-inline-size: none;
+  }
+
+  .sui-field-group__legend {
+    padding: 0;
+    color: var(--sui-color-on-surface);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-title-small-size);
+    line-height: var(--sui-type-title-small-line);
+    font-weight: var(--sui-type-title-small-weight);
+    overflow-wrap: anywhere;
+  }
+
+  .sui-field-group__hint {
+    color: var(--sui-color-on-surface-variant);
+    font-size: var(--sui-type-body-small-size);
+    line-height: var(--sui-type-body-small-line);
+    overflow-wrap: anywhere;
+  }
+
+  .sui-field-group__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sui-field-group-body-gap);
+    min-inline-size: 0;
+  }
+
+  .sui-field-group[data-layout="inline"] .sui-field-group__body {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  /* Сетка полей. Идёт после inline, чтобы `columns` побеждал `layout`. */
+  .sui-field-group[data-columns] .sui-field-group__body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    column-gap: var(--sui-field-group-column-gap);
+    row-gap: var(--sui-field-group-row-gap);
+  }
+
+  .sui-field-group[data-columns] .sui-field-group__body > * {
+    min-inline-size: 0;
+  }
+
+  .sui-field-group[data-columns="auto"] .sui-field-group__body {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  }
+
+  /* 600px: две колонки для `2`/`3`, auto-fit раскрывается сам. */
+  @media (min-width: 37.5em) {
+    .sui-field-group[data-columns="2"] .sui-field-group__body,
+    .sui-field-group[data-columns="3"] .sui-field-group__body {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  /* 840px: третья колонка. */
+  @media (min-width: 52.5em) {
+    .sui-field-group[data-columns="3"] .sui-field-group__body {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  .sui-field-group[data-disabled] .sui-field-group__legend,
+  .sui-field-group[data-disabled] .sui-field-group__hint {
+    opacity: var(--sui-state-disabled);
+  }
+
+  .sui-form-actions {
+    --sui-form-actions-gap: var(--sui-space-2);
+    --sui-form-actions-block-padding: var(--sui-space-3);
+    --sui-form-actions-bg: var(--sui-color-surface);
+    --sui-form-actions-shadow: var(--sui-color-outline-variant);
+
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    flex-wrap: wrap;
+    gap: var(--sui-form-actions-gap);
+    min-inline-size: 0;
+    margin-block-start: var(--sui-space-2);
+  }
+
+  .sui-form-actions[data-align="start"] {
+    justify-content: flex-start;
+  }
+
+  .sui-form-actions[data-align="end"] {
+    justify-content: flex-end;
+  }
+
+  .sui-form-actions[data-align="between"] {
+    justify-content: space-between;
+  }
+
+  .sui-form-actions__slot {
+    display: contents;
+  }
+
+  /* Со 480px действия снова идут строкой. */
+  @media (min-width: 30em) {
+    .sui-form-actions {
+      flex-direction: row;
+      align-items: center;
+    }
+  }
+
+  .sui-form-actions[data-sticky] {
+    position: sticky;
+    inset-block-end: 0;
+    z-index: 1;
+    margin-inline: 0;
+    padding-block: var(--sui-form-actions-block-padding);
+    padding-block-end: max(
+      var(--sui-form-actions-block-padding),
+      env(safe-area-inset-bottom, 0px)
+    );
+    background-color: var(--sui-form-actions-bg);
+    box-shadow: 0 calc(var(--sui-hairline) * -1) 0
+      var(--sui-form-actions-shadow);
+  }
+}

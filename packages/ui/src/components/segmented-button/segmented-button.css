@@ -1,0 +1,142 @@
+/*
+ * SegmentedButton: одна рамка, сегменты без зазоров, selected — заливка.
+ * Много сегментов — горизонтальный scroll; fullWidth — равные ширины.
+ * Длинные подписи обрезаются, высота сегмента — touch-цель.
+ */
+@layer sui.components {
+  .sui-segmented-button {
+    display: inline-flex;
+    align-items: stretch;
+    box-sizing: border-box;
+    max-inline-size: 100%;
+    min-inline-size: 0;
+    border: var(--sui-hairline) solid var(--sui-color-outline);
+    border-radius: var(--sui-radius-full);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    background-color: transparent;
+    scroll-snap-type: inline proximity;
+  }
+
+  .sui-segmented-button::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sui-segmented-button[data-full-width] {
+    display: flex;
+    inline-size: 100%;
+  }
+
+  .sui-segmented-button[data-disabled] {
+    opacity: var(--sui-state-disabled);
+    pointer-events: none;
+  }
+
+  .sui-segmented-button__item {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sui-space-2);
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    min-inline-size: 0;
+    max-inline-size: min(16rem, 80vw);
+    block-size: calc(var(--sui-control-height-md) * var(--sui-density));
+    padding-inline: var(--sui-space-4);
+    border: 0;
+    border-inline-start: var(--sui-hairline) solid var(--sui-color-outline);
+    background-color: transparent;
+    color: var(--sui-color-on-surface);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-label-large-size);
+    line-height: 1;
+    font-weight: var(--sui-type-label-large-weight);
+    letter-spacing: var(--sui-type-label-large-tracking);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    scroll-snap-align: start;
+    -webkit-tap-highlight-color: transparent;
+    transition:
+      background-color var(--sui-motion-short-2) var(--sui-easing-standard),
+      color var(--sui-motion-short-2) var(--sui-easing-standard);
+  }
+
+  .sui-segmented-button[data-full-width] .sui-segmented-button__item {
+    flex: 1 1 0;
+  }
+
+  .sui-segmented-button__item:first-child {
+    border-inline-start: 0;
+  }
+
+  .sui-segmented-button__item:hover:not(:disabled) {
+    background-color: var(--sui-color-surface-container-high);
+  }
+
+  .sui-segmented-button__item:active:not(:disabled) {
+    background-color: var(--sui-color-surface-container-highest);
+  }
+
+  .sui-segmented-button__item:focus-visible {
+    outline: var(--sui-focus-ring-width) solid var(--sui-color-primary);
+    outline-offset: calc(var(--sui-focus-ring-offset) * -1);
+    z-index: 1;
+  }
+
+  .sui-segmented-button__item[data-selected] {
+    background-color: var(--sui-color-secondary-container);
+    color: var(--sui-color-on-secondary-container);
+  }
+
+  .sui-segmented-button__item:disabled {
+    cursor: not-allowed;
+  }
+
+  .sui-segmented-button__label {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sui-segmented-button__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+  }
+
+  .sui-segmented-button__icon .sui-icon {
+    inline-size: var(--sui-icon-size-md);
+    block-size: var(--sui-icon-size-md);
+  }
+
+  .sui-segmented-button__extra {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .sui-segmented-button[data-size="sm"] .sui-segmented-button__item {
+    block-size: calc(var(--sui-control-height-sm) * var(--sui-density));
+    min-block-size: var(--sui-touch-target);
+    padding-inline: var(--sui-space-3);
+    font-size: var(--sui-type-label-medium-size);
+    letter-spacing: var(--sui-type-label-medium-tracking);
+  }
+
+  .sui-segmented-button[data-size="lg"] .sui-segmented-button__item {
+    block-size: calc(var(--sui-control-height-lg) * var(--sui-density));
+    padding-inline: var(--sui-space-5);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sui-segmented-button__item {
+      transition: none;
+    }
+  }
+}

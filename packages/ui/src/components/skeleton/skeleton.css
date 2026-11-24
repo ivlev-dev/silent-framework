@@ -1,0 +1,123 @@
+/*
+ * Skeleton: фон — surface-container-high, пульсация/волна — только анимацией
+ * и полностью выключается при `prefers-reduced-motion`.
+ */
+@layer sui.components {
+  .sui-skeleton {
+    --sui-skeleton-color: var(--sui-color-surface-container-high);
+    --sui-skeleton-radius: var(--sui-radius-xs);
+    --sui-skeleton-block-size: 1em;
+    --sui-skeleton-gap: var(--sui-space-2);
+
+    position: relative;
+    display: block;
+    box-sizing: border-box;
+    max-inline-size: 100%;
+    block-size: var(--sui-skeleton-block-size, 1em);
+    overflow: hidden;
+    border-radius: var(--sui-skeleton-radius, var(--sui-radius-xs));
+    background-color: var(--sui-skeleton-color, var(--sui-color-surface-container-high));
+  }
+
+  .sui-skeleton[data-size="sm"] {
+    --sui-skeleton-block-size: 0.75em;
+  }
+
+  .sui-skeleton[data-size="md"] {
+    --sui-skeleton-block-size: 1em;
+  }
+
+  .sui-skeleton[data-size="lg"] {
+    --sui-skeleton-block-size: 1.25em;
+  }
+
+  .sui-skeleton[data-variant="circle"] {
+    inline-size: 2.5rem;
+    block-size: 2.5rem;
+    border-radius: var(--sui-radius-full);
+  }
+
+  .sui-skeleton[data-variant="rect"] {
+    block-size: 8rem;
+    border-radius: var(--sui-radius-md);
+  }
+
+  .sui-skeleton[data-lines="multi"] {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sui-skeleton-gap, var(--sui-space-2));
+    block-size: auto;
+    background-color: transparent;
+  }
+
+  .sui-skeleton__line {
+    display: block;
+    block-size: var(--sui-skeleton-block-size, 1em);
+    border-radius: var(--sui-skeleton-radius, var(--sui-radius-xs));
+    background-color: var(--sui-skeleton-color, var(--sui-color-surface-container-high));
+  }
+
+  .sui-skeleton__line:last-child {
+    inline-size: 60%;
+  }
+
+  .sui-skeleton[data-animation="pulse"] {
+    animation: sui-skeleton-pulse 1.6s var(--sui-easing-standard) infinite;
+  }
+
+  .sui-skeleton[data-animation="pulse"] .sui-skeleton__line {
+    animation: sui-skeleton-pulse 1.6s var(--sui-easing-standard) infinite;
+  }
+
+  /* Волна — прогрессивный эффект: без color-mix остаётся спокойный фон. */
+  @supports (color: color-mix(in srgb, currentColor 8%, transparent)) {
+    .sui-skeleton[data-animation="wave"]::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image: linear-gradient(
+        90deg,
+        transparent,
+        color-mix(in srgb, var(--sui-color-on-surface) 8%, transparent),
+        transparent
+      );
+      transform: translateX(-100%);
+      animation: sui-skeleton-wave 1.6s var(--sui-easing-linear) infinite;
+    }
+  }
+
+  @keyframes sui-skeleton-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+
+    50% {
+      opacity: 0.55;
+    }
+  }
+
+  @keyframes sui-skeleton-wave {
+    to {
+      transform: translateX(100%);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sui-skeleton[data-animation="pulse"],
+    .sui-skeleton[data-animation="pulse"] .sui-skeleton__line {
+      animation: none;
+    }
+
+    .sui-skeleton[data-animation="wave"]::after {
+      display: none;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .sui-skeleton {
+      border: 1px solid CanvasText;
+      background-color: Canvas;
+    }
+  }
+}

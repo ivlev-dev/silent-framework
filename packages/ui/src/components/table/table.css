@@ -1,0 +1,266 @@
+/*
+ * Table: семантическая разметка, `aria-sort` на th, липкий заголовок по
+ * явному флагу. Обёртка `.sui-table-scroll` не даёт широкой таблице раздувать
+ * страницу: на узких экранах она скроллится по горизонтали, на широких —
+ * остаётся обычной таблицей (и sticky-заголовок работает от окна).
+ */
+@layer sui.components {
+  .sui-table-scroll {
+    --sui-table-min-inline-size: 36rem;
+
+    max-inline-size: 100%;
+    min-inline-size: 0;
+  }
+
+  /* До 840px: горизонтальный скролл вместо вылезания за вьюпорт. */
+  @media (max-width: 52.5em) {
+    .sui-table-scroll {
+      overflow-x: auto;
+      overscroll-behavior-inline: contain;
+      scrollbar-width: thin;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .sui-table-scroll .sui-table {
+      min-inline-size: var(--sui-table-min-inline-size);
+    }
+  }
+
+  .sui-table {
+    --sui-table-cell-padding-block: var(--sui-space-3);
+    --sui-table-cell-padding-inline: var(--sui-space-4);
+    --sui-table-border-color: var(--sui-color-outline-variant);
+    --sui-table-header-bg: var(--sui-color-surface-container-low);
+    --sui-table-header-color: var(--sui-color-on-surface-variant);
+    --sui-table-row-hover-bg: var(--sui-color-surface-container-low);
+    --sui-table-caption-color: var(--sui-color-on-surface-variant);
+    --sui-table-clamp-lines: 1;
+    --sui-table-empty-color: var(--sui-color-on-surface-variant);
+
+    inline-size: 100%;
+    max-inline-size: 100%;
+    min-inline-size: 0;
+    border-collapse: separate;
+    border-spacing: 0;
+    color: var(--sui-color-on-surface);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-body-medium-size);
+    line-height: var(--sui-type-body-medium-line);
+    letter-spacing: var(--sui-type-body-medium-tracking);
+  }
+
+  .sui-table__caption {
+    padding-block-end: var(--sui-space-2);
+    color: var(--sui-table-caption-color);
+    font-size: var(--sui-type-label-medium-size);
+    line-height: var(--sui-type-label-medium-line);
+    font-weight: var(--sui-type-label-medium-weight);
+    letter-spacing: var(--sui-type-label-medium-tracking);
+    text-align: start;
+    caption-side: top;
+    overflow-wrap: anywhere;
+  }
+
+  .sui-table__header-cell {
+    box-sizing: border-box;
+    padding: var(--sui-table-cell-padding-block)
+      var(--sui-table-cell-padding-inline);
+    border-block-end: var(--sui-hairline) solid var(--sui-table-border-color);
+    color: var(--sui-table-header-color);
+    font-size: var(--sui-type-label-large-size);
+    line-height: var(--sui-type-label-large-line);
+    font-weight: var(--sui-type-label-large-weight);
+    letter-spacing: var(--sui-type-label-large-tracking);
+    text-align: start;
+    /* Длинный заголовок переносится, а не раздувает таблицу и страницу. */
+    overflow-wrap: anywhere;
+  }
+
+  .sui-table__cell {
+    box-sizing: border-box;
+    padding: var(--sui-table-cell-padding-block)
+      var(--sui-table-cell-padding-inline);
+    text-align: start;
+    vertical-align: middle;
+  }
+
+  .sui-table__cell-content {
+    display: block;
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+
+  /*
+   * Truncate/lines не участвуют в intrinsic-ширине колонки: иначе nowrap-текст
+   * раздувает min-content первой колонки, а соседние auto-колонки сжимаются
+   * до одного символа. Ширину задаёт сама ячейка, содержимое обрезается.
+   */
+  .sui-table__cell[data-truncate] .sui-table__cell-content,
+  .sui-table__cell[data-lines] .sui-table__cell-content {
+    inline-size: 100%;
+    contain: inline-size;
+  }
+
+  /* Однострочная ячейка: многоточие, полный текст — в `title` у содержимого. */
+  .sui-table__cell[data-truncate] .sui-table__cell-content {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Обрезка по строкам: `lines="2"` → две строки и многоточие. */
+  .sui-table__cell[data-lines] {
+    --sui-table-clamp-lines: 1;
+  }
+
+  .sui-table__cell[data-lines="1"] {
+    --sui-table-clamp-lines: 1;
+  }
+
+  .sui-table__cell[data-lines="2"] {
+    --sui-table-clamp-lines: 2;
+  }
+
+  .sui-table__cell[data-lines="3"] {
+    --sui-table-clamp-lines: 3;
+  }
+
+  .sui-table__cell[data-lines] .sui-table__cell-content {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: var(--sui-table-clamp-lines);
+    line-clamp: var(--sui-table-clamp-lines);
+    white-space: normal;
+  }
+
+  .sui-table__body .sui-table__row:not(:last-child) .sui-table__cell {
+    border-block-end: var(--sui-hairline) solid var(--sui-table-border-color);
+  }
+
+  .sui-table__body .sui-table__row:hover .sui-table__cell {
+    background-color: var(--sui-table-row-hover-bg);
+  }
+
+  .sui-table__header-cell[data-align="center"],
+  .sui-table__cell[data-align="center"] {
+    text-align: center;
+  }
+
+  .sui-table__header-cell[data-align="end"],
+  .sui-table__cell[data-align="end"] {
+    text-align: end;
+  }
+
+  .sui-table__header-label {
+    display: inline-block;
+    max-inline-size: 100%;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sui-table__sort {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sui-space-1);
+    inline-size: 100%;
+    min-block-size: 1.5rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-align: inherit;
+    cursor: pointer;
+    justify-content: flex-start;
+  }
+
+  /* На touch-экранах заголовок-кнопка — полноценная цель 44px. */
+  @media (pointer: coarse) {
+    .sui-table__sort {
+      min-block-size: var(--sui-touch-target);
+    }
+  }
+
+  .sui-table__header-cell[data-align="center"] .sui-table__sort {
+    justify-content: center;
+  }
+
+  .sui-table__header-cell[data-align="end"] .sui-table__sort {
+    justify-content: flex-end;
+  }
+
+  .sui-table__sort:focus-visible {
+    outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
+    outline-offset: var(--sui-focus-ring-offset);
+  }
+
+  /* Подсказка о следующем действии сортировки для скринридера. */
+  .sui-table__sort-hint {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .sui-table__sort-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    opacity: 0;
+    transition:
+      opacity var(--sui-motion-short-2) var(--sui-easing-standard),
+      transform var(--sui-motion-short-2) var(--sui-easing-standard);
+  }
+
+  .sui-table__header-cell[data-sortable]:hover .sui-table__sort-icon,
+  .sui-table__sort:focus-visible .sui-table__sort-icon {
+    opacity: var(--sui-state-hover);
+  }
+
+  .sui-table__header-cell[data-sorted] .sui-table__sort-icon {
+    opacity: 1;
+  }
+
+  .sui-table__header-cell[aria-sort="ascending"] .sui-table__sort-icon {
+    transform: rotate(180deg);
+  }
+
+  .sui-table__empty-cell {
+    padding: 0;
+    color: var(--sui-table-empty-color);
+    text-align: center;
+  }
+
+  .sui-table[data-dense] {
+    --sui-table-cell-padding-block: var(--sui-space-2);
+    --sui-table-cell-padding-inline: var(--sui-space-3);
+
+    font-size: var(--sui-type-body-small-size);
+  }
+
+  .sui-table[data-sticky-header] .sui-table__head .sui-table__header-cell {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 1;
+    background-color: var(--sui-table-header-bg);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sui-table__sort-icon {
+      transition: none;
+    }
+  }
+}

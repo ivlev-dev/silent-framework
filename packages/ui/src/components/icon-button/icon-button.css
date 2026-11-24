@@ -1,0 +1,139 @@
+/* Круглая кнопка-иконка: размер из токенов, state layer, accent-вариант. */
+@layer sui.components {
+  .sui-icon-button {
+    --sui-icon-button-size: calc(var(--sui-control-height-md) * var(--sui-density));
+    --sui-icon-button-radius: var(--sui-radius-full);
+    --sui-icon-button-icon-size: var(--sui-icon-size-md);
+
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    box-sizing: border-box;
+    inline-size: var(--sui-icon-button-size, calc(var(--sui-control-height-md) * var(--sui-density)));
+    block-size: var(--sui-icon-button-size, calc(var(--sui-control-height-md) * var(--sui-density)));
+    padding: 0;
+    border: var(--sui-hairline) solid transparent;
+    border-radius: var(--sui-icon-button-radius, var(--sui-radius-full));
+    background-color: transparent;
+    color: var(--sui-color-on-surface-variant);
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    transition:
+      background-color var(--sui-motion-short-3) var(--sui-easing-standard),
+      color var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  .sui-icon-button::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: currentColor;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  .sui-icon-button:hover:not(:disabled)::after {
+    opacity: var(--sui-state-hover);
+  }
+
+  .sui-icon-button:active:not(:disabled)::after {
+    opacity: var(--sui-state-pressed);
+  }
+
+  @supports (color: color-mix(in srgb, currentColor 8%, transparent)) {
+    .sui-icon-button:hover:not(:disabled)::after {
+      background: color-mix(in srgb, currentColor 8%, transparent);
+      opacity: 1;
+    }
+
+    .sui-icon-button:active:not(:disabled)::after {
+      background: color-mix(in srgb, currentColor 12%, transparent);
+      opacity: 1;
+    }
+  }
+
+  .sui-icon-button:focus-visible {
+    outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
+    outline-offset: var(--sui-focus-ring-offset);
+  }
+
+  .sui-icon-button:disabled {
+    cursor: not-allowed;
+    opacity: var(--sui-state-disabled);
+  }
+
+  .sui-icon-button[data-loading] {
+    cursor: progress;
+  }
+
+  .sui-icon-button[data-size="sm"] {
+    --sui-icon-button-size: calc(var(--sui-control-height-sm) * var(--sui-density));
+    --sui-icon-button-icon-size: var(--sui-icon-size-sm);
+  }
+
+  .sui-icon-button[data-size="md"] {
+    --sui-icon-button-size: calc(var(--sui-control-height-md) * var(--sui-density));
+    --sui-icon-button-icon-size: var(--sui-icon-size-md);
+  }
+
+  .sui-icon-button[data-size="lg"] {
+    --sui-icon-button-size: calc(var(--sui-control-height-lg) * var(--sui-density));
+    --sui-icon-button-icon-size: var(--sui-icon-size-lg);
+  }
+
+  @media (pointer: coarse) {
+    .sui-icon-button {
+      min-inline-size: var(--sui-touch-target);
+      min-block-size: var(--sui-touch-target);
+    }
+  }
+
+  .sui-icon-button[data-variant="standard"] {
+    background-color: transparent;
+    color: var(--sui-color-on-surface-variant);
+  }
+
+  .sui-icon-button[data-variant="filled"] {
+    background-color: var(--sui-color-primary);
+    color: var(--sui-color-on-primary);
+  }
+
+  .sui-icon-button[data-variant="accent"] {
+    background-color: var(--sui-color-accent);
+    color: var(--sui-color-on-accent);
+  }
+
+  .sui-icon-button[data-variant="tonal"] {
+    background-color: var(--sui-color-secondary-container);
+    color: var(--sui-color-on-secondary-container);
+  }
+
+  .sui-icon-button[data-variant="outlined"] {
+    border-color: var(--sui-color-outline-variant);
+    color: var(--sui-color-primary);
+  }
+
+  .sui-icon-button .sui-icon {
+    inline-size: var(--sui-icon-button-icon-size, var(--sui-icon-size-md));
+    block-size: var(--sui-icon-button-icon-size, var(--sui-icon-size-md));
+  }
+
+  @media (forced-colors: active) {
+    .sui-icon-button {
+      border-color: ButtonBorder;
+    }
+
+    .sui-icon-button:focus-visible {
+      outline-color: Highlight;
+    }
+
+    .sui-icon-button:disabled {
+      color: GrayText;
+    }
+  }
+}

@@ -1,0 +1,135 @@
+/* Текст: варианты шкалы, тон, выравнивание, обрезка строк. */
+@layer sui.components {
+  .sui-text {
+    --sui-text-max-inline: 100%;
+    --sui-text-measure: var(--sui-measure);
+
+    display: inline;
+    margin: 0;
+    max-inline-size: var(--sui-text-max-inline, 100%);
+    min-inline-size: 0;
+    font-family: var(--sui-font-sans);
+    font-weight: var(--sui-type-body-medium-weight);
+    font-size: var(--sui-type-body-medium-size);
+    line-height: var(--sui-type-body-medium-line);
+    letter-spacing: var(--sui-type-body-medium-tracking);
+    color: var(--sui-color-on-surface);
+    overflow-wrap: break-word;
+  }
+
+  .sui-text[data-variant="body-large"] {
+    font-size: var(--sui-type-body-large-size);
+    line-height: var(--sui-type-body-large-line);
+    font-weight: var(--sui-type-body-large-weight);
+    letter-spacing: var(--sui-type-body-large-tracking);
+  }
+
+  .sui-text[data-variant="body-medium"] {
+    font-size: var(--sui-type-body-medium-size);
+    line-height: var(--sui-type-body-medium-line);
+    font-weight: var(--sui-type-body-medium-weight);
+    letter-spacing: var(--sui-type-body-medium-tracking);
+  }
+
+  .sui-text[data-variant="body-small"] {
+    font-size: var(--sui-type-body-small-size);
+    line-height: var(--sui-type-body-small-line);
+    font-weight: var(--sui-type-body-small-weight);
+    letter-spacing: var(--sui-type-body-small-tracking);
+  }
+
+  .sui-text[data-variant="title-medium"] {
+    font-size: var(--sui-type-title-medium-size);
+    line-height: var(--sui-type-title-medium-line);
+    font-weight: var(--sui-type-title-medium-weight);
+    letter-spacing: var(--sui-type-title-medium-tracking);
+  }
+
+  .sui-text[data-variant="title-small"] {
+    font-size: var(--sui-type-title-small-size);
+    line-height: var(--sui-type-title-small-line);
+    font-weight: var(--sui-type-title-small-weight);
+    letter-spacing: var(--sui-type-title-small-tracking);
+  }
+
+  .sui-text[data-variant="label-large"] {
+    font-size: var(--sui-type-label-large-size);
+    line-height: var(--sui-type-label-large-line);
+    font-weight: var(--sui-type-label-large-weight);
+    letter-spacing: var(--sui-type-label-large-tracking);
+  }
+
+  .sui-text[data-variant="label-medium"] {
+    font-size: var(--sui-type-label-medium-size);
+    line-height: var(--sui-type-label-medium-line);
+    font-weight: var(--sui-type-label-medium-weight);
+    letter-spacing: var(--sui-type-label-medium-tracking);
+  }
+
+  .sui-text[data-variant="label-small"] {
+    font-size: var(--sui-type-label-small-size);
+    line-height: var(--sui-type-label-small-line);
+    font-weight: var(--sui-type-label-small-weight);
+    letter-spacing: var(--sui-type-label-small-tracking);
+  }
+
+  .sui-text[data-tone="muted"] { color: var(--sui-color-on-surface-variant); }
+  .sui-text[data-tone="primary"] { color: var(--sui-color-primary); }
+  .sui-text[data-tone="secondary"] { color: var(--sui-color-secondary); }
+  .sui-text[data-tone="error"] { color: var(--sui-color-error); }
+  .sui-text[data-tone="success"] { color: var(--sui-color-success); }
+  .sui-text[data-tone="warning"] { color: var(--sui-color-warning); }
+  .sui-text[data-tone="inherit"] { color: inherit; }
+
+  .sui-text[data-align="center"] {
+    display: block;
+    text-align: center;
+    text-wrap: pretty;
+  }
+
+  .sui-text[data-align="end"] {
+    display: block;
+    text-align: end;
+    text-wrap: pretty;
+  }
+
+  /* Длинный URL/слово не вылезает из колонки. */
+  .sui-text[data-align],
+  .sui-text[data-clamp] {
+    overflow-wrap: anywhere;
+  }
+
+  /*
+   * Обрезка в одну строку: inline-block нужен, чтобы `text-overflow`
+   * работал у `<span>`, не превращая его в блочный на всю ширину.
+   */
+  .sui-text[data-truncate] {
+    display: inline-block;
+    max-inline-size: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+  }
+
+  /* Measure: текст для чтения не растягивается на 4K. */
+  .sui-text[data-measure] {
+    display: block;
+    max-inline-size: var(--sui-text-measure, var(--sui-measure));
+    text-wrap: pretty;
+  }
+
+  .sui-text[data-clamp="1"],
+  .sui-text[data-clamp="2"],
+  .sui-text[data-clamp="3"],
+  .sui-text[data-clamp="4"] {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .sui-text[data-clamp="1"] { -webkit-line-clamp: 1; }
+  .sui-text[data-clamp="2"] { -webkit-line-clamp: 2; }
+  .sui-text[data-clamp="3"] { -webkit-line-clamp: 3; }
+  .sui-text[data-clamp="4"] { -webkit-line-clamp: 4; }
+}

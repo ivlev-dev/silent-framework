@@ -1,0 +1,184 @@
+/*
+ * Боковая панель. Modal — fixed-оверлей со скримом и `role="dialog"`;
+ * standard — часть раскладки. Закрытая панель получает `hidden`, поэтому
+ * её содержимое не попадает в tab-порядок и дерево доступности.
+ * Ширина — clamp, длинные пункты переносятся/обрезаются, safe-area учтён.
+ */
+@layer sui.components {
+  .sui-drawer {
+    --sui-drawer-inline-min: 17rem;
+    --sui-drawer-inline-max: 24rem;
+    --sui-drawer-surface: var(--sui-color-surface-container-low);
+    --sui-drawer-duration: var(--sui-motion-slow);
+    --sui-drawer-scrim-opacity: var(--sui-overlay-scrim, 0.42);
+    --sui-z-drawer: 1200;
+
+    position: fixed;
+    inset: 0;
+    z-index: var(--sui-z-drawer, 1200);
+    display: flex;
+    pointer-events: none;
+  }
+
+  .sui-drawer[data-variant="standard"] {
+    position: relative;
+    inset: auto;
+    display: block;
+    pointer-events: auto;
+  }
+
+  .sui-drawer__scrim {
+    position: absolute;
+    inset: 0;
+    background-color: var(--sui-color-scrim);
+    opacity: var(--sui-drawer-scrim-opacity);
+    pointer-events: auto;
+    animation: sui-drawer-scrim-in var(--sui-drawer-duration)
+      var(--sui-easing-standard);
+  }
+
+  .sui-drawer__panel {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    block-size: 100%;
+    inline-size: clamp(
+      var(--sui-drawer-inline-min),
+      26vw,
+      var(--sui-drawer-inline-max)
+    );
+    max-inline-size: calc(100% - var(--sui-space-8));
+    max-block-size: 100%;
+    min-inline-size: 0;
+    overflow: hidden;
+    background-color: var(--sui-drawer-surface);
+    color: var(--sui-color-on-surface);
+    box-shadow: var(--sui-elevation-4);
+    pointer-events: auto;
+  }
+
+  .sui-drawer__panel[hidden] {
+    display: none;
+  }
+
+  .sui-drawer__panel:focus-visible {
+    outline-offset: calc(var(--sui-focus-ring-offset) * -1);
+  }
+
+  .sui-drawer[data-side="start"] .sui-drawer__panel {
+    margin-inline-end: auto;
+    border-inline-end: var(--sui-hairline) solid var(--sui-color-outline-variant);
+    animation: sui-drawer-in-start var(--sui-drawer-duration)
+      var(--sui-easing-emphasized);
+  }
+
+  .sui-drawer[data-side="end"] .sui-drawer__panel {
+    margin-inline-start: auto;
+    border-inline-start: var(--sui-hairline) solid var(--sui-color-outline-variant);
+    animation: sui-drawer-in-end var(--sui-drawer-duration)
+      var(--sui-easing-emphasized);
+  }
+
+  /* standard: панель встраивается в контейнер, без оверлея и тени. */
+  .sui-drawer[data-variant="standard"] .sui-drawer__panel {
+    position: static;
+    block-size: 100%;
+    inline-size: 100%;
+    max-inline-size: 100%;
+    box-shadow: none;
+    animation: none;
+  }
+
+  .sui-drawer__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sui-space-3);
+    flex: none;
+    min-block-size: calc(
+      var(--sui-control-height-lg) * var(--sui-density) + var(--sui-space-2)
+    );
+    padding: calc(var(--sui-space-2) + env(safe-area-inset-top, 0px))
+      var(--sui-space-2) var(--sui-space-2) var(--sui-space-4);
+    border-block-end: var(--sui-hairline) solid var(--sui-color-outline-variant);
+  }
+
+  .sui-drawer__header-content {
+    min-inline-size: 0;
+    overflow: hidden;
+    font-family: var(--sui-font-display);
+    font-size: var(--sui-type-title-medium-size);
+    line-height: var(--sui-type-title-medium-line);
+    font-weight: var(--sui-type-title-medium-weight);
+    letter-spacing: var(--sui-type-title-medium-tracking);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sui-drawer .sui-icon-button.sui-drawer__close {
+    flex: none;
+    inline-size: var(--sui-touch-target);
+    block-size: var(--sui-touch-target);
+    min-inline-size: var(--sui-touch-target);
+    min-block-size: var(--sui-touch-target);
+  }
+
+  .sui-drawer__content {
+    flex: 1 1 auto;
+    min-block-size: 0;
+    min-inline-size: 0;
+    padding: var(--sui-space-2) var(--sui-space-4) var(--sui-space-4);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    overflow-wrap: anywhere;
+  }
+
+  .sui-drawer__footer {
+    flex: none;
+    padding: var(--sui-space-3) var(--sui-space-4);
+    padding-block-end: calc(
+      var(--sui-space-3) + env(safe-area-inset-bottom, 0px)
+    );
+    border-block-start: var(--sui-hairline) solid var(--sui-color-outline-variant);
+  }
+
+  @media (max-width: 29.9375em) {
+    .sui-drawer__panel {
+      inline-size: min(100%, calc(100vw - var(--sui-space-8)));
+    }
+
+    .sui-drawer__footer {
+      display: flex;
+      flex-direction: column-reverse;
+      gap: var(--sui-space-2);
+    }
+
+    .sui-drawer__footer > * {
+      inline-size: 100%;
+    }
+  }
+
+  @keyframes sui-drawer-scrim-in {
+    from { opacity: 0; }
+    to { opacity: var(--sui-drawer-scrim-opacity); }
+  }
+
+  @keyframes sui-drawer-in-start {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(0); }
+  }
+
+  @keyframes sui-drawer-in-end {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sui-drawer__scrim,
+    .sui-drawer[data-side="start"] .sui-drawer__panel,
+    .sui-drawer[data-side="end"] .sui-drawer__panel {
+      animation: none;
+    }
+  }
+}

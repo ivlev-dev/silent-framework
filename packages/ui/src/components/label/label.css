@@ -1,0 +1,57 @@
+/* Подпись поля: sans UI, опциональный uppercase-стиль для секций. */
+@layer sui.components {
+  .sui-label {
+    --sui-label-gap: 0.25em;
+    --sui-label-max-inline: 100%;
+
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--sui-label-gap, 0.25em);
+    max-inline-size: var(--sui-label-max-inline, 100%);
+    min-inline-size: 0;
+    color: var(--sui-color-on-surface);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-label-large-size);
+    line-height: var(--sui-type-label-large-line);
+    font-weight: var(--sui-type-label-large-weight);
+    letter-spacing: var(--sui-type-label-large-tracking);
+    overflow-wrap: break-word;
+  }
+
+  .sui-label[data-variant="label-medium"] {
+    font-size: var(--sui-type-label-medium-size);
+    line-height: var(--sui-type-label-medium-line);
+    font-weight: var(--sui-type-label-medium-weight);
+    letter-spacing: var(--sui-type-label-medium-tracking);
+  }
+
+  .sui-label[data-variant="label-small"] {
+    font-size: var(--sui-type-label-small-size);
+    line-height: var(--sui-type-label-small-line);
+    font-weight: var(--sui-type-label-small-weight);
+    letter-spacing: var(--sui-type-label-small-tracking);
+  }
+
+  /* Единственный «громкий» регистр — осознанно, для групп/секций. */
+  .sui-label[data-case="upper"] {
+    font-size: var(--sui-type-label-small-size);
+    line-height: var(--sui-type-label-small-line);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .sui-label[data-tone="muted"] { color: var(--sui-color-on-surface-variant); }
+  .sui-label[data-tone="error"] { color: var(--sui-color-error); }
+  .sui-label[data-tone="primary"] { color: var(--sui-color-primary); }
+  .sui-label[data-tone="inherit"] { color: inherit; }
+
+  .sui-label[data-disabled] {
+    color: var(--sui-color-on-surface-muted);
+    cursor: not-allowed;
+  }
+
+  .sui-label__required {
+    color: var(--sui-color-error);
+    font-weight: 700;
+  }
+}

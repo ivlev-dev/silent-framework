@@ -1,0 +1,119 @@
+/*
+ * Хлебные крошки: список, разделители, текущая страница, многоточие.
+ * Цепочка переносится, длинные названия обрезаются, на узком экране —
+ * компактнее; ничего не вылезает за контейнер.
+ */
+@layer sui.components {
+  .sui-breadcrumbs {
+    --sui-breadcrumbs-separator: var(--sui-color-outline);
+
+    display: block;
+    min-inline-size: 0;
+    color: var(--sui-color-on-surface-variant);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-label-large-size);
+    line-height: var(--sui-type-label-large-line);
+    font-weight: var(--sui-type-label-large-weight);
+    letter-spacing: var(--sui-type-label-large-tracking);
+  }
+
+  .sui-breadcrumbs__list {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    min-inline-size: 0;
+  }
+
+  .sui-breadcrumbs__item {
+    display: inline-flex;
+    align-items: center;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+  }
+
+  .sui-breadcrumbs__separator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    padding-inline: var(--sui-space-2);
+    color: var(--sui-breadcrumbs-separator);
+    user-select: none;
+  }
+
+  .sui-breadcrumbs__icon {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    margin-inline-end: var(--sui-space-1);
+    color: inherit;
+  }
+
+  .sui-breadcrumbs__icon .sui-icon {
+    inline-size: var(--sui-icon-size-sm);
+    block-size: var(--sui-icon-size-sm);
+  }
+
+  .sui-breadcrumbs__link,
+  .sui-breadcrumbs__text,
+  .sui-breadcrumbs__ellipsis {
+    display: inline-block;
+    max-inline-size: 20ch;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .sui-breadcrumbs__link {
+    border-radius: var(--sui-radius-xs);
+    transition: color var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  .sui-breadcrumbs__link:hover {
+    color: var(--sui-color-on-surface);
+    text-decoration: underline;
+    text-underline-offset: 0.15em;
+  }
+
+  .sui-breadcrumbs__link:focus-visible {
+    outline-offset: var(--sui-focus-ring-offset);
+  }
+
+  .sui-breadcrumbs__item[data-current] {
+    color: var(--sui-color-on-surface);
+    font-weight: var(--sui-type-label-large-weight);
+  }
+
+  .sui-breadcrumbs__ellipsis {
+    color: var(--sui-color-on-surface-variant);
+    max-inline-size: none;
+  }
+
+  .sui-breadcrumbs__item[data-ellipsis] {
+    color: var(--sui-color-on-surface-variant);
+  }
+
+  @media (max-width: 29.9375em) {
+    .sui-breadcrumbs__link,
+    .sui-breadcrumbs__text {
+      max-inline-size: 14ch;
+    }
+
+    .sui-breadcrumbs__separator {
+      padding-inline: var(--sui-space-1);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sui-breadcrumbs__link {
+      transition: none;
+    }
+  }
+}

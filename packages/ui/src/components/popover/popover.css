@@ -1,0 +1,116 @@
+/*
+ * Popover: anchor + inline absolute-панель. Сторона — data-side (flip делает
+ * JS-хелпер), края подрезаются shift-переменными. Панель не в Portal:
+ * SSR-контекст сохраняется.
+ */
+@layer sui.components {
+  .sui-popover {
+    --sui-popover-surface: var(--sui-color-surface-container-low);
+    --sui-popover-radius: var(--sui-radius-lg);
+    --sui-popover-max-inline: 22rem;
+    --sui-popover-max-block: 28rem;
+    --sui-popover-duration: var(--sui-motion-base);
+
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    inline-size: fit-content;
+    max-width: 100%;
+    min-inline-size: 0;
+  }
+
+  .sui-popover__anchor {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    min-inline-size: 0;
+  }
+
+  .sui-popover__panel {
+    --sui-floating-inline-shift: 0px;
+    --sui-floating-block-shift: 0px;
+
+    position: absolute;
+    z-index: var(--sui-z-popover, 1100);
+    box-sizing: border-box;
+    min-width: 12rem;
+    max-width: min(
+      var(--sui-popover-max-inline),
+      calc(100vw - 2 * var(--sui-space-4))
+    );
+    max-block-size: min(
+      var(--sui-popover-max-block),
+      calc(100dvh - 2 * var(--sui-space-4))
+    );
+    padding: var(--sui-space-3);
+    border: var(--sui-hairline) solid var(--sui-color-outline-variant);
+    border-radius: var(--sui-popover-radius);
+    background-color: var(--sui-popover-surface);
+    color: var(--sui-color-on-surface);
+    box-shadow: var(--sui-elevation-3);
+    font-size: var(--sui-type-body-medium-size);
+    line-height: var(--sui-type-body-medium-line);
+    overflow: auto;
+    overscroll-behavior: contain;
+    overflow-wrap: anywhere;
+    animation: sui-popover-in var(--sui-popover-duration)
+      var(--sui-easing-standard) both;
+  }
+
+  .sui-popover__panel:focus {
+    outline: none;
+  }
+
+  .sui-popover__panel:focus-visible {
+    outline-offset: calc(var(--sui-focus-ring-offset) * -1);
+  }
+
+  .sui-popover__panel[hidden] {
+    display: none;
+  }
+
+  .sui-popover[data-side="bottom"] .sui-popover__panel {
+    top: calc(100% + var(--sui-space-2));
+    inset-inline-start: 0;
+    transform: translateX(var(--sui-floating-inline-shift, 0px));
+  }
+
+  .sui-popover[data-side="top"] .sui-popover__panel {
+    bottom: calc(100% + var(--sui-space-2));
+    inset-inline-start: 0;
+    transform: translateX(var(--sui-floating-inline-shift, 0px));
+  }
+
+  .sui-popover[data-side="start"] .sui-popover__panel {
+    top: 0;
+    inset-inline-end: calc(100% + var(--sui-space-2));
+    transform: translate(
+      var(--sui-floating-inline-shift, 0px),
+      var(--sui-floating-block-shift, 0px)
+    );
+  }
+
+  .sui-popover[data-side="end"] .sui-popover__panel {
+    top: 0;
+    inset-inline-start: calc(100% + var(--sui-space-2));
+    transform: translate(
+      var(--sui-floating-inline-shift, 0px),
+      var(--sui-floating-block-shift, 0px)
+    );
+  }
+
+  @keyframes sui-popover-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sui-popover__panel {
+      animation: none;
+    }
+  }
+}

@@ -1,0 +1,173 @@
+/*
+ * Многострочное поле: `rows` вместо авто-высоты, resize через `data-resize`.
+ * Высота и паддинги настраиваются переменными (--sui-textarea-*).
+ */
+@layer sui.components {
+  .sui-textarea {
+    --sui-textarea-min-block-size: calc(
+      var(--sui-control-height-lg) * var(--sui-density)
+    );
+    --sui-textarea-padding-block: var(--sui-space-2);
+    --sui-textarea-padding-inline: var(--sui-space-3);
+    --sui-textarea-radius: var(--sui-radius-control);
+    --sui-textarea-bg: var(--sui-color-surface-container-lowest);
+    --sui-textarea-border-color: var(--sui-color-outline-variant);
+    --sui-textarea-hover-color: var(--sui-color-outline);
+    --sui-textarea-focus-color: var(--sui-focus-ring-color);
+    --sui-textarea-error-color: var(--sui-color-error);
+    --sui-textarea-placeholder-color: var(--sui-color-on-surface-muted);
+    --sui-textarea-disabled-bg: var(--sui-color-surface-container);
+    --sui-textarea-validating-color: var(--sui-color-primary);
+    --sui-textarea-counter-color: var(--sui-color-on-surface-variant);
+
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    min-inline-size: 0;
+    border: var(--sui-hairline) solid var(--sui-textarea-border-color);
+    border-radius: var(--sui-textarea-radius);
+    background-color: var(--sui-textarea-bg);
+    color: var(--sui-color-on-surface);
+    transition:
+      border-color var(--sui-motion-short-3) var(--sui-easing-standard),
+      background-color var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  .sui-textarea:hover:not([data-disabled]):not([data-readonly]) {
+    border-color: var(--sui-textarea-hover-color);
+  }
+
+  .sui-textarea[data-invalid]:hover:not([data-disabled]):not([data-readonly]) {
+    border-color: var(--sui-textarea-error-color);
+  }
+
+  .sui-textarea:focus-within {
+    border-color: var(--sui-textarea-focus-color);
+    outline: var(--sui-focus-ring-width) solid var(--sui-textarea-focus-color);
+    outline-offset: calc(var(--sui-focus-ring-offset) * -1);
+  }
+
+  .sui-textarea[data-invalid] {
+    border-color: var(--sui-textarea-error-color);
+  }
+
+  .sui-textarea[data-invalid]:focus-within {
+    outline-color: var(--sui-textarea-error-color);
+  }
+
+  .sui-textarea[data-disabled] {
+    background-color: var(--sui-textarea-disabled-bg);
+    opacity: var(--sui-state-disabled);
+    cursor: not-allowed;
+  }
+
+  .sui-textarea[data-readonly] {
+    border-style: dashed;
+    background-color: transparent;
+  }
+
+  .sui-textarea[data-validating]::after {
+    content: "";
+    position: absolute;
+    inset-inline: var(--sui-textarea-radius);
+    inset-block-end: 0;
+    block-size: var(--sui-hairline);
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      var(--sui-textarea-validating-color),
+      transparent
+    );
+    background-repeat: no-repeat;
+    background-size: 40% 100%;
+    animation: sui-textarea-validating var(--sui-motion-long-2)
+      var(--sui-easing-linear) infinite;
+    pointer-events: none;
+  }
+
+  @keyframes sui-textarea-validating {
+    from {
+      background-position: -40% 0;
+    }
+
+    to {
+      background-position: 140% 0;
+    }
+  }
+
+  .sui-textarea[data-bare] {
+    border: 0;
+    background-color: transparent;
+  }
+
+  .sui-textarea[data-bare]:focus-within {
+    outline: none;
+  }
+
+  .sui-textarea__input {
+    display: block;
+    box-sizing: border-box;
+    inline-size: 100%;
+    min-inline-size: 0;
+    min-block-size: var(--sui-textarea-min-block-size);
+    margin: 0;
+    padding: var(--sui-textarea-padding-block) var(--sui-textarea-padding-inline);
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    color: inherit;
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-body-medium-size);
+    line-height: var(--sui-type-body-medium-line);
+    letter-spacing: var(--sui-type-body-medium-tracking);
+    overflow-wrap: anywhere;
+    resize: vertical;
+  }
+
+  .sui-textarea[data-resize="none"] .sui-textarea__input {
+    resize: none;
+  }
+
+  .sui-textarea[data-resize="horizontal"] .sui-textarea__input {
+    resize: horizontal;
+  }
+
+  .sui-textarea[data-resize="both"] .sui-textarea__input {
+    resize: both;
+  }
+
+  .sui-textarea__input:focus,
+  .sui-textarea__input:focus-visible {
+    outline: none;
+  }
+
+  .sui-textarea__input::placeholder {
+    color: var(--sui-textarea-placeholder-color);
+    opacity: 1;
+  }
+
+  .sui-textarea__input:disabled {
+    cursor: not-allowed;
+  }
+
+  .sui-textarea__counter {
+    align-self: flex-end;
+    max-inline-size: 100%;
+    padding: 0 var(--sui-textarea-padding-inline) var(--sui-space-1);
+    color: var(--sui-textarea-counter-color);
+    font-size: var(--sui-type-label-small-size);
+    line-height: var(--sui-type-label-small-line);
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+
+  @media (pointer: coarse) {
+    .sui-textarea__input {
+      min-block-size: max(
+        var(--sui-textarea-min-block-size),
+        var(--sui-touch-target-cozy)
+      );
+    }
+  }
+}

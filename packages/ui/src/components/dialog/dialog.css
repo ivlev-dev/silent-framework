@@ -1,0 +1,183 @@
+/*
+ * Dialog: нативный <dialog> в top layer. Fallback (без showModal) —
+ * fixed-позиционирование + scrim-сосед. Поверхность — ivory/navy,
+ * радиус 24, тень, спокойная анимация 240ms.
+ */
+@layer sui.components {
+  .sui-dialog {
+    --sui-dialog-surface: var(--sui-color-surface-container-low);
+    --sui-dialog-radius: var(--sui-radius-dialog);
+    --sui-dialog-max-inline: 34rem;
+    --sui-dialog-max-block: calc(
+      100dvh - 2 * var(--sui-space-4)
+        - env(safe-area-inset-top, 0px)
+        - env(safe-area-inset-bottom, 0px)
+    );
+    --sui-dialog-shadow: var(--sui-elevation-4);
+    --sui-dialog-duration: var(--sui-motion-slow);
+    --sui-dialog-title-font: var(--sui-font-display);
+    --sui-dialog-scrim-opacity: var(--sui-overlay-scrim, 0.42);
+
+    position: fixed;
+    inset: 0;
+    z-index: var(--sui-z-dialog, 1000);
+    box-sizing: border-box;
+    width: min(var(--sui-dialog-max-inline), calc(100vw - 2 * var(--sui-space-4)));
+    max-width: calc(100vw - 2 * var(--sui-space-4));
+    max-height: var(--sui-dialog-max-block);
+    margin: auto;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--sui-color-on-surface);
+    overflow: visible;
+  }
+
+  .sui-dialog:not([open]) {
+    display: none;
+  }
+
+  .sui-dialog:focus {
+    outline: none;
+  }
+
+  /* Нативный backdrop; в fallback его нет — рисуем соседний scrim. */
+  .sui-dialog::backdrop {
+    background-color: var(--sui-color-scrim);
+    opacity: var(--sui-dialog-scrim-opacity);
+  }
+
+  .sui-dialog__scrim {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background-color: var(--sui-color-scrim);
+    opacity: var(--sui-dialog-scrim-opacity);
+  }
+
+  .sui-dialog:modal .sui-dialog__scrim {
+    display: none;
+  }
+
+  .sui-dialog__panel {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    max-height: inherit;
+    border: var(--sui-hairline) solid var(--sui-color-outline-variant);
+    border-radius: var(--sui-dialog-radius);
+    background-color: var(--sui-dialog-surface);
+    box-shadow: var(--sui-dialog-shadow);
+    overflow: hidden;
+    animation: sui-dialog-in var(--sui-dialog-duration)
+      var(--sui-easing-editorial) both;
+  }
+
+  .sui-dialog__header {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sui-space-3);
+    flex: none;
+    padding: var(--sui-space-5) var(--sui-space-4) var(--sui-space-2)
+      var(--sui-space-6);
+  }
+
+  .sui-dialog__title {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    font-family: var(--sui-dialog-title-font);
+    font-size: var(--sui-type-title-large-size);
+    line-height: var(--sui-type-title-large-line);
+    font-weight: var(--sui-type-title-large-weight);
+    letter-spacing: var(--sui-type-title-large-tracking);
+    color: var(--sui-color-on-surface);
+    overflow-wrap: break-word;
+    text-wrap: balance;
+  }
+
+  .sui-dialog .sui-icon-button.sui-dialog__close {
+    flex: none;
+    margin-inline-start: auto;
+    inline-size: var(--sui-touch-target);
+    block-size: var(--sui-touch-target);
+    min-inline-size: var(--sui-touch-target);
+    min-block-size: var(--sui-touch-target);
+  }
+
+  .sui-dialog__description {
+    margin: 0;
+    padding: 0 var(--sui-space-6) var(--sui-space-2);
+    max-inline-size: var(--sui-measure);
+    font-size: var(--sui-type-body-medium-size);
+    line-height: var(--sui-type-body-medium-line);
+    color: var(--sui-color-on-surface-variant);
+    overflow-wrap: anywhere;
+  }
+
+  .sui-dialog__body {
+    flex: 1;
+    min-height: 0;
+    min-inline-size: 0;
+    padding: var(--sui-space-3) var(--sui-space-6) var(--sui-space-5);
+    overflow: auto;
+    overscroll-behavior: contain;
+    font-size: var(--sui-type-body-medium-size);
+    line-height: var(--sui-type-body-medium-line);
+    overflow-wrap: anywhere;
+  }
+
+  .sui-dialog__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--sui-space-2);
+    flex: none;
+    padding: var(--sui-space-3) var(--sui-space-4)
+      calc(var(--sui-space-4) + env(safe-area-inset-bottom, 0px))
+      var(--sui-space-6);
+    border-block-start: var(--sui-hairline) solid var(--sui-color-outline-variant);
+  }
+
+  @keyframes sui-dialog-in {
+    from {
+      opacity: 0;
+      transform: translateY(var(--sui-space-2)) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @media (max-width: 29.9375em) {
+    .sui-dialog__header {
+      padding: var(--sui-space-4) var(--sui-space-2) var(--sui-space-1)
+        var(--sui-space-4);
+    }
+
+    .sui-dialog__description {
+      padding-inline: var(--sui-space-4);
+    }
+
+    .sui-dialog__body {
+      padding-inline: var(--sui-space-4);
+    }
+
+    .sui-dialog__actions {
+      flex-direction: column-reverse;
+      align-items: stretch;
+      padding-inline: var(--sui-space-4);
+    }
+
+    .sui-dialog__actions > * {
+      inline-size: 100%;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sui-dialog__panel {
+      animation: none;
+    }
+  }
+}

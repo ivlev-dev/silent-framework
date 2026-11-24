@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "composite": true,
+    "incremental": true,
+    "tsBuildInfoFile": "./.tsbuildinfo",
+    "emitDeclarationOnly": true,
+    "resolveJsonModule": false,
+    "types": []
+  },
+  "include": ["src"],
+  "references": [{ "path": "../reactivity" }, { "path": "../core" }]
+}

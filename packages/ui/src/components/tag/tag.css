@@ -1,0 +1,118 @@
+/*
+ * Tag: компактная метка на токенах контейнерных цветов. Подпись обрезается,
+ * кнопка удаления имеет невидимую цель 44px, не раздувая саму метку.
+ */
+@layer sui.components {
+  .sui-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sui-space-1);
+    box-sizing: border-box;
+    max-inline-size: 100%;
+    min-inline-size: 0;
+    block-size: 1.5rem;
+    padding-inline: var(--sui-space-2);
+    border-radius: var(--sui-radius-xs);
+    background-color: var(--sui-color-surface-container-high);
+    color: var(--sui-color-on-surface-variant);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-label-medium-size);
+    line-height: 1;
+    font-weight: var(--sui-type-label-medium-weight);
+    letter-spacing: var(--sui-type-label-medium-tracking);
+    vertical-align: middle;
+  }
+
+  .sui-tag[data-size="sm"] {
+    block-size: 1.25rem;
+    padding-inline: var(--sui-space-1) var(--sui-space-2);
+    font-size: var(--sui-type-label-small-size);
+    letter-spacing: var(--sui-type-label-small-tracking);
+  }
+
+  .sui-tag__label {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sui-tag__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+  }
+
+  .sui-tag__icon .sui-icon {
+    inline-size: var(--sui-icon-size-sm);
+    block-size: var(--sui-icon-size-sm);
+  }
+
+  .sui-tag__remove {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    inline-size: 1.25rem;
+    block-size: 1.25rem;
+    margin-inline-end: calc(var(--sui-space-1) * -1);
+    padding: 0;
+    border: 0;
+    border-radius: var(--sui-radius-full);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  /* Невидимая цель 44×44 вокруг компактного крестика. */
+  .sui-tag__remove::before {
+    content: "";
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-start: 50%;
+    inline-size: var(--sui-touch-target);
+    block-size: var(--sui-touch-target);
+    transform: translate(-50%, -50%);
+  }
+
+  .sui-tag__remove:hover {
+    background-color: var(--sui-color-surface-container-highest);
+  }
+
+  .sui-tag__remove:focus-visible {
+    outline: var(--sui-focus-ring-width) solid var(--sui-color-primary);
+    outline-offset: calc(var(--sui-focus-ring-offset) * -1);
+  }
+
+  .sui-tag[data-variant="primary"] {
+    background-color: var(--sui-color-primary-container);
+    color: var(--sui-color-on-primary-container);
+  }
+
+  .sui-tag[data-variant="secondary"] {
+    background-color: var(--sui-color-secondary-container);
+    color: var(--sui-color-on-secondary-container);
+  }
+
+  .sui-tag[data-variant="success"] {
+    background-color: var(--sui-color-success-container);
+    color: var(--sui-color-on-success-container);
+  }
+
+  .sui-tag[data-variant="warning"] {
+    background-color: var(--sui-color-warning-container);
+    color: var(--sui-color-on-warning-container);
+  }
+
+  .sui-tag[data-variant="error"] {
+    background-color: var(--sui-color-error-container);
+    color: var(--sui-color-on-error-container);
+  }
+
+  .sui-tag[data-variant="info"] {
+    background-color: var(--sui-color-surface-container-highest);
+    color: var(--sui-color-on-surface);
+  }
+}

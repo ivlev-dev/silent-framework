@@ -1,0 +1,208 @@
+/*
+ * Кнопка: одна разметка, варианты через `data-variant`/`data-size`.
+ * Высота и отступы — компонентные переменные с дефолтами из токенов.
+ * State layers — overlay на `::after` (работает без color-mix), поверх —
+ * прогрессивное уточнение через color-mix.
+ */
+@layer sui.components {
+  .sui-button {
+    --sui-button-block-size: calc(var(--sui-control-height-md) * var(--sui-density));
+    --sui-button-padding-inline: var(--sui-space-4);
+    --sui-button-gap: var(--sui-space-2);
+    --sui-button-radius: var(--sui-radius-full);
+    --sui-button-min-inline: 2.5rem;
+    --sui-button-max-inline: 100%;
+    --sui-button-font-size: var(--sui-type-label-large-size);
+    --sui-button-font-weight: var(--sui-type-label-large-weight);
+    --sui-button-letter-spacing: var(--sui-type-label-large-tracking);
+    --sui-button-icon-size: 1.125rem;
+
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sui-button-gap, var(--sui-space-2));
+    box-sizing: border-box;
+    min-inline-size: var(--sui-button-min-inline, 2.5rem);
+    max-inline-size: var(--sui-button-max-inline, 100%);
+    block-size: var(--sui-button-block-size, calc(var(--sui-control-height-md) * var(--sui-density)));
+    padding-inline: var(--sui-button-padding-inline, var(--sui-space-4));
+    border: var(--sui-hairline) solid transparent;
+    border-radius: var(--sui-button-radius, var(--sui-radius-full));
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-button-font-size, var(--sui-type-label-large-size));
+    line-height: 1;
+    font-weight: var(--sui-button-font-weight, var(--sui-type-label-large-weight));
+    letter-spacing: var(--sui-button-letter-spacing, var(--sui-type-label-large-tracking));
+    white-space: nowrap;
+    vertical-align: middle;
+    text-decoration: none;
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    transition:
+      background-color var(--sui-motion-short-3) var(--sui-easing-standard),
+      box-shadow var(--sui-motion-short-3) var(--sui-easing-standard),
+      color var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  .sui-button::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: currentColor;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  .sui-button:hover:not(:disabled)::after {
+    opacity: var(--sui-state-hover);
+  }
+
+  .sui-button:active:not(:disabled)::after {
+    opacity: var(--sui-state-pressed);
+  }
+
+  @supports (color: color-mix(in srgb, currentColor 8%, transparent)) {
+    .sui-button:hover:not(:disabled)::after {
+      background: color-mix(in srgb, currentColor 8%, transparent);
+      opacity: 1;
+    }
+
+    .sui-button:active:not(:disabled)::after {
+      background: color-mix(in srgb, currentColor 12%, transparent);
+      opacity: 1;
+    }
+  }
+
+  .sui-button:focus-visible {
+    outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
+    outline-offset: var(--sui-focus-ring-offset);
+  }
+
+  .sui-button:disabled {
+    cursor: not-allowed;
+    opacity: var(--sui-state-disabled);
+    box-shadow: none;
+  }
+
+  .sui-button[data-loading] {
+    cursor: progress;
+  }
+
+  .sui-button[data-full-width] {
+    display: flex;
+    inline-size: 100%;
+    --sui-button-max-inline: none;
+  }
+
+  .sui-button__label {
+    display: block;
+    flex: 0 1 auto;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sui-button__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+  }
+
+  .sui-button__icon:empty {
+    display: none;
+  }
+
+  .sui-button__icon .sui-icon {
+    inline-size: var(--sui-button-icon-size, 1.125rem);
+    block-size: var(--sui-button-icon-size, 1.125rem);
+  }
+
+  /* --- размеры --------------------------------------------------------- */
+  .sui-button[data-size="sm"] {
+    --sui-button-block-size: calc(var(--sui-control-height-sm) * var(--sui-density));
+    --sui-button-padding-inline: var(--sui-space-3);
+    --sui-button-font-size: var(--sui-type-label-medium-size);
+    --sui-button-letter-spacing: var(--sui-type-label-medium-tracking);
+    --sui-button-min-inline: 2rem;
+  }
+
+  .sui-button[data-size="md"] {
+    --sui-button-block-size: calc(var(--sui-control-height-md) * var(--sui-density));
+  }
+
+  .sui-button[data-size="lg"] {
+    --sui-button-block-size: calc(var(--sui-control-height-lg) * var(--sui-density));
+    --sui-button-padding-inline: var(--sui-space-6);
+    --sui-button-font-size: var(--sui-type-label-large-size);
+    --sui-button-min-inline: 3rem;
+  }
+
+  /* На тач-устройствах даже компактная кнопка получает 44px-цель. */
+  @media (pointer: coarse) {
+    .sui-button {
+      min-block-size: var(--sui-touch-target);
+    }
+  }
+
+  /* --- варианты -------------------------------------------------------- */
+  .sui-button[data-variant="filled"] {
+    background-color: var(--sui-color-primary);
+    color: var(--sui-color-on-primary);
+  }
+
+  .sui-button[data-variant="accent"] {
+    background-color: var(--sui-color-accent);
+    color: var(--sui-color-on-accent);
+  }
+
+  .sui-button[data-variant="tonal"] {
+    background-color: var(--sui-color-secondary-container);
+    color: var(--sui-color-on-secondary-container);
+  }
+
+  .sui-button[data-variant="outlined"] {
+    background-color: transparent;
+    color: var(--sui-color-primary);
+    border-color: var(--sui-color-outline-variant);
+  }
+
+  .sui-button[data-variant="text"] {
+    background-color: transparent;
+    color: var(--sui-color-primary);
+    padding-inline: var(--sui-space-3);
+  }
+
+  .sui-button[data-variant="elevated"] {
+    background-color: var(--sui-color-surface-container-low);
+    color: var(--sui-color-primary);
+    box-shadow: var(--sui-elevation-1);
+  }
+
+  .sui-button[data-variant="elevated"]:hover:not(:disabled) {
+    box-shadow: var(--sui-elevation-2);
+  }
+
+  .sui-button[data-variant="elevated"]:active:not(:disabled) {
+    box-shadow: var(--sui-elevation-1);
+  }
+
+  @media (forced-colors: active) {
+    .sui-button {
+      border-color: ButtonBorder;
+    }
+
+    .sui-button:focus-visible {
+      outline-color: Highlight;
+    }
+
+    .sui-button:disabled {
+      color: GrayText;
+    }
+  }
+}

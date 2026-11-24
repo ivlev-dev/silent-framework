@@ -1,0 +1,244 @@
+/*
+ * Боковой рейл: свёрнут — только иконки, развёрнут — иконки + подписи.
+ * Подписи не удаляются в свёрнутом виде, а визуально скрываются, чтобы
+ * доступное имя пункта не зависело от раскладки. Ширина — clamp, золотой
+ * маркер выбранного, бейджи и длинные подписи не раздувают рейл.
+ */
+@layer sui.components {
+  .sui-navigation-rail {
+    --sui-rail-width-collapsed: 5rem;
+    --sui-rail-width-expanded: clamp(14rem, 18vw, 17rem);
+    --sui-rail-surface: var(--sui-color-surface-container);
+    --sui-rail-indicator: var(--sui-color-accent);
+
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--sui-space-3);
+    box-sizing: border-box;
+    inline-size: var(--sui-rail-width-collapsed);
+    max-inline-size: 100%;
+    block-size: 100%;
+    padding: var(--sui-space-2) var(--sui-space-1);
+    overflow: hidden;
+    background-color: var(--sui-rail-surface);
+    border-inline-end: var(--sui-hairline) solid var(--sui-color-outline-variant);
+    color: var(--sui-color-on-surface);
+    transition: inline-size var(--sui-motion-slow) var(--sui-easing-emphasized);
+  }
+
+  .sui-navigation-rail[data-expanded] {
+    inline-size: var(--sui-rail-width-expanded);
+  }
+
+  .sui-navigation-rail__fab {
+    display: flex;
+    justify-content: center;
+    padding-block: var(--sui-space-1);
+  }
+
+  .sui-navigation-rail[data-expanded] .sui-navigation-rail__fab {
+    justify-content: flex-start;
+    padding-inline: var(--sui-space-2);
+  }
+
+  .sui-navigation-rail__list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sui-space-1);
+    margin: 0;
+    padding: 0;
+    min-inline-size: 0;
+    list-style: none;
+  }
+
+  .sui-navigation-rail__item {
+    position: relative;
+    min-inline-size: 0;
+  }
+
+  .sui-navigation-rail__item[data-selected]::before {
+    content: "";
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-start: 0;
+    inline-size: 2px;
+    block-size: 1.25rem;
+    border-radius: var(--sui-radius-full);
+    background-color: var(--sui-rail-indicator);
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+
+  .sui-navigation-rail__link,
+  .sui-navigation-rail__button {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sui-space-1);
+    box-sizing: border-box;
+    inline-size: 100%;
+    min-inline-size: 0;
+    min-block-size: calc(
+      var(--sui-control-height-lg) * var(--sui-density) + var(--sui-space-2)
+    );
+    padding: var(--sui-space-1) var(--sui-space-2);
+    border: 0;
+    border-radius: var(--sui-radius-md);
+    background-color: transparent;
+    color: var(--sui-color-on-surface-variant);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-label-medium-size);
+    line-height: var(--sui-type-label-medium-line);
+    font-weight: var(--sui-type-label-medium-weight);
+    letter-spacing: var(--sui-type-label-medium-tracking);
+    text-decoration: none;
+    text-align: center;
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    transition:
+      color var(--sui-motion-short-3) var(--sui-easing-standard),
+      background-color var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  .sui-navigation-rail__link::after,
+  .sui-navigation-rail__button::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: currentColor;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  .sui-navigation-rail__link:hover::after,
+  .sui-navigation-rail__button:hover:not(:disabled)::after {
+    opacity: var(--sui-state-hover);
+  }
+
+  .sui-navigation-rail__link:active::after,
+  .sui-navigation-rail__button:active:not(:disabled)::after {
+    opacity: var(--sui-state-pressed);
+  }
+
+  .sui-navigation-rail__button:disabled,
+  .sui-navigation-rail__link[aria-disabled="true"] {
+    cursor: not-allowed;
+    opacity: var(--sui-state-disabled);
+  }
+
+  .sui-navigation-rail__icon {
+    position: relative;
+    display: grid;
+    place-items: center;
+    flex: none;
+    inline-size: calc(var(--sui-control-height-md) * var(--sui-density));
+    max-inline-size: 100%;
+    block-size: calc(var(--sui-control-height-md) * var(--sui-density));
+    border-radius: var(--sui-radius-full);
+    transition: background-color var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  .sui-navigation-rail__icon-glyph {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .sui-navigation-rail__icon .sui-icon {
+    inline-size: var(--sui-icon-size-md);
+    block-size: var(--sui-icon-size-md);
+  }
+
+  .sui-navigation-rail__label {
+    display: block;
+    max-inline-size: 100%;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sui-navigation-rail__link[data-selected],
+  .sui-navigation-rail__button[data-selected] {
+    color: var(--sui-color-on-surface);
+  }
+
+  .sui-navigation-rail__link[data-selected] .sui-navigation-rail__icon,
+  .sui-navigation-rail__button[data-selected] .sui-navigation-rail__icon {
+    background-color: var(--sui-color-secondary-container);
+    color: var(--sui-color-on-secondary-container);
+  }
+
+  .sui-navigation-rail__badge {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-end: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-inline-size: var(--sui-space-4);
+    min-block-size: var(--sui-space-4);
+    max-inline-size: 2.5rem;
+    padding-inline: var(--sui-space-1);
+    border-radius: var(--sui-radius-full);
+    background-color: var(--sui-color-error);
+    color: var(--sui-color-on-error);
+    font-size: var(--sui-type-label-small-size);
+    line-height: var(--sui-type-label-small-line);
+    font-weight: var(--sui-type-label-small-weight);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* --- свёрнутый режим ------------------------------------------------ */
+  .sui-navigation-rail:not([data-expanded]) .sui-navigation-rail__label {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* --- развёрнутый режим ---------------------------------------------- */
+  .sui-navigation-rail[data-expanded] .sui-navigation-rail__link,
+  .sui-navigation-rail[data-expanded] .sui-navigation-rail__button {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: var(--sui-space-3);
+    padding-inline: var(--sui-space-2);
+    text-align: start;
+  }
+
+  .sui-navigation-rail[data-expanded] .sui-navigation-rail__label {
+    flex: 1;
+    font-size: var(--sui-type-label-large-size);
+    line-height: var(--sui-type-label-large-line);
+    font-weight: var(--sui-type-label-large-weight);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sui-navigation-rail {
+      transition: none;
+    }
+
+    .sui-navigation-rail__link,
+    .sui-navigation-rail__button,
+    .sui-navigation-rail__icon,
+    .sui-navigation-rail__link::after,
+    .sui-navigation-rail__button::after {
+      transition: none;
+    }
+  }
+}

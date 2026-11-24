@@ -1,0 +1,97 @@
+/*
+ * Snackbar: controlled-уведомление. role=status, fixed над нижним краем.
+ * На мобильном — почти на всю ширину, на десктопе — компактная капсула.
+ * Скрытый снекбар убирается атрибутом hidden (не остаётся в tab-порядке).
+ */
+@layer sui.components {
+  .sui-snackbar {
+    --sui-snackbar-surface: var(--sui-color-inverse-surface);
+    --sui-snackbar-color: var(--sui-color-inverse-on-surface);
+    --sui-snackbar-duration: var(--sui-motion-slow);
+
+    position: fixed;
+    inset-inline: var(--sui-space-4);
+    bottom: calc(var(--sui-space-4) + env(safe-area-inset-bottom, 0px));
+    z-index: var(--sui-z-snackbar, 1300);
+    display: flex;
+    align-items: center;
+    gap: var(--sui-space-2);
+    box-sizing: border-box;
+    width: auto;
+    max-width: none;
+    min-block-size: calc(
+      var(--sui-control-height-md) * var(--sui-density)
+    );
+    margin-inline: 0;
+    padding: var(--sui-space-1) var(--sui-space-1) var(--sui-space-1)
+      var(--sui-space-4);
+    border-radius: var(--sui-radius-lg);
+    background-color: var(--sui-snackbar-surface);
+    color: var(--sui-snackbar-color);
+    box-shadow: var(--sui-elevation-4);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-body-medium-size);
+    line-height: var(--sui-type-body-medium-line);
+    animation: sui-snackbar-in var(--sui-snackbar-duration)
+      var(--sui-easing-emphasized) both;
+  }
+
+  .sui-snackbar[hidden] {
+    display: none;
+  }
+
+  .sui-snackbar__message {
+    flex: 1;
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .sui-snackbar__action {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    max-inline-size: 100%;
+  }
+
+  .sui-snackbar__action .sui-button[data-variant="text"] {
+    color: var(--sui-color-inverse-primary);
+  }
+
+  .sui-snackbar .sui-icon-button.sui-snackbar__close {
+    flex: none;
+    inline-size: var(--sui-touch-target);
+    block-size: var(--sui-touch-target);
+    min-inline-size: var(--sui-touch-target);
+    min-block-size: var(--sui-touch-target);
+    color: var(--sui-snackbar-color);
+  }
+
+  @media (min-width: 37.5em) {
+    .sui-snackbar {
+      inset-inline: 0;
+      bottom: var(--sui-space-6);
+      width: fit-content;
+      max-width: min(36rem, calc(100vw - 2 * var(--sui-space-4)));
+      margin-inline: auto;
+      padding-inline-start: var(--sui-space-4);
+      border-radius: var(--sui-radius-md);
+    }
+  }
+
+  @keyframes sui-snackbar-in {
+    from {
+      opacity: 0;
+      transform: translateY(var(--sui-space-3));
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sui-snackbar {
+      animation: none;
+    }
+  }
+}

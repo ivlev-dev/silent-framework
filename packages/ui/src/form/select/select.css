@@ -1,0 +1,162 @@
+/*
+ * Список: нативный `select` + декоративная стрелка.
+ * На мобильном браузер открывает системный picker — это ожидаемое поведение.
+ * Длинные подписи обрезаются многоточием, полный текст доступен в списке.
+ */
+@layer sui.components {
+  .sui-select {
+    --sui-select-block-size: calc(
+      var(--sui-control-height-md) * var(--sui-density)
+    );
+    --sui-select-padding-inline-start: var(--sui-space-3);
+    --sui-select-padding-inline-end: var(--sui-space-8);
+    --sui-select-radius: var(--sui-radius-control);
+    --sui-select-font-size: var(--sui-type-body-medium-size);
+    --sui-select-line-height: var(--sui-type-body-medium-line);
+    --sui-select-bg: var(--sui-color-surface-container-lowest);
+    --sui-select-border-color: var(--sui-color-outline-variant);
+    --sui-select-hover-color: var(--sui-color-outline);
+    --sui-select-focus-color: var(--sui-focus-ring-color);
+    --sui-select-error-color: var(--sui-color-error);
+    --sui-select-disabled-bg: var(--sui-color-surface-container);
+    --sui-select-arrow-color: var(--sui-color-on-surface-variant);
+
+    position: relative;
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+    min-inline-size: 0;
+    block-size: var(--sui-select-block-size);
+    border: var(--sui-hairline) solid var(--sui-select-border-color);
+    border-radius: var(--sui-select-radius);
+    background-color: var(--sui-select-bg);
+    color: var(--sui-color-on-surface);
+    transition:
+      border-color var(--sui-motion-short-3) var(--sui-easing-standard),
+      background-color var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  .sui-select:hover:not([data-disabled]) {
+    border-color: var(--sui-select-hover-color);
+  }
+
+  .sui-select[data-invalid]:hover:not([data-disabled]) {
+    border-color: var(--sui-select-error-color);
+  }
+
+  .sui-select:focus-within {
+    border-color: var(--sui-select-focus-color);
+    outline: var(--sui-focus-ring-width) solid var(--sui-select-focus-color);
+    outline-offset: calc(var(--sui-focus-ring-offset) * -1);
+  }
+
+  .sui-select[data-invalid] {
+    border-color: var(--sui-select-error-color);
+  }
+
+  .sui-select[data-invalid]:focus-within {
+    outline-color: var(--sui-select-error-color);
+  }
+
+  .sui-select[data-disabled] {
+    background-color: var(--sui-select-disabled-bg);
+    opacity: var(--sui-state-disabled);
+    cursor: not-allowed;
+  }
+
+  .sui-select[data-bare] {
+    --sui-select-block-size: auto;
+
+    border: 0;
+    background-color: transparent;
+  }
+
+  .sui-select[data-bare]:focus-within {
+    outline: none;
+  }
+
+  .sui-select[data-size="sm"] {
+    --sui-select-block-size: calc(
+      var(--sui-control-height-sm) * var(--sui-density)
+    );
+    --sui-select-padding-inline-start: var(--sui-space-2);
+    --sui-select-font-size: var(--sui-type-body-small-size);
+    --sui-select-line-height: var(--sui-type-body-small-line);
+  }
+
+  .sui-select[data-size="lg"] {
+    --sui-select-block-size: calc(
+      var(--sui-control-height-lg) * var(--sui-density)
+    );
+    --sui-select-padding-inline-start: var(--sui-space-4);
+    --sui-select-font-size: var(--sui-type-body-large-size);
+    --sui-select-line-height: var(--sui-type-body-large-line);
+  }
+
+  .sui-select[data-multiple] {
+    --sui-select-block-size: auto;
+
+    min-block-size: calc(var(--sui-control-height-md) * var(--sui-density));
+  }
+
+  @media (pointer: coarse) {
+    .sui-select {
+      min-block-size: var(--sui-touch-target-cozy);
+    }
+  }
+
+  .sui-select__input {
+    box-sizing: border-box;
+    inline-size: 100%;
+    block-size: 100%;
+    margin: 0;
+    padding: 0 var(--sui-select-padding-inline-end) 0
+      var(--sui-select-padding-inline-start);
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    color: inherit;
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-select-font-size);
+    line-height: var(--sui-select-line-height);
+    appearance: none;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sui-select[data-multiple] .sui-select__input {
+    min-block-size: calc(var(--sui-control-height-md) * var(--sui-density));
+    padding-block: var(--sui-space-1);
+    padding-inline-end: var(--sui-space-3);
+    overflow: auto;
+    white-space: normal;
+    cursor: default;
+  }
+
+  .sui-select__input:focus,
+  .sui-select__input:focus-visible {
+    outline: none;
+  }
+
+  .sui-select__input:disabled {
+    cursor: not-allowed;
+  }
+
+  /* Декоративная стрелка: нативный вид отключён только у одиночного списка. */
+  .sui-select:not([data-multiple])::after {
+    content: "";
+    position: absolute;
+    inset-inline-end: var(--sui-space-3);
+    inset-block-start: 50%;
+    inline-size: 0.5rem;
+    block-size: 0.5rem;
+    margin-block-start: -0.35rem;
+    border-inline-end: 2px solid currentColor;
+    border-block-end: 2px solid currentColor;
+    transform: rotate(45deg);
+    pointer-events: none;
+    color: var(--sui-select-arrow-color);
+  }
+}

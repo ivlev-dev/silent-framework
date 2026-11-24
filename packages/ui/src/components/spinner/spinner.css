@@ -1,0 +1,52 @@
+/* Спиннер: кольцо из border, без JS-анимации. */
+@layer sui.components {
+  .sui-spinner {
+    --sui-spinner-size: var(--sui-icon-size-md);
+    --sui-spinner-thickness: max(2px, 0.14em);
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    inline-size: var(--sui-spinner-size, var(--sui-icon-size-md));
+    block-size: var(--sui-spinner-size, var(--sui-icon-size-md));
+    color: currentColor;
+    vertical-align: middle;
+  }
+
+  .sui-spinner[data-size="sm"] {
+    --sui-spinner-size: var(--sui-icon-size-sm);
+  }
+
+  .sui-spinner[data-size="md"] {
+    --sui-spinner-size: var(--sui-icon-size-md);
+  }
+
+  .sui-spinner[data-size="lg"] {
+    --sui-spinner-size: 1.75rem;
+  }
+
+  .sui-spinner__ring {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+    border: var(--sui-spinner-thickness, max(2px, 0.14em)) solid currentColor;
+    border-inline-end-color: transparent;
+    border-radius: var(--sui-radius-full);
+    animation: sui-spin var(--sui-motion-long-1) var(--sui-easing-linear) infinite;
+  }
+
+  @keyframes sui-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sui-spinner__ring {
+      animation: none;
+      border-inline-end-color: currentColor;
+      opacity: 0.6;
+    }
+  }
+}

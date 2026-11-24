@@ -1,0 +1,188 @@
+/*
+ * Карточка: три варианта поверхности и один набор слотов. Отступ задаётся
+ * `--sui-card-padding`, поэтому медиа «вытекает» к краям при любом паддинге.
+ */
+@layer sui.components {
+  .sui-card {
+    --sui-card-padding: calc(var(--sui-space-4) * var(--sui-density));
+    --sui-card-radius: var(--sui-radius-card);
+    --sui-card-gap: var(--sui-space-3);
+    --sui-card-max-inline: 100%;
+    --sui-card-media-aspect: auto;
+
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    min-inline-size: 0;
+    max-inline-size: var(--sui-card-max-inline, 100%);
+    block-size: 100%;
+    padding: var(--sui-card-padding, var(--sui-space-4));
+    border: var(--sui-hairline) solid transparent;
+    border-radius: var(--sui-card-radius, var(--sui-radius-lg));
+    background-color: var(--sui-color-surface-container-low);
+    color: var(--sui-color-on-surface);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-body-medium-size);
+    line-height: var(--sui-type-body-medium-line);
+    overflow: hidden;
+  }
+
+  .sui-card[data-padding="0"] { --sui-card-padding: var(--sui-space-0); }
+  .sui-card[data-padding="1"] { --sui-card-padding: calc(var(--sui-space-1) * var(--sui-density)); }
+  .sui-card[data-padding="2"] { --sui-card-padding: calc(var(--sui-space-2) * var(--sui-density)); }
+  .sui-card[data-padding="3"] { --sui-card-padding: calc(var(--sui-space-3) * var(--sui-density)); }
+  .sui-card[data-padding="4"] { --sui-card-padding: calc(var(--sui-space-4) * var(--sui-density)); }
+  .sui-card[data-padding="5"] { --sui-card-padding: calc(var(--sui-space-5) * var(--sui-density)); }
+  .sui-card[data-padding="6"] { --sui-card-padding: calc(var(--sui-space-6) * var(--sui-density)); }
+  .sui-card[data-padding="7"] { --sui-card-padding: calc(var(--sui-space-7) * var(--sui-density)); }
+  .sui-card[data-padding="8"] { --sui-card-padding: calc(var(--sui-space-8) * var(--sui-density)); }
+  .sui-card[data-padding="9"] { --sui-card-padding: calc(var(--sui-space-9) * var(--sui-density)); }
+  .sui-card[data-padding="10"] { --sui-card-padding: calc(var(--sui-space-10) * var(--sui-density)); }
+
+  .sui-card[data-variant="elevated"] {
+    background-color: var(--sui-color-surface-container-low);
+    box-shadow: var(--sui-elevation-1);
+  }
+
+  .sui-card[data-variant="filled"] {
+    background-color: var(--sui-color-surface-container-highest);
+    box-shadow: none;
+  }
+
+  .sui-card[data-variant="outlined"] {
+    background-color: var(--sui-color-surface);
+    border-color: var(--sui-color-outline-variant);
+    box-shadow: none;
+  }
+
+  .sui-card__media {
+    display: grid;
+    margin: calc(var(--sui-card-padding) * -1) calc(var(--sui-card-padding) * -1) 0;
+    aspect-ratio: var(--sui-card-media-aspect, auto);
+    overflow: hidden;
+  }
+
+  .sui-card[data-media-aspect="square"] { --sui-card-media-aspect: 1 / 1; }
+  .sui-card[data-media-aspect="video"] { --sui-card-media-aspect: 16 / 9; }
+  .sui-card[data-media-aspect="wide"] { --sui-card-media-aspect: 21 / 9; }
+  .sui-card[data-media-aspect="portrait"] { --sui-card-media-aspect: 4 / 5; }
+
+  .sui-card__media > :where(img, video, svg, canvas, picture) {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+  }
+
+  .sui-card__media + .sui-card__header,
+  .sui-card__media + .sui-card__body {
+    margin-block-start: var(--sui-card-gap, var(--sui-space-3));
+  }
+
+  .sui-card__header {
+    display: block;
+    min-inline-size: 0;
+    font-size: var(--sui-type-title-small-size);
+    line-height: var(--sui-type-title-small-line);
+    font-weight: var(--sui-type-title-small-weight);
+    letter-spacing: var(--sui-type-title-small-tracking);
+    overflow-wrap: break-word;
+    text-wrap: balance;
+  }
+
+  /* Длинный заголовок: 1–3 строки с многоточием, по запросу. */
+  .sui-card[data-header-lines="1"] .sui-card__header,
+  .sui-card[data-header-lines="2"] .sui-card__header,
+  .sui-card[data-header-lines="3"] .sui-card__header {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .sui-card[data-header-lines="1"] .sui-card__header { -webkit-line-clamp: 1; }
+  .sui-card[data-header-lines="2"] .sui-card__header { -webkit-line-clamp: 2; }
+  .sui-card[data-header-lines="3"] .sui-card__header { -webkit-line-clamp: 3; }
+
+  .sui-card__body {
+    min-inline-size: 0;
+    overflow-wrap: break-word;
+  }
+
+  .sui-card__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--sui-space-2);
+    margin-block-start: var(--sui-card-gap, var(--sui-space-3));
+  }
+
+  .sui-card__actions > * {
+    min-inline-size: 0;
+  }
+
+  /* --- интерактивность ------------------------------------------------- */
+  .sui-card[data-interactive] {
+    cursor: pointer;
+    text-align: start;
+    -webkit-tap-highlight-color: transparent;
+    transition:
+      background-color var(--sui-motion-short-3) var(--sui-easing-standard),
+      box-shadow var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  .sui-card[data-interactive]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background-color: currentColor;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  .sui-card[data-interactive]:not([aria-disabled="true"]):hover::after {
+    opacity: var(--sui-state-hover);
+  }
+
+  .sui-card[data-interactive]:not([aria-disabled="true"]):active::after {
+    opacity: var(--sui-state-pressed);
+  }
+
+  .sui-card[data-interactive]:focus-visible {
+    outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
+    outline-offset: var(--sui-focus-ring-offset);
+  }
+
+  .sui-card[data-interactive][data-variant="elevated"]:hover {
+    box-shadow: var(--sui-elevation-2);
+  }
+
+  .sui-card[data-interactive][aria-disabled="true"] {
+    cursor: not-allowed;
+    opacity: var(--sui-state-disabled);
+  }
+
+  /* Узкий экран: действия не сжимаются в крошечные кнопки. */
+  @media (max-width: 30em) {
+    .sui-card__actions {
+      align-items: stretch;
+    }
+
+    .sui-card__actions > .sui-button {
+      flex: 1 1 auto;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .sui-card {
+      border-color: CanvasText;
+    }
+
+    .sui-card[data-interactive]:focus-visible {
+      outline-color: Highlight;
+    }
+  }
+}

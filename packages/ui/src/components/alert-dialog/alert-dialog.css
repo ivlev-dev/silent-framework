@@ -1,0 +1,157 @@
+/*
+ * AlertDialog: alertdialog на нативном <dialog>. Не закрывается по backdrop,
+ * акцент на confirm/cancel. Destructive — красная кнопка подтверждения.
+ * Поверхность ivory/navy, радиус 24, serif-заголовок, стек действий на мобильном.
+ */
+@layer sui.components {
+  .sui-alert-dialog {
+    --sui-alert-dialog-surface: var(--sui-color-surface-container-low);
+    --sui-alert-dialog-radius: var(--sui-radius-dialog);
+    --sui-alert-dialog-max-inline: 28rem;
+    --sui-alert-dialog-max-block: calc(
+      100dvh - 2 * var(--sui-space-4)
+        - env(safe-area-inset-top, 0px)
+        - env(safe-area-inset-bottom, 0px)
+    );
+    --sui-alert-dialog-shadow: var(--sui-elevation-4);
+    --sui-alert-dialog-duration: var(--sui-motion-slow);
+    --sui-alert-dialog-title-font: var(--sui-font-display);
+    --sui-alert-dialog-scrim-opacity: var(--sui-overlay-scrim, 0.42);
+
+    position: fixed;
+    inset: 0;
+    z-index: var(--sui-z-dialog, 1000);
+    box-sizing: border-box;
+    width: min(
+      var(--sui-alert-dialog-max-inline),
+      calc(100vw - 2 * var(--sui-space-4))
+    );
+    max-width: calc(100vw - 2 * var(--sui-space-4));
+    max-height: var(--sui-alert-dialog-max-block);
+    margin: auto;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--sui-color-on-surface);
+    overflow: visible;
+  }
+
+  .sui-alert-dialog:not([open]) {
+    display: none;
+  }
+
+  .sui-alert-dialog:focus {
+    outline: none;
+  }
+
+  .sui-alert-dialog::backdrop {
+    background-color: var(--sui-color-scrim);
+    opacity: var(--sui-alert-dialog-scrim-opacity);
+  }
+
+  .sui-alert-dialog__scrim {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background-color: var(--sui-color-scrim);
+    opacity: var(--sui-alert-dialog-scrim-opacity);
+  }
+
+  .sui-alert-dialog:modal .sui-alert-dialog__scrim {
+    display: none;
+  }
+
+  .sui-alert-dialog__panel {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    max-height: inherit;
+    border: var(--sui-hairline) solid var(--sui-color-outline-variant);
+    border-radius: var(--sui-alert-dialog-radius);
+    background-color: var(--sui-alert-dialog-surface);
+    box-shadow: var(--sui-alert-dialog-shadow);
+    overflow: hidden;
+    animation: sui-alert-dialog-in var(--sui-alert-dialog-duration)
+      var(--sui-easing-editorial) both;
+  }
+
+  .sui-alert-dialog__content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sui-space-2);
+    min-inline-size: 0;
+    padding: var(--sui-space-6) var(--sui-space-6) var(--sui-space-3);
+    overflow: auto;
+    overscroll-behavior: contain;
+    overflow-wrap: anywhere;
+  }
+
+  .sui-alert-dialog__title {
+    margin: 0;
+    font-family: var(--sui-alert-dialog-title-font);
+    font-size: var(--sui-type-title-large-size);
+    line-height: var(--sui-type-title-large-line);
+    font-weight: var(--sui-type-title-large-weight);
+    letter-spacing: var(--sui-type-title-large-tracking);
+    color: var(--sui-color-on-surface);
+    text-wrap: balance;
+  }
+
+  .sui-alert-dialog__description {
+    margin: 0;
+    max-inline-size: var(--sui-measure);
+    font-size: var(--sui-type-body-medium-size);
+    line-height: var(--sui-type-body-medium-line);
+    color: var(--sui-color-on-surface-variant);
+  }
+
+  .sui-alert-dialog__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--sui-space-2);
+    flex: none;
+    padding: var(--sui-space-2) var(--sui-space-4)
+      calc(var(--sui-space-4) + env(safe-area-inset-bottom, 0px))
+      var(--sui-space-6);
+    border-block-start: var(--sui-hairline) solid var(--sui-color-outline-variant);
+  }
+
+  .sui-alert-dialog [data-destructive].sui-button {
+    background-color: var(--sui-color-error);
+    color: var(--sui-color-on-error);
+  }
+
+  @keyframes sui-alert-dialog-in {
+    from {
+      opacity: 0;
+      transform: translateY(var(--sui-space-2)) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @media (max-width: 29.9375em) {
+    .sui-alert-dialog__content {
+      padding: var(--sui-space-5) var(--sui-space-4) var(--sui-space-2);
+    }
+
+    .sui-alert-dialog__actions {
+      flex-direction: column-reverse;
+      align-items: stretch;
+      padding-inline: var(--sui-space-4);
+    }
+
+    .sui-alert-dialog__actions > * {
+      inline-size: 100%;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sui-alert-dialog__panel {
+      animation: none;
+    }
+  }
+}

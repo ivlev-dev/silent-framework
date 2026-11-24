@@ -1,0 +1,118 @@
+/* Бейдж: контейнерный тон, tabular-nums для счётчика, точка без текста. */
+@layer sui.components {
+  .sui-badge {
+    --sui-badge-block-size: 1.125rem;
+    --sui-badge-min-inline: var(--sui-badge-block-size);
+    --sui-badge-padding-inline: var(--sui-space-1);
+    --sui-badge-radius: var(--sui-radius-full);
+    --sui-badge-max-inline: 100%;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    box-sizing: border-box;
+    min-inline-size: var(--sui-badge-min-inline, 1.125rem);
+    max-inline-size: var(--sui-badge-max-inline, 100%);
+    block-size: var(--sui-badge-block-size, 1.125rem);
+    padding-inline: var(--sui-badge-padding-inline, var(--sui-space-1));
+    overflow: hidden;
+    border-radius: var(--sui-badge-radius, var(--sui-radius-full));
+    background-color: var(--sui-color-surface-container-highest);
+    color: var(--sui-color-on-surface-variant);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-label-small-size);
+    line-height: 1;
+    font-weight: var(--sui-type-label-small-weight);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: var(--sui-type-label-small-tracking);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+
+  .sui-badge[data-variant="primary"] {
+    background-color: var(--sui-color-primary);
+    color: var(--sui-color-on-primary);
+  }
+
+  .sui-badge[data-variant="accent"] {
+    background-color: var(--sui-color-accent);
+    color: var(--sui-color-on-accent);
+  }
+
+  .sui-badge[data-variant="success"] {
+    background-color: var(--sui-color-success-container);
+    color: var(--sui-color-on-success-container);
+  }
+
+  .sui-badge[data-variant="warning"] {
+    background-color: var(--sui-color-warning-container);
+    color: var(--sui-color-on-warning-container);
+  }
+
+  .sui-badge[data-variant="error"] {
+    background-color: var(--sui-color-error);
+    color: var(--sui-color-on-error);
+  }
+
+  .sui-badge[data-variant="info"] {
+    background-color: var(--sui-color-secondary-container);
+    color: var(--sui-color-on-secondary-container);
+  }
+
+  .sui-badge[data-dot] {
+    min-inline-size: 0.5rem;
+    inline-size: 0.5rem;
+    block-size: 0.5rem;
+    padding: 0;
+  }
+
+  .sui-badge:not([data-dot]):empty {
+    display: none;
+  }
+
+  /*
+   * Позиционирование в углу «хозяина» (аватар, иконка, кнопка).
+   * Родитель должен быть `position: relative`; бейдж не перехватывает клики.
+   */
+  .sui-badge[data-position] {
+    position: absolute;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  .sui-badge[data-position="top-end"] {
+    inset-block-start: 0;
+    inset-inline-end: 0;
+    transform: translate(50%, -50%);
+  }
+
+  .sui-badge[data-position="top-start"] {
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    transform: translate(-50%, -50%);
+  }
+
+  .sui-badge[data-position="bottom-end"] {
+    inset-block-end: 0;
+    inset-inline-end: 0;
+    transform: translate(50%, 50%);
+  }
+
+  .sui-badge[data-position="bottom-start"] {
+    inset-block-end: 0;
+    inset-inline-start: 0;
+    transform: translate(-50%, 50%);
+  }
+
+  @media (forced-colors: active) {
+    .sui-badge {
+      border: 1px solid CanvasText;
+    }
+
+    .sui-badge[data-dot] {
+      background-color: Highlight;
+    }
+  }
+}

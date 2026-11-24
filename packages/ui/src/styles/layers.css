@@ -1,0 +1,5 @@
+/*
+ * Единая точка объявления порядка слоёв. Подключайте этот файл (или
+ * styles.css) первым: повторное объявление того же порядка безопасно.
+ */
+@layer sui.reset, sui.tokens, sui.base, sui.layout, sui.components, sui.overrides;

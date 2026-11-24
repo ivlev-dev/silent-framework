@@ -1,0 +1,117 @@
+/*
+ * EmptyState: вертикальная композиция с центрированием и слотом действий.
+ * Адаптивные отступы, ограниченная мера строки, длинный текст переносится,
+ * действия на узком экране встают в столбец.
+ */
+@layer sui.components {
+  .sui-empty-state {
+    --sui-empty-state-max: 44rem;
+
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sui-space-3);
+    box-sizing: border-box;
+    inline-size: 100%;
+    max-inline-size: var(--sui-empty-state-max, 44rem);
+    min-inline-size: 0;
+    margin-inline: auto;
+    padding-block: clamp(var(--sui-space-6), 6vw, var(--sui-space-9));
+    padding-inline: var(--sui-gutter);
+    color: var(--sui-color-on-surface);
+    font-family: var(--sui-font-sans);
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+
+  .sui-empty-state__media {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-inline-size: 100%;
+    min-inline-size: 0;
+  }
+
+  .sui-empty-state__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: calc(
+      var(--sui-control-height-lg) * var(--sui-density) + var(--sui-space-6)
+    );
+    block-size: calc(
+      var(--sui-control-height-lg) * var(--sui-density) + var(--sui-space-6)
+    );
+    border-radius: var(--sui-radius-full);
+    background-color: var(--sui-color-surface-container-high);
+    color: var(--sui-color-on-surface-variant);
+  }
+
+  .sui-empty-state__icon .sui-icon {
+    inline-size: var(--sui-icon-size-lg);
+    block-size: var(--sui-icon-size-lg);
+  }
+
+  .sui-empty-state__illustration {
+    display: block;
+    max-inline-size: 100%;
+  }
+
+  .sui-empty-state__illustration img,
+  .sui-empty-state__illustration svg {
+    display: block;
+    max-inline-size: 100%;
+    block-size: auto;
+  }
+
+  .sui-empty-state__title {
+    max-inline-size: min(100%, 28rem);
+    color: var(--sui-color-on-surface);
+    overflow-wrap: break-word;
+    text-wrap: balance;
+  }
+
+  .sui-empty-state__description {
+    max-inline-size: min(100%, 32rem);
+    margin: 0;
+    color: var(--sui-color-on-surface-variant);
+    font-size: var(--sui-type-body-medium-size);
+    line-height: var(--sui-type-body-medium-line);
+    letter-spacing: var(--sui-type-body-medium-tracking);
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+
+  .sui-empty-state__actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: var(--sui-space-2);
+    max-inline-size: 100%;
+    margin-block-start: var(--sui-space-2);
+  }
+
+  .sui-empty-state[data-compact] {
+    gap: var(--sui-space-2);
+    padding-block: var(--sui-space-5);
+  }
+
+  .sui-empty-state[data-compact] .sui-empty-state__icon {
+    inline-size: calc(var(--sui-control-height-lg) * var(--sui-density));
+    block-size: calc(var(--sui-control-height-lg) * var(--sui-density));
+  }
+
+  @media (max-width: 29.9375em) {
+    .sui-empty-state__actions {
+      flex-direction: column;
+      align-items: stretch;
+      inline-size: 100%;
+    }
+
+    .sui-empty-state__actions > * {
+      inline-size: 100%;
+    }
+  }
+}

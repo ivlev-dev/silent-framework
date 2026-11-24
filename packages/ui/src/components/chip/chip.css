@@ -1,0 +1,174 @@
+/*
+ * Chip: одна «капсула» с отдельной кнопкой действия и отдельной кнопкой
+ * удаления. Hover/pressed — state layer на ::after у действия. Высота и
+ * цель удаления — 44px, длинная подпись обрезается.
+ */
+@layer sui.components {
+  .sui-chip {
+    --sui-chip-selected-surface: var(--sui-color-tertiary-container);
+    --sui-chip-on-selected: var(--sui-color-on-tertiary-container);
+
+    display: inline-flex;
+    align-items: center;
+    box-sizing: border-box;
+    block-size: calc(var(--sui-control-height-md) * var(--sui-density));
+    min-block-size: var(--sui-touch-target);
+    max-inline-size: 100%;
+    min-inline-size: 0;
+    border: var(--sui-hairline) solid var(--sui-color-outline-variant);
+    border-radius: var(--sui-radius-full);
+    background-color: transparent;
+    color: var(--sui-color-on-surface-variant);
+    overflow: hidden;
+    vertical-align: middle;
+  }
+
+  .sui-chip:has(.sui-chip__action:focus-visible),
+  .sui-chip:has(.sui-chip__remove:focus-visible) {
+    outline: var(--sui-focus-ring-width) solid var(--sui-color-primary);
+    outline-offset: var(--sui-focus-ring-offset);
+  }
+
+  .sui-chip[data-disabled] {
+    color: var(--sui-color-on-surface-muted);
+    pointer-events: none;
+  }
+
+  .sui-chip[data-disabled] .sui-chip__icon,
+  .sui-chip[data-disabled] .sui-chip__avatar {
+    opacity: var(--sui-state-disabled);
+  }
+
+  .sui-chip__action {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sui-space-2);
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    block-size: 100%;
+    padding-inline: var(--sui-space-3);
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-label-large-size);
+    line-height: 1;
+    font-weight: var(--sui-type-label-large-weight);
+    letter-spacing: var(--sui-type-label-large-tracking);
+    text-align: start;
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  span.sui-chip__action {
+    cursor: inherit;
+  }
+
+  .sui-chip__action::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: currentColor;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--sui-motion-short-2) var(--sui-easing-standard);
+  }
+
+  .sui-chip__action:hover:not(:disabled)::after {
+    opacity: var(--sui-state-hover);
+  }
+
+  .sui-chip__action:active:not(:disabled)::after {
+    opacity: var(--sui-state-pressed);
+  }
+
+  .sui-chip__action:focus-visible {
+    outline: none;
+  }
+
+  .sui-chip__label {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sui-chip__icon,
+  .sui-chip__avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+  }
+
+  .sui-chip__icon .sui-icon {
+    inline-size: var(--sui-icon-size-sm);
+    block-size: var(--sui-icon-size-sm);
+  }
+
+  .sui-chip__avatar .sui-avatar {
+    inline-size: 1.5rem;
+    block-size: 1.5rem;
+    margin-inline-start: calc(var(--sui-space-2) * -1);
+  }
+
+  .sui-chip__remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    inline-size: var(--sui-touch-target);
+    min-inline-size: var(--sui-touch-target);
+    block-size: 100%;
+    min-block-size: var(--sui-touch-target);
+    padding: 0;
+    border: 0;
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .sui-chip__remove:hover:not(:disabled) {
+    background-color: var(--sui-color-surface-container-high);
+  }
+
+  .sui-chip__remove:focus-visible {
+    outline: none;
+    background-color: var(--sui-color-surface-container-high);
+  }
+
+  /* --- варианты -------------------------------------------------------- */
+  .sui-chip[data-variant="assist"],
+  .sui-chip[data-variant="suggestion"] {
+    border-color: var(--sui-color-outline-variant);
+    color: var(--sui-color-on-surface-variant);
+  }
+
+  .sui-chip[data-variant="filter"] {
+    border-color: var(--sui-color-outline);
+    color: var(--sui-color-on-surface-variant);
+  }
+
+  .sui-chip[data-variant="filter"][data-selected] {
+    border-color: transparent;
+    background-color: var(--sui-chip-selected-surface);
+    color: var(--sui-chip-on-selected);
+  }
+
+  .sui-chip[data-variant="input"] {
+    border-color: var(--sui-color-outline-variant);
+    background-color: var(--sui-color-surface-container-high);
+    color: var(--sui-color-on-surface);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sui-chip__action::after {
+      transition: none;
+    }
+  }
+}

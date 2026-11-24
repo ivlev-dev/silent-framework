@@ -1,0 +1,143 @@
+/*
+ * Постраничная навигация: номера, текущая страница, стрелки, многоточия.
+ * Диапазон стабилен; на мобильном многоточия скрываются, кнопки остаются
+ * 44px и список не вылезает. В RTL стрелки зеркалятся.
+ */
+@layer sui.components {
+  .sui-pagination {
+    --sui-pagination-current: var(--sui-color-primary);
+    --sui-pagination-on-current: var(--sui-color-on-primary);
+
+    display: block;
+    min-inline-size: 0;
+    color: var(--sui-color-on-surface);
+  }
+
+  .sui-pagination__list {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sui-space-1);
+    margin: 0;
+    padding: 0;
+    min-inline-size: 0;
+    list-style: none;
+  }
+
+  .sui-pagination__item {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-inline-size: 0;
+  }
+
+  .sui-pagination__page,
+  .sui-pagination__arrow,
+  .sui-pagination__ellipsis {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-inline-size: calc(var(--sui-control-height-md) * var(--sui-density));
+    block-size: calc(var(--sui-control-height-md) * var(--sui-density));
+    padding-inline: var(--sui-space-2);
+    border: var(--sui-hairline) solid transparent;
+    border-radius: var(--sui-radius-full);
+    background-color: transparent;
+    color: var(--sui-color-on-surface-variant);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-label-large-size);
+    line-height: 1;
+    font-weight: var(--sui-type-label-large-weight);
+    letter-spacing: var(--sui-type-label-large-tracking);
+    text-decoration: none;
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    transition:
+      background-color var(--sui-motion-short-3) var(--sui-easing-standard),
+      color var(--sui-motion-short-3) var(--sui-easing-standard),
+      border-color var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  .sui-pagination__page:hover:not(:disabled),
+  .sui-pagination__arrow:hover:not(:disabled) {
+    background-color: var(--sui-color-surface-container);
+    color: var(--sui-color-on-surface);
+  }
+
+  .sui-pagination__page:active:not(:disabled),
+  .sui-pagination__arrow:active:not(:disabled) {
+    background-color: var(--sui-color-surface-container-high);
+  }
+
+  .sui-pagination__page[data-current] {
+    background-color: var(--sui-pagination-current);
+    color: var(--sui-pagination-on-current);
+    cursor: default;
+  }
+
+  .sui-pagination__page[data-current]:hover {
+    background-color: var(--sui-pagination-current);
+    color: var(--sui-pagination-on-current);
+  }
+
+  .sui-pagination__page:disabled,
+  .sui-pagination__arrow:disabled {
+    cursor: not-allowed;
+    opacity: var(--sui-state-disabled);
+  }
+
+  .sui-pagination__arrow .sui-icon {
+    inline-size: var(--sui-icon-size-md);
+    block-size: var(--sui-icon-size-md);
+  }
+
+  .sui-pagination__ellipsis {
+    color: var(--sui-color-on-surface-variant);
+    cursor: default;
+    user-select: none;
+  }
+
+  .sui-pagination__status {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  :dir(rtl) .sui-pagination__arrow[data-direction="previous"] .sui-icon,
+  :dir(rtl) .sui-pagination__arrow[data-direction="next"] .sui-icon {
+    transform: scaleX(-1);
+  }
+
+  @media (max-width: 29.9375em) {
+    .sui-pagination__list {
+      gap: var(--sui-space-0);
+    }
+
+    /* Многоточия — декоративные: на узком экране экономим два тапа. */
+    .sui-pagination__item[data-ellipsis] {
+      display: none;
+    }
+
+    .sui-pagination__page,
+    .sui-pagination__arrow {
+      padding-inline: var(--sui-space-1);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sui-pagination__page,
+    .sui-pagination__arrow,
+    .sui-pagination__ellipsis {
+      transition: none;
+    }
+  }
+}

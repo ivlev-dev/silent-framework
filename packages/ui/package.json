@@ -1,0 +1,114 @@
+{
+  "name": "@ivlev-dev/silent-ui",
+  "version": "0.14.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./layout": {
+      "types": "./dist/layout/index.d.ts",
+      "import": "./dist/layout/index.js"
+    },
+    "./theme": {
+      "types": "./dist/theme/index.d.ts",
+      "import": "./dist/theme/index.js"
+    },
+    "./tokens": {
+      "types": "./dist/tokens/index.d.ts",
+      "import": "./dist/tokens/index.js"
+    },
+    "./icons/*": {
+      "types": "./dist/icons/*.d.ts",
+      "import": "./dist/icons/*.js"
+    },
+    "./form": {
+      "types": "./dist/form/index.d.ts",
+      "import": "./dist/form/index.js"
+    },
+    "./form/*": {
+      "types": "./dist/form/*/index.d.ts",
+      "import": "./dist/form/*/index.js"
+    },
+    "./text.css": "./dist/components/text/text.css",
+    "./heading.css": "./dist/components/heading/heading.css",
+    "./label.css": "./dist/components/label/label.css",
+    "./button.css": "./dist/components/button/button.css",
+    "./icon-button.css": "./dist/components/icon-button/icon-button.css",
+    "./icon.css": "./dist/components/icon/icon.css",
+    "./spinner.css": "./dist/components/spinner/spinner.css",
+    "./form.css": "./dist/form.css",
+    "./styles.css": "./dist/styles.css",
+    "./base.css": "./dist/base.css",
+    "./tokens.css": "./dist/tokens.css",
+    "./themes.css": "./dist/themes.css",
+    "./layout.css": "./dist/layout.css",
+    "./reset.css": "./dist/reset.css",
+    "./*.css": "./dist/components/*/*.css",
+    "./*": {
+      "types": "./dist/components/*/index.d.ts",
+      "import": "./dist/components/*/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
+    "test": "node scripts/build.mjs && vitest run"
+  },
+  "peerDependencies": {
+    "@ivlev-dev/silent-core": ">=0.14.0 <0.15.0",
+    "@ivlev-dev/silent-form": ">=0.14.0 <0.15.0",
+    "@ivlev-dev/silent-reactivity": ">=0.14.0 <0.15.0"
+  },
+  "peerDependenciesMeta": {
+    "@ivlev-dev/silent-form": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@ivlev-dev/silent-core": "workspace:*",
+    "@ivlev-dev/silent-form": "workspace:*",
+    "@ivlev-dev/silent-reactivity": "workspace:*",
+    "@ivlev-dev/silent-server": "workspace:*",
+    "@ivlev-dev/silent-swc": "workspace:*",
+    "@ivlev-dev/silent-vite": "workspace:*",
+    "@types/node": "^26.6.6",
+    "jsdom": "^31.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ivlev-dev/silent-framework.git"
+  },
+  "homepage": "https://github.com/ivlev-dev/silent-framework#readme",
+  "bugs": {
+    "url": "https://github.com/ivlev-dev/silent-framework/issues"
+  },
+  "description": "Design system for Silent Framework: tokens, themes, layout primitives and accessible components",
+  "keywords": [
+    "silent",
+    "ui",
+    "design-system",
+    "material-design",
+    "tokens",
+    "css"
+  ]
+}

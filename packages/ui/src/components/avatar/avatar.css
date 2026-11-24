@@ -1,0 +1,137 @@
+/* Аватар: квадрат/круг, размеры на токенах, точка статуса поверх изображения. */
+@layer sui.components {
+  .sui-avatar {
+    --sui-avatar-size: 2rem;
+    --sui-avatar-radius: var(--sui-radius-full);
+    --sui-avatar-status-size: 0.625rem;
+    --sui-avatar-status-ring: var(--sui-color-surface);
+
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    box-sizing: border-box;
+    inline-size: var(--sui-avatar-size, 2rem);
+    block-size: var(--sui-avatar-size, 2rem);
+    aspect-ratio: 1 / 1;
+    overflow: visible;
+    border-radius: var(--sui-avatar-radius, var(--sui-radius-full));
+    background-color: var(--sui-color-surface-container-high);
+    color: var(--sui-color-on-surface-variant);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-label-medium-size);
+    line-height: 1;
+    font-weight: var(--sui-type-label-large-weight);
+    letter-spacing: var(--sui-type-label-large-tracking);
+    text-transform: uppercase;
+    user-select: none;
+  }
+
+  .sui-avatar[data-shape="circle"] {
+    --sui-avatar-radius: var(--sui-radius-full);
+  }
+
+  .sui-avatar[data-shape="square"] {
+    --sui-avatar-radius: var(--sui-radius-md);
+  }
+
+  .sui-avatar[data-size="sm"] {
+    --sui-avatar-size: 1.5rem;
+    --sui-avatar-status-size: 0.5rem;
+
+    font-size: var(--sui-type-label-small-size);
+  }
+
+  .sui-avatar[data-size="md"] {
+    --sui-avatar-size: 2rem;
+  }
+
+  .sui-avatar[data-size="lg"] {
+    --sui-avatar-size: 2.5rem;
+
+    font-size: var(--sui-type-title-small-size);
+  }
+
+  .sui-avatar[data-size="xl"] {
+    --sui-avatar-size: 3.5rem;
+    --sui-avatar-status-size: 0.875rem;
+
+    font-size: var(--sui-type-title-medium-size);
+  }
+
+  .sui-avatar__image {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: inherit;
+    object-fit: cover;
+  }
+
+  .sui-avatar__initials {
+    display: block;
+    max-inline-size: 100%;
+    padding-inline: var(--sui-space-1);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sui-avatar__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 60%;
+    block-size: 60%;
+  }
+
+  .sui-avatar__icon svg {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+  }
+
+  .sui-avatar__status {
+    position: absolute;
+    inset-inline-end: calc(var(--sui-space-1) * -1);
+    inset-block-end: calc(var(--sui-space-1) * -1);
+    box-sizing: border-box;
+    inline-size: var(--sui-avatar-status-size, 0.625rem);
+    block-size: var(--sui-avatar-status-size, 0.625rem);
+    border: 2px solid var(--sui-avatar-status-ring, var(--sui-color-surface));
+    border-radius: var(--sui-radius-full);
+    background-color: var(--sui-color-outline);
+  }
+
+  .sui-avatar[data-size="sm"] .sui-avatar__status {
+    border-width: 1px;
+  }
+
+  .sui-avatar[data-status="online"] .sui-avatar__status {
+    background-color: var(--sui-color-success);
+  }
+
+  .sui-avatar[data-status="offline"] .sui-avatar__status {
+    background-color: var(--sui-color-outline);
+  }
+
+  .sui-avatar[data-status="away"] .sui-avatar__status {
+    background-color: var(--sui-color-warning);
+  }
+
+  .sui-avatar[data-status="busy"] .sui-avatar__status {
+    background-color: var(--sui-color-error);
+  }
+
+  @media (forced-colors: active) {
+    .sui-avatar {
+      border: 1px solid CanvasText;
+    }
+
+    .sui-avatar__status {
+      border-color: Canvas;
+      background-color: Highlight;
+    }
+  }
+}

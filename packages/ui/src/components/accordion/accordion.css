@@ -1,0 +1,126 @@
+/*
+ * Accordion: заголовок-кнопка на всю ширину, иконка поворачивается, панель
+ * скрыта атрибутом hidden. Длинный заголовок переносится, `truncate` обрезает
+ * его одной строкой; контент ограничен мерой строки и переносится по словам.
+ */
+@layer sui.components {
+  .sui-accordion {
+    --sui-accordion-border-color: var(--sui-color-outline-variant);
+    --sui-accordion-trigger-color: var(--sui-color-on-surface);
+    --sui-accordion-trigger-hover-color: var(--sui-color-primary);
+    --sui-accordion-trigger-hover-bg: var(--sui-color-surface-container-low);
+    --sui-accordion-icon-color: var(--sui-color-on-surface-variant);
+    --sui-accordion-panel-color: var(--sui-color-on-surface-variant);
+    --sui-accordion-trigger-block-size: calc(
+      var(--sui-control-height-lg) * var(--sui-density)
+    );
+
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+    border-block-start: var(--sui-hairline) solid var(--sui-accordion-border-color);
+    color: var(--sui-color-on-surface);
+    font-family: var(--sui-font-sans);
+  }
+
+  .sui-accordion__item {
+    min-inline-size: 0;
+    border-block-end: var(--sui-hairline) solid var(--sui-accordion-border-color);
+  }
+
+  .sui-accordion__item[data-disabled] {
+    opacity: var(--sui-state-disabled);
+  }
+
+  .sui-accordion__heading {
+    font: inherit;
+    color: inherit;
+  }
+
+  .sui-accordion__trigger {
+    display: flex;
+    align-items: center;
+    gap: var(--sui-space-3);
+    box-sizing: border-box;
+    inline-size: 100%;
+    min-block-size: var(--sui-accordion-trigger-block-size);
+    padding-block: var(--sui-space-2);
+    padding-inline: 0 var(--sui-space-2);
+    border: 0;
+    background: transparent;
+    color: var(--sui-accordion-trigger-color);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-title-small-size);
+    line-height: var(--sui-type-title-small-line);
+    font-weight: var(--sui-type-title-small-weight);
+    letter-spacing: var(--sui-type-title-small-tracking);
+    text-align: start;
+    cursor: pointer;
+    transition:
+      color var(--sui-motion-short-3) var(--sui-easing-standard),
+      background-color var(--sui-motion-short-3) var(--sui-easing-standard);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .sui-accordion__trigger:hover:not(:disabled) {
+    color: var(--sui-accordion-trigger-hover-color);
+    background-color: var(--sui-accordion-trigger-hover-bg);
+  }
+
+  .sui-accordion__trigger:focus-visible {
+    outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
+    outline-offset: calc(var(--sui-focus-ring-offset) * -1);
+  }
+
+  .sui-accordion__trigger:disabled {
+    cursor: not-allowed;
+  }
+
+  .sui-accordion__title {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+
+  .sui-accordion__title[data-truncate] {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sui-accordion__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    color: var(--sui-accordion-icon-color);
+    transition: transform var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  .sui-accordion__item[data-expanded] .sui-accordion__icon {
+    transform: rotate(180deg);
+  }
+
+  .sui-accordion__panel {
+    max-inline-size: var(--sui-measure);
+    padding-block: 0 var(--sui-space-4);
+    padding-inline: 0 var(--sui-space-2);
+    color: var(--sui-accordion-panel-color);
+    font-size: var(--sui-type-body-medium-size);
+    line-height: var(--sui-type-body-medium-line);
+    letter-spacing: var(--sui-type-body-medium-tracking);
+    overflow-wrap: anywhere;
+  }
+
+  .sui-accordion__panel[hidden] {
+    display: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sui-accordion__trigger,
+    .sui-accordion__icon {
+      transition: none;
+    }
+  }
+}

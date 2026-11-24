@@ -1,0 +1,157 @@
+/*
+ * Верхняя панель: small — одна строка, medium/large — две (иконки сверху,
+ * заголовок снизу). Подъём при прокрутке — `data-elevated`, липкость —
+ * `data-sticky`. Без JS: слушатель scroll остаётся за приложением.
+ * Заголовок обрезается, actions не выдавливают его, 4K ограничен мерой.
+ */
+@layer sui.components {
+  .sui-top-app-bar {
+    --sui-top-app-bar-max: var(--sui-content-wide-max);
+    --sui-top-app-bar-surface: var(--sui-color-surface);
+    --sui-z-app-bar: 1100;
+
+    display: flex;
+    flex-direction: column;
+    inline-size: 100%;
+    background-color: var(--sui-top-app-bar-surface);
+    color: var(--sui-color-on-surface);
+    transition:
+      background-color var(--sui-motion-short-3) var(--sui-easing-standard),
+      box-shadow var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  .sui-top-app-bar[data-safe-area] {
+    padding-block-start: env(safe-area-inset-top, 0px);
+  }
+
+  .sui-top-app-bar[data-sticky] {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: var(--sui-z-app-bar, 1100);
+  }
+
+  .sui-top-app-bar[data-elevated] {
+    background-color: var(--sui-color-surface-container);
+    box-shadow: var(--sui-elevation-2);
+  }
+
+  .sui-top-app-bar__bar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "leading title actions";
+    grid-template-rows: auto;
+    align-items: center;
+    gap: var(--sui-space-1);
+    box-sizing: border-box;
+    inline-size: 100%;
+    max-inline-size: var(--sui-top-app-bar-max);
+    min-inline-size: 0;
+    min-block-size: calc(
+      var(--sui-control-height-lg) * var(--sui-density) + var(--sui-space-2)
+    );
+    margin-inline: auto;
+    padding-inline: var(--sui-gutter) var(--sui-space-2);
+  }
+
+  .sui-top-app-bar__leading {
+    grid-area: leading;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    min-inline-size: calc(var(--sui-control-height-md) * var(--sui-density));
+  }
+
+  .sui-top-app-bar__leading:empty {
+    display: none;
+  }
+
+  .sui-top-app-bar__title {
+    grid-area: title;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-title-large-size);
+    line-height: var(--sui-type-title-large-line);
+    font-weight: var(--sui-type-title-large-weight);
+    letter-spacing: var(--sui-type-title-large-tracking);
+  }
+
+  .sui-top-app-bar__actions {
+    grid-area: actions;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--sui-space-1);
+    flex: none;
+    min-inline-size: 0;
+    max-inline-size: min(50%, 24rem);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+
+  .sui-top-app-bar__actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sui-top-app-bar__actions:empty {
+    display: none;
+  }
+
+  /* medium/large: иконки в первой строке, заголовок — во второй. */
+  .sui-top-app-bar[data-variant="medium"] .sui-top-app-bar__bar,
+  .sui-top-app-bar[data-variant="large"] .sui-top-app-bar__bar {
+    grid-template-areas:
+      "leading . actions"
+      "title title title";
+    grid-template-rows:
+      calc(var(--sui-control-height-lg) * var(--sui-density))
+      auto;
+    align-items: start;
+    padding-block-start: var(--sui-space-1);
+  }
+
+  .sui-top-app-bar[data-variant="medium"] .sui-top-app-bar__leading,
+  .sui-top-app-bar[data-variant="large"] .sui-top-app-bar__leading,
+  .sui-top-app-bar[data-variant="medium"] .sui-top-app-bar__actions,
+  .sui-top-app-bar[data-variant="large"] .sui-top-app-bar__actions {
+    align-self: center;
+  }
+
+  .sui-top-app-bar[data-variant="medium"] .sui-top-app-bar__title,
+  .sui-top-app-bar[data-variant="large"] .sui-top-app-bar__title {
+    padding-inline: var(--sui-space-3);
+    padding-block: 0 var(--sui-space-3);
+  }
+
+  .sui-top-app-bar[data-variant="medium"] .sui-top-app-bar__title {
+    font-size: var(--sui-type-title-large-size);
+    line-height: var(--sui-type-title-large-line);
+  }
+
+  .sui-top-app-bar[data-variant="large"] .sui-top-app-bar__title {
+    font-family: var(--sui-font-display);
+    font-size: var(--sui-type-headline-medium-size);
+    line-height: var(--sui-type-headline-medium-line);
+    font-weight: var(--sui-type-headline-medium-weight);
+    letter-spacing: var(--sui-type-headline-medium-tracking);
+  }
+
+  @media (max-width: 29.9375em) {
+    .sui-top-app-bar__bar {
+      padding-inline-start: var(--sui-space-1);
+    }
+
+    .sui-top-app-bar__actions {
+      max-inline-size: 45%;
+    }
+
+    .sui-top-app-bar[data-variant="medium"] .sui-top-app-bar__title,
+    .sui-top-app-bar[data-variant="large"] .sui-top-app-bar__title {
+      padding-inline: var(--sui-space-2);
+    }
+  }
+}

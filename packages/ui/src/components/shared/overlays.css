@@ -1,0 +1,16 @@
+/*
+ * Общие токены оверлеев: z-index-шкала и прозрачность scrim.
+ * Лежат в слое токенов, чтобы переопределяться темой/приложением.
+ */
+@layer sui.tokens {
+  :where(:root) {
+    --sui-z-dialog: 1000;
+    --sui-z-sheet: 1000;
+    --sui-z-popover: 1100;
+    --sui-z-menu: 1100;
+    --sui-z-tooltip: 1200;
+    --sui-z-snackbar: 1300;
+
+    --sui-overlay-scrim: 0.32;
+  }
+}

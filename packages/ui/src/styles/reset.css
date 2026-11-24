@@ -1,0 +1,62 @@
+/*
+ * Минимальный reset: только то, что мешает компонентам. Не трогает
+ * типографику приложения за пределами корня дизайн-системы.
+ */
+@layer sui.reset {
+  :where(*, *::before, *::after) {
+    box-sizing: border-box;
+  }
+
+  :where(html) {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    -moz-tab-size: 4;
+    tab-size: 4;
+  }
+
+  :where(body) {
+    margin: 0;
+  }
+
+  :where(button, input, select, textarea) {
+    font: inherit;
+    color: inherit;
+    letter-spacing: inherit;
+  }
+
+  :where(button) {
+    margin: 0;
+    padding: 0;
+    background: none;
+    border: 0;
+    cursor: pointer;
+  }
+
+  :where(button:disabled) {
+    cursor: not-allowed;
+  }
+
+  :where(img, svg, video, canvas) {
+    display: block;
+    max-width: 100%;
+  }
+
+  :where(p, h1, h2, h3, h4, h5, h6, figure, blockquote, dl, dd) {
+    margin: 0;
+  }
+
+  :where(ul, ol) {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  :where(a) {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  :where([hidden]) {
+    display: none !important;
+  }
+}

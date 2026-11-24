@@ -1,0 +1,455 @@
+/*
+ * Layout-примитивы. Только статические классы `sui-*` + `data-*`-варианты:
+ * никаких классов, собранных из пропсов, — предсказуемая каскадка и SSR.
+ *
+ * Логические свойства + min-inline-size: 0 у детей flex/grid дают
+ * устойчивость к длинным словам и RTL; safe-area учитывается в Container.
+ */
+@layer sui.layout {
+  .sui-box {
+    --sui-box-padding: var(--sui-space-0);
+
+    display: block;
+    box-sizing: border-box;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    padding: var(--sui-box-padding, var(--sui-space-0));
+  }
+
+  .sui-surface {
+    --sui-surface-background: var(--sui-color-surface-container);
+    --sui-surface-padding: var(--sui-space-0);
+
+    display: block;
+    box-sizing: border-box;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    padding: var(--sui-surface-padding, var(--sui-space-0));
+    background-color: var(--sui-surface-background, var(--sui-color-surface-container));
+  }
+
+  .sui-stack {
+    --sui-stack-gap: var(--sui-space-0);
+
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+    gap: var(--sui-stack-gap, var(--sui-space-0));
+  }
+
+  .sui-inline {
+    --sui-inline-gap: var(--sui-space-0);
+
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    min-inline-size: 0;
+    gap: var(--sui-inline-gap, var(--sui-space-0));
+  }
+
+  .sui-inline[data-wrap] {
+    flex-wrap: wrap;
+  }
+
+  .sui-grid {
+    --sui-grid-gap: var(--sui-space-0);
+
+    display: grid;
+    min-inline-size: 0;
+    gap: var(--sui-grid-gap, var(--sui-space-0));
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Дети flex/grid не раздувают контейнер длинным словом/таблицей. */
+  :where(.sui-stack, .sui-inline, .sui-grid) > * {
+    min-inline-size: 0;
+  }
+
+  .sui-container {
+    --sui-container-max-inline: var(--sui-content-max);
+    --sui-container-gutter: var(--sui-gutter);
+
+    display: block;
+    box-sizing: border-box;
+    inline-size: 100%;
+    max-inline-size: var(--sui-container-max-inline, var(--sui-content-max));
+    margin-inline: auto;
+    padding-inline-start: max(var(--sui-container-gutter, var(--sui-gutter)), env(safe-area-inset-left, 0px));
+    padding-inline-end: max(var(--sui-container-gutter, var(--sui-gutter)), env(safe-area-inset-right, 0px));
+  }
+
+  /* RTL: физические safe-area-инсеты меняются местами. */
+  .sui-container:dir(rtl) {
+    padding-inline-start: max(var(--sui-container-gutter, var(--sui-gutter)), env(safe-area-inset-right, 0px));
+    padding-inline-end: max(var(--sui-container-gutter, var(--sui-gutter)), env(safe-area-inset-left, 0px));
+  }
+
+  .sui-container[data-size="wide"] {
+    --sui-container-max-inline: var(--sui-content-wide-max);
+  }
+
+  .sui-container[data-size="full"] {
+    --sui-container-max-inline: none;
+  }
+
+  .sui-container[data-gutter="none"] {
+    --sui-container-gutter: 0px;
+    padding-inline: 0;
+  }
+
+  .sui-section {
+    margin-block-end: var(--sui-section-gap);
+  }
+
+  .sui-section-gap {
+    row-gap: var(--sui-section-gap);
+  }
+
+  .sui-divider {
+    --sui-divider-color: var(--sui-color-outline-variant);
+    --sui-divider-size: var(--sui-hairline);
+
+    margin: 0;
+    border: 0;
+    border-block-start: var(--sui-divider-size, var(--sui-hairline)) solid var(--sui-divider-color, var(--sui-color-outline-variant));
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+
+  .sui-divider[data-inset="start"] {
+    margin-inline-start: var(--sui-space-4);
+    inline-size: auto;
+  }
+
+  .sui-divider[data-inset="both"] {
+    margin-inline: var(--sui-space-4);
+    inline-size: auto;
+  }
+
+  .sui-divider[data-orientation="vertical"] {
+    align-self: stretch;
+    inline-size: var(--sui-divider-size, var(--sui-hairline));
+    block-size: auto;
+    min-block-size: var(--sui-space-6);
+    border-block-start: 0;
+    border-inline-start: var(--sui-divider-size, var(--sui-hairline)) solid var(--sui-divider-color, var(--sui-color-outline-variant));
+  }
+
+  /* --- padding -------------------------------------------------------- */
+  :where(.sui-box, .sui-surface)[data-padding="0"] {
+    --sui-box-padding: var(--sui-space-0);
+    --sui-surface-padding: var(--sui-space-0);
+  }
+
+  :where(.sui-box, .sui-surface)[data-padding="1"] {
+    --sui-box-padding: var(--sui-space-1);
+    --sui-surface-padding: var(--sui-space-1);
+  }
+
+  :where(.sui-box, .sui-surface)[data-padding="2"] {
+    --sui-box-padding: var(--sui-space-2);
+    --sui-surface-padding: var(--sui-space-2);
+  }
+
+  :where(.sui-box, .sui-surface)[data-padding="3"] {
+    --sui-box-padding: var(--sui-space-3);
+    --sui-surface-padding: var(--sui-space-3);
+  }
+
+  :where(.sui-box, .sui-surface)[data-padding="4"] {
+    --sui-box-padding: var(--sui-space-4);
+    --sui-surface-padding: var(--sui-space-4);
+  }
+
+  :where(.sui-box, .sui-surface)[data-padding="5"] {
+    --sui-box-padding: var(--sui-space-5);
+    --sui-surface-padding: var(--sui-space-5);
+  }
+
+  :where(.sui-box, .sui-surface)[data-padding="6"] {
+    --sui-box-padding: var(--sui-space-6);
+    --sui-surface-padding: var(--sui-space-6);
+  }
+
+  :where(.sui-box, .sui-surface)[data-padding="7"] {
+    --sui-box-padding: var(--sui-space-7);
+    --sui-surface-padding: var(--sui-space-7);
+  }
+
+  :where(.sui-box, .sui-surface)[data-padding="8"] {
+    --sui-box-padding: var(--sui-space-8);
+    --sui-surface-padding: var(--sui-space-8);
+  }
+
+  :where(.sui-box, .sui-surface)[data-padding="9"] {
+    --sui-box-padding: var(--sui-space-9);
+    --sui-surface-padding: var(--sui-space-9);
+  }
+
+  :where(.sui-box, .sui-surface)[data-padding="10"] {
+    --sui-box-padding: var(--sui-space-10);
+    --sui-surface-padding: var(--sui-space-10);
+  }
+
+  :where(.sui-box, .sui-surface)[data-padding="none"] {
+    --sui-box-padding: 0;
+    --sui-surface-padding: 0;
+  }
+
+  /* --- gap ------------------------------------------------------------ */
+  :where(.sui-stack, .sui-inline, .sui-grid)[data-gap="0"] {
+    --sui-stack-gap: var(--sui-space-0);
+    --sui-inline-gap: var(--sui-space-0);
+    --sui-grid-gap: var(--sui-space-0);
+  }
+
+  :where(.sui-stack, .sui-inline, .sui-grid)[data-gap="1"] {
+    --sui-stack-gap: var(--sui-space-1);
+    --sui-inline-gap: var(--sui-space-1);
+    --sui-grid-gap: var(--sui-space-1);
+  }
+
+  :where(.sui-stack, .sui-inline, .sui-grid)[data-gap="2"] {
+    --sui-stack-gap: var(--sui-space-2);
+    --sui-inline-gap: var(--sui-space-2);
+    --sui-grid-gap: var(--sui-space-2);
+  }
+
+  :where(.sui-stack, .sui-inline, .sui-grid)[data-gap="3"] {
+    --sui-stack-gap: var(--sui-space-3);
+    --sui-inline-gap: var(--sui-space-3);
+    --sui-grid-gap: var(--sui-space-3);
+  }
+
+  :where(.sui-stack, .sui-inline, .sui-grid)[data-gap="4"] {
+    --sui-stack-gap: var(--sui-space-4);
+    --sui-inline-gap: var(--sui-space-4);
+    --sui-grid-gap: var(--sui-space-4);
+  }
+
+  :where(.sui-stack, .sui-inline, .sui-grid)[data-gap="5"] {
+    --sui-stack-gap: var(--sui-space-5);
+    --sui-inline-gap: var(--sui-space-5);
+    --sui-grid-gap: var(--sui-space-5);
+  }
+
+  :where(.sui-stack, .sui-inline, .sui-grid)[data-gap="6"] {
+    --sui-stack-gap: var(--sui-space-6);
+    --sui-inline-gap: var(--sui-space-6);
+    --sui-grid-gap: var(--sui-space-6);
+  }
+
+  :where(.sui-stack, .sui-inline, .sui-grid)[data-gap="7"] {
+    --sui-stack-gap: var(--sui-space-7);
+    --sui-inline-gap: var(--sui-space-7);
+    --sui-grid-gap: var(--sui-space-7);
+  }
+
+  :where(.sui-stack, .sui-inline, .sui-grid)[data-gap="8"] {
+    --sui-stack-gap: var(--sui-space-8);
+    --sui-inline-gap: var(--sui-space-8);
+    --sui-grid-gap: var(--sui-space-8);
+  }
+
+  :where(.sui-stack, .sui-inline, .sui-grid)[data-gap="9"] {
+    --sui-stack-gap: var(--sui-space-9);
+    --sui-inline-gap: var(--sui-space-9);
+    --sui-grid-gap: var(--sui-space-9);
+  }
+
+  :where(.sui-stack, .sui-inline, .sui-grid)[data-gap="10"] {
+    --sui-stack-gap: var(--sui-space-10);
+    --sui-inline-gap: var(--sui-space-10);
+    --sui-grid-gap: var(--sui-space-10);
+  }
+
+  /* --- выравнивание --------------------------------------------------- */
+  .sui-stack[data-align="start"],
+  .sui-inline[data-align="start"] { align-items: flex-start; }
+  .sui-stack[data-align="center"],
+  .sui-inline[data-align="center"] { align-items: center; }
+  .sui-stack[data-align="end"],
+  .sui-inline[data-align="end"] { align-items: flex-end; }
+  .sui-stack[data-align="baseline"],
+  .sui-inline[data-align="baseline"] { align-items: baseline; }
+  .sui-stack[data-align="stretch"],
+  .sui-inline[data-align="stretch"] { align-items: stretch; }
+
+  .sui-inline[data-justify="center"],
+  .sui-stack[data-justify="center"] { justify-content: center; }
+  .sui-inline[data-justify="end"],
+  .sui-stack[data-justify="end"] { justify-content: flex-end; }
+  .sui-inline[data-justify="between"],
+  .sui-stack[data-justify="between"] { justify-content: space-between; }
+  .sui-inline[data-justify="around"],
+  .sui-stack[data-justify="around"] { justify-content: space-around; }
+  .sui-inline[data-justify="evenly"],
+  .sui-stack[data-justify="evenly"] { justify-content: space-evenly; }
+
+  /* --- тон поверхности ------------------------------------------------- */
+  .sui-box[data-background="surface"],
+  .sui-surface[data-tone="surface"] { background-color: var(--sui-color-surface); }
+  .sui-box[data-background="surface-container"],
+  .sui-surface[data-tone="surface-container"] { background-color: var(--sui-color-surface-container); }
+  .sui-box[data-background="surface-container-low"],
+  .sui-surface[data-tone="surface-container-low"] { background-color: var(--sui-color-surface-container-low); }
+  .sui-box[data-background="surface-container-high"],
+  .sui-surface[data-tone="surface-container-high"] { background-color: var(--sui-color-surface-container-high); }
+  .sui-box[data-background="surface-container-highest"],
+  .sui-surface[data-tone="surface-container-highest"] { background-color: var(--sui-color-surface-container-highest); }
+  .sui-box[data-background="primary-container"],
+  .sui-surface[data-tone="primary-container"] { background-color: var(--sui-color-primary-container); }
+  .sui-box[data-background="secondary-container"],
+  .sui-surface[data-tone="secondary-container"] { background-color: var(--sui-color-secondary-container); }
+  .sui-box[data-background="tertiary-container"],
+  .sui-surface[data-tone="tertiary-container"] { background-color: var(--sui-color-tertiary-container); }
+  .sui-box[data-background="inverse-surface"],
+  .sui-surface[data-tone="inverse-surface"] {
+    background-color: var(--sui-color-inverse-surface);
+    color: var(--sui-color-inverse-on-surface);
+  }
+  .sui-box[data-background="transparent"],
+  .sui-surface[data-tone="transparent"] { background-color: transparent; }
+
+  /* --- радиусы --------------------------------------------------------- */
+  :where(.sui-box, .sui-surface)[data-radius="none"] { border-radius: var(--sui-radius-none); }
+  :where(.sui-box, .sui-surface)[data-radius="xs"] { border-radius: var(--sui-radius-xs); }
+  :where(.sui-box, .sui-surface)[data-radius="sm"] { border-radius: var(--sui-radius-sm); }
+  :where(.sui-box, .sui-surface)[data-radius="md"] { border-radius: var(--sui-radius-md); }
+  :where(.sui-box, .sui-surface)[data-radius="lg"] { border-radius: var(--sui-radius-lg); }
+  :where(.sui-box, .sui-surface)[data-radius="xl"] { border-radius: var(--sui-radius-xl); }
+  :where(.sui-box, .sui-surface)[data-radius="card"] { border-radius: var(--sui-radius-card); }
+  :where(.sui-box, .sui-surface)[data-radius="dialog"] { border-radius: var(--sui-radius-dialog); }
+  :where(.sui-box, .sui-surface)[data-radius="sheet"] { border-radius: var(--sui-radius-sheet); }
+  :where(.sui-box, .sui-surface)[data-radius="full"] { border-radius: var(--sui-radius-full); }
+
+  /* --- elevation ------------------------------------------------------- */
+  :where(.sui-box, .sui-surface)[data-elevation="1"] { box-shadow: var(--sui-elevation-1); }
+  :where(.sui-box, .sui-surface)[data-elevation="2"] { box-shadow: var(--sui-elevation-2); }
+  :where(.sui-box, .sui-surface)[data-elevation="3"] { box-shadow: var(--sui-elevation-3); }
+  :where(.sui-box, .sui-surface)[data-elevation="4"] { box-shadow: var(--sui-elevation-4); }
+  :where(.sui-box, .sui-surface)[data-elevation="5"] { box-shadow: var(--sui-elevation-5); }
+
+  /* --- границы --------------------------------------------------------- */
+  :where(.sui-box, .sui-surface)[data-border="outline"] {
+    border: var(--sui-hairline) solid var(--sui-color-outline);
+  }
+  :where(.sui-box, .sui-surface)[data-border="outline-variant"] {
+    border: var(--sui-hairline) solid var(--sui-color-outline-variant);
+  }
+
+  /* --- grid ------------------------------------------------------------ */
+  .sui-grid[data-min="sm"] { --sui-grid-min: 12rem; }
+  .sui-grid[data-min="md"] { --sui-grid-min: 18rem; }
+  .sui-grid[data-min="lg"] { --sui-grid-min: 24rem; }
+
+  .sui-grid[data-columns="auto"] {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--sui-grid-min, 18rem)), 1fr));
+  }
+
+  /* Колонки включаются по мере роста экрана: сначала 2, дальше — по ширине. */
+  @media (min-width: 22.5em) {
+    .sui-grid[data-columns="2"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
+  @media (min-width: 30em) {
+    .sui-grid[data-columns="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+
+  @media (min-width: 37.5em) {
+    :where(:root) {
+      --sui-section-gap: 2rem;
+    }
+
+    .sui-container {
+      --sui-gutter: 1.5rem;
+    }
+
+    .sui-grid[data-columns="4"] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  }
+
+  @media (min-width: 52.5em) {
+    :where(:root) {
+      --sui-section-gap: 2.5rem;
+    }
+
+    .sui-container {
+      --sui-gutter: 2rem;
+    }
+
+    .sui-grid[data-columns="5"] { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .sui-grid[data-columns="6"] { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  }
+
+  @media (min-width: 75em) {
+    .sui-grid[data-columns="7"] { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+    .sui-grid[data-columns="8"] { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+  }
+
+  @media (min-width: 100em) {
+    .sui-grid[data-columns="9"] { grid-template-columns: repeat(9, minmax(0, 1fr)); }
+    .sui-grid[data-columns="10"] { grid-template-columns: repeat(10, minmax(0, 1fr)); }
+  }
+
+  @media (min-width: 120em) {
+    .sui-grid[data-columns="11"] { grid-template-columns: repeat(11, minmax(0, 1fr)); }
+    .sui-grid[data-columns="12"] { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+  }
+
+  /* Десктоп и 4K: больше воздуха, но контент не «резиновый» и не гигантский. */
+  @media (min-width: 75em) {
+    :where(:root) {
+      --sui-content-max: 78rem;
+      --sui-content-wide-max: 96rem;
+      --sui-section-gap: 3rem;
+    }
+
+    .sui-container {
+      --sui-gutter: 2rem;
+    }
+  }
+
+  @media (min-width: 100em) {
+    :where(:root) {
+      --sui-content-max: 84rem;
+      --sui-content-wide-max: 108rem;
+    }
+
+    .sui-container {
+      --sui-gutter: 2.5rem;
+    }
+  }
+
+  @media (min-width: 120em) {
+    :where(:root) {
+      --sui-content-max: 90rem;
+      --sui-content-wide-max: 112rem;
+    }
+
+    .sui-container {
+      --sui-gutter: 3rem;
+    }
+  }
+
+  @media (min-width: 160em) {
+    :where(:root) {
+      --sui-content-max: 120rem;
+      --sui-content-wide-max: 150rem;
+    }
+
+    .sui-container {
+      --sui-gutter: 3.5rem;
+    }
+  }
+
+  @media (min-width: 240em) {
+    :where(:root) {
+      --sui-content-max: 150rem;
+      --sui-content-wide-max: 162.5rem;
+    }
+
+    .sui-container {
+      --sui-gutter: 4rem;
+    }
+  }
+}
