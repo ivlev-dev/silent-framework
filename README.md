@@ -22,6 +22,7 @@
 - Опциональный `@ivlev-dev/silent-validation`: декораторы + валидация из TS-типов через Vite-плагин `@ivlev-dev/silent-validation-vite` (`@Required`, `@IsEmail`, `@Min` — всего 51 правило, `accessor`-поля без дублирования типов), кастомные сообщения, встроенные ru/en и интеграция с i18n.
 - Опциональный `@ivlev-dev/silent-form`: реактивные формы на тех же `accessor`-декораторах — метаданные полей (`@Label`, `@Placeholder`, `@Hint`, `@Required`), вложенные формы, серверные ошибки и асинхронная готовность полей.
 - Опциональный `@ivlev-dev/silent-protocol`: бинарный протокол вместо JSON — схема из класса, без имён полей, bitmap optional, oneof, массивы/map/set/nested; TS, Rust, Kotlin и PHP.
+- Опциональный `@ivlev-dev/silent-ui`: дизайн-система — токены Material 3, светлая/тёмная темы, layout-примитивы, типографика, компоненты данных/оверлеев/навигации, формы, иконки и Storybook.
 - Справочник API с автопроверкой полноты (`pnpm api:check`).
 
 ## Установка
@@ -117,6 +118,31 @@ await form.onSubmit((submitted) => api.login(submitted.values))();
 ```
 
 `getFieldProps` отдаёт реактивные `value`, `label`, `placeholder`, `hint`, `error`, `isReady`, `isValid`, `isValidating` и обработчики `onInput`/`onChange`/`onBlur`, а также DOM-`id` по умолчанию `${className}-${path}` (`LoginForm-email`). Имя класса может измениться при минификации, поэтому для стабильных id (минификация, SSR) задавайте `formId`: `new LoginForm({ formId: "login" })` даёт `login-email`. Вложенные формы подключаются через `@FormField()` — значения, ошибки и готовность агрегируются, пути типизированы (`address.city`); серверные ошибки ставятся `setFieldErrors` и снимаются при изменении значения. Подробнее — [`docs/api/form.md`](./docs/api/form.md), полный пример — [`examples/forms`](./examples/forms).
+
+## UI и дизайн-система
+
+`@ivlev-dev/silent-ui` — дизайн-система: токены Material 3, светлая/тёмная темы, layout-примитивы, типографика, компоненты (контролы, данные, оверлеи, навигация), формы с `field={form.getFieldProps(...)}`, иконки и Storybook. Пакет поставляется **precompiled** (`dist` собран `@ivlev-dev/silent-swc`), CSS подключается отдельными входами — импорт CSS из JS сломал бы Node-SSR.
+
+```tsx
+import { Button, Container, Heading, Inline, Stack, Surface, Text } from "@ivlev-dev/silent-ui";
+import "@ivlev-dev/silent-ui/styles.css";
+
+<Container>
+  <Stack gap={4}>
+    <Heading level={1}>Панель</Heading>
+    <Text tone="muted">Сводка за день</Text>
+    <Inline gap={2}>
+      <Button>Сохранить</Button>
+      <Button variant="text">Отмена</Button>
+    </Inline>
+    <Surface tone="surface-container" padding={4} radius="md">
+      <Button variant="tonal" loading>Отправляем…</Button>
+    </Surface>
+  </Stack>
+</Container>
+```
+
+Темы: `applyTheme({ theme: "dark" })`, `UiConfigProvider` (RU-строки: `Закрыть`, `Загрузка`, …), SSR-скрипт `ThemeScript` без вспышки светлой темы. Формы связываются с `@ivlev-dev/silent-form` через `field`. Все пары текст/фон проходят WCAG AA, брейкпоинты `xs 0 … 6xl 3840` синхронизированы с CSS и документацией. Storybook — `pnpm --filter @ivlev-dev/silent-ui-storybook dev`. Установка, CSS-входы, темы, каталог компонентов и ограничения — [`docs/guides/ui.md`](./docs/guides/ui.md); справочник API — [`docs/api/ui.md`](./docs/api/ui.md).
 
 ## Протокол
 
@@ -413,6 +439,7 @@ silent({
 - [Гидрация](./docs/guides/hydration.md)
 - [Dependency Injection](./docs/guides/di.md)
 - [Роутер](./docs/guides/router.md)
+- [UI и дизайн-система](./docs/guides/ui.md)
 - [Миграция с SolidJS](./docs/guides/migration-from-solid.md)
 - [Справочник API](./docs/api/index.md)
 - [Протокол](./docs/protocol.md)

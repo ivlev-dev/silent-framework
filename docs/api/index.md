@@ -22,6 +22,7 @@
 | `@ivlev-dev/silent-validation` | [validation.md](./validation.md) | классовая валидация: декораторы, схемы из TS-типов, i18n |
 | `@ivlev-dev/silent-validation-vite` | [validation-vite.md](./validation-vite.md) | Vite-плагин генерации схем валидации |
 | `@ivlev-dev/silent-form` | [form.md](./form.md) | реактивные формы: `@Field`, метаданные полей, вложенные формы, серверные ошибки |
+| `@ivlev-dev/silent-ui` | [ui.md](./ui.md) | дизайн-система: токены, темы, layout, типографика, компоненты, формы, иконки |
 | `@ivlev-dev/silent-protocol` | [protocol.md](./protocol.md) | бинарный протокол: схема из класса, encode/decode, oneof |
 | `@ivlev-dev/silent-protocol-vite` | [protocol-vite.md](./protocol-vite.md) | Vite-плагин схем и статических кодеков |
 | `@ivlev-dev/silent` | [getting-started.md](../getting-started.md) | метапакет: рантайм и плагин одной установкой |
@@ -34,6 +35,8 @@
 - [Гидрация](../guides/hydration.md)
 - [Dependency Injection](../guides/di.md)
 - [Роутер](../guides/router.md)
+- [Формы (валидация и поля)](../guides/forms.md)
+- [UI и дизайн-система](../guides/ui.md)
 - [Миграция с SolidJS](../guides/migration-from-solid.md)
 
 ## Соглашения

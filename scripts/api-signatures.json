@@ -2102,6 +2102,1267 @@
         "signature": "export function version(): string;"
       }
     },
+    "@ivlev-dev/silent-ui": {
+      "Accordion": {
+        "kind": "function",
+        "type": "(props: AccordionProps) => Node",
+        "signature": "export declare function Accordion(props: AccordionProps): Node;"
+      },
+      "AccordionItem": {
+        "kind": "function",
+        "type": "(props: AccordionItemProps) => Node",
+        "signature": "export declare function AccordionItem(props: AccordionItemProps): Node;"
+      },
+      "AccordionItemData": {
+        "kind": "interface",
+        "signature": "export interface AccordionItemData { readonly key: string; readonly title: Children; /** Содержимое: для SSR передавайте лениво — `content: () => <… />`. */ readonly content?: Children; /** Обрезать длинный заголовок одной строкой (многоточие вместо переноса). */ readonly truncate?: boolean | undefined; readonly disabled?: boolean | undefined; }"
+      },
+      "AccordionItemProps": {
+        "kind": "interface",
+        "signature": "export interface AccordionItemProps { readonly title: Children; readonly expanded: boolean; readonly content?: Children; readonly truncate?: boolean | undefined; readonly disabled?: boolean | undefined; readonly headingLevel?: HeadingLevel | undefined; /** id триггера; на него ссылается `aria-labelledby` панели. */ readonly triggerId?: string | undefined; /** id панели; на него ссылается `aria-controls` триггера. */ readonly panelId?: string | undefined; readonly onToggle?: ((event: MouseEvent) => void) | undefined; readonly onKeyDown?: ((event: KeyboardEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "AccordionProps": {
+        "kind": "interface",
+        "signature": "export interface AccordionProps { readonly items: readonly AccordionItemData[]; /** `single` — открыт максимум один пункт, `multiple` — сколько угодно. */ readonly selectionMode?: AccordionSelectionMode | undefined; /** Управляемое значение. */ readonly value?: AccordionValue | undefined; readonly defaultValue?: AccordionValue | undefined; /** `string` в single-режиме, массив ключей — в multiple. */ readonly onValueChange?: ((value: AccordionValue) => void) | undefined; readonly headingLevel?: HeadingLevel | undefined; /** Базовый id для `aria-controls`/`aria-labelledby`; иначе генерируется. */ readonly id?: string | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "AccordionSelectionMode": {
+        "kind": "type",
+        "signature": "export type AccordionSelectionMode = \"single\" | \"multiple\";"
+      },
+      "AccordionValue": {
+        "kind": "type",
+        "signature": "export type AccordionValue = string | readonly string[];"
+      },
+      "AddIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function AddIcon(props: GlyphProps): Node;"
+      },
+      "Alert": {
+        "kind": "function",
+        "type": "(props: AlertProps) => Node",
+        "signature": "export declare function Alert(props: AlertProps): Node;"
+      },
+      "AlertDialog": {
+        "kind": "function",
+        "type": "(props: AlertDialogProps) => Node",
+        "signature": "export declare function AlertDialog(props: AlertDialogProps): Node;"
+      },
+      "AlertDialogProps": {
+        "kind": "interface",
+        "signature": "export interface AlertDialogProps { readonly open?: boolean | undefined; readonly defaultOpen?: boolean | undefined; readonly onOpenChange?: ((open: boolean) => void) | undefined; readonly title?: Children; readonly description?: Children; readonly children?: Children; readonly confirmLabel?: string | undefined; readonly cancelLabel?: string | undefined; readonly onConfirm?: (() => void) | undefined; readonly onCancel?: (() => void) | undefined; /** Красная кнопка подтверждения для необратимых действий. */ readonly destructive?: boolean | undefined; readonly hideCancel?: boolean | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "AlertProps": {
+        "kind": "interface",
+        "signature": "export interface AlertProps { readonly variant?: AlertVariant | undefined; readonly title?: Children; /** Иконка слева от текста. Декоративная: смысл несёт `variant`. */ readonly icon?: Children; /** Действия под сообщением (кнопки/ссылки). */ readonly actions?: Children; readonly dismissible?: boolean | undefined; readonly onClose?: ((event: MouseEvent) => void) | undefined; /** Переопределяет строку `close` из `UiConfigProvider`. */ readonly closeLabel?: string | undefined; /** Ручное переопределение роли; по умолчанию выводится из `variant`. */ readonly role?: AlertRole | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly children?: Children; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "AlertRole": {
+        "kind": "type",
+        "signature": "export type AlertRole = \"status\" | \"alert\";"
+      },
+      "AlertVariant": {
+        "kind": "type",
+        "signature": "export type AlertVariant = \"info\" | \"success\" | \"warning\" | \"error\";"
+      },
+      "applyTheme": {
+        "kind": "function",
+        "type": "(options: ApplyThemeOptions) => void",
+        "signature": "export declare function applyTheme(options: ApplyThemeOptions): void;"
+      },
+      "ApplyThemeOptions": {
+        "kind": "interface",
+        "signature": "export interface ApplyThemeOptions { readonly theme: ThemeMode; /** Переопределение цветовых ролей: `{ primary: \"#…\" }`. */ readonly palette?: ThemePalette | undefined; /** Корень, на который ставится `data-theme`. По умолчанию `<html>`. */ readonly root?: HTMLElement | null | undefined; /** Сохранить выбор в localStorage (только явные `light`/`dark`/`auto`). */ readonly persist?: boolean | undefined; readonly storageKey?: string | undefined; }"
+      },
+      "ArrowBackIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function ArrowBackIcon(props: GlyphProps): Node;"
+      },
+      "ArrowForwardIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function ArrowForwardIcon(props: GlyphProps): Node;"
+      },
+      "Avatar": {
+        "kind": "function",
+        "type": "(props: AvatarProps) => Node",
+        "signature": "export declare function Avatar(props: AvatarProps): Node;"
+      },
+      "AvatarProps": {
+        "kind": "interface",
+        "signature": "export interface AvatarProps { /** URL изображения. При наличии рендерится `<img>` (готов к SSR). */ readonly src?: string | undefined; /** Alt изображения; также доступное имя для fallback-вариантов. */ readonly alt?: string | undefined; /** Инициалы, если нет изображения. */ readonly initials?: string | undefined; /** Иконка-fallback; по умолчанию — силуэт пользователя. */ readonly icon?: Children; readonly size?: AvatarSize | undefined; readonly shape?: AvatarShape | undefined; /** Точка статуса в правом нижнем углу. */ readonly status?: AvatarStatus | undefined; /** Подпись статуса для скринридера; без неё точка декоративна. */ readonly statusLabel?: string | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "AvatarShape": {
+        "kind": "type",
+        "signature": "export type AvatarShape = \"circle\" | \"square\";"
+      },
+      "AvatarSize": {
+        "kind": "type",
+        "signature": "export type AvatarSize = \"sm\" | \"md\" | \"lg\" | \"xl\";"
+      },
+      "AvatarStatus": {
+        "kind": "type",
+        "signature": "export type AvatarStatus = \"online\" | \"offline\" | \"away\" | \"busy\";"
+      },
+      "Badge": {
+        "kind": "function",
+        "type": "(props: BadgeProps) => Node",
+        "signature": "export declare function Badge(props: BadgeProps): Node;"
+      },
+      "BadgePosition": {
+        "kind": "type",
+        "signature": "export type BadgePosition = \"top-end\" | \"top-start\" | \"bottom-end\" | \"bottom-start\";"
+      },
+      "BadgeProps": {
+        "kind": "interface",
+        "signature": "export interface BadgeProps { /** Число в бейдже. Значения больше `max` сворачиваются в `max+`. */ readonly count?: number | undefined; /** Порог свёртки, по умолчанию `99` → `99+`. */ readonly max?: number | undefined; /** Точка-индикатор без текста. */ readonly dot?: boolean | undefined; readonly variant?: BadgeVariant | undefined; /** Угол у родителя с `position: relative`; по умолчанию — inline. */ readonly position?: BadgePosition | undefined; /** Доступное имя. Для точки обязательно, иначе бейдж декоративен. */ readonly label?: string | undefined; /** Принудительно скрыть от скринридера. */ readonly decorative?: boolean | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "BadgeVariant": {
+        "kind": "type",
+        "signature": "export type BadgeVariant = \"neutral\" | \"primary\" | \"accent\" | \"success\" | \"warning\" | \"error\" | \"info\";"
+      },
+      "baseFontSize": {
+        "kind": "variable",
+        "type": "16",
+        "signature": "export declare const baseFontSize = 16;"
+      },
+      "Box": {
+        "kind": "function",
+        "type": "(props: BoxProps) => Node",
+        "signature": "export declare function Box(props: BoxProps): Node;"
+      },
+      "BoxProps": {
+        "kind": "interface",
+        "signature": "export interface BoxProps extends PrimitiveProps { readonly padding?: SpaceStep | undefined; readonly background?: BackgroundTone | undefined; readonly border?: BorderTone | undefined; readonly radius?: RadiusStep | undefined; readonly elevation?: ElevationStep | undefined; }"
+      },
+      "BreadcrumbItem": {
+        "kind": "function",
+        "type": "(props: BreadcrumbItemProps) => Node",
+        "signature": "export declare function BreadcrumbItem(props: BreadcrumbItemProps): Node;"
+      },
+      "BreadcrumbItemData": {
+        "kind": "interface",
+        "signature": "export interface BreadcrumbItemData { readonly key: string; readonly label: Children; readonly href?: string | undefined; /** Ленивый слот для SSR: `icon: () => <HomeIcon />`. */ readonly icon?: Children; readonly onClick?: ((event: MouseEvent) => void) | undefined; }"
+      },
+      "BreadcrumbItemProps": {
+        "kind": "interface",
+        "signature": "export interface BreadcrumbItemProps { readonly href?: string | undefined; /** Текущая страница: `aria-current=\"page\"`. */ readonly current?: boolean | undefined; readonly icon?: Children; /** Разделитель перед пунктом; по умолчанию `/`. */ readonly separator?: Children; /** Показывать разделитель (все пункты, кроме первого). */ readonly showSeparator?: boolean | undefined; readonly onClick?: ((event: MouseEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly children?: Children; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "Breadcrumbs": {
+        "kind": "function",
+        "type": "(props: BreadcrumbsProps) => Node",
+        "signature": "export declare function Breadcrumbs(props: BreadcrumbsProps): Node;"
+      },
+      "BreadcrumbsProps": {
+        "kind": "interface",
+        "signature": "export interface BreadcrumbsProps { readonly items: readonly BreadcrumbItemData[]; /** * Максимум видимых пунктов. При превышении середина сворачивается в `…` * без JS-измерений: первый блок, многоточие и последний пункт. * Значения меньше `3` не сворачивают цепочку. */ readonly maxItems?: number | undefined; /** Разделитель между пунктами; по умолчанию `/`. */ readonly separator?: Children; /** Доступное имя `nav`; по умолчанию — `Хлебные крошки`. */ readonly label?: string | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "Breakpoint": {
+        "kind": "type",
+        "signature": "export type Breakpoint = keyof typeof values;"
+      },
+      "breakpointEm": {
+        "kind": "variable",
+        "type": "Readonly<Record<\"2xl\" | \"3xl\" | \"4xl\" | \"5xl\" | \"6xl\" | \"lg\" | \"md\" | \"sm\" | \"xl\" | \"xs\", string>>",
+        "signature": "export declare const breakpointEm: Readonly<Record<Breakpoint, string>>;"
+      },
+      "breakpointOrder": {
+        "kind": "variable",
+        "type": "readonly (\"2xl\" | \"3xl\" | \"4xl\" | \"5xl\" | \"6xl\" | \"lg\" | \"md\" | \"sm\" | \"xl\" | \"xs\")[]",
+        "signature": "export declare const breakpointOrder: readonly Breakpoint[];"
+      },
+      "breakpoints": {
+        "kind": "variable",
+        "type": "Readonly<Record<\"2xl\" | \"3xl\" | \"4xl\" | \"5xl\" | \"6xl\" | \"lg\" | \"md\" | \"sm\" | \"xl\" | \"xs\", number>>",
+        "signature": "export declare const breakpoints: Readonly<Record<Breakpoint, number>>;"
+      },
+      "Button": {
+        "kind": "function",
+        "type": "(props: ButtonProps) => Node",
+        "signature": "export declare function Button(props: ButtonProps): Node;"
+      },
+      "ButtonProps": {
+        "kind": "interface",
+        "signature": "export interface ButtonProps { readonly variant?: ButtonVariant | undefined; readonly size?: ButtonSize | undefined; readonly leading?: Children; readonly trailing?: Children; readonly loading?: boolean | undefined; readonly disabled?: boolean | undefined; readonly fullWidth?: boolean | undefined; readonly type?: ButtonType | undefined; readonly onClick?: ((event: MouseEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly children?: Children; /** Ref-колбэк: `ref((node) => …)`, без объекта-ref. */ readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "ButtonSize": {
+        "kind": "type",
+        "signature": "export type ButtonSize = \"sm\" | \"md\" | \"lg\";"
+      },
+      "ButtonType": {
+        "kind": "type",
+        "signature": "export type ButtonType = \"button\" | \"submit\" | \"reset\";"
+      },
+      "ButtonVariant": {
+        "kind": "type",
+        "signature": "export type ButtonVariant = \"filled\" | \"accent\" | \"tonal\" | \"outlined\" | \"text\" | \"elevated\";"
+      },
+      "Card": {
+        "kind": "function",
+        "type": "(props: CardProps) => Node",
+        "signature": "export declare function Card(props: CardProps): Node;"
+      },
+      "CardMediaAspect": {
+        "kind": "type",
+        "signature": "export type CardMediaAspect = \"auto\" | \"square\" | \"video\" | \"wide\" | \"portrait\";"
+      },
+      "CardProps": {
+        "kind": "interface",
+        "signature": "export interface CardProps { readonly variant?: CardVariant | undefined; /** * Интерактивная карточка: `role=\"button\"`, `tabindex=\"0\"` и активация * Enter/Space. Нативный `<button>` не используется, чтобы в слоты можно * было класть ссылки и другие кнопки без вложенной интерактивности. */ readonly interactive?: boolean | undefined; readonly disabled?: boolean | undefined; readonly padding?: SpaceStep | undefined; /** Медиа сверху: изображение, видео, график. */ readonly media?: Children; /** Пропорции медиа: `auto` (натуральные) или фиксированные. */ readonly mediaAspect?: CardMediaAspect | undefined; /** Заголовок/подзаголовок над телом. */ readonly header?: Children; /** Обрезка длинного заголовка по строкам (1–3). */ readonly headerLines?: 1 | 2 | 3 | undefined; /** Действия внизу карточки. */ readonly actions?: Children; readonly onClick?: ((event: MouseEvent | KeyboardEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly children?: Children; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "CardVariant": {
+        "kind": "type",
+        "signature": "export type CardVariant = \"elevated\" | \"filled\" | \"outlined\";"
+      },
+      "Checkbox": {
+        "kind": "function",
+        "type": "(props: CheckboxProps) => Node",
+        "signature": "export declare function Checkbox(props: CheckboxProps): Node;"
+      },
+      "CheckboxProps": {
+        "kind": "interface",
+        "signature": "export interface CheckboxProps { readonly checked?: boolean | undefined; readonly field?: BoundField<boolean> | undefined; readonly label?: Children; readonly description?: Children; readonly hint?: Children; readonly error?: Children; readonly indeterminate?: boolean | undefined; readonly name?: string | undefined; readonly id?: string | undefined; readonly required?: boolean | undefined; readonly disabled?: boolean | undefined; readonly readOnly?: boolean | undefined; readonly describedBy?: string | undefined; readonly onChange?: ((event: Event) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly onFocus?: ((event: FocusEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+      },
+      "CheckIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function CheckIcon(props: GlyphProps): Node;"
+      },
+      "ChevronDownIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function ChevronDownIcon(props: GlyphProps): Node;"
+      },
+      "ChevronEndIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function ChevronEndIcon(props: GlyphProps): Node;"
+      },
+      "ChevronStartIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function ChevronStartIcon(props: GlyphProps): Node;"
+      },
+      "ChevronUpIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function ChevronUpIcon(props: GlyphProps): Node;"
+      },
+      "Chip": {
+        "kind": "function",
+        "type": "(props: ChipProps) => Node",
+        "signature": "export declare function Chip(props: ChipProps): Node;"
+      },
+      "ChipProps": {
+        "kind": "interface",
+        "signature": "export interface ChipProps { readonly variant?: ChipVariant | undefined; /** Отмеченное состояние (`filter` получает `aria-pressed`). */ readonly selected?: boolean | undefined; /** Кнопка удаления с RU-подписью (`Удалить`). */ readonly removable?: boolean | undefined; readonly onRemove?: ((event: MouseEvent) => void) | undefined; /** Переопределяет строку `removeItem` из `UiConfigProvider`. */ readonly removeLabel?: string | undefined; /** Иконка слева. Для `filter` при `selected` заменяется галочкой. */ readonly leading?: Children; /** Аватар слева: приоритетнее `leading`. */ readonly avatar?: Children; readonly disabled?: boolean | undefined; readonly onClick?: ((event: MouseEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly children?: Children; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "ChipVariant": {
+        "kind": "type",
+        "signature": "export type ChipVariant = \"assist\" | \"filter\" | \"input\" | \"suggestion\";"
+      },
+      "CloseIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function CloseIcon(props: GlyphProps): Node;"
+      },
+      "Container": {
+        "kind": "function",
+        "type": "(props: ContainerProps) => Node",
+        "signature": "export declare function Container(props: ContainerProps): Node;"
+      },
+      "ContainerProps": {
+        "kind": "interface",
+        "signature": "export interface ContainerProps extends PrimitiveProps { /** Ограничение ширины: `content` (75rem, до 2400px на 4K), `wide` (90rem, до 2600px), `full`. */ readonly size?: ContainerSize | undefined; /** Горизонтальные поля `--sui-gutter`. По умолчанию включены. */ readonly gutter?: boolean | undefined; }"
+      },
+      "ContainerSize": {
+        "kind": "type",
+        "signature": "export type ContainerSize = \"content\" | \"wide\" | \"full\";"
+      },
+      "controlHeight": {
+        "kind": "variable",
+        "type": "{ readonly sm: \"2.25rem\"; readonly md: \"2.75rem\"; readonly lg: \"3rem\"; }",
+        "signature": "export declare const controlHeight: { readonly sm: \"2.25rem\"; readonly md: \"2.75rem\"; readonly lg: \"3rem\"; };"
+      },
+      "ControlSize": {
+        "kind": "type",
+        "signature": "export type ControlSize = keyof typeof controlHeight;"
+      },
+      "cssVar": {
+        "kind": "function",
+        "type": "(name: string) => string",
+        "signature": "export declare function cssVar(name: string): string;"
+      },
+      "darkColors": {
+        "kind": "variable",
+        "type": "SemanticColors",
+        "signature": "export declare const darkColors: SemanticColors;"
+      },
+      "DEFAULT_LOCALE": {
+        "kind": "variable",
+        "type": "\"ru-RU\"",
+        "signature": "export declare const DEFAULT_LOCALE = \"ru-RU\";"
+      },
+      "DEFAULT_UI_CONFIG": {
+        "kind": "variable",
+        "type": "UiConfig",
+        "signature": "export declare const DEFAULT_UI_CONFIG: UiConfig;"
+      },
+      "defaultUiStrings": {
+        "kind": "variable",
+        "type": "UiStrings",
+        "signature": "export declare const defaultUiStrings: UiStrings;"
+      },
+      "density": {
+        "kind": "variable",
+        "type": "{ readonly compact: 0.875; readonly default: 1; readonly comfortable: 1.125; }",
+        "signature": "export declare const density: { readonly compact: 0.875; readonly default: 1; readonly comfortable: 1.125; };"
+      },
+      "Density": {
+        "kind": "type",
+        "signature": "export type Density = keyof typeof density;"
+      },
+      "Dialog": {
+        "kind": "function",
+        "type": "(props: DialogProps) => Node",
+        "signature": "export declare function Dialog(props: DialogProps): Node;"
+      },
+      "DialogProps": {
+        "kind": "interface",
+        "signature": "export interface DialogProps { /** Controlled-состояние. Без пропса диалог живёт на `defaultOpen`. */ readonly open?: boolean | undefined; readonly defaultOpen?: boolean | undefined; readonly onOpenChange?: ((open: boolean) => void) | undefined; readonly title?: Children; readonly description?: Children; readonly children?: Children; readonly actions?: Children; /** Переопределяет RU-строку «Закрыть» из `UiConfigProvider`. */ readonly closeLabel?: string | undefined; /** Скрыть крестик (например, когда закрытие только кнопкой в `actions`). */ readonly hideClose?: boolean | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "DismissIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function CloseIcon(props: GlyphProps): Node;"
+      },
+      "Divider": {
+        "kind": "function",
+        "type": "(props: DividerProps) => Node",
+        "signature": "export declare function Divider(props: DividerProps): Node;"
+      },
+      "DividerInset": {
+        "kind": "type",
+        "signature": "export type DividerInset = \"none\" | \"start\" | \"both\";"
+      },
+      "DividerOrientation": {
+        "kind": "type",
+        "signature": "export type DividerOrientation = \"horizontal\" | \"vertical\";"
+      },
+      "DividerProps": {
+        "kind": "interface",
+        "signature": "export interface DividerProps extends PrimitiveProps { readonly orientation?: DividerOrientation | undefined; readonly inset?: DividerInset | undefined; }"
+      },
+      "DownloadIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function DownloadIcon(props: GlyphProps): Node;"
+      },
+      "Drawer": {
+        "kind": "function",
+        "type": "(props: DrawerProps) => Node",
+        "signature": "export declare function Drawer(props: DrawerProps): Node;"
+      },
+      "DrawerProps": {
+        "kind": "interface",
+        "signature": "export interface DrawerProps { readonly open: boolean; readonly onOpenChange?: ((open: boolean) => void) | undefined; /** `modal` — оверлей со скримом и focus trap, `standard` — часть раскладки. */ readonly variant?: DrawerVariant | undefined; readonly side?: DrawerSide | undefined; readonly header?: Children; readonly footer?: Children; /** Доступное имя панели, если нет заголовка. */ readonly label?: string | undefined; /** Внешний id заголовка вместо встроенного. */ readonly labelledBy?: string | undefined; /** Кнопка закрытия в шапке (RU-подпись `Закрыть`). */ readonly showCloseButton?: boolean | undefined; /** Закрывать модальную панель кликом по скриму (по умолчанию `true`). */ readonly closeOnScrimClick?: boolean | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly children?: Children; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "DrawerSide": {
+        "kind": "type",
+        "signature": "export type DrawerSide = \"start\" | \"end\";"
+      },
+      "DrawerVariant": {
+        "kind": "type",
+        "signature": "export type DrawerVariant = \"modal\" | \"standard\";"
+      },
+      "elevation": {
+        "kind": "variable",
+        "type": "{ readonly 0: \"none\"; readonly 1: \"0 1px 2px rgba(var(--sui-color-shadow-rgb), 0.10), 0 1px 3px 1px rgba(var(--sui-color-shadow-rgb), 0.06)\"; readonly 2: \"0 2px 4px rgba(var(--sui-color-shadow-rgb), 0.10), 0 4px 12px 2px rgba(var(--sui-color-shadow-rgb), 0.08)\"; readonly 3: \"0 6px 16px 4px rgba(var(--sui-color-shadow-rgb), 0.10), 0 2px 6px rgba(var(--sui-color-shadow-rgb), 0.08)\"; readonly 4: \"0 10px 24px 6px rgba(var(--sui-color-shadow-rgb), 0.12), 0 4px 8px rgba(var(--sui-color-shadow-rgb), 0.08)\"; readonly 5: \"0 16px 36px 8px rgba(var(--sui-color-shadow-rgb), 0.14), 0 6px 12px rgba(var(--sui-color-shadow-rgb), 0.10)\"; }",
+        "signature": "export declare const elevation: { readonly 0: \"none\"; readonly 1: \"0 1px 2px rgba(var(--sui-color-shadow-rgb), 0.10), 0 1px 3px 1px rgba(var(--sui-color-shadow-rgb), 0.06)\"; readonly 2: \"0 2px 4px rgba(var(--sui-color-shadow-rgb), 0.10), 0 4px 12px 2px rgba(var(--sui-color-shadow-rgb), 0.08)\"; readonly 3: \"0 6px 16px 4px rgba(var(--sui-color-shadow-rgb), 0.10), 0 2px 6px rgba(var(--sui-color-shadow-rgb), 0.08)\"; readonly 4: \"0 10px 24px 6px rgba(var(--sui-color-shadow-rgb), 0.12), 0 4px 8px rgba(var(--sui-color-shadow-rgb), 0.08)\"; readonly 5: \"0 16px 36px 8px rgba(var(--sui-color-shadow-rgb), 0.14), 0 6px 12px rgba(var(--sui-color-shadow-rgb), 0.10)\"; };"
+      },
+      "Elevation": {
+        "kind": "type",
+        "signature": "export type Elevation = keyof typeof elevation;"
+      },
+      "EmptyState": {
+        "kind": "function",
+        "type": "(props: EmptyStateProps) => Node",
+        "signature": "export declare function EmptyState(props: EmptyStateProps): Node;"
+      },
+      "EmptyStateProps": {
+        "kind": "interface",
+        "signature": "export interface EmptyStateProps { /** Декоративная иконка в круге. */ readonly icon?: Children; /** Иллюстрация вместо иконки; ответственность за alt — на потребителе. */ readonly illustration?: Children; readonly title: Children; readonly description?: Children; /** Кнопки/ссылки под описанием. */ readonly actions?: Children; /** Компактный вариант для встраивания в таблицу или панель. */ readonly compact?: boolean | undefined; /** Уровень заголовка; по умолчанию `3`. */ readonly titleLevel?: HeadingLevel | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "ErrorIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function ErrorIcon(props: GlyphProps): Node;"
+      },
+      "ExpandLessIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function ExpandLessIcon(props: GlyphProps): Node;"
+      },
+      "ExpandMoreIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function ExpandMoreIcon(props: GlyphProps): Node;"
+      },
+      "Fab": {
+        "kind": "function",
+        "type": "(props: FabProps) => Node",
+        "signature": "export declare function Fab(props: FabProps): Node;"
+      },
+      "FabPosition": {
+        "kind": "type",
+        "signature": "export type FabPosition = \"top-start\" | \"top-end\" | \"bottom-start\" | \"bottom-end\";"
+      },
+      "FabProps": {
+        "kind": "type",
+        "signature": "export type FabProps = FabCommonProps & ({ readonly extended: true; readonly label: Children; readonly ariaLabel?: string | undefined; } | { readonly extended?: false | undefined; /** В icon-only режиме обязателен: иначе кнопка безымянная. */ readonly ariaLabel: string; readonly label?: undefined; });"
+      },
+      "FabSize": {
+        "kind": "type",
+        "signature": "export type FabSize = \"sm\" | \"md\" | \"lg\";"
+      },
+      "FabVariant": {
+        "kind": "type",
+        "signature": "export type FabVariant = \"primary\" | \"secondary\" | \"tertiary\" | \"surface\";"
+      },
+      "Field": {
+        "kind": "function",
+        "type": "(props: FieldProps) => Node",
+        "signature": "export declare function Field(props: FieldProps): Node;"
+      },
+      "FieldArray": {
+        "kind": "function",
+        "type": "<T extends Form>(props: FieldArrayProps<T>) => Node",
+        "signature": "export declare function FieldArray<T extends Form>(props: FieldArrayProps<T>): Node;"
+      },
+      "FieldArrayProps": {
+        "kind": "interface",
+        "signature": "export interface FieldArrayProps<T extends Form> { readonly array: FormArray<T>; readonly children: (item: T, index: number) => Children; /** Ключ строки; по умолчанию — сам элемент (стабильная ссылка формы). */ readonly keyOf?: ((item: T) => unknown) | undefined; readonly label?: Children; readonly hint?: Children; readonly disabled?: boolean | undefined; readonly addLabel?: string | undefined; readonly removeLabel?: string | undefined; readonly moveUpLabel?: string | undefined; readonly moveDownLabel?: string | undefined; readonly min?: number | undefined; readonly max?: number | undefined; /** Показывать кнопки перемещения (по умолчанию да). */ readonly allowMove?: boolean | undefined; readonly onAdd?: ((item: T) => void) | undefined; readonly onRemove?: ((index: number) => void) | undefined; readonly onMove?: ((from: number, to: number) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+      },
+      "FieldGroup": {
+        "kind": "function",
+        "type": "(props: FieldGroupProps) => Node",
+        "signature": "export declare function FieldGroup(props: FieldGroupProps): Node;"
+      },
+      "FieldGroupLayout": {
+        "kind": "type",
+        "signature": "export type FieldGroupLayout = \"stack\" | \"inline\";"
+      },
+      "FieldGroupProps": {
+        "kind": "interface",
+        "signature": "export interface FieldGroupProps { readonly legend?: Children; readonly hint?: Children; readonly layout?: FieldGroupLayout | undefined; /** * Сетка внутри группы: `1` — одна колонка, `2`/`3` — 1 колонка на мобильном, * 2 на ≥600px и 3 на ≥840px, `auto` — auto-fit по минимальной ширине. * Без значения группа остаётся стеком/строкой (`layout`). */ readonly columns?: 1 | 2 | 3 | \"auto\" | undefined; /** Ограничение ширины формы: удобная мера строки на широких экранах. */ readonly maxWidth?: \"none\" | \"narrow\" | \"default\" | undefined; readonly disabled?: boolean | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly children?: Children; }"
+      },
+      "FieldProps": {
+        "kind": "interface",
+        "signature": "export interface FieldProps { /** DOM-id контрола. Он же — база для `id` подсказки и ошибки. */ readonly id?: string | undefined; /** `for` подписи; по умолчанию совпадает с `id`. */ readonly htmlFor?: string | undefined; readonly label?: Children; readonly hint?: Children; readonly error?: Children; readonly required?: boolean | undefined; /** Ошибка без текста: контрол невалиден, но сообщения ещё нет. */ readonly invalid?: boolean | undefined; /** Поле посещено. Только `data`-атрибут: серверные ошибки не скрываем. */ readonly touched?: boolean | undefined; readonly disabled?: boolean | undefined; /** Асинхронная проверка: подпись/сообщения получают статус `validating`. */ readonly validating?: boolean | undefined; /** Компактная раскладка без внешних отступов — для встраивания. */ readonly bare?: boolean | undefined; readonly class?: ClassNameValue | undefined; readonly style?: StyleInput | undefined; readonly attrs?: Attrs | undefined; /** Контрол. `Field` не знает его тип и не связывает `aria-describedby`. */ readonly children?: Children | undefined; }"
+      },
+      "FileField": {
+        "kind": "function",
+        "type": "(props: FileFieldProps) => Node",
+        "signature": "export declare function FileField(props: FileFieldProps): Node;"
+      },
+      "FileFieldProps": {
+        "kind": "interface",
+        "signature": "export interface FileFieldProps { readonly accept?: string | undefined; readonly multiple?: boolean | undefined; /** Имя выбранного файла (или файлов) для отображения. */ readonly value?: string | undefined; /** Поле формы: подпись/подсказка/ошибка (значение контролирует `onFiles`). */ readonly field?: BoundField<unknown> | undefined; readonly label?: Children; readonly hint?: Children; readonly error?: Children; readonly name?: string | undefined; readonly id?: string | undefined; /** Прогресс загрузки 0–100; `undefined` — полоса скрыта. */ readonly progress?: number | undefined; readonly required?: boolean | undefined; readonly disabled?: boolean | undefined; readonly chooseLabel?: string | undefined; readonly describedBy?: string | undefined; /** * Получил файлы. Интеграция с `uploadField` — на стороне приложения: * `onFiles={(files, { signal }) => uploadField(form, \"avatar\", files[0], uploader, { signal })}`. */ readonly onFiles?: ((files: readonly File[], context: FileSelectionContext) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly onFocus?: ((event: FocusEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+      },
+      "FileSelectionContext": {
+        "kind": "interface",
+        "signature": "export interface FileSelectionContext { readonly signal: AbortSignal; }"
+      },
+      "FormActions": {
+        "kind": "function",
+        "type": "(props: FormActionsProps) => Node",
+        "signature": "export declare function FormActions(props: FormActionsProps): Node;"
+      },
+      "FormActionsAlign": {
+        "kind": "type",
+        "signature": "export type FormActionsAlign = \"start\" | \"end\" | \"between\";"
+      },
+      "FormActionsProps": {
+        "kind": "interface",
+        "signature": "export interface FormActionsProps { /** Свой набор действий: заменяет кнопки submit/reset. */ readonly actions?: Children; readonly submitLabel?: string | undefined; readonly resetLabel?: string | undefined; readonly submit?: boolean | undefined; readonly reset?: boolean | undefined; readonly loading?: boolean | undefined; readonly disabled?: boolean | undefined; readonly align?: FormActionsAlign | undefined; /** Прижать подвал к нижней кромке скроллящегося диалога/страницы. */ readonly sticky?: boolean | undefined; readonly onSubmit?: ((event: MouseEvent) => void) | undefined; readonly onReset?: ((event: MouseEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; /** Дополнительные действия после основных. */ readonly children?: Children; }"
+      },
+      "GlyphProps": {
+        "kind": "interface",
+        "signature": "export interface GlyphProps extends Omit<IconProps, \"children\"> { readonly title?: string | undefined; }"
+      },
+      "Grid": {
+        "kind": "function",
+        "type": "(props: GridProps) => Node",
+        "signature": "export declare function Grid(props: GridProps): Node;"
+      },
+      "GridColumns": {
+        "kind": "type",
+        "signature": "export type GridColumns = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | \"auto\";"
+      },
+      "GridProps": {
+        "kind": "interface",
+        "signature": "export interface GridProps extends PrimitiveProps { readonly columns?: GridColumns | undefined; readonly gap?: SpaceStep | undefined; /** Минимальная ширина колонки для `columns=\"auto\"`. */ readonly min?: \"sm\" | \"md\" | \"lg\" | undefined; }"
+      },
+      "Heading": {
+        "kind": "function",
+        "type": "(props: HeadingProps) => Node",
+        "signature": "export declare function Heading(props: HeadingProps): Node;"
+      },
+      "HeadingLevel": {
+        "kind": "type",
+        "signature": "export type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;"
+      },
+      "HeadingProps": {
+        "kind": "interface",
+        "signature": "export interface HeadingProps { readonly level?: HeadingLevel | undefined; readonly variant?: HeadingVariant | undefined; readonly tone?: HeadingTone | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly children?: Children; }"
+      },
+      "HeadingTone": {
+        "kind": "type",
+        "signature": "export type HeadingTone = \"default\" | \"muted\" | \"primary\" | \"inherit\";"
+      },
+      "HeadingVariant": {
+        "kind": "type",
+        "signature": "export type HeadingVariant = \"display-large\" | \"display-medium\" | \"display-small\" | \"headline-large\" | \"headline-medium\" | \"headline-small\" | \"title-large\" | \"title-medium\" | \"title-small\";"
+      },
+      "Icon": {
+        "kind": "function",
+        "type": "(props: IconProps) => Node",
+        "signature": "export declare function Icon(props: IconProps): Node;"
+      },
+      "IconButton": {
+        "kind": "function",
+        "type": "(props: IconButtonProps) => Node",
+        "signature": "export declare function IconButton(props: IconButtonProps): Node;"
+      },
+      "IconButtonProps": {
+        "kind": "interface",
+        "signature": "export interface IconButtonProps { /** Обязателен: без него кнопка недоступна для скринридера. */ readonly label: string; readonly size?: IconButtonSize | undefined; readonly variant?: IconButtonVariant | undefined; readonly disabled?: boolean | undefined; /** Блокирует нажатия и показывает спиннер вместо иконки. */ readonly loading?: boolean | undefined; readonly type?: \"button\" | \"submit\" | \"reset\" | undefined; readonly onClick?: ((event: MouseEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly children?: Children; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "IconButtonSize": {
+        "kind": "type",
+        "signature": "export type IconButtonSize = \"sm\" | \"md\" | \"lg\";"
+      },
+      "IconButtonVariant": {
+        "kind": "type",
+        "signature": "export type IconButtonVariant = \"standard\" | \"filled\" | \"accent\" | \"tonal\" | \"outlined\";"
+      },
+      "IconProps": {
+        "kind": "interface",
+        "signature": "export interface IconProps { readonly size?: IconSize | undefined; /** Если задан — `role=\"img\"` и `aria-label`; иначе иконка декоративна. */ readonly label?: string | undefined; readonly class?: ClassNameValue | undefined; readonly style?: StyleInput | undefined; readonly attrs?: Attrs | undefined; /** Содержимое SVG: `<path>`, `<circle>` и т. п. */ readonly children?: Children; }"
+      },
+      "IconSize": {
+        "kind": "type",
+        "signature": "export type IconSize = \"sm\" | \"md\" | \"lg\" | \"xl\";"
+      },
+      "InfoIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function InfoIcon(props: GlyphProps): Node;"
+      },
+      "Inline": {
+        "kind": "function",
+        "type": "(props: InlineProps) => Node",
+        "signature": "export declare function Inline(props: InlineProps): Node;"
+      },
+      "InlineProps": {
+        "kind": "interface",
+        "signature": "export interface InlineProps extends PrimitiveProps { readonly gap?: SpaceStep | undefined; readonly align?: AlignItems | undefined; readonly justify?: JustifyContent | undefined; readonly wrap?: boolean | undefined; }"
+      },
+      "Label": {
+        "kind": "function",
+        "type": "(props: LabelProps) => Node",
+        "signature": "export declare function Label(props: LabelProps): Node;"
+      },
+      "LabelProps": {
+        "kind": "interface",
+        "signature": "export interface LabelProps { /** `for` связывает подпись с контролом. */ readonly for?: string | undefined; readonly variant?: LabelVariant | undefined; readonly tone?: LabelTone | undefined; readonly disabled?: boolean | undefined; /** Маркер обязательности: `*` с `aria-hidden`. */ readonly required?: boolean | undefined; /** Верхний регистр для подписей секций (осознанно, не по умолчанию). */ readonly uppercase?: boolean | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly children?: Children; }"
+      },
+      "LabelTone": {
+        "kind": "type",
+        "signature": "export type LabelTone = \"default\" | \"muted\" | \"error\" | \"primary\" | \"inherit\";"
+      },
+      "LabelVariant": {
+        "kind": "type",
+        "signature": "export type LabelVariant = \"label-large\" | \"label-medium\" | \"label-small\";"
+      },
+      "lightColors": {
+        "kind": "variable",
+        "type": "SemanticColors",
+        "signature": "export declare const lightColors: SemanticColors;"
+      },
+      "List": {
+        "kind": "function",
+        "type": "(props: ListProps) => Node",
+        "signature": "export declare function List(props: ListProps): Node;"
+      },
+      "ListItem": {
+        "kind": "function",
+        "type": "(props: ListItemProps) => Node",
+        "signature": "export declare function ListItem(props: ListItemProps): Node;"
+      },
+      "ListItemProps": {
+        "kind": "interface",
+        "signature": "export interface ListItemProps { readonly selected?: boolean | undefined; readonly interactive?: boolean | undefined; readonly current?: boolean | undefined; readonly disabled?: boolean | undefined; /** Слот слева: аватар, иконка, чекбокс. */ readonly leading?: Children; /** Слот справа: бейдж, иконка, метаданные. */ readonly trailing?: Children; /** Разделитель сверху у конкретного элемента. */ readonly divider?: boolean | undefined; /** Обрезка длинного текста по строкам (1–3). */ readonly lines?: 1 | 2 | 3 | undefined; /** Переопределение роли (по умолчанию: `option` при `selected`, иначе `button`). */ readonly role?: ListItemRole | undefined; readonly onClick?: ((event: MouseEvent | KeyboardEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly children?: Children; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "ListItemRole": {
+        "kind": "type",
+        "signature": "export type ListItemRole = \"option\" | \"button\" | \"link\";"
+      },
+      "ListProps": {
+        "kind": "interface",
+        "signature": "export interface ListProps { /** `role=\"listbox\"`: включает выбор элементов (`ListItem.selected`). */ readonly selectable?: boolean | undefined; /** Разделители между всеми элементами. */ readonly divider?: boolean | undefined; /** Плотный режим: меньше вертикальные отступы. */ readonly dense?: boolean | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly children?: Children; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "LoadingIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function LoadingIcon(props: GlyphProps): Node;"
+      },
+      "mediaDown": {
+        "kind": "function",
+        "type": "(breakpoint: Breakpoint) => string | null",
+        "signature": "export declare function mediaDown(breakpoint: Breakpoint): string | null;"
+      },
+      "mediaUp": {
+        "kind": "function",
+        "type": "(breakpoint: Breakpoint) => string | null",
+        "signature": "export declare function mediaUp(breakpoint: Breakpoint): string | null;"
+      },
+      "Menu": {
+        "kind": "function",
+        "type": "(props: MenuProps) => Node",
+        "signature": "export declare function Menu(props: MenuProps): Node;"
+      },
+      "MenuIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function MenuIcon(props: GlyphProps): Node;"
+      },
+      "MenuItem": {
+        "kind": "function",
+        "type": "(props: MenuItemProps) => Node",
+        "signature": "export declare function MenuItem(props: MenuItemProps): Node;"
+      },
+      "MenuItemProps": {
+        "kind": "interface",
+        "signature": "export interface MenuItemProps { readonly disabled?: boolean | undefined; readonly leading?: Children; readonly trailing?: Children; readonly onSelect?: (() => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly children?: Children; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "MenuProps": {
+        "kind": "interface",
+        "signature": "export interface MenuProps { readonly trigger?: Children; readonly children?: Children; readonly open?: boolean | undefined; readonly defaultOpen?: boolean | undefined; readonly onOpenChange?: ((open: boolean) => void) | undefined; /** Доступное имя меню. */ readonly label?: string | undefined; readonly disabled?: boolean | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "MenuSeparator": {
+        "kind": "function",
+        "type": "(props: MenuSeparatorProps) => Node",
+        "signature": "export declare function MenuSeparator(props: MenuSeparatorProps): Node;"
+      },
+      "MenuSeparatorProps": {
+        "kind": "interface",
+        "signature": "export interface MenuSeparatorProps { readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+      },
+      "MoreHorizIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function MoreHorizIcon(props: GlyphProps): Node;"
+      },
+      "MoreVertIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function MoreVertIcon(props: GlyphProps): Node;"
+      },
+      "motion": {
+        "kind": "variable",
+        "type": "{ readonly duration: { readonly fast: \"120ms\"; readonly base: \"180ms\"; readonly slow: \"240ms\"; readonly short1: \"50ms\"; readonly short2: \"100ms\"; readonly short3: \"150ms\"; readonly short4: \"200ms\"; readonly medium1: \"250ms\"; readonly medium2: \"300ms\"; readonly long1: \"400ms\"; readonly long2: \"500ms\"; }; readonly easing: { readonly standard: \"cubic-bezier(0.2, 0, 0, 1)\"; readonly standardAccelerate: \"cubic-bezier(0.3, 0, 1, 1)\"; readonly standardDecelerate: \"cubic-bezier(0, 0, 0, 1)\"; readonly emphasized: \"cubic-bezier(0.05, 0.7, 0.1, 1)\"; readonly editorial: \"cubic-bezier(0.22, 1, 0.36, 1)\"; readonly linear: \"linear\"; }; }",
+        "signature": "export declare const motion: { readonly duration: { readonly fast: \"120ms\"; readonly base: \"180ms\"; readonly slow: \"240ms\"; readonly short1: \"50ms\"; readonly short2: \"100ms\"; readonly short3: \"150ms\"; readonly short4: \"200ms\"; readonly medium1: \"250ms\"; readonly medium2: \"300ms\"; readonly long1: \"400ms\"; readonly long2: \"500ms\"; }; readonly easing: { readonly standard: \"cubic-bezier(0.2, 0, 0, 1)\"; readonly standardAccelerate: \"cubic-bezier(0.3, 0, 1, 1)\"; readonly standardDecelerate: \"cubic-bezier(0, 0, 0, 1)\"; readonly emphasized: \"cubic-bezier(0.05, 0.7, 0.1, 1)\"; readonly editorial: \"cubic-bezier(0.22, 1, 0.36, 1)\"; readonly linear: \"linear\"; }; };"
+      },
+      "NavigationBar": {
+        "kind": "function",
+        "type": "(props: NavigationBarProps) => Node",
+        "signature": "export declare function NavigationBar(props: NavigationBarProps): Node;"
+      },
+      "NavigationBarItem": {
+        "kind": "function",
+        "type": "(props: NavigationBarItemProps) => Node",
+        "signature": "export declare function NavigationBarItem(props: NavigationBarItemProps): Node;"
+      },
+      "NavigationBarItemData": {
+        "kind": "interface",
+        "signature": "export interface NavigationBarItemData { readonly key: string; readonly label: Children; /** Ленивый слот для SSR: `icon: () => <MenuIcon />`. */ readonly icon?: Children; /** Счётчик/точка в углу иконки; для JSX используйте `() => …`. */ readonly badge?: Children; /** Доступное имя бейджа, если визуального текста недостаточно. */ readonly badgeLabel?: string | undefined; readonly disabled?: boolean | undefined; readonly href?: string | undefined; readonly onClick?: ((event: MouseEvent) => void) | undefined; }"
+      },
+      "NavigationBarItemProps": {
+        "kind": "interface",
+        "signature": "export interface NavigationBarItemProps { readonly label: Children; readonly icon?: Children; readonly selected?: boolean | undefined; readonly badge?: Children; readonly badgeLabel?: string | undefined; readonly disabled?: boolean | undefined; readonly href?: string | undefined; readonly onClick?: ((event: MouseEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "NavigationBarProps": {
+        "kind": "interface",
+        "signature": "export interface NavigationBarProps { /** 3–5 пунктов; больше — визуально ломает нижнюю панель. */ readonly items: readonly NavigationBarItemData[]; readonly value?: string | undefined; readonly defaultValue?: string | undefined; readonly onValueChange?: ((value: string) => void) | undefined; /** Доступное имя навигации. По умолчанию — `Основная навигация`. */ readonly label?: string | undefined; /** Учитывать `safe-area-inset-bottom` (по умолчанию `true`). */ readonly safeArea?: boolean | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "NavigationRail": {
+        "kind": "function",
+        "type": "(props: NavigationRailProps) => Node",
+        "signature": "export declare function NavigationRail(props: NavigationRailProps): Node;"
+      },
+      "NavigationRailItem": {
+        "kind": "function",
+        "type": "(props: NavigationRailItemProps) => Node",
+        "signature": "export declare function NavigationRailItem(props: NavigationRailItemProps): Node;"
+      },
+      "NavigationRailItemData": {
+        "kind": "interface",
+        "signature": "export interface NavigationRailItemData { readonly key: string; readonly label: Children; /** Ленивый слот для SSR: `icon: () => <MenuIcon />`. */ readonly icon?: Children; /** Счётчик/точка в углу иконки; для JSX используйте `() => …`. */ readonly badge?: Children; readonly badgeLabel?: string | undefined; readonly disabled?: boolean | undefined; readonly href?: string | undefined; readonly onClick?: ((event: MouseEvent) => void) | undefined; }"
+      },
+      "NavigationRailItemProps": {
+        "kind": "interface",
+        "signature": "export interface NavigationRailItemProps { readonly label: Children; readonly icon?: Children; readonly selected?: boolean | undefined; readonly badge?: Children; readonly badgeLabel?: string | undefined; readonly disabled?: boolean | undefined; readonly href?: string | undefined; readonly onClick?: ((event: MouseEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "NavigationRailProps": {
+        "kind": "interface",
+        "signature": "export interface NavigationRailProps { readonly items: readonly NavigationRailItemData[]; readonly value?: string | undefined; readonly defaultValue?: string | undefined; readonly onValueChange?: ((value: string) => void) | undefined; /** Развёрнутый рейл с подписями; по умолчанию свёрнут. */ readonly expanded?: boolean | undefined; /** Слот FAB вверху рейла. */ readonly fab?: Children; /** Доступное имя навигации. По умолчанию — `Основная навигация`. */ readonly label?: string | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "Pagination": {
+        "kind": "function",
+        "type": "(props: PaginationProps) => Node",
+        "signature": "export declare function Pagination(props: PaginationProps): Node;"
+      },
+      "PaginationProps": {
+        "kind": "interface",
+        "signature": "export interface PaginationProps { /** Текущая страница, `1..pageCount`. */ readonly page: number; readonly pageCount: number; readonly onChange?: ((page: number) => void) | undefined; /** Сколько соседних страниц показывать слева и справа (по умолчанию `1`). */ readonly siblingCount?: number | undefined; readonly disabled?: boolean | undefined; /** Доступное имя `nav`; по умолчанию — `Постраничная навигация`. */ readonly label?: string | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "paginationRange": {
+        "kind": "function",
+        "type": "(page: number, pageCount: number, siblingCount?: number) => PaginationToken[]",
+        "signature": "export declare function paginationRange(page: number, pageCount: number, siblingCount?: number): PaginationToken[];"
+      },
+      "PaginationToken": {
+        "kind": "type",
+        "signature": "export type PaginationToken = number | \"ellipsis-start\" | \"ellipsis-end\";"
+      },
+      "palette": {
+        "kind": "variable",
+        "type": "{ readonly ivory: \"#F9F8F7\"; readonly almond: \"#EDEAE4\"; readonly mist: \"#ADB8BB\"; readonly navy: \"#153147\"; readonly noir: \"#232A2F\"; readonly gold: \"#CEA434\"; readonly \"navy-deep\": \"#193153\"; readonly \"navy-mid\": \"#122948\"; readonly \"navy-dark\": \"#0E1F33\"; readonly white: \"#FFFFFF\"; readonly primary: \"#153147\"; readonly secondary: \"#ADB8BB\"; readonly tertiary: \"#CEA434\"; readonly neutralDarkest: \"#0E1F33\"; readonly neutralDark: \"#153147\"; readonly neutralLightest: \"#F9F8F7\"; }",
+        "signature": "export declare const palette: { readonly ivory: \"#F9F8F7\"; readonly almond: \"#EDEAE4\"; readonly mist: \"#ADB8BB\"; readonly navy: \"#153147\"; readonly noir: \"#232A2F\"; readonly gold: \"#CEA434\"; readonly \"navy-deep\": \"#193153\"; readonly \"navy-mid\": \"#122948\"; readonly \"navy-dark\": \"#0E1F33\"; readonly white: \"#FFFFFF\"; readonly primary: \"#153147\"; readonly secondary: \"#ADB8BB\"; readonly tertiary: \"#CEA434\"; readonly neutralDarkest: \"#0E1F33\"; readonly neutralDark: \"#153147\"; readonly neutralLightest: \"#F9F8F7\"; };"
+      },
+      "PaletteColor": {
+        "kind": "type",
+        "signature": "export type PaletteColor = keyof typeof palette;"
+      },
+      "Popover": {
+        "kind": "function",
+        "type": "(props: PopoverProps) => Node",
+        "signature": "export declare function Popover(props: PopoverProps): Node;"
+      },
+      "PopoverPlacement": {
+        "kind": "type",
+        "signature": "export type PopoverPlacement = \"top\" | \"bottom\" | \"start\" | \"end\";"
+      },
+      "PopoverProps": {
+        "kind": "interface",
+        "signature": "export interface PopoverProps { readonly trigger: Children; readonly children?: Children; readonly open?: boolean | undefined; readonly defaultOpen?: boolean | undefined; readonly onOpenChange?: ((open: boolean) => void) | undefined; readonly placement?: PopoverPlacement | undefined; /** Доступное имя панели (`role=\"dialog\"`). */ readonly label?: string | undefined; readonly disabled?: boolean | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "Progress": {
+        "kind": "function",
+        "type": "(props: ProgressProps) => Node",
+        "signature": "export declare function Progress(props: ProgressProps): Node;"
+      },
+      "ProgressProps": {
+        "kind": "interface",
+        "signature": "export interface ProgressProps { readonly variant?: ProgressVariant | undefined; /** `0..100`. Без значения (или `NaN`) индикатор неопределённый. */ readonly value?: number | undefined; /** Подпись: видимая и доступная (`aria-label`). */ readonly label?: string | undefined; /** Показать процент рядом с подписью (только для определённого значения). */ readonly showValue?: boolean | undefined; readonly size?: ProgressSize | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "ProgressSize": {
+        "kind": "type",
+        "signature": "export type ProgressSize = \"sm\" | \"md\" | \"lg\";"
+      },
+      "ProgressVariant": {
+        "kind": "type",
+        "signature": "export type ProgressVariant = \"linear\" | \"circular\";"
+      },
+      "radii": {
+        "kind": "variable",
+        "type": "{ readonly none: \"0\"; readonly xs: \"0.25rem\"; readonly sm: \"0.5rem\"; readonly md: \"0.75rem\"; readonly lg: \"1rem\"; readonly xl: \"1.5rem\"; readonly full: \"999px\"; readonly card: \"1rem\"; readonly dialog: \"1.5rem\"; readonly sheet: \"1.5rem\"; }",
+        "signature": "export declare const radii: { readonly none: \"0\"; readonly xs: \"0.25rem\"; readonly sm: \"0.5rem\"; readonly md: \"0.75rem\"; readonly lg: \"1rem\"; readonly xl: \"1.5rem\"; readonly full: \"999px\"; readonly card: \"1rem\"; readonly dialog: \"1.5rem\"; readonly sheet: \"1.5rem\"; };"
+      },
+      "RadioGroup": {
+        "kind": "function",
+        "type": "(props: RadioGroupProps) => Node",
+        "signature": "export declare function RadioGroup(props: RadioGroupProps): Node;"
+      },
+      "RadioGroupProps": {
+        "kind": "interface",
+        "signature": "export interface RadioGroupProps { readonly options: readonly RadioOption[]; readonly field?: BoundField<string | number> | undefined; readonly value?: string | number | undefined; readonly label?: Children; readonly hint?: Children; readonly error?: Children; readonly name?: string | undefined; readonly id?: string | undefined; readonly required?: boolean | undefined; readonly disabled?: boolean | undefined; readonly readOnly?: boolean | undefined; readonly describedBy?: string | undefined; readonly onChange?: ((event: Event) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly onFocus?: ((event: FocusEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+      },
+      "RadioOption": {
+        "kind": "interface",
+        "signature": "export interface RadioOption { readonly value: string | number; readonly label: Children; readonly description?: Children; readonly disabled?: boolean | undefined; }"
+      },
+      "Radius": {
+        "kind": "type",
+        "signature": "export type Radius = keyof typeof radii;"
+      },
+      "readStoredTheme": {
+        "kind": "function",
+        "type": "(storageKey?: string) => ThemeMode | null",
+        "signature": "export declare function readStoredTheme(storageKey?: string): ThemeMode | null;"
+      },
+      "RefreshIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function RefreshIcon(props: GlyphProps): Node;"
+      },
+      "RemoveIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function RemoveIcon(props: GlyphProps): Node;"
+      },
+      "resetThemePalette": {
+        "kind": "function",
+        "type": "(root?: HTMLElement | null) => void",
+        "signature": "export declare function resetThemePalette(root?: HTMLElement | null): void;"
+      },
+      "SearchField": {
+        "kind": "function",
+        "type": "(props: SearchFieldProps) => Node",
+        "signature": "export declare function SearchField(props: SearchFieldProps): Node;"
+      },
+      "SearchFieldProps": {
+        "kind": "interface",
+        "signature": "export interface SearchFieldProps { /** Управляемое значение. Без него поле работает как неуправляемое. */ readonly value?: string | undefined; readonly onInput?: ((event: InputEvent) => void) | undefined; readonly onValueChange?: ((value: string) => void) | undefined; /** Enter в поле. Значение читается из DOM на момент нажатия. */ readonly onSearch?: ((value: string) => void) | undefined; readonly onClear?: ((event: MouseEvent) => void) | undefined; /** * Поле формы. Только тип из `@ivlev-dev/silent-form`: связь значений, * подсказок и ошибок остаётся за контролом. */ readonly field?: FormFieldProps<string> | undefined; readonly label?: Children; readonly hint?: Children; readonly error?: Children; readonly placeholder?: string | undefined; readonly name?: string | undefined; readonly id?: string | undefined; /** Доступное имя, если видимой подписи нет. */ readonly ariaLabel?: string | undefined; readonly required?: boolean | undefined; readonly disabled?: boolean | undefined; readonly readOnly?: boolean | undefined; readonly size?: ControlSize | undefined; /** Компактная обёртка без внешних отступов. */ readonly bare?: boolean | undefined; /** Переопределяет строку `clear` из `UiConfigProvider`. */ readonly clearLabel?: string | undefined; /** Дополнительные id для `aria-describedby`. */ readonly describedBy?: string | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+      },
+      "SearchIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function SearchIcon(props: GlyphProps): Node;"
+      },
+      "SegmentedButton": {
+        "kind": "function",
+        "type": "(props: SegmentedButtonProps) => Node",
+        "signature": "export declare function SegmentedButton(props: SegmentedButtonProps): Node;"
+      },
+      "SegmentedButtonItem": {
+        "kind": "function",
+        "type": "(props: SegmentedButtonItemProps) => Node",
+        "signature": "export declare function SegmentedButtonItem(props: SegmentedButtonItemProps): Node;"
+      },
+      "SegmentedButtonItemProps": {
+        "kind": "interface",
+        "signature": "export interface SegmentedButtonItemProps { readonly value: string; readonly selected: boolean; readonly label?: Children; readonly icon?: Children; readonly ariaLabel?: string | undefined; readonly disabled?: boolean | undefined; readonly id?: string | undefined; /** Roving tabindex: выбранный элемент — `0`, остальные — `-1`. */ readonly tabIndex?: number | undefined; readonly onSelect?: ((event: MouseEvent) => void) | undefined; readonly onKeyDown?: ((event: KeyboardEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly children?: Children; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "SegmentedButtonOption": {
+        "kind": "interface",
+        "signature": "export interface SegmentedButtonOption { readonly key: string; readonly label?: Children; readonly icon?: Children; /** Доступное имя, если визуальной подписи нет. */ readonly ariaLabel?: string | undefined; readonly disabled?: boolean | undefined; }"
+      },
+      "SegmentedButtonProps": {
+        "kind": "interface",
+        "signature": "export interface SegmentedButtonProps { /** Управляемое значение: ключ выбранного сегмента. */ readonly value: string; readonly options: readonly SegmentedButtonOption[]; readonly onValueChange?: ((value: string) => void) | undefined; readonly size?: SegmentedButtonSize | undefined; readonly disabled?: boolean | undefined; readonly fullWidth?: boolean | undefined; /** Доступное имя группы. */ readonly label?: string | undefined; readonly labelledBy?: string | undefined; /** Базовый id для элементов; иначе генерируется. */ readonly id?: string | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "SegmentedButtonSize": {
+        "kind": "type",
+        "signature": "export type SegmentedButtonSize = \"sm\" | \"md\" | \"lg\";"
+      },
+      "Select": {
+        "kind": "function",
+        "type": "(props: SelectProps) => Node",
+        "signature": "export declare function Select(props: SelectProps): Node;"
+      },
+      "SelectOption": {
+        "kind": "interface",
+        "signature": "export interface SelectOption { readonly value: string | number; readonly label: Children; readonly disabled?: boolean | undefined; }"
+      },
+      "SelectProps": {
+        "kind": "interface",
+        "signature": "export interface SelectProps { readonly options: readonly SelectOption[]; readonly value?: string | number | readonly (string | number)[] | undefined; readonly field?: BoundField<string | number | readonly string[]> | undefined; readonly label?: Children; readonly hint?: Children; readonly error?: Children; readonly placeholder?: string | undefined; readonly multiple?: boolean | undefined; readonly name?: string | undefined; readonly id?: string | undefined; readonly required?: boolean | undefined; readonly disabled?: boolean | undefined; readonly size?: ControlSize | undefined; readonly bare?: boolean | undefined; readonly describedBy?: string | undefined; readonly onChange?: ((event: Event) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly onFocus?: ((event: FocusEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+      },
+      "SemanticColorRole": {
+        "kind": "type",
+        "signature": "export type SemanticColorRole = keyof SemanticColors;"
+      },
+      "SemanticColors": {
+        "kind": "interface",
+        "signature": "export interface SemanticColors { readonly primary: string; readonly \"on-primary\": string; readonly \"primary-container\": string; readonly \"on-primary-container\": string; readonly \"primary-fixed\": string; readonly \"primary-fixed-dim\": string; readonly \"on-primary-fixed\": string; readonly \"on-primary-fixed-variant\": string; readonly secondary: string; readonly \"on-secondary\": string; readonly \"secondary-container\": string; readonly \"on-secondary-container\": string; readonly tertiary: string; readonly \"on-tertiary\": string; readonly \"tertiary-container\": string; readonly \"on-tertiary-container\": string; /** Акцент (золото) — для CTA, хайлайтов и декоративных акцентов. */ readonly accent: string; readonly \"on-accent\": string; readonly error: string; readonly \"on-error\": string; readonly \"error-container\": string; readonly \"on-error-container\": string; readonly success: string; readonly \"on-success\": string; readonly \"success-container\": string; readonly \"on-success-container\": string; readonly warning: string; readonly \"on-warning\": string; readonly \"warning-container\": string; readonly \"on-warning-container\": string; readonly surface: string; readonly \"surface-dim\": string; readonly \"surface-bright\": string; readonly \"surface-container-lowest\": string; readonly \"surface-container-low\": string; readonly \"surface-container\": string; readonly \"surface-container-high\": string; readonly \"surface-container-highest\": string; readonly \"on-surface\": string; readonly \"on-surface-variant\": string; readonly \"on-surface-muted\": string; readonly outline: string; readonly \"outline-variant\": string; readonly scrim: string; readonly shadow: string; readonly \"inverse-surface\": string; readonly \"inverse-on-surface\": string; readonly \"inverse-primary\": string; }"
+      },
+      "semanticRoles": {
+        "kind": "variable",
+        "type": "readonly (keyof SemanticColors)[]",
+        "signature": "export declare const semanticRoles: readonly SemanticColorRole[];"
+      },
+      "Sheet": {
+        "kind": "function",
+        "type": "(props: SheetProps) => Node",
+        "signature": "export declare function Sheet(props: SheetProps): Node;"
+      },
+      "SheetProps": {
+        "kind": "interface",
+        "signature": "export interface SheetProps { readonly open?: boolean | undefined; readonly defaultOpen?: boolean | undefined; readonly onOpenChange?: ((open: boolean) => void) | undefined; readonly side?: SheetSide | undefined; /** Модальный лист блокирует фон (`inert` + `aria-hidden`) и focus trap. */ readonly modal?: boolean | undefined; readonly title?: Children; readonly description?: Children; readonly children?: Children; readonly actions?: Children; readonly closeLabel?: string | undefined; readonly hideClose?: boolean | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "SheetSide": {
+        "kind": "type",
+        "signature": "export type SheetSide = \"top\" | \"right\" | \"bottom\" | \"left\";"
+      },
+      "Skeleton": {
+        "kind": "function",
+        "type": "(props: SkeletonProps) => Node",
+        "signature": "export declare function Skeleton(props: SkeletonProps): Node;"
+      },
+      "SkeletonAnimation": {
+        "kind": "type",
+        "signature": "export type SkeletonAnimation = \"pulse\" | \"wave\" | \"none\";"
+      },
+      "SkeletonProps": {
+        "kind": "interface",
+        "signature": "export interface SkeletonProps { readonly variant?: SkeletonVariant | undefined; /** Число или CSS-длина (`\"12rem\"`, `\"100%\"`). */ readonly width?: string | number | undefined; /** Число или CSS-длина. */ readonly height?: string | number | undefined; /** Количество строк для `variant=\"text\"`. */ readonly lines?: number | undefined; readonly animation?: SkeletonAnimation | undefined; /** Высота строки текста: 0.75em / 1em / 1.25em. */ readonly size?: SkeletonSize | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "SkeletonVariant": {
+        "kind": "type",
+        "signature": "export type SkeletonVariant = \"text\" | \"circle\" | \"rect\";"
+      },
+      "Slider": {
+        "kind": "function",
+        "type": "(props: SliderProps) => Node",
+        "signature": "export declare function Slider(props: SliderProps): Node;"
+      },
+      "SliderProps": {
+        "kind": "interface",
+        "signature": "export interface SliderProps { readonly min?: number | undefined; readonly max?: number | undefined; readonly step?: number | undefined; readonly value?: number | undefined; readonly field?: BoundField<number> | undefined; readonly label?: Children; readonly hint?: Children; readonly error?: Children; readonly unit?: string | undefined; /** Человекочитаемое значение для `aria-valuetext` и `<output>`. */ readonly formatValue?: ((value: number) => string) | undefined; /** Показывать `<output>` со значением (по умолчанию да). */ readonly output?: boolean | undefined; readonly name?: string | undefined; readonly id?: string | undefined; readonly required?: boolean | undefined; readonly disabled?: boolean | undefined; readonly describedBy?: string | undefined; readonly onInput?: ((event: InputEvent) => void) | undefined; readonly onChange?: ((event: Event) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly onFocus?: ((event: FocusEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+      },
+      "Snackbar": {
+        "kind": "function",
+        "type": "(props: SnackbarProps) => Node",
+        "signature": "export declare function Snackbar(props: SnackbarProps): Node;"
+      },
+      "SnackbarProps": {
+        "kind": "interface",
+        "signature": "export interface SnackbarProps { /** Controlled: показывать ли снекбар. */ readonly open: boolean; readonly message?: Children; /** Действие справа от текста (кнопка «Отменить» и т. п.). */ readonly action?: Children; readonly onClose?: (() => void) | undefined; /** Автоскрытие в мс; `0`/`null` — не скрывать. По умолчанию 5000. */ readonly autoHideDuration?: number | null | undefined; /** Переопределяет RU-строку «Закрыть». */ readonly closeLabel?: string | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "spacing": {
+        "kind": "variable",
+        "type": "{ readonly 0: \"0\"; readonly 1: \"0.25rem\"; readonly 2: \"0.5rem\"; readonly 3: \"0.75rem\"; readonly 4: \"1rem\"; readonly 5: \"1.25rem\"; readonly 6: \"1.5rem\"; readonly 7: \"2rem\"; readonly 8: \"2.5rem\"; readonly 9: \"3rem\"; readonly 10: \"4rem\"; }",
+        "signature": "export declare const spacing: { readonly 0: \"0\"; readonly 1: \"0.25rem\"; readonly 2: \"0.5rem\"; readonly 3: \"0.75rem\"; readonly 4: \"1rem\"; readonly 5: \"1.25rem\"; readonly 6: \"1.5rem\"; readonly 7: \"2rem\"; readonly 8: \"2.5rem\"; readonly 9: \"3rem\"; readonly 10: \"4rem\"; };"
+      },
+      "SpacingStep": {
+        "kind": "type",
+        "signature": "export type SpacingStep = keyof typeof spacing;"
+      },
+      "Spinner": {
+        "kind": "function",
+        "type": "(props: SpinnerProps) => Node",
+        "signature": "export declare function Spinner(props: SpinnerProps): Node;"
+      },
+      "SpinnerProps": {
+        "kind": "interface",
+        "signature": "export interface SpinnerProps { readonly size?: SpinnerSize | undefined; /** Переопределяет строку `loading` из `UiConfigProvider`. */ readonly label?: string | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+      },
+      "SpinnerSize": {
+        "kind": "type",
+        "signature": "export type SpinnerSize = \"sm\" | \"md\" | \"lg\";"
+      },
+      "Stack": {
+        "kind": "function",
+        "type": "(props: StackProps) => Node",
+        "signature": "export declare function Stack(props: StackProps): Node;"
+      },
+      "StackProps": {
+        "kind": "interface",
+        "signature": "export interface StackProps extends PrimitiveProps { readonly gap?: SpaceStep | undefined; readonly align?: AlignItems | undefined; readonly justify?: JustifyContent | undefined; }"
+      },
+      "StarFilledIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function StarFilledIcon(props: GlyphProps): Node;"
+      },
+      "StarIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function StarIcon(props: GlyphProps): Node;"
+      },
+      "StateLayer": {
+        "kind": "type",
+        "signature": "export type StateLayer = keyof typeof stateLayerOpacity;"
+      },
+      "stateLayerOpacity": {
+        "kind": "variable",
+        "type": "{ readonly hover: 0.08; readonly focus: 0.12; readonly pressed: 0.12; readonly dragged: 0.16; readonly disabled: 0.38; readonly disabledContainer: 0.12; }",
+        "signature": "export declare const stateLayerOpacity: { readonly hover: 0.08; readonly focus: 0.12; readonly pressed: 0.12; readonly dragged: 0.16; readonly disabled: 0.38; readonly disabledContainer: 0.12; };"
+      },
+      "SuccessIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function SuccessIcon(props: GlyphProps): Node;"
+      },
+      "Surface": {
+        "kind": "function",
+        "type": "(props: SurfaceProps) => Node",
+        "signature": "export declare function Surface(props: SurfaceProps): Node;"
+      },
+      "SurfaceProps": {
+        "kind": "interface",
+        "signature": "export interface SurfaceProps extends PrimitiveProps { readonly tone?: BackgroundTone | undefined; readonly padding?: SpaceStep | undefined; readonly border?: BorderTone | undefined; readonly radius?: RadiusStep | undefined; readonly elevation?: ElevationStep | undefined; }"
+      },
+      "Switch": {
+        "kind": "function",
+        "type": "(props: SwitchProps) => Node",
+        "signature": "export declare function Switch(props: SwitchProps): Node;"
+      },
+      "SwitchProps": {
+        "kind": "interface",
+        "signature": "export interface SwitchProps { readonly checked?: boolean | undefined; readonly field?: BoundField<boolean> | undefined; readonly label?: Children; readonly description?: Children; readonly hint?: Children; readonly error?: Children; readonly name?: string | undefined; readonly id?: string | undefined; readonly required?: boolean | undefined; readonly disabled?: boolean | undefined; readonly readOnly?: boolean | undefined; /** Размер трека: `sm` компактный, `md` базовый, `lg` крупный. */ readonly size?: ControlSize | undefined; readonly describedBy?: string | undefined; readonly onChange?: ((event: Event) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly onFocus?: ((event: FocusEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+      },
+      "Tab": {
+        "kind": "function",
+        "type": "(props: TabProps) => Node",
+        "signature": "export declare function Tab(props: TabProps): Node;"
+      },
+      "TabItem": {
+        "kind": "interface",
+        "signature": "export interface TabItem { readonly key: string; readonly label: Children; /** * Содержимое панели. Для SSR/hydration передавайте JSX лениво: * `content: () => <…/>`, иначе узел создаётся вне окна гидрации. */ readonly content?: Children; readonly disabled?: boolean | undefined; }"
+      },
+      "Table": {
+        "kind": "function",
+        "type": "<Row>(props: TableProps<Row>) => Node",
+        "signature": "export declare function Table<Row>(props: TableProps<Row>): Node;"
+      },
+      "TableAlign": {
+        "kind": "type",
+        "signature": "export type TableAlign = \"start\" | \"center\" | \"end\";"
+      },
+      "TableColumn": {
+        "kind": "interface",
+        "signature": "export interface TableColumn<Row> { /** Ключ колонки: он же ключ сортировки и ключ значения строки по умолчанию. */ readonly key: string; readonly header: Children; readonly align?: TableAlign | undefined; /** CSS-ширина: число трактуется как `px`. */ readonly width?: string | number | undefined; readonly sortable?: boolean | undefined; /** Одна строка с многоточием: длинные значения не раздувают колонку. */ readonly truncate?: boolean | undefined; /** Обрезка по числу строк (1–3) вместо переноса на любое число строк. */ readonly lines?: 1 | 2 | 3 | undefined; /** Ячейка строки. Без рендерера берётся `row[column.key]`. */ readonly renderCell?: ((row: Row, rowIndex: number) => Children) | undefined; }"
+      },
+      "TableProps": {
+        "kind": "interface",
+        "signature": "export interface TableProps<Row> { readonly columns: readonly TableColumn<Row>[]; readonly rows: readonly Row[]; /** Стабильный ключ строки для `For`/SSR-гидрации. */ readonly rowKey: (row: Row, index: number) => string | number; /** Управляемая сортировка: какой столбец отсортирован. */ readonly sortKey?: string | undefined; readonly sortDirection?: TableSortDirection | undefined; /** Запрос сортировки; сами строки сортирует потребитель. */ readonly onSort?: ((key: string, direction: TableSortDirection) => void) | undefined; readonly dense?: boolean | undefined; readonly stickyHeader?: boolean | undefined; readonly caption?: Children; /** Доступное имя, если `caption` нет. */ readonly label?: string | undefined; /** Переопределяет пустое состояние таблицы. */ readonly empty?: Children; readonly emptyTitle?: string | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "TableSortDirection": {
+        "kind": "type",
+        "signature": "export type TableSortDirection = \"ascending\" | \"descending\";"
+      },
+      "TabList": {
+        "kind": "function",
+        "type": "(props: TabListProps) => Node",
+        "signature": "export declare function TabList(props: TabListProps): Node;"
+      },
+      "TabListProps": {
+        "kind": "interface",
+        "signature": "export interface TabListProps { readonly orientation?: TabsOrientation | undefined; /** Доступное имя списка вкладок. */ readonly label?: string | undefined; /** Идентификатор видимой подписи вместо `label`. */ readonly labelledBy?: string | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly children?: Children; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "TabPanel": {
+        "kind": "function",
+        "type": "(props: TabPanelProps) => Node",
+        "signature": "export declare function TabPanel(props: TabPanelProps): Node;"
+      },
+      "TabPanelProps": {
+        "kind": "interface",
+        "signature": "export interface TabPanelProps { readonly active: boolean; readonly panelId: string; readonly tabId: string; /** Не монтировать содержимое до первого показа (по умолчанию `true`). */ readonly lazy?: boolean | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly children?: Children; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "TabProps": {
+        "kind": "interface",
+        "signature": "export interface TabProps { readonly selected: boolean; readonly tabId: string; readonly panelId?: string | undefined; readonly disabled?: boolean | undefined; readonly onSelect?: ((event: MouseEvent) => void) | undefined; readonly onKeyDown?: ((event: KeyboardEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly children?: Children; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "Tabs": {
+        "kind": "function",
+        "type": "(props: TabsProps) => Node",
+        "signature": "export declare function Tabs(props: TabsProps): Node;"
+      },
+      "TabsActivationMode": {
+        "kind": "type",
+        "signature": "export type TabsActivationMode = \"automatic\" | \"manual\";"
+      },
+      "TabsOrientation": {
+        "kind": "type",
+        "signature": "export type TabsOrientation = \"horizontal\" | \"vertical\";"
+      },
+      "TabsProps": {
+        "kind": "interface",
+        "signature": "export interface TabsProps { readonly items: readonly TabItem[]; /** Управляемое значение. */ readonly value?: string | undefined; /** Начальное значение для неуправляемого режима. */ readonly defaultValue?: string | undefined; readonly onValueChange?: ((value: string) => void) | undefined; readonly orientation?: TabsOrientation | undefined; /** `automatic` — стрелки сразу активируют вкладку, `manual` — только фокус. */ readonly activationMode?: TabsActivationMode | undefined; /** Высота вкладок: компактная, обычная или крупная. */ readonly size?: TabsSize | undefined; /** Монтировать содержимое панели только при активации. По умолчанию `true`. */ readonly lazy?: boolean | undefined; /** Базовый id для `aria-controls`/`aria-labelledby`; иначе генерируется. */ readonly id?: string | undefined; readonly label?: string | undefined; readonly labelledBy?: string | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "TabsSize": {
+        "kind": "type",
+        "signature": "export type TabsSize = \"sm\" | \"md\" | \"lg\";"
+      },
+      "Tag": {
+        "kind": "function",
+        "type": "(props: TagProps) => Node",
+        "signature": "export declare function Tag(props: TagProps): Node;"
+      },
+      "TagProps": {
+        "kind": "interface",
+        "signature": "export interface TagProps { readonly variant?: TagVariant | undefined; readonly size?: TagSize | undefined; readonly removable?: boolean | undefined; readonly onRemove?: ((event: MouseEvent) => void) | undefined; /** Переопределяет строку `removeItem` из `UiConfigProvider`. */ readonly removeLabel?: string | undefined; /** Иконка слева; декоративная. */ readonly leading?: Children; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly children?: Children; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "TagSize": {
+        "kind": "type",
+        "signature": "export type TagSize = \"sm\" | \"md\";"
+      },
+      "TagVariant": {
+        "kind": "type",
+        "signature": "export type TagVariant = \"neutral\" | \"primary\" | \"secondary\" | \"success\" | \"warning\" | \"error\" | \"info\";"
+      },
+      "Text": {
+        "kind": "function",
+        "type": "(props: TextProps) => Node",
+        "signature": "export declare function Text(props: TextProps): Node;"
+      },
+      "TextAlign": {
+        "kind": "type",
+        "signature": "export type TextAlign = \"start\" | \"center\" | \"end\";"
+      },
+      "Textarea": {
+        "kind": "function",
+        "type": "(props: TextareaProps) => Node",
+        "signature": "export declare function Textarea(props: TextareaProps): Node;"
+      },
+      "TextareaProps": {
+        "kind": "interface",
+        "signature": "export interface TextareaProps { readonly value?: string | number | undefined; readonly field?: BoundField<string | number> | undefined; readonly label?: Children; readonly hint?: Children; readonly error?: Children; readonly placeholder?: string | undefined; readonly name?: string | undefined; readonly id?: string | undefined; readonly rows?: number | undefined; readonly resize?: TextareaResize | undefined; /** Показывать счётчик символов (и предел `maxLength`). */ readonly counter?: boolean | undefined; readonly maxLength?: number | undefined; readonly required?: boolean | undefined; readonly disabled?: boolean | undefined; readonly readOnly?: boolean | undefined; readonly bare?: boolean | undefined; readonly describedBy?: string | undefined; readonly onInput?: ((event: InputEvent) => void) | undefined; readonly onChange?: ((event: Event) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly onFocus?: ((event: FocusEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+      },
+      "TextareaResize": {
+        "kind": "type",
+        "signature": "export type TextareaResize = \"none\" | \"vertical\" | \"horizontal\" | \"both\";"
+      },
+      "TextClamp": {
+        "kind": "type",
+        "signature": "export type TextClamp = 1 | 2 | 3 | 4;"
+      },
+      "TextField": {
+        "kind": "function",
+        "type": "(props: TextFieldProps) => Node",
+        "signature": "export declare function TextField(props: TextFieldProps): Node;"
+      },
+      "TextFieldProps": {
+        "kind": "interface",
+        "signature": "export interface TextFieldProps { readonly type?: TextFieldType | undefined; /** Явное значение; приоритетнее `field.value`. */ readonly value?: string | number | undefined; /** Поле формы: источник значения, подписи, ошибки и событий. */ readonly field?: BoundField<string | number> | undefined; readonly label?: Children; readonly hint?: Children; readonly error?: Children; readonly placeholder?: string | undefined; readonly name?: string | undefined; readonly id?: string | undefined; readonly required?: boolean | undefined; readonly disabled?: boolean | undefined; readonly readOnly?: boolean | undefined; readonly size?: ControlSize | undefined; readonly leading?: Children; readonly trailing?: Children; /** Без рамки контрола: для встраивания в свою оболочку. */ readonly bare?: boolean | undefined; /** Кнопка «Показать/Скрыть пароль»; по умолчанию включена для `type=password`. */ readonly passwordToggle?: boolean | undefined; /** Дополнительные id для `aria-describedby`. */ readonly describedBy?: string | undefined; readonly onInput?: ((event: InputEvent) => void) | undefined; readonly onChange?: ((event: Event) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly onFocus?: ((event: FocusEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+      },
+      "TextFieldType": {
+        "kind": "type",
+        "signature": "export type TextFieldType = \"text\" | \"email\" | \"password\" | \"number\" | \"search\" | \"tel\" | \"url\";"
+      },
+      "TextProps": {
+        "kind": "interface",
+        "signature": "export interface TextProps { readonly variant?: TextVariant | undefined; readonly tone?: TextTone | undefined; readonly align?: TextAlign | undefined; /** Обрезка по строкам (`-webkit-line-clamp`). */ readonly clamp?: TextClamp | undefined; /** Одна строка с многоточием (`.sui-truncate`). */ readonly truncate?: boolean | undefined; /** Ограничить меру строки для чтения (`.sui-measure`, 68ch). */ readonly measure?: boolean | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly children?: Children; }"
+      },
+      "TextTone": {
+        "kind": "type",
+        "signature": "export type TextTone = \"default\" | \"muted\" | \"primary\" | \"secondary\" | \"error\" | \"success\" | \"warning\" | \"inherit\";"
+      },
+      "TextVariant": {
+        "kind": "type",
+        "signature": "export type TextVariant = \"body-large\" | \"body-medium\" | \"body-small\" | \"title-medium\" | \"title-small\" | \"label-large\" | \"label-medium\" | \"label-small\";"
+      },
+      "THEME_STORAGE_KEY": {
+        "kind": "variable",
+        "type": "\"sui-theme\"",
+        "signature": "export declare const THEME_STORAGE_KEY = \"sui-theme\";"
+      },
+      "ThemeMode": {
+        "kind": "type",
+        "signature": "export type ThemeMode = \"light\" | \"dark\" | \"auto\";"
+      },
+      "ThemePalette": {
+        "kind": "type",
+        "signature": "export type ThemePalette = Partial<SemanticColors>;"
+      },
+      "ThemeScript": {
+        "kind": "function",
+        "type": "(props: ThemeScriptProps) => Node",
+        "signature": "export declare function ThemeScript(props: ThemeScriptProps): Node;"
+      },
+      "ThemeScriptProps": {
+        "kind": "interface",
+        "signature": "export interface ThemeScriptProps { /** Nonce для CSP: `<script nonce>`. */ readonly nonce?: string | undefined; readonly defaultTheme?: ThemeMode | undefined; readonly storageKey?: string | undefined; readonly class?: ClassNameValue; readonly attrs?: Attrs; }"
+      },
+      "themeScriptSource": {
+        "kind": "function",
+        "type": "(defaultTheme?: ThemeMode, storageKey?: string) => string",
+        "signature": "export declare function themeScriptSource(defaultTheme?: ThemeMode, storageKey?: string): string;"
+      },
+      "Tooltip": {
+        "kind": "function",
+        "type": "(props: TooltipProps) => Node",
+        "signature": "export declare function Tooltip(props: TooltipProps): Node;"
+      },
+      "TooltipPlacement": {
+        "kind": "type",
+        "signature": "export type TooltipPlacement = \"top\" | \"bottom\" | \"start\" | \"end\";"
+      },
+      "TooltipProps": {
+        "kind": "interface",
+        "signature": "export interface TooltipProps { readonly content: Children; readonly children?: Children; readonly placement?: TooltipPlacement | undefined; /** Задержка показа в мс. По умолчанию 500. */ readonly delay?: number | undefined; readonly disabled?: boolean | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "TopAppBar": {
+        "kind": "function",
+        "type": "(props: TopAppBarProps) => Node",
+        "signature": "export declare function TopAppBar(props: TopAppBarProps): Node;"
+      },
+      "TopAppBarProps": {
+        "kind": "interface",
+        "signature": "export interface TopAppBarProps { readonly title?: Children; /** Уровень заголовка для `role=\"heading\"` (по умолчанию 1). */ readonly titleLevel?: 1 | 2 | 3 | 4 | 5 | 6 | undefined; readonly variant?: TopAppBarVariant | undefined; /** Слот навигации/назад: обычно `IconButton` с обязательной подписью. */ readonly leading?: Children; readonly actions?: Children; /** Доступное имя группы actions; по умолчанию — строка `actions`. */ readonly actionsLabel?: string | undefined; /** * Приподнятое состояние при прокрутке: тень + тон `surface-container`. * Компонент не слушает `scroll` сам — состояние передаёт приложение. */ readonly elevated?: boolean | undefined; /** Липкая шапка: `position: sticky` сверху. */ readonly sticky?: boolean | undefined; /** Учитывать `safe-area-inset-top` (по умолчанию `true`). */ readonly safeArea?: boolean | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
+      },
+      "TopAppBarVariant": {
+        "kind": "type",
+        "signature": "export type TopAppBarVariant = \"small\" | \"medium\" | \"large\";"
+      },
+      "TypeFamily": {
+        "kind": "type",
+        "signature": "export type TypeFamily = \"display\" | \"sans\" | \"mono\";"
+      },
+      "typeScale": {
+        "kind": "variable",
+        "type": "{ readonly \"display-large\": { readonly family: \"display\"; readonly size: \"clamp(2.75rem, 2.1rem + 1.9vw, 4rem)\"; readonly lineHeight: \"1.06\"; readonly weight: \"600\"; readonly tracking: \"-0.02em\"; }; readonly \"display-medium\": { readonly family: \"display\"; readonly size: \"clamp(2.25rem, 1.8rem + 1.4vw, 3.25rem)\"; readonly lineHeight: \"1.1\"; readonly weight: \"600\"; readonly tracking: \"-0.015em\"; }; readonly \"display-small\": { readonly family: \"display\"; readonly size: \"clamp(1.875rem, 1.55rem + 1.1vw, 2.5rem)\"; readonly lineHeight: \"1.16\"; readonly weight: \"600\"; readonly tracking: \"-0.01em\"; }; readonly \"headline-large\": { readonly family: \"display\"; readonly size: \"clamp(1.625rem, 1.45rem + 0.7vw, 2.125rem)\"; readonly lineHeight: \"1.2\"; readonly weight: \"600\"; readonly tracking: \"-0.005em\"; }; readonly \"headline-medium\": { readonly family: \"display\"; readonly size: \"clamp(1.375rem, 1.27rem + 0.5vw, 1.75rem)\"; readonly lineHeight: \"1.25\"; readonly weight: \"600\"; readonly tracking: \"0\"; }; readonly \"headline-small\": { readonly family: \"display\"; readonly size: \"clamp(1.25rem, 1.18rem + 0.3vw, 1.5rem)\"; readonly lineHeight: \"1.3\"; readonly weight: \"600\"; readonly tracking: \"0\"; }; readonly \"title-large\": { readonly family: \"sans\"; readonly size: \"clamp(1.25rem, 1.2rem + 0.2vw, 1.375rem)\"; readonly lineHeight: \"1.35\"; readonly weight: \"600\"; readonly tracking: \"0\"; }; readonly \"title-medium\": { readonly family: \"sans\"; readonly size: \"1.125rem\"; readonly lineHeight: \"1.4\"; readonly weight: \"600\"; readonly tracking: \"0.002em\"; }; readonly \"title-small\": { readonly family: \"sans\"; readonly size: \"1rem\"; readonly lineHeight: \"1.45\"; readonly weight: \"600\"; readonly tracking: \"0.005em\"; }; readonly \"body-large\": { readonly family: \"sans\"; readonly size: \"clamp(1.125rem, 1.08rem + 0.2vw, 1.25rem)\"; readonly lineHeight: \"1.6\"; readonly weight: \"400\"; readonly tracking: \"0\"; }; readonly \"body-medium\": { readonly family: \"sans\"; readonly size: \"1.0625rem\"; readonly lineHeight: \"1.6\"; readonly weight: \"400\"; readonly tracking: \"0.002em\"; }; readonly \"body-small\": { readonly family: \"sans\"; readonly size: \"1rem\"; readonly lineHeight: \"1.55\"; readonly weight: \"400\"; readonly tracking: \"0.005em\"; }; readonly \"label-large\": { readonly family: \"sans\"; readonly size: \"0.9375rem\"; readonly lineHeight: \"1.4\"; readonly weight: \"600\"; readonly tracking: \"0.01em\"; }; readonly \"label-medium\": { readonly family: \"sans\"; readonly size: \"0.875rem\"; readonly lineHeight: \"1.4\"; readonly weight: \"600\"; readonly tracking: \"0.015em\"; }; readonly \"label-small\": { readonly family: \"sans\"; readonly size: \"0.75rem\"; readonly lineHeight: \"1.35\"; readonly weight: \"600\"; readonly tracking: \"0.04em\"; }; }",
+        "signature": "export declare const typeScale: { readonly \"display-large\": { readonly family: \"display\"; readonly size: \"clamp(2.75rem, 2.1rem + 1.9vw, 4rem)\"; readonly lineHeight: \"1.06\"; readonly weight: \"600\"; readonly tracking: \"-0.02em\"; }; readonly \"display-medium\": { readonly family: \"display\"; readonly size: \"clamp(2.25rem, 1.8rem + 1.4vw, 3.25rem)\"; readonly lineHeight: \"1.1\"; readonly weight: \"600\"; readonly tracking: \"-0.015em\"; }; readonly \"display-small\": { readonly family: \"display\"; readonly size: \"clamp(1.875rem, 1.55rem + 1.1vw, 2.5rem)\"; readonly lineHeight: \"1.16\"; readonly weight: \"600\"; readonly tracking: \"-0.01em\"; }; readonly \"headline-large\": { readonly family: \"display\"; readonly size: \"clamp(1.625rem, 1.45rem + 0.7vw, 2.125rem)\"; readonly lineHeight: \"1.2\"; readonly weight: \"600\"; readonly tracking: \"-0.005em\"; }; readonly \"headline-medium\": { readonly family: \"display\"; readonly size: \"clamp(1.375rem, 1.27rem + 0.5vw, 1.75rem)\"; readonly lineHeight: \"1.25\"; readonly weight: \"600\"; readonly tracking: \"0\"; }; readonly \"headline-small\": { readonly family: \"display\"; readonly size: \"clamp(1.25rem, 1.18rem + 0.3vw, 1.5rem)\"; readonly lineHeight: \"1.3\"; readonly weight: \"600\"; readonly tracking: \"0\"; }; readonly \"title-large\": { readonly family: \"sans\"; readonly size: \"clamp(1.25rem, 1.2rem + 0.2vw, 1.375rem)\"; readonly lineHeight: \"1.35\"; readonly weight: \"600\"; readonly tracking: \"0\"; }; readonly \"title-medium\": { readonly family: \"sans\"; readonly size: \"1.125rem\"; readonly lineHeight: \"1.4\"; readonly weight: \"600\"; readonly tracking: \"0.002em\"; }; readonly \"title-small\": { readonly family: \"sans\"; readonly size: \"1rem\"; readonly lineHeight: \"1.45\"; readonly weight: \"600\"; readonly tracking: \"0.005em\"; }; readonly \"body-large\": { readonly family: \"sans\"; readonly size: \"clamp(1.125rem, 1.08rem + 0.2vw, 1.25rem)\"; readonly lineHeight: \"1.6\"; readonly weight: \"400\"; readonly tracking: \"0\"; }; readonly \"body-medium\": { readonly family: \"sans\"; readonly size: \"1.0625rem\"; readonly lineHeight: \"1.6\"; readonly weight: \"400\"; readonly tracking: \"0.002em\"; }; readonly \"body-small\": { readonly family: \"sans\"; readonly size: \"1rem\"; readonly lineHeight: \"1.55\"; readonly weight: \"400\"; readonly tracking: \"0.005em\"; }; readonly \"label-large\": { readonly family: \"sans\"; readonly size: \"0.9375rem\"; readonly lineHeight: \"1.4\"; readonly weight: \"600\"; readonly tracking: \"0.01em\"; }; readonly \"label-medium\": { readonly family: \"sans\"; readonly size: \"0.875rem\"; readonly lineHeight: \"1.4\"; readonly weight: \"600\"; readonly tracking: \"0.015em\"; }; readonly \"label-small\": { readonly family: \"sans\"; readonly size: \"0.75rem\"; readonly lineHeight: \"1.35\"; readonly weight: \"600\"; readonly tracking: \"0.04em\"; }; };"
+      },
+      "TypeStyle": {
+        "kind": "interface",
+        "signature": "export interface TypeStyle { readonly family: TypeFamily; readonly size: string; readonly lineHeight: string; readonly weight: string; readonly tracking: string; }"
+      },
+      "TypeVariant": {
+        "kind": "type",
+        "signature": "export type TypeVariant = keyof typeof typeScale;"
+      },
+      "UiConfig": {
+        "kind": "interface",
+        "signature": "export interface UiConfig { readonly strings: UiStrings; readonly locale: string; }"
+      },
+      "uiConfigContext": {
+        "kind": "variable",
+        "type": "Context<UiConfig>",
+        "signature": "export declare const uiConfigContext: import(\"@ivlev-dev/silent-core\").Context<UiConfig>;"
+      },
+      "UiConfigProvider": {
+        "kind": "function",
+        "type": "(props: UiConfigProviderProps) => Node",
+        "signature": "export declare function UiConfigProvider(props: UiConfigProviderProps): Node;"
+      },
+      "UiConfigProviderProps": {
+        "kind": "interface",
+        "signature": "export interface UiConfigProviderProps { readonly strings?: Partial<UiStrings> | undefined; readonly locale?: string | undefined; /** Тема поддерева: `light`, `dark` или `auto` (системная). */ readonly theme?: ThemeMode | undefined; readonly density?: \"compact\" | \"default\" | \"comfortable\" | undefined; readonly class?: ClassNameValue; readonly children?: Children; }"
+      },
+      "UiStrings": {
+        "kind": "interface",
+        "signature": "export interface UiStrings { readonly close: string; readonly loading: string; readonly showPassword: string; readonly hidePassword: string; readonly required: string; readonly addItem: string; readonly removeItem: string; readonly moveUp: string; readonly moveDown: string; readonly submit: string; readonly reset: string; readonly chooseFile: string; readonly navigation: string; readonly actions: string; readonly breadcrumbs: string; readonly pagination: string; readonly previousPage: string; readonly nextPage: string; /** Шаблон статуса: `{page}` и `{pageCount}` подставляются компонентом. */ readonly pageStatus: string; readonly search: string; readonly clear: string; readonly sortAscending: string; readonly sortDescending: string; readonly noData: string; }"
+      },
+      "UploadIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function UploadIcon(props: GlyphProps): Node;"
+      },
+      "useUiConfig": {
+        "kind": "function",
+        "type": "() => UiConfig",
+        "signature": "export declare function useUiConfig(): UiConfig;"
+      },
+      "VisibilityIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function VisibilityIcon(props: GlyphProps): Node;"
+      },
+      "VisibilityOffIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function VisibilityOffIcon(props: GlyphProps): Node;"
+      },
+      "WarningIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function WarningIcon(props: GlyphProps): Node;"
+      }
+    },
     "@ivlev-dev/silent-validation": {
       "ArrayMaxSize": {
         "kind": "function",
