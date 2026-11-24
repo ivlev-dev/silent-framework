@@ -22,6 +22,7 @@ const PACKAGES = [
   { name: "@ivlev-dev/silent-router", entry: "packages/router/dist/index.d.ts", doc: "docs/api/router.md" },
   { name: "@ivlev-dev/silent-protocol", entry: "packages/protocol/dist/index.d.ts", doc: "docs/api/protocol.md" },
   { name: "@ivlev-dev/silent-protocol-vite", entry: "packages/protocol-vite/dist/index.d.ts", doc: "docs/api/protocol-vite.md" },
+  { name: "@ivlev-dev/silent-ui", entry: "packages/ui/dist/index.d.ts", doc: "docs/api/ui.md" },
 ];
 
 const SNAPSHOT_FILE = path.resolve(root, "scripts/api-snapshot.json");
