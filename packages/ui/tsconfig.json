@@ -11,5 +11,5 @@
     "types": []
   },
   "include": ["src"],
-  "references": [{ "path": "../reactivity" }, { "path": "../core" }]
+  "references": [{ "path": "../reactivity" }, { "path": "../core" }, { "path": "../form" }]
 }
