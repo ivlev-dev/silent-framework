@@ -1,0 +1,30 @@
+{
+  "name": "@ivlev-dev/silent-ui-storybook",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "storybook dev -p 6106 --host 0.0.0.0 --no-open",
+    "build": "storybook build -o storybook-static",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "check:ui": "node ../../scripts/ui-check.mjs",
+    "check:ui:strict": "node ../../scripts/ui-check.mjs --strict-browser",
+    "test:ui": "node ../../scripts/ui-check.mjs --build --strict-browser"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@ivlev-dev/silent-core": "workspace:*",
+    "@ivlev-dev/silent-reactivity": "workspace:*",
+    "@ivlev-dev/silent-ui": "workspace:*",
+    "@ivlev-dev/silent-vite": "workspace:*",
+    "@storybook/addon-a11y": "10.6.8",
+    "@storybook/addon-docs": "10.6.8",
+    "@storybook/html-vite": "10.6.8",
+    "jsdom": "^31.0.0",
+    "storybook": "10.6.8",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
+  }
+}

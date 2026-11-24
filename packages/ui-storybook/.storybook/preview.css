@@ -1,0 +1,9 @@
+/* Сцена Storybook: фон/отступы берутся из токенов выбранной темы. */
+.sui-story-canvas {
+  box-sizing: border-box;
+  min-height: 100%;
+  padding: var(--sui-space-6);
+  background: var(--sui-color-surface);
+  color: var(--sui-color-on-surface);
+  font-family: var(--sui-font-sans);
+}

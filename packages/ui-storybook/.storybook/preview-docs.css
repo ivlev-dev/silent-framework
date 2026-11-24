@@ -1,0 +1,231 @@
+/*
+ * Оформление Docs-страниц (autodocs и MDX). Подключается только в preview-
+ * iframe и не влияет на canvas stories.
+ *
+ * Все селекторы типографики исключают `.sbdocs-preview *`: иначе правила
+ * документации перекрашивают компоненты в Canvas (docs-специфичность выше
+ * `:where()`-селекторов дизайн-системы).
+ *
+ * Палитра «ivory / navy / gold»: значения по умолчанию — целевые цвета
+ * витрины, а `var(--sui-color-*)` первым аргументом подхватывает токены
+ * темы, когда они определены (light/dark переключаются автоматически).
+ */
+:root {
+  --sui-docs-ivory: var(--sui-color-surface, #fbf7ec);
+  --sui-docs-ivory-deep: var(--sui-color-surface-container, #f3ecdb);
+  --sui-docs-navy: var(--sui-color-on-surface, #0e1b33);
+  --sui-docs-navy-muted: var(--sui-color-on-surface-variant, #3c4a63);
+  --sui-docs-gold: var(--sui-color-tertiary, #9a7a14);
+  --sui-docs-gold-soft: color-mix(in srgb, var(--sui-docs-gold) 18%, transparent);
+  --sui-docs-line: var(--sui-color-outline-variant, #d8cdb4);
+}
+
+/* ---------- Каркас страницы ---------- */
+
+.sbdocs-wrapper {
+  background: var(--sui-docs-ivory);
+  color: var(--sui-docs-navy);
+}
+
+.sbdocs.sbdocs-wrapper {
+  padding: 3rem clamp(1rem, 4vw, 4rem) 5rem;
+}
+
+.sbdocs-content {
+  max-width: 980px;
+  color: var(--sui-docs-navy);
+  font-family: var(--sui-font-sans, ui-sans-serif, system-ui, sans-serif);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+/* Canvas внутри Docs живёт по правилам дизайн-системы, не документации. */
+.sbdocs-preview,
+.docs-story {
+  color: var(--sui-color-on-surface, var(--sui-docs-navy));
+}
+
+/* ---------- Типографика (только вне Canvas) ---------- */
+
+.sbdocs-content h1:not(.sbdocs-preview *),
+.sbdocs-content h2:not(.sbdocs-preview *),
+.sbdocs-content h3:not(.sbdocs-preview *),
+.sbdocs-content h4:not(.sbdocs-preview *) {
+  color: var(--sui-docs-navy);
+  font-family: var(--sui-font-sans, ui-sans-serif, system-ui, sans-serif);
+  letter-spacing: -0.01em;
+}
+
+.sbdocs-content h1:not(.sbdocs-preview *) {
+  font-size: clamp(2rem, 3vw, 2.6rem);
+  border-bottom: 2px solid var(--sui-docs-gold);
+  padding-bottom: 0.5rem;
+}
+
+.sbdocs-content h2:not(.sbdocs-preview *) {
+  margin-top: 2.5rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--sui-docs-line);
+}
+
+.sbdocs-content h3:not(.sbdocs-preview *) {
+  margin-top: 1.75rem;
+}
+
+.sbdocs-content p:not(.sbdocs-preview *),
+.sbdocs-content li:not(.sbdocs-preview *) {
+  color: var(--sui-docs-navy-muted);
+}
+
+.sbdocs-content a:not(.sbdocs-preview *) {
+  color: var(--sui-docs-navy);
+  text-decoration-color: var(--sui-docs-gold);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.2em;
+}
+
+.sbdocs-content a:not(.sbdocs-preview *):hover {
+  color: var(--sui-docs-gold);
+}
+
+.sbdocs-content code:not(.sbdocs-preview *) {
+  background: var(--sui-docs-gold-soft);
+  border-radius: 4px;
+  color: var(--sui-docs-navy);
+  padding: 0.1em 0.35em;
+}
+
+.sbdocs-content pre code {
+  background: transparent;
+}
+
+.sbdocs-content blockquote:not(.sbdocs-preview *) {
+  border-left: 3px solid var(--sui-docs-gold);
+  color: var(--sui-docs-navy-muted);
+  margin-left: 0;
+  padding-left: 1rem;
+}
+
+.sbdocs-content hr:not(.sbdocs-preview *) {
+  border-color: var(--sui-docs-line);
+}
+
+/* ---------- Таблицы документации (args table, палитра, брейкпоинты) ---- */
+
+.sbdocs-content table:not(.sbdocs-preview *) {
+  border-collapse: collapse;
+  border-color: var(--sui-docs-line);
+  width: 100%;
+}
+
+.sbdocs-content th:not(.sbdocs-preview *) {
+  background: var(--sui-docs-ivory-deep);
+  color: var(--sui-docs-navy);
+  font-weight: 600;
+  text-align: left;
+}
+
+.sbdocs-content td:not(.sbdocs-preview *),
+.sbdocs-content th:not(.sbdocs-preview *) {
+  border: 1px solid var(--sui-docs-line);
+  padding: 0.5rem 0.75rem;
+  vertical-align: top;
+}
+
+.sbdocs-content tr:nth-child(even) td:not(.sbdocs-preview *) {
+  background: color-mix(in srgb, var(--sui-docs-ivory-deep) 45%, transparent);
+}
+
+/* Args table Storybook (Controls): это UI Storybook, а не компонент. */
+.docblock-argstable,
+.docblock-argstable-head,
+.docblock-argstable-body {
+  color: var(--sui-docs-navy);
+}
+
+.docblock-argstable th {
+  background: var(--sui-docs-ivory-deep) !important;
+  color: var(--sui-docs-navy) !important;
+}
+
+.docblock-argstable td {
+  border-color: var(--sui-docs-line) !important;
+}
+
+/* ---------- Canvas-превью ---------- */
+
+.sbdocs-preview {
+  background: var(--sui-docs-ivory-deep);
+  border: 1px solid var(--sui-docs-line);
+  border-radius: 12px;
+  box-shadow: 0 1px 0 var(--sui-docs-gold-soft);
+  overflow: hidden;
+}
+
+.sbdocs-preview > div:first-child {
+  background: var(--sui-color-surface, var(--sui-docs-ivory));
+}
+
+.docblock-source {
+  border-color: var(--sui-docs-line);
+}
+
+/* ---------- Палитра на intro-странице ---------- */
+
+.sui-docs-swatches {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  margin: 1rem 0;
+}
+
+.sui-docs-swatch {
+  border: 1px solid var(--sui-docs-line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.sui-docs-swatch__chip {
+  height: 64px;
+}
+
+.sui-docs-swatch__chip p {
+  color: inherit;
+  margin: 0;
+}
+
+.sui-docs-swatch__meta {
+  background: var(--sui-docs-ivory-deep);
+  color: var(--sui-docs-navy);
+  font-size: 0.8rem;
+  padding: 0.5rem 0.65rem;
+}
+
+.sui-docs-swatch__meta p {
+  color: inherit;
+  margin: 0;
+}
+
+.sui-docs-swatch__meta code {
+  background: transparent;
+  color: inherit;
+  display: block;
+  font-size: 0.72rem;
+  opacity: 0.8;
+  padding: 0;
+}
+
+/* ---------- Тёмная тема документации ---------- */
+
+[data-theme="dark"] .sbdocs-wrapper {
+  background: var(--sui-color-surface, #0e1b33);
+  color: var(--sui-color-on-surface, #fbf7ec);
+}
+
+[data-theme="dark"] .sbdocs-content,
+[data-theme="dark"] .sbdocs-content h1:not(.sbdocs-preview *),
+[data-theme="dark"] .sbdocs-content h2:not(.sbdocs-preview *),
+[data-theme="dark"] .sbdocs-content h3:not(.sbdocs-preview *),
+[data-theme="dark"] .sbdocs-content h4:not(.sbdocs-preview *) {
+  color: var(--sui-color-on-surface, #fbf7ec);
+}

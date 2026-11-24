@@ -1,0 +1,160 @@
+import { Meta } from "@storybook/addon-docs/blocks";
+
+<Meta title="Introduction" />
+
+# Silent UI — витрина дизайн-системы
+
+`@ivlev-dev/silent-ui` — токены, темы, layout-примитивы и компоненты Silent
+Framework. Эта витрина — рабочее место для проверки компонентов в браузере:
+каждая story монтируется тем же рантаймом, что и в приложении
+(`@ivlev-dev/silent-core`), поэтому поведение эффектов, ref-колбэков и
+`dispose()` здесь такое же, как в проде.
+
+- Справочник по экспортам: [`docs/api/ui.md`](../../docs/api/ui.md)
+- Руководство: [`docs/guides/ui.md`](../../docs/guides/ui.md)
+- Пакет: `packages/ui`, stories: `packages/ui-storybook/src`
+
+## Как устроена витрина
+
+<table>
+  <thead>
+    <tr><th>Раздел</th><th>Что внутри</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>Introduction</strong></td><td>Эта страница: палитра, темы, брейкпоинты, controls</td></tr>
+    <tr><td><strong>Foundations</strong></td><td>Цвета и темы, типографика, layout-примитивы</td></tr>
+    <tr><td><strong>Components</strong></td><td>Component stories с autodocs, controls и args table</td></tr>
+    <tr><td><strong>Patterns</strong></td><td>Готовые экраны: форма, dashboard, auth, settings, dialog flow</td></tr>
+  </tbody>
+</table>
+
+Каждый компонент-эталон (`Button`, `TextField`, `Alert`, `Dialog`, `Table`)
+имеет тег `autodocs`: рядом со stories появляется страница **Docs** с
+описанием компонента, primary story, args table и исходником. Остальные
+компоненты подключаются к той же схеме по мере готовности.
+
+## Палитра
+
+Цвета — семантические роли Material 3. Компоненты читают только
+`var(--sui-color-<role>)`, поэтому витрина автоматически следует теме.
+
+<div className="sui-docs-swatches">
+  <div className="sui-docs-swatch">
+    <div className="sui-docs-swatch__chip" style={{ background: "var(--sui-color-primary)" }} />
+    <div className="sui-docs-swatch__meta">primary<code>--sui-color-primary</code></div>
+  </div>
+  <div className="sui-docs-swatch">
+    <div className="sui-docs-swatch__chip" style={{ background: "var(--sui-color-secondary)" }} />
+    <div className="sui-docs-swatch__meta">secondary<code>--sui-color-secondary</code></div>
+  </div>
+  <div className="sui-docs-swatch">
+    <div className="sui-docs-swatch__chip" style={{ background: "var(--sui-color-tertiary)" }} />
+    <div className="sui-docs-swatch__meta">tertiary<code>--sui-color-tertiary</code></div>
+  </div>
+  <div className="sui-docs-swatch">
+    <div className="sui-docs-swatch__chip" style={{ background: "var(--sui-color-accent)" }} />
+    <div className="sui-docs-swatch__meta">accent<code>--sui-color-accent</code></div>
+  </div>
+  <div className="sui-docs-swatch">
+    <div className="sui-docs-swatch__chip" style={{ background: "var(--sui-color-surface)" }} />
+    <div className="sui-docs-swatch__meta">surface<code>--sui-color-surface</code></div>
+  </div>
+  <div className="sui-docs-swatch">
+    <div className="sui-docs-swatch__chip" style={{ background: "var(--sui-color-surface-container)" }} />
+    <div className="sui-docs-swatch__meta">container<code>--sui-color-surface-container</code></div>
+  </div>
+  <div className="sui-docs-swatch">
+    <div
+      className="sui-docs-swatch__chip"
+      style={{ background: "var(--sui-color-on-surface)", color: "var(--sui-color-surface)", display: "grid", placeItems: "center" }}
+    >
+      Aa
+    </div>
+    <div className="sui-docs-swatch__meta">on-surface<code>--sui-color-on-surface</code></div>
+  </div>
+  <div className="sui-docs-swatch">
+    <div className="sui-docs-swatch__chip" style={{ background: "var(--sui-color-error)" }} />
+    <div className="sui-docs-swatch__meta">error<code>--sui-color-error</code></div>
+  </div>
+  <div className="sui-docs-swatch">
+    <div className="sui-docs-swatch__chip" style={{ background: "var(--sui-color-warning)" }} />
+    <div className="sui-docs-swatch__meta">warning<code>--sui-color-warning</code></div>
+  </div>
+</div>
+
+> Брендовая палитра витрины — **ivory / navy / gold**: тёплый фон документации,
+> глубокий navy для текста и золотой акцент для ссылок и границ. Она собрана
+> поверх тех же токенов: `surface`, `on-surface`, `tertiary`. Перекраска бренда
+> делается через `applyTheme({ palette })` без правок компонентов.
+
+## Темы
+
+Тема задаётся атрибутом `data-theme="light|dark|auto"` и наследуется поддеревом.
+В тулбаре переключатель **Тема** меняет `data-theme` у canvas-обёртки, а
+`Palette`/`Theme` stories показывают обе темы рядом.
+
+- `light` — светлая, значения по умолчанию;
+- `dark` — тёмная;
+- `auto` — системная (`prefers-color-scheme`).
+
+Для SSR без вспышки светлой темы используйте `ThemeScript` из
+`@ivlev-dev/silent-ui`.
+
+## Брейкпоинты
+
+Единственный источник истины — `packages/ui/src/tokens/breakpoints.json`
+(синхронизация проверяется тестом `tokens.test.ts`).
+
+<table>
+  <thead>
+    <tr><th>Токен</th><th>Ширина, px</th><th>Где применяется</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>sm</code></td><td>360</td><td>минимальный мобильный</td></tr>
+    <tr><td><code>md</code></td><td>480</td><td>крупный мобильный</td></tr>
+    <tr><td><code>lg</code></td><td>600</td><td>планшет-портрет</td></tr>
+    <tr><td><code>xl</code></td><td>840</td><td>планшет-ландшафт</td></tr>
+    <tr><td><code>2xl</code></td><td>1200</td><td>ноутбук</td></tr>
+    <tr><td><code>3xl</code></td><td>1600</td><td>десктоп</td></tr>
+    <tr><td><code>4xl</code></td><td>1920</td><td>широкий десктоп</td></tr>
+    <tr><td><code>5xl</code></td><td>2560</td><td>QHD</td></tr>
+    <tr><td><code>6xl</code></td><td>3840</td><td>4K</td></tr>
+  </tbody>
+</table>
+
+В тулбаре **Viewport** доступны 360×800, 600×960, 840×1112, 1200×900,
+1600×1000 и 2560×1440 — те же разрешения, что проверяет `check:ui`.
+Хелперы `mediaUp`/`mediaDown` и тип `Breakpoint` экспортируются из пакета.
+
+## Как пользоваться controls
+
+1. Откройте story с панелью **Controls** снизу.
+2. Панель раскрыта по умолчанию (`parameters.controls.expanded`), значимые
+   props сгруппированы, обязательные — выше (`sort: "requiredFirst"`).
+3. `select`/`inline-radio` — варианты и размеры, `boolean` — состояния,
+   `range` — числовые шкалы, `color` — цвета (`matchers` распознаёт
+   `background`/`color`/`Date`).
+4. Изменение args перерисовывает story через `renderToCanvas`; handle
+   предыдущей story освобождается, утечек подписок нет.
+5. Действия (`onClick`, `onClose`, `onOpenChange`) подключены через `fn()` и
+   видны на вкладке **Actions**.
+
+Тег `autodocs` добавляет страницу **Docs** с таблицей props. Для HTML-renderer'а
+Storybook не выводит props из JSDoc, поэтому таблица строится из явных
+`argTypes`: описание, тип, значение по умолчанию и control задаются в meta.
+
+## Проверки витрины
+
+```bash
+pnpm --filter @ivlev-dev/silent-ui-storybook test       # unit-тесты stories
+pnpm --filter @ivlev-dev/silent-ui-storybook typecheck  # tsc
+pnpm --filter @ivlev-dev/silent-ui-storybook build      # static build
+pnpm --filter @ivlev-dev/silent-ui-storybook check:ui   # браузер + a11y + скриншоты
+```
+
+`check:ui` проходит по всем записям `index.json`, проверяет горизонтальный
+overflow, вылезающий текст, видимость элементов, `sb-errordisplay` и
+критические нарушения axe-core на шести viewport'ах с DPR 1 и 2. Отчёты и
+скриншоты складываются в `/tmp`. Если браузер недоступен, скрипт печатает
+причину и переходит к статическим проверкам (`--strict-browser` запрещает
+такой fallback — так шаг CI не пропустит сломанный браузер).

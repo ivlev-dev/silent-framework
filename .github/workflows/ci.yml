@@ -80,6 +80,10 @@ jobs:
       - run: pnpm --filter @ivlev-dev/silent-example-ssr-pool build
       - run: pnpm --filter @ivlev-dev/silent-example-router build
       - run: pnpm --filter @ivlev-dev/silent-example-forms build
+      # UI-дизайн-система: precompiled-сборка, unit/SSR-тесты и Storybook MVP.
+      - run: pnpm --filter @ivlev-dev/silent-ui test
+      - run: pnpm --filter @ivlev-dev/silent-ui-storybook test
+      - run: pnpm --filter @ivlev-dev/silent-ui-storybook build
       - run: pnpm exec playwright-core install --with-deps chromium
       - run: pnpm test:ssr
       - run: pnpm test:ssr-pool
@@ -90,6 +94,38 @@ jobs:
       # Шаг --only=browser вернётся после замера browser-бенчмарка на раннере
       # и добавления секции browser в scripts/bench-baseline.json: сейчас
       # baseline.browser нет, и bench-guard с --only=browser обязан падать.
+
+  # Витрина Storybook: браузерные проверки всех stories (6 viewport'ов × DPR
+  # 1/2), overflow/текст/sb-errordisplay/консоль, axe-core и скриншоты.
+  # Отдельный job: прогон долгий и не должен съедать бюджет ssr. Если браузер
+  # не запустился, --strict-browser валит job, а не «зеленеет» с fallback.
+  ui:
+    name: ui (storybook)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm --filter @ivlev-dev/silent-ui-storybook build
+      - run: pnpm exec playwright-core install --with-deps chromium
+      - run: pnpm --filter @ivlev-dev/silent-ui-storybook check:ui:strict
+      - name: Upload UI report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-check-report
+          path: /tmp/silent-ui-check
+          if-no-files-found: ignore
 
   e2e:
     name: e2e (${{ matrix.browser }})
