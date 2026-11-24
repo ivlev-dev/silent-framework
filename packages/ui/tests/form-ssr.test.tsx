@@ -107,6 +107,31 @@ describe("SSR форм", () => {
     ]);
   });
 
+  it("Select: SSR-разметка option без маркеров списка", async () => {
+    function SelectOnly(): Node {
+      return (
+        <Select
+          id="letter"
+          name="letter"
+          placeholder="Выберите"
+          options={[
+            { value: "a", label: "A" },
+            { value: "b", label: "B" },
+            { value: "c", label: "C", disabled: true },
+          ]}
+          value="b"
+        />
+      );
+    }
+    const { html } = await renderToString(SelectOnly);
+    // Маркеры списков (`For`) недопустимы внутри `<select>`: их быть не должно.
+    expect(html).not.toContain("silent-item");
+    expect(html).not.toContain("silent-end");
+    expect(html.match(/<option/gu)).toHaveLength(4);
+    expect(html).toContain('value="b" selected');
+    expect(html).toContain("disabled");
+  });
+
   it("повторный рендер даёт тот же html (детерминированные id)", async () => {
     const first = await renderToString(SsrForm);
     const second = await renderToString(SsrForm);

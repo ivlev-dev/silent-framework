@@ -1105,7 +1105,7 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `Select`
 
-`function Select(props: SelectProps): Node` — список. На SSR у выбранных `option` стоит `selected`, на клиенте значение синхронизирует `bindValue` (включая `multiple`). Опции рендерятся `.map()`, а не `For`: `For`/`KeyedList` внутри `<select>` не гидратируется (тег с неявной перестройкой парсером).
+`function Select(props: SelectProps): Node` — список. SSR-разметка строится `.map()` по начальному `options` (без `For`/`KeyedList`: маркеры списка недопустимы парсером внутри `<select>`), у выбранных `option` стоит `selected`. На клиенте `options` реконсилируются реактивно: изменение `props.options` обновляет существующие `<option>`, добавляет/удаляет недостающие, сохраняет порядок, `disabled` и текст, а placeholder остаётся первым. После реконсиляции выбранное значение восстанавливается из `value`/`field.value` (включая `multiple`); `bindValue` работает с `NO_WRITE`, поэтому состояние формы не перезаписывается. `<select>` при этом не пересоздаётся.
 
 ### `SelectProps`
 

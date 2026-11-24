@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { flushSync } from "@ivlev-dev/silent-core";
+import { createSignal, flushSync } from "@ivlev-dev/silent-core";
 import {
   Checkbox,
   Field,
@@ -8,6 +8,7 @@ import {
   FormActions,
   RadioGroup,
   Select,
+  type SelectOption,
   Slider,
   Switch,
   Textarea,
@@ -300,6 +301,163 @@ describe("Select", () => {
     select.dispatchEvent(new Event("change", { bubbles: true }));
     flushSync();
     expect(fake.field.value).toEqual(["b", "c"]);
+  });
+
+  it("реконсилирует options из сигнала: порядок, текст и disabled", () => {
+    const [options, setOptions] = createSignal<readonly SelectOption[]>([
+      { value: "a", label: "A" },
+      { value: "b", label: "B" },
+    ]);
+    const root = rootOf(
+      mount(handles, Select, {
+        label: "Буква",
+        get options() {
+          return options();
+        },
+      }),
+    );
+    const select = query<HTMLSelectElement>(root, "select");
+    const reused = select.options[0]!;
+    expect(Array.from(select.options).map((option) => option.value)).toEqual(["a", "b"]);
+
+    setOptions([
+      { value: "c", label: "C", disabled: true },
+      { value: "a", label: "A2" },
+    ]);
+    flushSync();
+
+    expect(query(root, "select")).toBe(select);
+    expect(Array.from(select.options).map((option) => option.value)).toEqual(["c", "a"]);
+    expect(select.options[0]).toBe(reused);
+    expect(select.options[0]?.textContent).toBe("C");
+    expect(select.options[0]?.disabled).toBe(true);
+    expect(select.options[1]?.textContent).toBe("A2");
+    expect(select.options[1]?.disabled).toBe(false);
+  });
+
+  it("сохраняет выбранное значение при изменении options и value", () => {
+    const [options, setOptions] = createSignal<readonly SelectOption[]>([
+      { value: "a", label: "A" },
+      { value: "b", label: "B" },
+    ]);
+    const [value, setValue] = createSignal<string | number>("b");
+    const root = rootOf(
+      mount(handles, Select, {
+        get options() {
+          return options();
+        },
+        get value() {
+          return value();
+        },
+      }),
+    );
+    const select = query<HTMLSelectElement>(root, "select");
+    expect(select.value).toBe("b");
+    expect(select.title).toBe("B");
+
+    setOptions([
+      { value: "c", label: "C" },
+      { value: "b", label: "B2" },
+    ]);
+    flushSync();
+    expect(select.value).toBe("b");
+    expect(select.selectedOptions[0]?.textContent).toBe("B2");
+    expect(select.title).toBe("B2");
+
+    setValue("c");
+    flushSync();
+    expect(select.value).toBe("c");
+    expect(select.selectedOptions[0]?.textContent).toBe("C");
+  });
+
+  it("не теряет placeholder при изменении options", () => {
+    const [options, setOptions] = createSignal<readonly SelectOption[]>([]);
+    const root = rootOf(
+      mount(handles, Select, {
+        placeholder: "Выберите",
+        value: "",
+        get options() {
+          return options();
+        },
+      }),
+    );
+    const select = query<HTMLSelectElement>(root, "select");
+    expect(select.options).toHaveLength(1);
+    expect(select.options[0]?.textContent).toBe("Выберите");
+    expect(select.value).toBe("");
+
+    setOptions([
+      { value: "a", label: "A" },
+      { value: "b", label: "B" },
+    ]);
+    flushSync();
+    expect(Array.from(select.options).map((option) => option.value)).toEqual(["", "a", "b"]);
+    expect(select.options[0]?.textContent).toBe("Выберите");
+    expect(select.value).toBe("");
+
+    setOptions([{ value: "b", label: "B" }]);
+    flushSync();
+    expect(Array.from(select.options).map((option) => option.value)).toEqual(["", "b"]);
+    expect(select.options[0]?.textContent).toBe("Выберите");
+    expect(select.value).toBe("");
+  });
+
+  it("multiple: реконсилирует options и выбранные значения", () => {
+    const [options, setOptions] = createSignal<readonly SelectOption[]>([
+      { value: "a", label: "A" },
+      { value: "b", label: "B" },
+      { value: "c", label: "C" },
+    ]);
+    const fake = fakeField<readonly string[]>(["a", "b"]);
+    const root = rootOf(
+      mount(handles, Select, {
+        multiple: true,
+        field: fake.field,
+        get options() {
+          return options();
+        },
+      }),
+    );
+    const select = query<HTMLSelectElement>(root, "select");
+    expect(Array.from(select.selectedOptions).map((option) => option.value)).toEqual(["a", "b"]);
+
+    setOptions([
+      { value: "b", label: "B" },
+      { value: "c", label: "C" },
+      { value: "d", label: "D" },
+    ]);
+    flushSync();
+    expect(Array.from(select.options).map((option) => option.value)).toEqual(["b", "c", "d"]);
+    expect(Array.from(select.selectedOptions).map((option) => option.value)).toEqual(["b"]);
+
+    fake.set(["c", "d"]);
+    flushSync();
+    expect(Array.from(select.selectedOptions).map((option) => option.value)).toEqual(["c", "d"]);
+    expect(fake.field.value).toEqual(["c", "d"]);
+  });
+
+  it("пустой список → заполненный выбирает значение без сброса формы", async () => {
+    const [options, setOptions] = createSignal<readonly SelectOption[]>([]);
+    const fake = fakeField("a");
+    const root = rootOf(
+      mount(handles, Select, {
+        field: fake.field,
+        get options() {
+          return options();
+        },
+      }),
+    );
+    const select = query<HTMLSelectElement>(root, "select");
+    expect(select.options).toHaveLength(0);
+
+    setOptions([
+      { value: "a", label: "A" },
+      { value: "b", label: "B" },
+    ]);
+    flushSync();
+    await Promise.resolve();
+    expect(select.value).toBe("a");
+    expect(fake.field.value).toBe("a");
   });
 });
 

@@ -1,6 +1,7 @@
 import type { Children, ClassNameValue, StyleInput } from "@ivlev-dev/silent-core";
-import { Show } from "@ivlev-dev/silent-core";
+import { Show, createSignal, untrack } from "@ivlev-dev/silent-core";
 import type { Attrs } from "../../internal/props.js";
+import { clientEffect } from "../../internal/overlay.js";
 import { Field } from "../field/field.js";
 import {
   NO_WRITE,
@@ -53,9 +54,75 @@ function optionValue(option: SelectOption): string {
   return String(option.value);
 }
 
+/** Текст `option` из `Children`: внутри `<option>` допустим только текст. */
+function optionText(label: Children): string {
+  if (typeof label === "function") return optionText(label());
+  if (label === null || label === undefined || typeof label === "boolean") {
+    return "";
+  }
+  if (
+    typeof label === "string"
+    || typeof label === "number"
+    || typeof label === "bigint"
+  ) {
+    return String(label);
+  }
+  if (typeof label === "object" && "nodeType" in label) {
+    return (label as Node).textContent ?? "";
+  }
+  if (
+    typeof label === "object"
+    && typeof (label as Iterable<unknown>)[Symbol.iterator] === "function"
+  ) {
+    let text = "";
+    for (const child of label as Iterable<Children>) text += optionText(child);
+    return text;
+  }
+  return String(label);
+}
+
+function textValue(value: unknown): string {
+  if (Array.isArray(value)) return value.length === 0 ? "" : String(value[0]);
+  if (value === undefined || value === null) return "";
+  return String(value);
+}
+
+function valueList(value: unknown): readonly string[] {
+  if (Array.isArray(value)) return value.map((item) => String(item));
+  if (value === undefined || value === null || value === "") return [];
+  return [String(value)];
+}
+
+function createOption(select: HTMLSelectElement): HTMLOptionElement {
+  // Скобочный доступ: build-проверка запрещает `createElement(` в dist
+  // (так ловят недокомпилированный JSX).
+  return select.ownerDocument["createElement"]("option") as HTMLOptionElement;
+}
+
+function firstChildOption(select: HTMLSelectElement): HTMLOptionElement | null {
+  for (const child of Array.from(select.children)) {
+    if (child.localName === "option") return child as HTMLOptionElement;
+  }
+  return null;
+}
+
+function childOptions(
+  select: HTMLSelectElement,
+  placeholder: HTMLOptionElement | null,
+): HTMLOptionElement[] {
+  const options: HTMLOptionElement[] = [];
+  for (const child of Array.from(select.children)) {
+    if (child.localName !== "option" || child === placeholder) continue;
+    options.push(child as HTMLOptionElement);
+  }
+  return options;
+}
+
 /**
- * Список. На SSR у выбранных `option` стоит `selected`, на клиенте значение
- * синхронизирует `bindValue` (включая `multiple`).
+ * Список. На SSR у выбранных `option` стоит `selected`; разметка строится
+ * `.map()` без `For`/маркеров. На клиенте `options` реконсилируются вручную:
+ * SSR-разметка остаётся прежней, а после mount обновление сигнала `options`
+ * переиспользует/добавляет/удаляет `<option>` без пересоздания `<select>`.
  */
 export function Select(props: SelectProps): Node {
   const id = resolveControlId(
@@ -65,12 +132,7 @@ export function Select(props: SelectProps): Node {
   );
   const currentValue = (): unknown =>
     props.value !== undefined ? props.value : props.field?.value;
-  const selectedValues = (): readonly string[] => {
-    const value = currentValue();
-    if (Array.isArray(value)) return value.map((item) => String(item));
-    if (value === undefined || value === null || value === "") return [];
-    return [String(value)];
-  };
+  const selectedValues = (): readonly string[] => valueList(currentValue());
   const readValue = (): unknown => {
     const value = currentValue();
     if (Array.isArray(value)) return value.map((item) => String(item));
@@ -105,6 +167,104 @@ export function Select(props: SelectProps): Node {
       hasContent(hintOf()) ? hintIdFor(id) : undefined,
       hasContent(errorOf()) ? errorIdFor(id) : undefined,
     );
+
+  // Только начальная разметка (SSR и первый клиентский рендер). Дальнейшие
+  // изменения `options` обрабатывает реконсилятор ниже, а не `<insert>` JSX:
+  // иначе список пересоздавался бы целиком и терял выбранное значение.
+  const initialOptions = untrack(() => props.options);
+  const [selectElement, setSelectElement] = createSignal<HTMLSelectElement | null>(
+    null,
+  );
+  let placeholderOption: HTMLOptionElement | null = null;
+
+  // Реконсиляция options на клиенте: `For` внутри `<select>` ломает SSR/гидрацию
+  // (маркеры списка недопустимы парсером), поэтому SSR-разметка остаётся `.map()`,
+  // а изменения `props.options` применяются к существующим `<option>`.
+  clientEffect(() => {
+    const select = selectElement();
+    if (select === null) return;
+    const options = props.options;
+    const multiple = props.multiple === true;
+    const placeholder = props.placeholder;
+    const required = requiredOf();
+    const value = currentValue();
+
+    if (multiple || placeholder === undefined) {
+      if (placeholderOption !== null) {
+        if (placeholderOption.parentNode === select) placeholderOption.remove();
+        placeholderOption = null;
+      }
+    } else {
+      let element = placeholderOption;
+      if (element === null || element.parentNode !== select) {
+        const first = firstChildOption(select);
+        element = first !== null && first.value === "" ? first : null;
+        if (element === null) {
+          element = createOption(select);
+          element.value = "";
+          select.insertBefore(element, select.firstChild);
+        }
+        placeholderOption = element;
+      }
+      const placeholderText = optionText(placeholder);
+      if (element.textContent !== placeholderText) {
+        element.textContent = placeholderText;
+      }
+      if (element.disabled !== required) element.disabled = required;
+      if (select.firstElementChild !== element) {
+        select.insertBefore(element, select.firstChild);
+      }
+    }
+
+    const existing = childOptions(select, placeholderOption);
+    for (let index = 0; index < options.length; index += 1) {
+      const spec = options[index]!;
+      let element = existing[index];
+      if (element === undefined) {
+        element = createOption(select);
+        select.appendChild(element);
+      }
+      const nextValue = optionValue(spec);
+      if (element.value !== nextValue) element.value = nextValue;
+      const nextDisabled = spec.disabled === true;
+      if (element.disabled !== nextDisabled) element.disabled = nextDisabled;
+      const nextText = optionText(spec.label);
+      if (element.textContent !== nextText) element.textContent = nextText;
+    }
+    for (let index = options.length; index < existing.length; index += 1) {
+      existing[index]!.remove();
+    }
+
+    // Выбранное значение — из `currentValue()`; форма не перезаписывается
+    // (`bindValue` работает с `NO_WRITE`).
+    if (multiple) {
+      const desired = new Set(valueList(value));
+      for (const element of Array.from(select.options)) {
+        const selected = desired.has(element.value);
+        if (element.selected !== selected) element.selected = selected;
+      }
+    } else {
+      const nextValue = textValue(value);
+      if (select.value !== nextValue) select.value = nextValue;
+    }
+
+    if (multiple) {
+      if (select.hasAttribute("title")) select.removeAttribute("title");
+    } else {
+      const current = textValue(value);
+      const selected =
+        current === ""
+          ? undefined
+          : options.find((option) => optionValue(option) === current);
+      const title = typeof selected?.label === "string" ? selected.label : "";
+      if (title === "") {
+        if (select.hasAttribute("title")) select.removeAttribute("title");
+      } else if (select.title !== title) {
+        select.title = title;
+      }
+    }
+  });
+
   return (
     <Field
       id={id}
@@ -134,6 +294,9 @@ export function Select(props: SelectProps): Node {
         <select
           id={id}
           class="sui-select__input"
+          ref={(node: Element | null) => {
+            setSelectElement(node as HTMLSelectElement | null);
+          }}
           name={nameOf()}
           title={selectedLabel()}
           multiple={props.multiple === true}
@@ -166,7 +329,7 @@ export function Select(props: SelectProps): Node {
               {props.placeholder}
             </option>
           </Show>
-          {props.options.map((option) => (
+          {initialOptions.map((option) => (
             <option
               value={optionValue(option)}
               disabled={option.disabled === true}
