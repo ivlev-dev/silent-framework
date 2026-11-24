@@ -105,6 +105,57 @@ const modalRoots = new Set<Element>();
 const snapshots = new Map<Element, AttributeSnapshot>();
 const applied = new Set<Element>();
 
+interface ScrollLockSnapshot {
+  readonly overflow: string;
+  readonly paddingRight: string;
+}
+
+let scrollLocks = 0;
+let scrollSnapshot: ScrollLockSnapshot | null = null;
+
+/**
+ * Блокировка прокрутки `body` с подсчётом вложенных оверлеев. Первый слой
+ * сохраняет исходные `overflow`/`padding-right` и компенсирует ширину
+ * скроллбара, последний — восстанавливает. На сервере ничего не делает.
+ */
+function lockBodyScroll(): () => void {
+  if (isServerMode() || typeof document === "undefined" || typeof window === "undefined") {
+    return () => {};
+  }
+  const body = document.body;
+  if (body === null) return () => {};
+  if (scrollLocks === 0) {
+    const viewportWidth = document.documentElement.clientWidth;
+    const scrollbar = viewportWidth > 0
+      ? Math.max(0, window.innerWidth - viewportWidth)
+      : 0;
+    scrollSnapshot = {
+      overflow: body.style.overflow,
+      paddingRight: body.style.paddingRight,
+    };
+    body.style.overflow = "hidden";
+    if (scrollbar > 0) {
+      const computed = window.getComputedStyle(body).paddingRight;
+      const current = Number.parseFloat(computed);
+      const base = Number.isFinite(current) ? current : 0;
+      body.style.paddingRight = `${base + scrollbar}px`;
+    }
+  }
+  scrollLocks += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    scrollLocks -= 1;
+    if (scrollLocks > 0) return;
+    const snapshot = scrollSnapshot;
+    scrollSnapshot = null;
+    if (snapshot === null) return;
+    body.style.overflow = snapshot.overflow;
+    body.style.paddingRight = snapshot.paddingRight;
+  };
+}
+
 function restoreChild(child: Element): void {
   const snapshot = snapshots.get(child);
   if (snapshot === undefined) return;
@@ -160,12 +211,14 @@ function applyModalLayer(): void {
 export function registerModal(root: Element): () => void {
   modalRoots.add(root);
   applyModalLayer();
+  const releaseScroll = lockBodyScroll();
   let released = false;
   return () => {
     if (released) return;
     released = true;
     modalRoots.delete(root);
     applyModalLayer();
+    releaseScroll();
   };
 }
 

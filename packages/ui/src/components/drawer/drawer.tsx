@@ -1,6 +1,14 @@
 import type { Children, ClassNameValue, StyleInput } from "@ivlev-dev/silent-core";
-import { Show, createEffect, isServerMode, useId } from "@ivlev-dev/silent-core";
+import { Show, createSignal, useId } from "@ivlev-dev/silent-core";
 import type { Attrs } from "../../internal/props.js";
+import {
+  clientEffect,
+  focusFirst,
+  trapTab,
+  useDismiss,
+  useFocusRestore,
+  useModalLayer,
+} from "../../internal/overlay.js";
 import { CloseIcon } from "../../icons/close.js";
 import { IconButton } from "../icon-button/icon-button.js";
 import { useUiConfig } from "../../theme/config.js";
@@ -11,7 +19,7 @@ export type DrawerSide = "start" | "end";
 export interface DrawerProps {
   readonly open: boolean;
   readonly onOpenChange?: ((open: boolean) => void) | undefined;
-  /** `modal` — оверлей со скримом и focus trap, `standard` — часть раскладки. */
+  /** `modal` — оверлей со скримом, `inert`-фоном и focus trap, `standard` — часть раскладки. */
   readonly variant?: DrawerVariant | undefined;
   readonly side?: DrawerSide | undefined;
   readonly header?: Children;
@@ -31,23 +39,12 @@ export interface DrawerProps {
   readonly ref?: ((node: Element | null) => void) | undefined;
 }
 
-const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-function focusableIn(root: HTMLElement): HTMLElement[] {
-  const nodes = root.querySelectorAll<HTMLElement>(FOCUSABLE);
-  const result: HTMLElement[] = [];
-  for (const node of nodes) {
-    if (node.getAttribute("aria-hidden") === "true") continue;
-    result.push(node);
-  }
-  return result;
-}
-
 /**
- * Боковая панель. `modal` рендерит скрим, `role="dialog"` и `aria-modal`,
+ * Боковая панель. `modal` рендерит скрим, `role="dialog"`,
+ * `aria-modal`, блокирует фон (`inert`/`aria-hidden`) и прокрутку `body`,
  * запирает фокус и возвращает его на триггер при закрытии. Escape закрывает
- * панель через `onOpenChange(false)`. В SSR панель рендерится inline.
+ * панель через `onOpenChange(false)`. `standard` — часть раскладки: фон и
+ * прокрутка не блокируются. В SSR панель рендерится inline.
  */
 export function Drawer(props: DrawerProps): Node {
   const config = useUiConfig();
@@ -62,76 +59,58 @@ export function Drawer(props: DrawerProps): Node {
     props.labelledBy
     ?? (props.label === undefined && hasHeaderContent ? headerId : undefined);
 
-  let panel: HTMLElement | null = null;
-  let restoreTarget: HTMLElement | null = null;
+  const [root, setRoot] = createSignal<HTMLElement | null>(null);
+  const [panel, setPanel] = createSignal<HTMLElement | null>(null);
 
   const isOpen = (): boolean => props.open === true;
-
-  const focusPanel = (): void => {
-    const node = panel;
-    if (node === null || !isOpen()) return;
-    const first = focusableIn(node)[0];
-    (first ?? node).focus();
-  };
-
-  let wasOpen = false;
-  createEffect(() => {
-    const open = isOpen();
-    if (open === wasOpen) return;
-    wasOpen = open;
-    if (isServerMode() || typeof document === "undefined") return;
-    if (open) {
-      const active = document.activeElement;
-      restoreTarget =
-        active instanceof HTMLElement && active !== document.body ? active : null;
-      focusPanel();
-      return;
-    }
-    const target = restoreTarget;
-    restoreTarget = null;
-    if (target !== null && target.isConnected) target.focus();
-  });
 
   const requestClose = (): void => {
     props.onOpenChange?.(false);
   };
 
+  useFocusRestore(isOpen);
+  useModalLayer(root, () => modal && isOpen());
+
+  // Модальная панель закрывается кликом вне окна и Escape; standard остаётся
+  // частью раскладки и не перехватывает клики по странице.
+  useDismiss(
+    root,
+    () => modal && isOpen(),
+    requestClose,
+    { outside: true, escape: true },
+  );
+
+  // Автофокус при открытии, если фокус ещё не внутри панели.
+  clientEffect(() => {
+    if (!isOpen()) return;
+    const element = panel();
+    if (element === null) return;
+    const active = typeof document === "undefined" ? null : document.activeElement;
+    if (active !== null && element.contains(active)) return;
+    focusFirst(element);
+  });
+
   const handleKeyDown = (event: KeyboardEvent): void => {
     if (!isOpen()) return;
-    if (event.key === "Escape") {
+    // В modal Escape ловит `useDismiss` на документе; для standard закрываем
+    // только когда событие пришло из самой панели.
+    if (!modal && event.key === "Escape") {
       event.preventDefault();
       requestClose();
       return;
     }
     if (!modal || event.key !== "Tab") return;
-    const node = panel;
-    if (node === null) return;
-    const focusables = focusableIn(node);
-    if (focusables.length === 0) {
-      event.preventDefault();
-      node.focus();
-      return;
-    }
-    const first = focusables[0] as HTMLElement;
-    const last = focusables[focusables.length - 1] as HTMLElement;
-    const active = document.activeElement;
-    if (event.shiftKey) {
-      if (active === first || active === node) {
-        event.preventDefault();
-        last.focus();
-      }
-      return;
-    }
-    if (active === last) {
-      event.preventDefault();
-      first.focus();
-    }
+    const node = panel();
+    if (node !== null) trapTab(node, event);
   };
 
   return (
     <div
       {...props.attrs}
-      ref={props.ref}
+      ref={(node: Element | null) => {
+        setRoot(node as HTMLElement | null);
+        props.ref?.(node);
+      }}
       class={["sui-drawer", props.class]}
       style={props.style}
       data-variant={props.variant ?? "modal"}
@@ -151,7 +130,7 @@ export function Drawer(props: DrawerProps): Node {
       </Show>
       <aside
         ref={(node: Element | null) => {
-          panel = node instanceof HTMLElement ? node : null;
+          setPanel(node as HTMLElement | null);
         }}
         class="sui-drawer__panel"
         tabindex={-1}

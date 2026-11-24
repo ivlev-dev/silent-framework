@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { For, createComponent, hydrate, type AnyComponent } from "@ivlev-dev/silent-core";
+import { For, createComponent, flushSync, hydrate, type AnyComponent } from "@ivlev-dev/silent-core";
 import { renderToString } from "@ivlev-dev/silent-server";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -14,6 +14,7 @@ import { Avatar } from "../src/components/avatar/index.js";
 
 interface Handle {
   readonly node: Node;
+  update(props: Record<string, unknown>): void;
   dispose(): void;
 }
 
@@ -459,6 +460,45 @@ describe("Avatar", () => {
     const icon = rootOf(mount(Avatar, {}));
     expect(icon.querySelector(".sui-avatar__icon svg")).not.toBeNull();
     expect(icon.getAttribute("aria-label")).toBeNull();
+  });
+
+  it("битый src переключает на fallback, новый src возвращает изображение", () => {
+    const handle = mount(Avatar, {
+      src: "/broken.png",
+      alt: "Анна",
+      initials: "АБ",
+    });
+    const avatar = rootOf(handle);
+    const image = avatar.querySelector("img");
+    expect(image?.getAttribute("src")).toBe("/broken.png");
+
+    image?.dispatchEvent(new Event("error"));
+    flushSync();
+
+    expect(avatar.querySelector("img")).toBeNull();
+    expect(avatar.querySelector(".sui-avatar__initials")?.textContent).toBe("АБ");
+    expect(avatar.getAttribute("role")).toBe("img");
+    expect(avatar.getAttribute("aria-label")).toBe("Анна");
+
+    handle.update({ src: "/fresh.png", alt: "Анна", initials: "АБ" });
+    flushSync();
+
+    const restored = avatar.querySelector("img");
+    expect(restored?.getAttribute("src")).toBe("/fresh.png");
+    expect(avatar.hasAttribute("role")).toBe(false);
+    expect(avatar.hasAttribute("aria-label")).toBe(false);
+  });
+
+  it("битый src без инициалов показывает иконку", () => {
+    const handle = mount(Avatar, { src: "/broken.png", alt: "Анна" });
+    const avatar = rootOf(handle);
+    avatar.querySelector("img")?.dispatchEvent(new Event("error"));
+    flushSync();
+
+    expect(avatar.querySelector("img")).toBeNull();
+    expect(avatar.querySelector(".sui-avatar__icon svg")).not.toBeNull();
+    expect(avatar.getAttribute("role")).toBe("img");
+    expect(avatar.getAttribute("aria-label")).toBe("Анна");
   });
 
   it("размер, форма и статус", () => {

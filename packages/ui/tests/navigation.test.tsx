@@ -383,6 +383,40 @@ describe("Drawer", () => {
     expect(panel?.hasAttribute("hidden")).toBe(false);
   });
 
+  it("modal: inert/aria-hidden фона и блокировка прокрутки body со снятием", () => {
+    const sibling = document.createElement("div");
+    sibling.setAttribute("data-testid", "page");
+    document.body.appendChild(sibling);
+
+    const base = { open: true, header: "Меню", children: "x" };
+    const handle = mount(Drawer, base);
+    const drawer = rootOf(handle);
+
+    expect(drawer.hasAttribute("inert")).toBe(false);
+    expect(sibling.hasAttribute("inert")).toBe(true);
+    expect(sibling.getAttribute("aria-hidden")).toBe("true");
+    expect(document.body.style.overflow).toBe("hidden");
+
+    handle.update({ ...base, open: false });
+    flushSync();
+
+    expect(sibling.hasAttribute("inert")).toBe(false);
+    expect(sibling.hasAttribute("aria-hidden")).toBe(false);
+    expect(document.body.style.overflow).toBe("");
+    expect(drawer.hasAttribute("inert")).toBe(false);
+  });
+
+  it("standard: не блокирует фон и прокрутку body", () => {
+    const sibling = document.createElement("div");
+    document.body.appendChild(sibling);
+
+    mount(Drawer, { open: true, variant: "standard", header: "Навигация", children: "x" });
+
+    expect(sibling.hasAttribute("inert")).toBe(false);
+    expect(sibling.hasAttribute("aria-hidden")).toBe(false);
+    expect(document.body.style.overflow).toBe("");
+  });
+
   it("закрытая панель скрыта, открытие/закрытие возвращает фокус триггеру", () => {
     const trigger = document.createElement("button");
     trigger.textContent = "Открыть";

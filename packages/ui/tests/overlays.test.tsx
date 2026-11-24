@@ -14,7 +14,7 @@ import { Menu, MenuItem, MenuSeparator } from "../src/components/menu/index.js";
 import { Tooltip } from "../src/components/tooltip/index.js";
 import { Snackbar } from "../src/components/snackbar/index.js";
 import { Button } from "../src/components/button/index.js";
-import { resolveFloatingPlacement } from "../src/internal/overlay.js";
+import { resolveFloatingPlacement, registerModal } from "../src/internal/overlay.js";
 
 interface Handle {
   readonly node: Node;
@@ -254,6 +254,50 @@ describe("Sheet", () => {
     handles.splice(handles.indexOf(handle), 1);
     flush();
     expect(sibling.hasAttribute("inert")).toBe(false);
+  });
+
+  it("вложенные modal-слои держат блокировку прокрутки до закрытия последнего", () => {
+    const first = mount(Sheet, { defaultOpen: true, title: "Первый" });
+    expect(document.body.style.overflow).toBe("hidden");
+
+    const second = mount(Sheet, { defaultOpen: true, title: "Второй" });
+    first.dispose();
+    handles.splice(handles.indexOf(first), 1);
+    flush();
+    expect(document.body.style.overflow).toBe("hidden");
+
+    second.dispose();
+    handles.splice(handles.indexOf(second), 1);
+    flush();
+    expect(document.body.style.overflow).toBe("");
+  });
+
+  it("registerModal компенсирует скроллбар и восстанавливает overflow/padding", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    document.body.style.overflow = "auto";
+    document.body.style.paddingRight = "4px";
+    Object.defineProperty(document.documentElement, "clientWidth", {
+      configurable: true,
+      value: 1000,
+    });
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(1017);
+    let release: () => void = () => {};
+    try {
+      release = registerModal(root);
+      expect(document.body.style.overflow).toBe("hidden");
+      expect(document.body.style.paddingRight).toBe("21px");
+
+      release();
+      release = () => {};
+      expect(document.body.style.overflow).toBe("auto");
+      expect(document.body.style.paddingRight).toBe("4px");
+    } finally {
+      release();
+      Reflect.deleteProperty(document.documentElement, "clientWidth");
+      document.body.style.overflow = "";
+      document.body.style.paddingRight = "";
+    }
   });
 });
 

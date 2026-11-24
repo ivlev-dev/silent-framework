@@ -1,5 +1,5 @@
 import type { Children, ClassNameValue, StyleInput } from "@ivlev-dev/silent-core";
-import { Show } from "@ivlev-dev/silent-core";
+import { Show, createEffect, createSignal } from "@ivlev-dev/silent-core";
 import type { Attrs } from "../../internal/props.js";
 
 export type AvatarSize = "sm" | "md" | "lg" | "xl";
@@ -32,15 +32,30 @@ const PERSON_PATH =
 
 /**
  * Аватар: изображение → инициалы → иконка. Один корень, размер/форма/статус
- * через `data-*`. Точка статуса не добавляет имени, если `statusLabel` нет.
+ * через `data-*`. Ошибка загрузки `src` переключает на fallback; смена `src`
+ * сбрасывает ошибку. Точка статуса не добавляет имени, если `statusLabel` нет.
  */
 export function Avatar(props: AvatarProps): Node {
-  const hasImage = typeof props.src === "string" && props.src.length > 0;
+  const [failed, setFailed] = createSignal(false);
+  let currentSrc = props.src;
+
+  // Новый `src` — новая попытка загрузки: сбрасываем прошлую ошибку.
+  createEffect(() => {
+    const src = props.src;
+    if (src === currentSrc) return;
+    currentSrc = src;
+    setFailed(false);
+  });
+
+  const hasImage = (): boolean =>
+    typeof props.src === "string" && props.src.length > 0;
+  const showImage = (): boolean => hasImage() && !failed();
   const initials =
     typeof props.initials === "string" && props.initials.length > 0
       ? props.initials
       : undefined;
-  const fallbackLabel = hasImage ? undefined : props.alt;
+  const fallbackLabel = (): string | undefined =>
+    showImage() ? undefined : props.alt;
 
   return (
     <span
@@ -51,16 +66,19 @@ export function Avatar(props: AvatarProps): Node {
       data-size={props.size ?? "md"}
       data-shape={props.shape ?? "circle"}
       data-status={props.status}
-      role={fallbackLabel === undefined ? undefined : "img"}
-      aria-label={fallbackLabel}
+      role={fallbackLabel() === undefined ? undefined : "img"}
+      aria-label={fallbackLabel()}
     >
-      {hasImage ? (
+      {showImage() ? (
         <img
           class="sui-avatar__image"
-          src={props.src}
+          src={props.src ?? ""}
           alt={props.alt ?? ""}
           loading="lazy"
           decoding="async"
+          on:error={() => {
+            setFailed(true);
+          }}
         />
       ) : initials !== undefined ? (
         <span class="sui-avatar__initials" aria-hidden="true">

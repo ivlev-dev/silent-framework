@@ -683,7 +683,7 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `Avatar`
 
-`function Avatar(props: AvatarProps): Node` — аватар: изображение → инициалы → иконка. Размер/форма/статус через `data-*`; точка статуса не добавляет имени без `statusLabel`.
+`function Avatar(props: AvatarProps): Node` — аватар: изображение → инициалы → иконка. Размер/форма/статус через `data-*`; точка статуса не добавляет имени без `statusLabel`. Если `src` не загрузился, показывается fallback (инициалы/иконка) с `role="img"` и `aria-label`; смена `src` повторяет попытку.
 
 ### `AvatarProps`
 
@@ -833,7 +833,7 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `Drawer`
 
-`function Drawer(props: DrawerProps): Node` — боковая панель. `modal` рендерит скрим, `role="dialog"`/`aria-modal`, запирает фокус и возвращает его на триггер; Escape закрывает через `onOpenChange(false)`. В отличие от `Dialog`/`Sheet`, фон не получает `inert`/`aria-hidden`, а прокрутка `body` не блокируется.
+`function Drawer(props: DrawerProps): Node` — боковая панель. `modal` рендерит скрим, `role="dialog"`/`aria-modal`, ставит `inert`/`aria-hidden` на фон, блокирует прокрутку `body`, запирает фокус и возвращает его на триггер; Escape закрывает через `onOpenChange(false)`. `standard` — часть раскладки: фон и прокрутка не блокируются.
 
 ### `DrawerProps`
 
