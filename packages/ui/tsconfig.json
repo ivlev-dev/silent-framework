@@ -10,6 +10,21 @@
     "resolveJsonModule": false,
     "types": []
   },
-  "include": ["src"],
-  "references": [{ "path": "../reactivity" }, { "path": "../core" }, { "path": "../form" }]
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../reactivity"
+    },
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../form"
+    },
+    {
+      "path": "../virtual"
+    }
+  ]
 }
