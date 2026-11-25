@@ -16,8 +16,8 @@
 
 | Артефакт | Координаты | Назначение |
 | --- | --- | --- |
-| рантайм | `io.github.ivlev-dev:silent-protocol:<version>` | аннотации, writer/reader, интерфейсы |
-| KSP-процессор | `io.github.ivlev-dev:silent-protocol-ksp:<version>` | генерация кодеков на этапе компиляции |
+| рантайм | `dev.ivlev.silent:silent-protocol:<version>` | аннотации, writer/reader, интерфейсы |
+| KSP-процессор | `dev.ivlev.silent:silent-protocol-ksp:<version>` | генерация кодеков на этапе компиляции |
 
 `<version>` — Gradle-свойство `protocolVersion` (по умолчанию `0.14.0`).
 
@@ -48,12 +48,12 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.ivlev-dev:silent-protocol:0.14.0")
-    ksp("io.github.ivlev-dev:silent-protocol-ksp:0.14.0")
+    implementation("dev.ivlev.silent:silent-protocol:0.14.0")
+    ksp("dev.ivlev.silent:silent-protocol-ksp:0.14.0")
 }
 ```
 
-Настройка KSP сводится к применению плагина и добавлению процессора в конфигурацию `ksp`: провайдер найден через `META-INF/services/com.google.devtools.ksp.processing.SymbolProcessorProvider`, аргументы процессора не используются. Для `@Proto`-классов в тестовых исходниках добавьте `kspTest("io.github.ivlev-dev:silent-protocol-ksp:0.14.0")`.
+Настройка KSP сводится к применению плагина и добавлению процессора в конфигурацию `ksp`: провайдер найден через `META-INF/services/com.google.devtools.ksp.processing.SymbolProcessorProvider`, аргументы процессора не используются. Для `@Proto`-классов в тестовых исходниках добавьте `kspTest("dev.ivlev.silent:silent-protocol-ksp:0.14.0")`.
 
 Если артефакты еще не опубликованы в Maven Central, выполните из каталога `kotlin`:
 

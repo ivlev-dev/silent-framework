@@ -81,10 +81,10 @@
 
 ## Протокол
 
-Пакеты `@ivlev-dev/silent-protocol` и `@ivlev-dev/silent-protocol-vite` публикуются в npm вместе с остальными (`pnpm -r publish`). Rust-крейты `silent-protocol`/`silent-protocol-macros` и Kotlin-артефакты `io.github.ivlev-dev:silent-protocol`/`silent-protocol-ksp` в этот workflow не входят:
+Пакеты `@ivlev-dev/silent-protocol` и `@ivlev-dev/silent-protocol-vite` публикуются в npm вместе с остальными (`pnpm -r publish`). Rust-крейты `silent-protocol`/`silent-protocol-macros` и Kotlin-артефакты `dev.ivlev.silent:silent-protocol`/`silent-protocol-ksp` в этот workflow не входят:
 
 - Rust: `cargo publish -p silent-protocol-macros` затем `cargo publish -p silent-protocol` (нужен `CARGO_REGISTRY_TOKEN`). Версия `0.14.0` уже опубликована на crates.io.
-- Kotlin: `pnpm publish:maven` (нужны `MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`, `GPG_PRIVATE_KEY`, подтверждённый namespace и публичный ключ на keyserver). Скрипт подписывает, собирает bundle и загружает в Central Portal; см. `kotlin/README.md`. Версия `0.14.0` опубликована в `io.github.ivlev-dev`.
+- Kotlin: `pnpm publish:maven` (нужны `MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`, `GPG_PRIVATE_KEY`, подтверждённый namespace и публичный ключ на keyserver). Скрипт подписывает, собирает bundle и загружает в Central Portal; см. `kotlin/README.md`. Версия `0.14.0` опубликована в `dev.ivlev.silent`.
 
 Версия Kotlin задаётся в `kotlin/gradle.properties` (`protocolVersion`) и должна совпадать с версией пакетов.
 

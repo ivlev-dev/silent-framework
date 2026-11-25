@@ -6,8 +6,8 @@ Kotlin/JVM-реализация бинарного протокола Silent: к
 
 | Модуль | Назначение | Координаты |
 | --- | --- | --- |
-| `protocol` | рантайм: аннотации, `ProtoWriter`/`ProtoReader`, `ProtocolOptions`, `ProtocolError`, `ProtoSort`, `ProtoNumbers`, интерфейсы `ProtoCodec`/`ProtocolEnum` | `io.github.ivlev-dev:silent-protocol` |
-| `ksp-processor` | KSP-процессор, который по `@Proto` генерирует `object <Class>Codec : ProtoCodec<Class>` | `io.github.ivlev-dev:silent-protocol-ksp` |
+| `protocol` | рантайм: аннотации, `ProtoWriter`/`ProtoReader`, `ProtocolOptions`, `ProtocolError`, `ProtoSort`, `ProtoNumbers`, интерфейсы `ProtoCodec`/`ProtocolEnum` | `dev.ivlev.silent:silent-protocol` |
+| `ksp-processor` | KSP-процессор, который по `@Proto` генерирует `object <Class>Codec : ProtoCodec<Class>` | `dev.ivlev.silent:silent-protocol-ksp` |
 
 Тесты протокола лежат в `protocol/src/test/kotlin`, включая кросс-языковые векторы (`CrossLanguageTest`) и замеры (`BenchMain`). Подробный справочник по API, типам и ограничениям — в [`protocol/README.md`](protocol/README.md).
 
@@ -88,12 +88,12 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.ivlev-dev:silent-protocol:0.14.0")
-    ksp("io.github.ivlev-dev:silent-protocol-ksp:0.14.0")
+    implementation("dev.ivlev.silent:silent-protocol:0.14.0")
+    ksp("dev.ivlev.silent:silent-protocol-ksp:0.14.0")
 }
 ```
 
-Процессор регистрируется автоматически через `META-INF/services`, дополнительная настройка KSP не нужна. Если `@Proto`-классы объявлены в тестовых исходниках, добавьте `kspTest("io.github.ivlev-dev:silent-protocol-ksp:0.14.0")`.
+Процессор регистрируется автоматически через `META-INF/services`, дополнительная настройка KSP не нужна. Если `@Proto`-классы объявлены в тестовых исходниках, добавьте `kspTest("dev.ivlev.silent:silent-protocol-ksp:0.14.0")`.
 
 Артефакт `silent-protocol-ksp` нужен только на конфигурации `ksp` (это процессор, а не рантайм-зависимость). Версия KSP-плагина должна совпадать с версией Kotlin, которой собран проект.
 
@@ -117,8 +117,8 @@ gradle :protocol:test :ksp-processor:build :protocol:publishToMavenLocal --conso
 
 | Publication | Group | Artifact | Версия |
 | --- | --- | --- | --- |
-| `maven` в `:protocol` | `io.github.ivlev-dev` | `silent-protocol` | `protocolVersion` |
-| `maven` в `:ksp-processor` | `io.github.ivlev-dev` | `silent-protocol-ksp` | `protocolVersion` |
+| `maven` в `:protocol` | `dev.ivlev.silent` | `silent-protocol` | `protocolVersion` |
+| `maven` в `:ksp-processor` | `dev.ivlev.silent` | `silent-protocol-ksp` | `protocolVersion` |
 
 Локальная публикация:
 
@@ -138,7 +138,7 @@ export GPG_PASSPHRASE=""   # если ключ без пароля
 pnpm publish:maven
 ```
 
-Скрипт собирает staging-repo, подписывает артефакты, упаковывает bundle, загружает в Central Portal (`publishingType=AUTOMATIC`) и ждёт `PUBLISHED`. Нужны подтверждённый namespace (`io.github.ivlev-dev` или другой из аккаунта) и публичный GPG-ключ на keyserver.
+Скрипт собирает staging-repo, подписывает артефакты, упаковывает bundle, загружает в Central Portal (`publishingType=AUTOMATIC`) и ждёт `PUBLISHED`. Нужны подтверждённый namespace (`dev.ivlev.silent` или другой из аккаунта) и публичный GPG-ключ на keyserver.
 
 ### Что осталось для Maven Central
 
