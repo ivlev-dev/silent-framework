@@ -34,6 +34,8 @@ const meta = {
           "navy/noir/gold компилируется в CSS-переменные `--sui-color-*`;",
           "`data-theme` переключает light/dark без перерисовки, `applyTheme()` ставит",
           "тему на документ, `themeScriptSource()` отдаёт inline-скрипт для SSR.",
+          "Display/headline и UI используют один современный sans, контролы 32/40/48px,",
+          "радиусы 4/6/10/14/20 — без serif и визуального раздувания.",
         ].join(" "),
       },
       canvas: { sourceState: "shown" },
@@ -143,13 +145,19 @@ function semanticSwatches(theme: "light" | "dark"): Node {
 
 function sample(): Node {
   return (
-    <Surface tone="surface-container" padding={5} radius="lg" border="outline-variant">
+    <Surface tone="surface-container" padding={4} radius="lg" border="outline-variant">
       <Stack gap={3}>
-        <Heading level={3}>Поверхность и текст</Heading>
-        <Text variant="body-large" class="sui-measure">
-          Основной текст на бумажной поверхности. Мера строки — 68ch, поэтому
-          абзац остаётся читаемым и на широком 4K-экране.
-        </Text>
+        <Stack gap={1}>
+          <Text variant="label-small" tone="muted">display / headline / title / body / label — sans</Text>
+          <Heading level={2} variant="display-small">Строгая типографика</Heading>
+          <Heading level={3} variant="headline-small">Заголовок без serif</Heading>
+          <Text variant="title-small">Компактный title</Text>
+          <Text variant="body-medium" class="sui-measure">
+            Основной текст на бумажной поверхности. Мера строки — 68ch, поэтому
+            абзац остаётся читаемым и на широком 4K-экране.
+          </Text>
+          <Text variant="label-medium" tone="muted">LABEL · 12–13PX</Text>
+        </Stack>
         <Text tone="muted">Вспомогательный текст — приглушённый navy.</Text>
         <Box padding={3} background="primary-container" radius="md">
           <Text tone="primary">primary-container</Text>
@@ -172,11 +180,13 @@ function sample(): Node {
             <Text>tertiary-container</Text>
           </Surface>
         </Grid>
-        <Stack gap={2} justify="start">
-          <Button>filled</Button>
+        <Inline gap={2} wrap align="center">
+          <Button size="sm">sm 32</Button>
+          <Button>filled 40</Button>
           <Button variant="tonal">tonal</Button>
           <Button variant="outlined">outlined</Button>
-        </Stack>
+          <Button variant="accent" size="lg">lg 48</Button>
+        </Inline>
       </Stack>
     </Surface>
   );
@@ -186,7 +196,7 @@ export const Palette: Story = {
   render: silentStory<ThemeArgs>((args) => (
     <Surface tone="surface" padding={5} radius="xl" attrs={{ "data-theme": args.theme }}>
       <Stack gap={4}>
-        <Heading level={2} class="sui-font-display">{args.headline}</Heading>
+        <Heading level={2}>{args.headline}</Heading>
         <Text tone="muted">
           Палитра ivory / almond / mist / navy / noir / gold. Ниже — семантические
           роли текущей темы.

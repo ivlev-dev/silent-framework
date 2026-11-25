@@ -1,54 +1,23 @@
-import type { Children, ClassNameValue, StyleInput } from "@ivlev-dev/silent-core";
+import type { Children } from "@ivlev-dev/silent-core";
 import { Show, createSignal, untrack } from "@ivlev-dev/silent-core";
-import type { Attrs } from "../../internal/props.js";
 import { clientEffect } from "../../internal/overlay.js";
 import { Field } from "../field/field.js";
 import {
   NO_WRITE,
-  type BoundField,
-  type ControlSize,
   describedBy,
   errorIdFor,
   hasContent,
   hintIdFor,
   resolveControlId,
 } from "../internal/control.js";
+import { flattenListbox } from "../internal/listbox-engine.js";
+import type { SelectOption, SelectProps } from "./types.js";
 
-export interface SelectOption {
-  readonly value: string | number;
-  readonly label: Children;
-  readonly disabled?: boolean | undefined;
-}
-
-export interface SelectProps {
-  readonly options: readonly SelectOption[];
-  readonly value?:
-    | string
-    | number
-    | readonly (string | number)[]
-    | undefined;
-  readonly field?:
-    | BoundField<string | number | readonly string[]>
-    | undefined;
-  readonly label?: Children;
-  readonly hint?: Children;
-  readonly error?: Children;
-  readonly placeholder?: string | undefined;
-  readonly multiple?: boolean | undefined;
-  readonly name?: string | undefined;
-  readonly id?: string | undefined;
-  readonly required?: boolean | undefined;
-  readonly disabled?: boolean | undefined;
-  readonly size?: ControlSize | undefined;
-  readonly bare?: boolean | undefined;
-  readonly describedBy?: string | undefined;
-  readonly onChange?: ((event: Event) => void) | undefined;
-  readonly onBlur?: ((event: FocusEvent) => void) | undefined;
-  readonly onFocus?: ((event: FocusEvent) => void) | undefined;
-  readonly class?: ClassNameValue;
-  readonly style?: StyleInput;
-  readonly attrs?: Attrs;
-}
+/**
+ * Нативная ветка `Select`: прежний `<select>` с ручной реконсиляцией
+ * `<option>`. SSR-разметка строится `.map()` без маркеров списка; на клиенте
+ * обновление `options` переиспользует существующие `<option>`.
+ */
 
 function optionValue(option: SelectOption): string {
   return String(option.value);
@@ -118,13 +87,8 @@ function childOptions(
   return options;
 }
 
-/**
- * Список. На SSR у выбранных `option` стоит `selected`; разметка строится
- * `.map()` без `For`/маркеров. На клиенте `options` реконсилируются вручную:
- * SSR-разметка остаётся прежней, а после mount обновление сигнала `options`
- * переиспользует/добавляет/удаляет `<option>` без пересоздания `<select>`.
- */
-export function Select(props: SelectProps): Node {
+/** Нативный `Select`: та же геометрия и события, что у прежнего компонента. */
+export function NativeSelect(props: SelectProps): Node {
   const id = resolveControlId(
     props.id ?? props.field?.id,
     props.name ?? props.field?.name,
@@ -151,12 +115,14 @@ export function Select(props: SelectProps): Node {
       ? props.required
       : props.field?.isRequired === true;
   const invalidOf = (): boolean => hasContent(errorOf());
+  const flatOptions = (): readonly SelectOption[] =>
+    flattenListbox(props.options).map((entry) => entry.option);
   /** Полный текст выбранного варианта — в `title` для обрезанного значения. */
   const selectedLabel = (): string | undefined => {
     if (props.multiple === true) return undefined;
     const value = currentValue();
     if (value === undefined || value === null || value === "") return undefined;
-    const selected = props.options.find(
+    const selected = flatOptions().find(
       (option) => optionValue(option) === String(value),
     );
     return typeof selected?.label === "string" ? selected.label : undefined;
@@ -171,7 +137,7 @@ export function Select(props: SelectProps): Node {
   // Только начальная разметка (SSR и первый клиентский рендер). Дальнейшие
   // изменения `options` обрабатывает реконсилятор ниже, а не `<insert>` JSX:
   // иначе список пересоздавался бы целиком и терял выбранное значение.
-  const initialOptions = untrack(() => props.options);
+  const initialOptions = untrack(() => flatOptions());
   const [selectElement, setSelectElement] = createSignal<HTMLSelectElement | null>(
     null,
   );
@@ -183,7 +149,7 @@ export function Select(props: SelectProps): Node {
   clientEffect(() => {
     const select = selectElement();
     if (select === null) return;
-    const options = props.options;
+    const options = flatOptions();
     const multiple = props.multiple === true;
     const placeholder = props.placeholder;
     const required = requiredOf();
@@ -284,6 +250,7 @@ export function Select(props: SelectProps): Node {
     >
       <div
         class="sui-select"
+        data-variant="native"
         data-size={props.size ?? "md"}
         data-invalid={invalidOf() ? "" : undefined}
         data-disabled={props.disabled === true ? "" : undefined}

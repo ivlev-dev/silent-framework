@@ -60,7 +60,7 @@
     inline-size: 100%;
     min-inline-size: 0;
     min-block-size: calc(
-      var(--sui-control-height-lg) * var(--sui-density) + var(--sui-space-4)
+      var(--sui-control-height-md) * var(--sui-density) + var(--sui-space-4)
     );
     padding: var(--sui-space-1);
     border: 0;
@@ -115,9 +115,9 @@
     display: grid;
     place-items: center;
     flex: none;
-    inline-size: calc(var(--sui-space-10) * var(--sui-density));
+    inline-size: calc(2.75rem * var(--sui-density));
     max-inline-size: 100%;
-    block-size: calc(var(--sui-space-8) * var(--sui-density));
+    block-size: calc(2rem * var(--sui-density));
     border-radius: var(--sui-radius-full);
     transition: background-color var(--sui-motion-short-3) var(--sui-easing-standard);
   }

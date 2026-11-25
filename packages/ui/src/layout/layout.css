@@ -401,7 +401,7 @@
     :where(:root) {
       --sui-content-max: 78rem;
       --sui-content-wide-max: 96rem;
-      --sui-section-gap: 3rem;
+      --sui-section-gap: 2.5rem;
     }
 
     .sui-container {
@@ -433,8 +433,8 @@
 
   @media (min-width: 160em) {
     :where(:root) {
-      --sui-content-max: 120rem;
-      --sui-content-wide-max: 150rem;
+      --sui-content-max: 100rem;
+      --sui-content-wide-max: 128rem;
     }
 
     .sui-container {
@@ -444,8 +444,8 @@
 
   @media (min-width: 240em) {
     :where(:root) {
-      --sui-content-max: 150rem;
-      --sui-content-wide-max: 162.5rem;
+      --sui-content-max: 112rem;
+      --sui-content-wide-max: 144rem;
     }
 
     .sui-container {

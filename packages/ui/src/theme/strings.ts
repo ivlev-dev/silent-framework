@@ -25,6 +25,15 @@ export interface UiStrings {
   readonly sortAscending: string;
   readonly sortDescending: string;
   readonly noData: string;
+  /** Подсказка группы чекбоксов: `{count}` подставляется компонентом. */
+  readonly minSelections: string;
+  /** Подсказка группы чекбоксов: `{count}` подставляется компонентом. */
+  readonly maxSelections: string;
+  readonly increment: string;
+  readonly decrement: string;
+  readonly removeTag: string;
+  /** Подпись разряда OTP: `{index}` и `{count}` подставляются компонентом. */
+  readonly otpDigit: string;
 }
 
 export const defaultUiStrings: UiStrings = {
@@ -52,6 +61,12 @@ export const defaultUiStrings: UiStrings = {
   sortAscending: "По возрастанию",
   sortDescending: "По убыванию",
   noData: "Нет данных",
+  minSelections: "Выберите не менее {count}",
+  maxSelections: "Выберите не более {count}",
+  increment: "Увеличить",
+  decrement: "Уменьшить",
+  removeTag: "Удалить тег",
+  otpDigit: "Символ {index} из {count}",
 };
 
 export const DEFAULT_LOCALE = "ru-RU";

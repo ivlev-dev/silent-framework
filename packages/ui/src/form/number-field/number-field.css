@@ -1,0 +1,207 @@
+/*
+ * Числовое поле: рамку и геометрию задаёт контрол, `Field` — подпись.
+ * Значение набирается как текст, поэтому поле не зависит от `type=number`
+ * и сохраняет группировку, единицу и локальный разделитель.
+ */
+@layer sui.components {
+  .sui-number-field {
+    --sui-number-field-block-size: calc(
+      var(--sui-control-height-md) * var(--sui-density)
+    );
+    --sui-number-field-padding-inline: var(--sui-space-3);
+    --sui-number-field-gap: var(--sui-space-1);
+    --sui-number-field-radius: var(--sui-radius-control);
+    --sui-number-field-font-size: var(--sui-type-body-medium-size);
+    --sui-number-field-line-height: var(--sui-type-body-medium-line);
+    --sui-number-field-bg: var(--sui-color-surface-container-lowest);
+    --sui-number-field-border-color: var(--sui-color-outline-variant);
+    --sui-number-field-hover-color: var(--sui-color-outline);
+    --sui-number-field-focus-color: var(--sui-focus-ring-color);
+    --sui-number-field-error-color: var(--sui-color-error);
+    --sui-number-field-disabled-bg: var(--sui-color-surface-container);
+    --sui-number-field-affix-color: var(--sui-color-on-surface-variant);
+    --sui-number-field-stepper-color: var(--sui-color-on-surface-variant);
+    --sui-number-field-stepper-hover: var(--sui-color-surface-container-high);
+    --sui-number-field-stepper-size: var(--sui-touch-target);
+
+    position: relative;
+    display: flex;
+    align-items: stretch;
+    gap: var(--sui-number-field-gap);
+    box-sizing: border-box;
+    min-inline-size: 0;
+    block-size: max(
+      var(--sui-number-field-block-size),
+      var(--sui-number-field-stepper-size)
+    );
+    padding-inline-start: var(--sui-number-field-padding-inline);
+    padding-inline-end: 0;
+    border: var(--sui-hairline) solid var(--sui-number-field-border-color);
+    border-radius: var(--sui-number-field-radius);
+    background-color: var(--sui-number-field-bg);
+    color: var(--sui-color-on-surface);
+    transition:
+      border-color var(--sui-motion-short-3) var(--sui-easing-standard),
+      background-color var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  .sui-number-field:hover:not([data-disabled]):not([data-readonly]) {
+    border-color: var(--sui-number-field-hover-color);
+  }
+
+  .sui-number-field[data-invalid] {
+    border-color: var(--sui-number-field-error-color);
+  }
+
+  .sui-number-field[data-invalid]:hover:not([data-disabled]):not([data-readonly]) {
+    border-color: var(--sui-number-field-error-color);
+  }
+
+  .sui-number-field:focus-within {
+    border-color: var(--sui-number-field-focus-color);
+    outline: var(--sui-focus-ring-width) solid var(--sui-number-field-focus-color);
+    outline-offset: calc(var(--sui-focus-ring-offset) * -1);
+  }
+
+  .sui-number-field[data-invalid]:focus-within {
+    outline-color: var(--sui-number-field-error-color);
+  }
+
+  .sui-number-field[data-disabled] {
+    background-color: var(--sui-number-field-disabled-bg);
+    opacity: var(--sui-state-disabled);
+    cursor: not-allowed;
+  }
+
+  .sui-number-field[data-readonly] {
+    border-style: dashed;
+    background-color: transparent;
+  }
+
+  .sui-number-field[data-size="sm"] {
+    --sui-number-field-block-size: calc(
+      var(--sui-control-height-sm) * var(--sui-density)
+    );
+    --sui-number-field-padding-inline: var(--sui-space-2);
+    --sui-number-field-font-size: var(--sui-type-body-small-size);
+    --sui-number-field-line-height: var(--sui-type-body-small-line);
+  }
+
+  .sui-number-field[data-size="lg"] {
+    --sui-number-field-block-size: calc(
+      var(--sui-control-height-lg) * var(--sui-density)
+    );
+    --sui-number-field-padding-inline: var(--sui-space-4);
+    --sui-number-field-font-size: var(--sui-type-body-large-size);
+    --sui-number-field-line-height: var(--sui-type-body-large-line);
+  }
+
+  .sui-number-field__input {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    color: inherit;
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-number-field-font-size);
+    line-height: var(--sui-number-field-line-height);
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sui-number-field__input:focus,
+  .sui-number-field__input:focus-visible {
+    outline: none;
+  }
+
+  .sui-number-field__input::placeholder {
+    color: var(--sui-color-on-surface-muted);
+    opacity: 1;
+  }
+
+  .sui-number-field__input:disabled {
+    cursor: not-allowed;
+  }
+
+  .sui-number-field__unit {
+    flex: none;
+    align-self: center;
+    color: var(--sui-number-field-affix-color);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-label-large-size);
+    line-height: var(--sui-type-label-large-line);
+    user-select: none;
+  }
+
+  .sui-number-field__steppers {
+    display: inline-flex;
+    flex: none;
+    align-self: stretch;
+    border-inline-start: var(--sui-hairline) solid
+      var(--sui-number-field-border-color);
+  }
+
+  /* Каждая кнопка — самостоятельная цель не меньше 44px. */
+  .sui-number-field__stepper {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: var(--sui-number-field-stepper-size);
+    block-size: 100%;
+    min-block-size: var(--sui-number-field-stepper-size);
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--sui-number-field-stepper-color);
+    cursor: pointer;
+    transition: background-color var(--sui-motion-short-2)
+      var(--sui-easing-standard);
+  }
+
+  .sui-number-field__stepper:first-child {
+    border-start-end-radius: var(--sui-number-field-radius);
+  }
+
+  .sui-number-field__stepper:last-child {
+    border-end-end-radius: var(--sui-number-field-radius);
+  }
+
+  .sui-number-field__stepper:hover:not(:disabled) {
+    background-color: var(--sui-number-field-stepper-hover);
+  }
+
+  .sui-number-field__stepper:disabled {
+    opacity: var(--sui-state-disabled);
+    cursor: not-allowed;
+  }
+
+  .sui-number-field__stepper:focus-visible {
+    outline: var(--sui-focus-ring-width) solid var(--sui-number-field-focus-color);
+    outline-offset: calc(var(--sui-focus-ring-offset) * -1);
+  }
+
+  @media (pointer: coarse) {
+    .sui-number-field {
+      --sui-number-field-stepper-size: var(--sui-touch-target);
+    }
+
+    .sui-number-field__input {
+      min-block-size: var(--sui-touch-target);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sui-number-field,
+    .sui-number-field__stepper {
+      transition: none;
+    }
+  }
+}

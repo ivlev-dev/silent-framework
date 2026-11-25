@@ -1012,6 +1012,549 @@
         "signature": "export type Token<T> = symbol & { readonly __type?: T; };"
       }
     },
+    "@ivlev-dev/silent-dnd": {
+      "AccessibilityOptions": {
+        "kind": "interface",
+        "signature": "export interface AccessibilityOptions { readonly announcements?: Partial<Announcements>; readonly screenReaderInstructions?: ScreenReaderInstructions; /** Возвращать фокус на активировавший элемент после drag. */ readonly restoreFocus?: boolean; readonly ariaRoleDescription?: string; }"
+      },
+      "ActivationConstraint": {
+        "kind": "type",
+        "signature": "export type ActivationConstraint = DistanceActivationConstraint | DelayActivationConstraint;"
+      },
+      "Active": {
+        "kind": "interface",
+        "signature": "export interface Active { id: UniqueIdentifier; data: Data; /** Измеренный прямоугольник элемента; `null`, пока элемент не измерен. */ rect: ClientRect | null; }"
+      },
+      "Announcements": {
+        "kind": "interface",
+        "signature": "export interface Announcements { onDragStart(event: DragStartEvent): string | undefined; onDragMove?(event: DragMoveEvent): string | undefined; onDragOver?(event: DragOverEvent): string | undefined; onDragEnd?(event: DragEndEvent): string | undefined; onDragCancel?(event: DragCancelEvent): string | undefined; }"
+      },
+      "applyModifiers": {
+        "kind": "function",
+        "type": "(modifiers: Modifiers | null | undefined, args: ModifierArgs) => Transform",
+        "signature": "export declare function applyModifiers(modifiers: Modifiers | null | undefined, args: ModifierArgs): Transform;"
+      },
+      "arrayMove": {
+        "kind": "function",
+        "type": "<T>(array: readonly T[], from: number, to: number) => T[]",
+        "signature": "export declare function arrayMove<T>(array: readonly T[], from: number, to: number): T[];"
+      },
+      "arraySwap": {
+        "kind": "function",
+        "type": "<T>(array: readonly T[], i: number, j: number) => T[]",
+        "signature": "export declare function arraySwap<T>(array: readonly T[], i: number, j: number): T[];"
+      },
+      "AutoScrollActivator": {
+        "kind": "variable",
+        "type": "{ readonly Pointer: \"pointer\"; readonly Always: \"always\"; }",
+        "signature": "export declare const AutoScrollActivator: { readonly Pointer: \"pointer\"; readonly Always: \"always\"; }; export type AutoScrollActivator = (typeof AutoScrollActivator)[keyof typeof AutoScrollActivator];"
+      },
+      "AutoScrollOptions": {
+        "kind": "interface",
+        "signature": "export interface AutoScrollOptions { readonly enabled?: boolean; readonly activator?: AutoScrollActivator; /** Доля меньшей стороны контейнера, считающаяся краевой зоной. */ readonly threshold?: number; /** Максимальная скорость прокрутки в px за кадр. */ readonly acceleration?: number; }"
+      },
+      "CancelDrop": {
+        "kind": "type",
+        "signature": "export type CancelDrop = (args: CancelDropArgs) => boolean;"
+      },
+      "CancelDropArgs": {
+        "kind": "interface",
+        "signature": "export interface CancelDropArgs { readonly active: Active; readonly over: Over | null; readonly collisions: Collision[] | null; readonly delta: Transform; readonly activatorEvent: Event | null; }"
+      },
+      "ClientRect": {
+        "kind": "interface",
+        "signature": "export interface ClientRect { top: number; left: number; right: number; bottom: number; width: number; height: number; }"
+      },
+      "closestCenter": {
+        "kind": "variable",
+        "type": "CollisionDetection",
+        "signature": "export declare const closestCenter: CollisionDetection;"
+      },
+      "closestCorners": {
+        "kind": "variable",
+        "type": "CollisionDetection",
+        "signature": "export declare const closestCorners: CollisionDetection;"
+      },
+      "Collision": {
+        "kind": "interface",
+        "signature": "export interface Collision { id: UniqueIdentifier; data?: Data; }"
+      },
+      "CollisionArgs": {
+        "kind": "interface",
+        "signature": "export interface CollisionArgs { active: Active; collisionRect: ClientRect; droppableRects: Map<UniqueIdentifier, ClientRect>; droppableContainers: readonly DroppableContainer[]; pointerCoordinates: Coordinates | null; }"
+      },
+      "CollisionDetection": {
+        "kind": "type",
+        "signature": "export type CollisionDetection = (args: CollisionArgs) => Collision[];"
+      },
+      "Coordinates": {
+        "kind": "interface",
+        "signature": "export interface Coordinates { x: number; y: number; }"
+      },
+      "createSnapModifier": {
+        "kind": "function",
+        "type": "(gridSize: number) => Modifier",
+        "signature": "export declare function createSnapModifier(gridSize: number): Modifier;"
+      },
+      "CSS": {
+        "kind": "variable",
+        "type": "{ readonly Transform: { readonly toString: (transform: Transform | null | undefined) => string | undefined; }; readonly Translate: { readonly toString: (transform: Transform | null | undefined) => string | undefined; }; readonly Transition: { readonly toString: (transition: CSSTransition | null | undefined) => string | undefined; }; }",
+        "signature": "export declare const CSS: { readonly Transform: { readonly toString: (transform: Transform | null | undefined) => string | undefined; }; readonly Translate: { readonly toString: (transform: Transform | null | undefined) => string | undefined; }; readonly Transition: { readonly toString: (transition: CSSTransition | null | undefined) => string | undefined; }; };"
+      },
+      "defaultAnimateLayoutChanges": {
+        "kind": "variable",
+        "type": "AnimateLayoutChanges",
+        "signature": "export declare const defaultAnimateLayoutChanges: AnimateLayoutChanges;"
+      },
+      "defaultAnnouncements": {
+        "kind": "variable",
+        "type": "Announcements",
+        "signature": "export declare const defaultAnnouncements: Announcements;"
+      },
+      "defaultCoordinates": {
+        "kind": "variable",
+        "type": "Coordinates",
+        "signature": "export declare const defaultCoordinates: Coordinates;"
+      },
+      "defaultDropAnimation": {
+        "kind": "variable",
+        "type": "DropAnimation",
+        "signature": "export declare const defaultDropAnimation: DropAnimation;"
+      },
+      "defaultDropAnimationSideEffects": {
+        "kind": "function",
+        "type": "(options: DropAnimationSideEffectsOptions) => DropAnimationSideEffects",
+        "signature": "export declare function defaultDropAnimationSideEffects(options: DropAnimationSideEffectsOptions): DropAnimationSideEffects;"
+      },
+      "defaultKeyboardCoordinateGetter": {
+        "kind": "variable",
+        "type": "KeyboardCoordinateGetter",
+        "signature": "export declare const defaultKeyboardCoordinateGetter: KeyboardCoordinateGetter;"
+      },
+      "defaultNewIndexGetter": {
+        "kind": "variable",
+        "type": "NewIndexGetter",
+        "signature": "export declare const defaultNewIndexGetter: NewIndexGetter;"
+      },
+      "defaultScreenReaderInstructions": {
+        "kind": "variable",
+        "type": "ScreenReaderInstructions",
+        "signature": "export declare const defaultScreenReaderInstructions: ScreenReaderInstructions;"
+      },
+      "DelayActivationConstraint": {
+        "kind": "interface",
+        "signature": "export interface DelayActivationConstraint { readonly delay?: number; readonly tolerance?: number; }"
+      },
+      "DistanceActivationConstraint": {
+        "kind": "interface",
+        "signature": "export interface DistanceActivationConstraint { readonly distance?: number; }"
+      },
+      "distanceBetween": {
+        "kind": "function",
+        "type": "(a: Coordinates, b: Coordinates) => number",
+        "signature": "export declare function distanceBetween(a: Coordinates, b: Coordinates): number;"
+      },
+      "DndContext": {
+        "kind": "function",
+        "type": "(props: DndContextProps) => Node",
+        "signature": "export declare function DndContext(props: DndContextProps): Node;"
+      },
+      "DndContextProps": {
+        "kind": "interface",
+        "signature": "export interface DndContextProps { readonly id?: string; readonly sensors?: readonly SensorDescriptor[]; readonly collisionDetection?: CollisionDetection; readonly modifiers?: Modifiers; readonly measuring?: MeasuringOptions; readonly autoScroll?: boolean | AutoScrollOptions; readonly cancelDrop?: CancelDrop; readonly accessibility?: AccessibilityOptions; readonly onDragStart?: (event: DragStartEvent) => void; readonly onDragMove?: (event: DragMoveEvent) => void; readonly onDragOver?: (event: DragOverEvent) => void; readonly onDragEnd?: (event: DragEndEvent) => void; readonly onDragCancel?: (event: DragCancelEvent) => void; readonly onDragPending?: (event: DragPendingEvent) => void; readonly onDragAbort?: (event: DragAbortEvent) => void; readonly children?: Children; }"
+      },
+      "DndContextValue": {
+        "kind": "interface",
+        "signature": "export interface DndContextValue { readonly id: string; readonly active: Accessor<Active | null>; readonly over: Accessor<Over | null>; readonly collisions: Accessor<Collision[] | null>; readonly activatorEvent: Accessor<Event | null>; readonly pending: Accessor<PendingDrag | null>; readonly status: Accessor<DragStatus>; readonly activeTransform: Accessor<Transform>; readonly announcement: Accessor<string>; readonly instructions: Accessor<ScreenReaderInstructions>; readonly ariaRoleDescription: Accessor<string>; readonly overlayVisible: Accessor<boolean>; readonly overlaySource: Accessor<Active | null>; readonly overlayTransform: Accessor<Transform>; readonly dragResult: Accessor<DragResult | null>; readonly sensors: Accessor<readonly SensorDescriptor[]>; readonly droppableContainers: Accessor<readonly DroppableContainer[]>; readonly droppableRects: Accessor<ReadonlyMap<UniqueIdentifier, ClientRect>>; readonly windowRect: Accessor<ClientRect | null>; registerDraggable(entry: DraggableEntry): () => void; registerDroppable(entry: DroppableEntry): () => void; registerSortable(entry: SortableEntry): () => void; registerMonitor(listener: DndMonitorListener): () => void; registerActivator(node: HTMLElement, eventType: string, handler: (event: Event) => void): () => void; dispatchActivator(id: UniqueIdentifier, eventType: string, event: Event): void; claimActivator(event: Event): boolean; getDraggableIdByNode(node: HTMLElement): UniqueIdentifier | null; getDraggableNode(id: UniqueIdentifier): HTMLElement | null; getDroppableRect(id: UniqueIdentifier): ClientRect | null; getActiveRect(): ClientRect | null; getPointerCoordinates(): Coordinates | null; startDrag(id: UniqueIdentifier, event: Event | null, coordinates?: Coordinates): void; moveDrag(coordinates: Coordinates, event?: Event): void; moveDragBy(delta: Coordinates, event?: Event): void; endDrag(event?: Event): void; cancelDrag(event?: Event): void; setPending(id: UniqueIdentifier, event: Event | null, coordinates: Coordinates | null): void; abortPending(event?: Event | null): void; clearPending(): void; hideOverlay(): void; dispose(): void; }"
+      },
+      "DndMonitorListener": {
+        "kind": "interface",
+        "signature": "export interface DndMonitorListener { onDragStart?(event: DragStartEvent): void; onDragMove?(event: DragMoveEvent): void; onDragOver?(event: DragOverEvent): void; onDragEnd?(event: DragEndEvent): void; onDragCancel?(event: DragCancelEvent): void; onDragPending?(event: DragPendingEvent): void; onDragAbort?(event: DragAbortEvent): void; }"
+      },
+      "DragAbortEvent": {
+        "kind": "interface",
+        "signature": "export interface DragAbortEvent extends DragEventBase { id: UniqueIdentifier; }"
+      },
+      "DragCancelEvent": {
+        "kind": "interface",
+        "signature": "export interface DragCancelEvent extends DragEventBase { }"
+      },
+      "DragEndEvent": {
+        "kind": "interface",
+        "signature": "export interface DragEndEvent extends DragEventBase { }"
+      },
+      "DragEventBase": {
+        "kind": "interface",
+        "signature": "export interface DragEventBase { active: Active; over: Over | null; delta: Transform; collisions: Collision[] | null; activatorEvent: Event | null; }"
+      },
+      "DraggableAttributeValue": {
+        "kind": "type",
+        "signature": "export type DraggableAttributeValue = string | number | boolean | undefined | null | (() => string | number | boolean | undefined | null);"
+      },
+      "DraggableListeners": {
+        "kind": "interface",
+        "signature": "export interface DraggableListeners { onPointerDown(event: Event): void; onKeyDown(event: Event): void; }"
+      },
+      "DragMoveEvent": {
+        "kind": "interface",
+        "signature": "export interface DragMoveEvent extends DragEventBase { }"
+      },
+      "DragOverEvent": {
+        "kind": "interface",
+        "signature": "export interface DragOverEvent extends DragEventBase { }"
+      },
+      "DragOverlay": {
+        "kind": "function",
+        "type": "(props: DragOverlayProps) => Node",
+        "signature": "export declare function DragOverlay(props: DragOverlayProps): Node;"
+      },
+      "DragOverlayProps": {
+        "kind": "interface",
+        "signature": "export interface DragOverlayProps { readonly children?: Children | ((source: DragOverlaySource) => Children); readonly tag?: string; readonly disabled?: boolean; readonly dropAnimation?: DropAnimationOption; readonly sideEffects?: DragOverlaySideEffects; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly container?: Element | string | (() => Element | null); }"
+      },
+      "DragOverlaySideEffects": {
+        "kind": "interface",
+        "signature": "export interface DragOverlaySideEffects { readonly opacity?: string | number; readonly scale?: string | number; }"
+      },
+      "DragOverlaySource": {
+        "kind": "type",
+        "signature": "export type DragOverlaySource = Active;"
+      },
+      "DragPendingEvent": {
+        "kind": "interface",
+        "signature": "export interface DragPendingEvent extends DragEventBase { id: UniqueIdentifier; initialCoordinates: Coordinates | null; }"
+      },
+      "DragResult": {
+        "kind": "interface",
+        "signature": "export interface DragResult { readonly active: Active; readonly over: Over | null; readonly cancelled: boolean; }"
+      },
+      "DragStartEvent": {
+        "kind": "interface",
+        "signature": "export interface DragStartEvent extends DragEventBase { }"
+      },
+      "DragStatus": {
+        "kind": "type",
+        "signature": "export type DragStatus = \"idle\" | \"pending\" | \"dragging\";"
+      },
+      "DropAnimation": {
+        "kind": "interface",
+        "signature": "export interface DropAnimation { readonly duration?: number; readonly easing?: string; /** Побочные эффекты на время анимации; очищаются по её завершении. */ readonly sideEffects?: DropAnimationSideEffects | null; }"
+      },
+      "DropAnimationArgs": {
+        "kind": "interface",
+        "signature": "export interface DropAnimationArgs { readonly active: Active; readonly over: Over | null; }"
+      },
+      "DropAnimationOption": {
+        "kind": "type",
+        "signature": "export type DropAnimationOption = DropAnimation | null | ((args: DropAnimationArgs) => DropAnimation | null);"
+      },
+      "DropAnimationSideEffects": {
+        "kind": "type",
+        "signature": "export type DropAnimationSideEffects = (args: DropAnimationSideEffectsArgs) => void | (() => void);"
+      },
+      "DropAnimationSideEffectsArgs": {
+        "kind": "interface",
+        "signature": "export interface DropAnimationSideEffectsArgs { readonly active: Active; /** Узел активного элемента; может отсутствовать, если он уже удалён. */ readonly activeNode?: HTMLElement | DropAnimationSideEffectElement | null; readonly dragOverlay: { readonly node: HTMLElement | DropAnimationSideEffectElement | null; readonly rect?: ClientRect | null; }; }"
+      },
+      "DropAnimationSideEffectsOptions": {
+        "kind": "interface",
+        "signature": "export interface DropAnimationSideEffectsOptions { readonly styles?: { readonly active?: Readonly<Record<string, string>>; readonly dragOverlay?: Readonly<Record<string, string>>; }; }"
+      },
+      "DroppableContainer": {
+        "kind": "interface",
+        "signature": "export interface DroppableContainer { id: UniqueIdentifier; data?: Data; disabled?: boolean; rect?: ClientRect | null; }"
+      },
+      "DroppableMeasuringOptions": {
+        "kind": "interface",
+        "signature": "export interface DroppableMeasuringOptions { readonly strategy?: MeasuringStrategy; readonly frequency?: MeasuringFrequency; }"
+      },
+      "getCenter": {
+        "kind": "function",
+        "type": "(rect: ClientRect) => Coordinates",
+        "signature": "export declare function getCenter(rect: ClientRect): Coordinates;"
+      },
+      "getClientRect": {
+        "kind": "function",
+        "type": "(rectLike: RectLike) => ClientRect",
+        "signature": "export declare function getClientRect(rectLike: RectLike): ClientRect;"
+      },
+      "getFirstCollision": {
+        "kind": "function",
+        "type": "(collisions: readonly Collision[] | null | undefined, id?: UniqueIdentifier) => Collision | null",
+        "signature": "export declare function getFirstCollision(collisions: readonly Collision[] | null | undefined, id?: UniqueIdentifier): Collision | null;"
+      },
+      "getScrollableAncestors": {
+        "kind": "function",
+        "type": "(element: Element | null) => Element[]",
+        "signature": "export declare function getScrollableAncestors(element: Element | null): Element[];"
+      },
+      "hasSortableData": {
+        "kind": "function",
+        "type": "(entry: unknown) => entry is SortableDataCarrier & { readonly data: { readonly current: { readonly sortable: SortableData; }; }; }",
+        "signature": "export declare function hasSortableData(entry: unknown): entry is SortableDataCarrier & { readonly data: { readonly current: { readonly sortable: SortableData; }; }; };"
+      },
+      "horizontalListSortingStrategy": {
+        "kind": "variable",
+        "type": "SortingStrategy",
+        "signature": "export declare const horizontalListSortingStrategy: SortingStrategy;"
+      },
+      "KeyboardCode": {
+        "kind": "enum",
+        "signature": "export declare enum KeyboardCode { Space = \"Space\", Down = \"ArrowDown\", Right = \"ArrowRight\", Left = \"ArrowLeft\", Up = \"ArrowUp\", Esc = \"Escape\", Enter = \"Enter\", Tab = \"Tab\", Home = \"Home\", End = \"End\" }"
+      },
+      "KeyboardCoordinateGetter": {
+        "kind": "type",
+        "signature": "export type KeyboardCoordinateGetter = (event: KeyboardEvent, args: KeyboardCoordinateGetterArgs) => Coordinates | void;"
+      },
+      "KeyboardCoordinateGetterArgs": {
+        "kind": "interface",
+        "signature": "export interface KeyboardCoordinateGetterArgs { readonly active: Active; readonly currentCoordinates: Coordinates; readonly context: KeyboardCoordinateGetterContext; }"
+      },
+      "KeyboardCoordinateGetterContext": {
+        "kind": "interface",
+        "signature": "export interface KeyboardCoordinateGetterContext { readonly active: Active; readonly currentCoordinates: Coordinates; readonly collisionRect: ClientRect | null; readonly droppableRects: ReadonlyMap<UniqueIdentifier, ClientRect>; readonly droppableContainers: readonly DroppableContainer[]; readonly over: Over | null; readonly activeNodeRect: ClientRect | null; }"
+      },
+      "KeyboardSensor": {
+        "kind": "variable",
+        "type": "Sensor<SensorOptions>",
+        "signature": "export declare const KeyboardSensor: Sensor;"
+      },
+      "KeyboardSensorOptions": {
+        "kind": "interface",
+        "signature": "export interface KeyboardSensorOptions extends SensorOptions { readonly coordinateGetter?: KeyboardCoordinateGetter; /** Пользовательский фильтр: `true` запрещает активацию с клавиатуры. */ readonly preventActivation?: (event: KeyboardEvent) => boolean; }"
+      },
+      "MeasuringFrequency": {
+        "kind": "variable",
+        "type": "{ readonly Optimized: \"optimized\"; readonly Always: \"always\"; }",
+        "signature": "export declare const MeasuringFrequency: { readonly Optimized: \"optimized\"; readonly Always: \"always\"; }; export type MeasuringFrequency = (typeof MeasuringFrequency)[keyof typeof MeasuringFrequency];"
+      },
+      "MeasuringFrequencyValue": {
+        "kind": "variable",
+        "type": "{ readonly Optimized: \"optimized\"; readonly Always: \"always\"; }",
+        "signature": "export declare const MeasuringFrequency: { readonly Optimized: \"optimized\"; readonly Always: \"always\"; }; export type MeasuringFrequency = (typeof MeasuringFrequency)[keyof typeof MeasuringFrequency];"
+      },
+      "MeasuringOptions": {
+        "kind": "interface",
+        "signature": "export interface MeasuringOptions { readonly droppable?: DroppableMeasuringOptions; readonly draggable?: DroppableMeasuringOptions; }"
+      },
+      "MeasuringStrategy": {
+        "kind": "variable",
+        "type": "{ readonly Always: \"always\"; readonly BeforeDragging: \"beforeDragging\"; readonly WhileDragging: \"whileDragging\"; }",
+        "signature": "export declare const MeasuringStrategy: { readonly Always: \"always\"; readonly BeforeDragging: \"beforeDragging\"; readonly WhileDragging: \"whileDragging\"; }; export type MeasuringStrategy = (typeof MeasuringStrategy)[keyof typeof MeasuringStrategy];"
+      },
+      "MeasuringStrategyValue": {
+        "kind": "variable",
+        "type": "{ readonly Always: \"always\"; readonly BeforeDragging: \"beforeDragging\"; readonly WhileDragging: \"whileDragging\"; }",
+        "signature": "export declare const MeasuringStrategy: { readonly Always: \"always\"; readonly BeforeDragging: \"beforeDragging\"; readonly WhileDragging: \"whileDragging\"; }; export type MeasuringStrategy = (typeof MeasuringStrategy)[keyof typeof MeasuringStrategy];"
+      },
+      "Modifier": {
+        "kind": "type",
+        "signature": "export type Modifier = (args: ModifierArgs) => Transform;"
+      },
+      "ModifierArgs": {
+        "kind": "interface",
+        "signature": "export interface ModifierArgs { transform: Transform; draggingNodeRect: ClientRect | null; activatorEvent: Event | null; active: Active; over: Over | null; containerRect?: ClientRect; scrollableAncestorRect?: ClientRect; windowRect?: ClientRect; pointerCoordinates?: Coordinates; }"
+      },
+      "Modifiers": {
+        "kind": "type",
+        "signature": "export type Modifiers = Modifier[];"
+      },
+      "MouseSensor": {
+        "kind": "variable",
+        "type": "Sensor<SensorOptions>",
+        "signature": "export declare const MouseSensor: Sensor;"
+      },
+      "Over": {
+        "kind": "interface",
+        "signature": "export interface Over { id: UniqueIdentifier; data: Data; rect: ClientRect | null; disabled: boolean; }"
+      },
+      "PendingDrag": {
+        "kind": "interface",
+        "signature": "export interface PendingDrag { readonly id: UniqueIdentifier; readonly initialCoordinates: Coordinates | null; readonly activatorEvent: Event | null; }"
+      },
+      "PointerSensor": {
+        "kind": "variable",
+        "type": "Sensor<SensorOptions>",
+        "signature": "export declare const PointerSensor: Sensor;"
+      },
+      "PointerSensorOptions": {
+        "kind": "interface",
+        "signature": "export interface PointerSensorOptions extends SensorOptions { readonly activationConstraint?: ActivationConstraint; }"
+      },
+      "pointerWithin": {
+        "kind": "variable",
+        "type": "CollisionDetection",
+        "signature": "export declare const pointerWithin: CollisionDetection;"
+      },
+      "rectIntersection": {
+        "kind": "variable",
+        "type": "CollisionDetection",
+        "signature": "export declare const rectIntersection: CollisionDetection;"
+      },
+      "rectSortingStrategy": {
+        "kind": "variable",
+        "type": "SortingStrategy",
+        "signature": "export declare const rectSortingStrategy: SortingStrategy;"
+      },
+      "rectSwappingStrategy": {
+        "kind": "variable",
+        "type": "SortingStrategy",
+        "signature": "export declare const rectSwappingStrategy: SortingStrategy;"
+      },
+      "restrictToFirstScrollableAncestor": {
+        "kind": "variable",
+        "type": "Modifier",
+        "signature": "export declare const restrictToFirstScrollableAncestor: Modifier;"
+      },
+      "restrictToHorizontalAxis": {
+        "kind": "variable",
+        "type": "Modifier",
+        "signature": "export declare const restrictToHorizontalAxis: Modifier;"
+      },
+      "restrictToParentElement": {
+        "kind": "variable",
+        "type": "Modifier",
+        "signature": "export declare const restrictToParentElement: Modifier;"
+      },
+      "restrictToVerticalAxis": {
+        "kind": "variable",
+        "type": "Modifier",
+        "signature": "export declare const restrictToVerticalAxis: Modifier;"
+      },
+      "restrictToWindowEdges": {
+        "kind": "function",
+        "type": "{ (args: ModifierArgs): Transform; (context: { windowRect: ClientRect; }): Modifier; }",
+        "signature": "export declare function restrictToWindowEdges(args: ModifierArgs): Transform; export declare function restrictToWindowEdges(context: { windowRect: ClientRect; }): Modifier;"
+      },
+      "ScreenReaderInstructions": {
+        "kind": "interface",
+        "signature": "export interface ScreenReaderInstructions { draggable: string; }"
+      },
+      "Sensor": {
+        "kind": "interface",
+        "signature": "export interface Sensor<T extends SensorOptions = SensorOptions> { readonly name: string; attach(controller: DndContextValue, node: HTMLElement, options: T, activatorNode?: HTMLElement | null): () => void; }"
+      },
+      "SensorDescriptor": {
+        "kind": "interface",
+        "signature": "export interface SensorDescriptor { readonly sensor: Sensor; readonly options?: SensorOptions; }"
+      },
+      "SensorOptions": {
+        "kind": "type",
+        "signature": "export type SensorOptions = Record<string, unknown>;"
+      },
+      "snapCenterToCursor": {
+        "kind": "variable",
+        "type": "Modifier",
+        "signature": "export declare const snapCenterToCursor: Modifier;"
+      },
+      "SortableContext": {
+        "kind": "function",
+        "type": "(props: SortableContextProps) => Node",
+        "signature": "export declare function SortableContext(props: SortableContextProps): Node;"
+      },
+      "SortableContextProps": {
+        "kind": "interface",
+        "signature": "export interface SortableContextProps { readonly items: readonly UniqueIdentifier[] | (() => readonly UniqueIdentifier[]); readonly strategy?: SortingStrategy; readonly disabled?: boolean; readonly id?: UniqueIdentifier; readonly containerId?: UniqueIdentifier; readonly children?: Children; }"
+      },
+      "SortableContextValue": {
+        "kind": "interface",
+        "signature": "export interface SortableContextValue { readonly id: UniqueIdentifier; readonly containerId: UniqueIdentifier | undefined; readonly items: () => readonly UniqueIdentifier[]; readonly strategy: () => SortingStrategy; readonly disabled: () => boolean; }"
+      },
+      "sortableKeyboardCoordinates": {
+        "kind": "variable",
+        "type": "KeyboardCoordinateGetter",
+        "signature": "export declare const sortableKeyboardCoordinates: KeyboardCoordinateGetter;"
+      },
+      "SortingStrategy": {
+        "kind": "type",
+        "signature": "export type SortingStrategy = (args: SortingStrategyArgs) => Transform | null;"
+      },
+      "SortingStrategyArgs": {
+        "kind": "interface",
+        "signature": "export interface SortingStrategyArgs { activeIndex: number; overIndex: number; index: number; rects: readonly (ClientRect | null)[]; activeNodeRect: ClientRect | null; overRect?: ClientRect | null; }"
+      },
+      "TouchSensor": {
+        "kind": "variable",
+        "type": "Sensor<SensorOptions>",
+        "signature": "export declare const TouchSensor: Sensor;"
+      },
+      "Transform": {
+        "kind": "interface",
+        "signature": "export interface Transform { x: number; y: number; scaleX?: number; scaleY?: number; }"
+      },
+      "TraversalOrder": {
+        "kind": "enum",
+        "signature": "export declare enum TraversalOrder { BreadthFirst = 0, DepthFirst = 1 }"
+      },
+      "UniqueIdentifier": {
+        "kind": "type",
+        "signature": "export type UniqueIdentifier = string | number;"
+      },
+      "useDndContext": {
+        "kind": "function",
+        "type": "() => DndContextValue",
+        "signature": "export declare function useDndContext(): DndContextValue;"
+      },
+      "useDndMonitor": {
+        "kind": "function",
+        "type": "(listener: DndMonitorListener) => void",
+        "signature": "export declare function useDndMonitor(listener: DndMonitorListener): void;"
+      },
+      "useDraggable": {
+        "kind": "function",
+        "type": "(args: UseDraggableArguments) => UseDraggableReturn",
+        "signature": "export declare function useDraggable(args: UseDraggableArguments): UseDraggableReturn;"
+      },
+      "UseDraggableArguments": {
+        "kind": "interface",
+        "signature": "export interface UseDraggableArguments { readonly id: UniqueIdentifier; readonly data?: Data; readonly disabled?: boolean; readonly attributes?: Record<string, unknown>; readonly listeners?: Partial<DraggableListeners>; }"
+      },
+      "UseDraggableReturn": {
+        "kind": "interface",
+        "signature": "export interface UseDraggableReturn { readonly attributes: Record<string, DraggableAttributeValue>; readonly listeners: DraggableListeners; readonly setNodeRef: (node: HTMLElement | null) => void; readonly setActivatorNodeRef: (node: HTMLElement | null) => void; readonly node: Accessor<HTMLElement | null>; readonly activatorNode: Accessor<HTMLElement | null>; readonly transform: Accessor<Transform | null>; readonly isDragging: Accessor<boolean>; readonly active: Accessor<Active | null>; readonly over: Accessor<Over | null>; readonly activatorEvent: Accessor<Event | null>; readonly data: Accessor<Data>; }"
+      },
+      "useDroppable": {
+        "kind": "function",
+        "type": "(args: UseDroppableArguments) => UseDroppableReturn",
+        "signature": "export declare function useDroppable(args: UseDroppableArguments): UseDroppableReturn;"
+      },
+      "UseDroppableArguments": {
+        "kind": "interface",
+        "signature": "export interface UseDroppableArguments { readonly id: UniqueIdentifier; readonly data?: Data; readonly disabled?: boolean; }"
+      },
+      "UseDroppableReturn": {
+        "kind": "interface",
+        "signature": "export interface UseDroppableReturn { readonly setNodeRef: (node: HTMLElement | null) => void; readonly node: Accessor<HTMLElement | null>; readonly rect: Accessor<ClientRect | null>; readonly isOver: Accessor<boolean>; readonly active: Accessor<Active | null>; readonly over: Accessor<Over | null>; readonly data: Accessor<Data>; }"
+      },
+      "useSensor": {
+        "kind": "function",
+        "type": "<T extends SensorOptions>(sensor: Sensor<T>, options?: T) => SensorDescriptor",
+        "signature": "export declare function useSensor<T extends SensorOptions>(sensor: Sensor<T>, options?: T): SensorDescriptor;"
+      },
+      "useSensors": {
+        "kind": "function",
+        "type": "(...sensors: readonly SensorDescriptor[]) => readonly SensorDescriptor[]",
+        "signature": "export declare function useSensors(...sensors: readonly SensorDescriptor[]): readonly SensorDescriptor[];"
+      },
+      "useSortable": {
+        "kind": "function",
+        "type": "(args: UseSortableArguments) => UseSortableReturn",
+        "signature": "export declare function useSortable(args: UseSortableArguments): UseSortableReturn;"
+      },
+      "UseSortableArguments": {
+        "kind": "interface",
+        "signature": "export interface UseSortableArguments extends UseDraggableArguments { readonly strategy?: SortingStrategy; readonly transition?: string | null; }"
+      },
+      "UseSortableReturn": {
+        "kind": "interface",
+        "signature": "export interface UseSortableReturn extends UseDraggableReturn { readonly rect: Accessor<ClientRect | null>; readonly index: Accessor<number>; readonly items: Accessor<readonly UniqueIdentifier[]>; readonly newIndex: Accessor<number>; readonly isSorting: Accessor<boolean>; readonly wasDragging: Accessor<boolean>; readonly isOver: Accessor<boolean>; readonly transition: Accessor<string | null>; readonly setDroppableNodeRef: (node: HTMLElement | null) => void; readonly setDraggableNodeRef: (node: HTMLElement | null) => void; }"
+      },
+      "verticalListSortingStrategy": {
+        "kind": "variable",
+        "type": "SortingStrategy",
+        "signature": "export declare const verticalListSortingStrategy: SortingStrategy;"
+      }
+    },
     "@ivlev-dev/silent-form": {
       "ArrayFieldPath": {
         "kind": "type",
@@ -2321,7 +2864,7 @@
       },
       "CheckboxProps": {
         "kind": "interface",
-        "signature": "export interface CheckboxProps { readonly checked?: boolean | undefined; readonly field?: BoundField<boolean> | undefined; readonly label?: Children; readonly description?: Children; readonly hint?: Children; readonly error?: Children; readonly indeterminate?: boolean | undefined; readonly name?: string | undefined; readonly id?: string | undefined; readonly required?: boolean | undefined; readonly disabled?: boolean | undefined; readonly readOnly?: boolean | undefined; readonly describedBy?: string | undefined; readonly onChange?: ((event: Event) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly onFocus?: ((event: FocusEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+        "signature": "export interface CheckboxProps { readonly checked?: boolean | undefined; readonly field?: BoundField<boolean> | undefined; readonly label?: Children; readonly description?: Children; readonly hint?: Children; readonly error?: Children; /** Значение для отправки формы и групп чекбоксов. */ readonly value?: string | number | undefined; readonly indeterminate?: boolean | undefined; readonly name?: string | undefined; readonly id?: string | undefined; readonly required?: boolean | undefined; readonly disabled?: boolean | undefined; readonly readOnly?: boolean | undefined; /** Оформление: обычная строка, кликабельная карточка или плитка. */ readonly variant?: CheckboxVariant | undefined; /** Размер квадрата и текста: `sm` компактный, `md` базовый, `lg` крупный. */ readonly size?: CheckboxSize | undefined; /** Декоративная иконка рядом с подписью или в карточке. */ readonly icon?: Children; /** Ошибка без текста: контрол невалиден, сообщения ещё нет. */ readonly invalid?: boolean | undefined; readonly describedBy?: string | undefined; readonly onChange?: ((event: Event) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly onFocus?: ((event: FocusEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
       },
       "CheckIcon": {
         "kind": "function",
@@ -2381,8 +2924,8 @@
       },
       "controlHeight": {
         "kind": "variable",
-        "type": "{ readonly sm: \"2.25rem\"; readonly md: \"2.75rem\"; readonly lg: \"3rem\"; }",
-        "signature": "export declare const controlHeight: { readonly sm: \"2.25rem\"; readonly md: \"2.75rem\"; readonly lg: \"3rem\"; };"
+        "type": "{ readonly sm: \"2rem\"; readonly md: \"2.5rem\"; readonly lg: \"3rem\"; }",
+        "signature": "export declare const controlHeight: { readonly sm: \"2rem\"; readonly md: \"2.5rem\"; readonly lg: \"3rem\"; };"
       },
       "ControlSize": {
         "kind": "type",
@@ -2477,8 +3020,8 @@
       },
       "elevation": {
         "kind": "variable",
-        "type": "{ readonly 0: \"none\"; readonly 1: \"0 1px 2px rgba(var(--sui-color-shadow-rgb), 0.10), 0 1px 3px 1px rgba(var(--sui-color-shadow-rgb), 0.06)\"; readonly 2: \"0 2px 4px rgba(var(--sui-color-shadow-rgb), 0.10), 0 4px 12px 2px rgba(var(--sui-color-shadow-rgb), 0.08)\"; readonly 3: \"0 6px 16px 4px rgba(var(--sui-color-shadow-rgb), 0.10), 0 2px 6px rgba(var(--sui-color-shadow-rgb), 0.08)\"; readonly 4: \"0 10px 24px 6px rgba(var(--sui-color-shadow-rgb), 0.12), 0 4px 8px rgba(var(--sui-color-shadow-rgb), 0.08)\"; readonly 5: \"0 16px 36px 8px rgba(var(--sui-color-shadow-rgb), 0.14), 0 6px 12px rgba(var(--sui-color-shadow-rgb), 0.10)\"; }",
-        "signature": "export declare const elevation: { readonly 0: \"none\"; readonly 1: \"0 1px 2px rgba(var(--sui-color-shadow-rgb), 0.10), 0 1px 3px 1px rgba(var(--sui-color-shadow-rgb), 0.06)\"; readonly 2: \"0 2px 4px rgba(var(--sui-color-shadow-rgb), 0.10), 0 4px 12px 2px rgba(var(--sui-color-shadow-rgb), 0.08)\"; readonly 3: \"0 6px 16px 4px rgba(var(--sui-color-shadow-rgb), 0.10), 0 2px 6px rgba(var(--sui-color-shadow-rgb), 0.08)\"; readonly 4: \"0 10px 24px 6px rgba(var(--sui-color-shadow-rgb), 0.12), 0 4px 8px rgba(var(--sui-color-shadow-rgb), 0.08)\"; readonly 5: \"0 16px 36px 8px rgba(var(--sui-color-shadow-rgb), 0.14), 0 6px 12px rgba(var(--sui-color-shadow-rgb), 0.10)\"; };"
+        "type": "{ readonly 0: \"none\"; readonly 1: \"0 1px 2px rgba(var(--sui-color-shadow-rgb), 0.06), 0 1px 2px rgba(var(--sui-color-shadow-rgb), 0.04)\"; readonly 2: \"0 2px 8px rgba(var(--sui-color-shadow-rgb), 0.08), 0 1px 3px rgba(var(--sui-color-shadow-rgb), 0.05)\"; readonly 3: \"0 8px 24px rgba(var(--sui-color-shadow-rgb), 0.10), 0 2px 6px rgba(var(--sui-color-shadow-rgb), 0.06)\"; readonly 4: \"0 12px 32px rgba(var(--sui-color-shadow-rgb), 0.12), 0 4px 10px rgba(var(--sui-color-shadow-rgb), 0.06)\"; readonly 5: \"0 20px 48px rgba(var(--sui-color-shadow-rgb), 0.14), 0 8px 16px rgba(var(--sui-color-shadow-rgb), 0.08)\"; }",
+        "signature": "export declare const elevation: { readonly 0: \"none\"; readonly 1: \"0 1px 2px rgba(var(--sui-color-shadow-rgb), 0.06), 0 1px 2px rgba(var(--sui-color-shadow-rgb), 0.04)\"; readonly 2: \"0 2px 8px rgba(var(--sui-color-shadow-rgb), 0.08), 0 1px 3px rgba(var(--sui-color-shadow-rgb), 0.05)\"; readonly 3: \"0 8px 24px rgba(var(--sui-color-shadow-rgb), 0.10), 0 2px 6px rgba(var(--sui-color-shadow-rgb), 0.06)\"; readonly 4: \"0 12px 32px rgba(var(--sui-color-shadow-rgb), 0.12), 0 4px 10px rgba(var(--sui-color-shadow-rgb), 0.06)\"; readonly 5: \"0 20px 48px rgba(var(--sui-color-shadow-rgb), 0.14), 0 8px 16px rgba(var(--sui-color-shadow-rgb), 0.08)\"; };"
       },
       "Elevation": {
         "kind": "type",
@@ -2877,8 +3420,8 @@
       },
       "radii": {
         "kind": "variable",
-        "type": "{ readonly none: \"0\"; readonly xs: \"0.25rem\"; readonly sm: \"0.5rem\"; readonly md: \"0.75rem\"; readonly lg: \"1rem\"; readonly xl: \"1.5rem\"; readonly full: \"999px\"; readonly card: \"1rem\"; readonly dialog: \"1.5rem\"; readonly sheet: \"1.5rem\"; }",
-        "signature": "export declare const radii: { readonly none: \"0\"; readonly xs: \"0.25rem\"; readonly sm: \"0.5rem\"; readonly md: \"0.75rem\"; readonly lg: \"1rem\"; readonly xl: \"1.5rem\"; readonly full: \"999px\"; readonly card: \"1rem\"; readonly dialog: \"1.5rem\"; readonly sheet: \"1.5rem\"; };"
+        "type": "{ readonly none: \"0\"; readonly xs: \"0.25rem\"; readonly sm: \"0.375rem\"; readonly md: \"0.625rem\"; readonly lg: \"0.875rem\"; readonly xl: \"1.25rem\"; readonly full: \"999px\"; readonly card: \"0.875rem\"; readonly dialog: \"1.25rem\"; readonly sheet: \"1.25rem\"; }",
+        "signature": "export declare const radii: { readonly none: \"0\"; readonly xs: \"0.25rem\"; readonly sm: \"0.375rem\"; readonly md: \"0.625rem\"; readonly lg: \"0.875rem\"; readonly xl: \"1.25rem\"; readonly full: \"999px\"; readonly card: \"0.875rem\"; readonly dialog: \"1.25rem\"; readonly sheet: \"1.25rem\"; };"
       },
       "RadioGroup": {
         "kind": "function",
@@ -2887,11 +3430,11 @@
       },
       "RadioGroupProps": {
         "kind": "interface",
-        "signature": "export interface RadioGroupProps { readonly options: readonly RadioOption[]; readonly field?: BoundField<string | number> | undefined; readonly value?: string | number | undefined; readonly label?: Children; readonly hint?: Children; readonly error?: Children; readonly name?: string | undefined; readonly id?: string | undefined; readonly required?: boolean | undefined; readonly disabled?: boolean | undefined; readonly readOnly?: boolean | undefined; readonly describedBy?: string | undefined; readonly onChange?: ((event: Event) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly onFocus?: ((event: FocusEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+        "signature": "export interface RadioGroupProps { readonly options: readonly RadioOption[]; readonly field?: BoundField<string | number> | undefined; readonly value?: string | number | undefined; /** Оформление пункта: обычная строка, карточка или плитка. */ readonly variant?: RadioGroupVariant | undefined; /** Размер точки и текста: `sm` компактный, `md` базовый, `lg` крупный. */ readonly size?: RadioGroupSize | undefined; readonly orientation?: RadioGroupOrientation | undefined; /** Сетка пунктов: 1–4 колонки (на узком экране схлопывается в одну). */ readonly columns?: GroupColumns | undefined; /** Уведомление о выбранном значении (после `field.onChange`). */ readonly onValueChange?: ((value: string | number) => void) | undefined; readonly label?: Children; readonly hint?: Children; readonly error?: Children; readonly name?: string | undefined; readonly id?: string | undefined; readonly required?: boolean | undefined; readonly disabled?: boolean | undefined; readonly readOnly?: boolean | undefined; readonly describedBy?: string | undefined; readonly onChange?: ((event: Event) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly onFocus?: ((event: FocusEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
       },
       "RadioOption": {
         "kind": "interface",
-        "signature": "export interface RadioOption { readonly value: string | number; readonly label: Children; readonly description?: Children; readonly disabled?: boolean | undefined; }"
+        "signature": "export interface RadioOption { readonly value: string | number; readonly label: Children; readonly description?: Children; readonly icon?: Children; readonly disabled?: boolean | undefined; }"
       },
       "Radius": {
         "kind": "type",
@@ -2963,12 +3506,12 @@
         "signature": "export declare function Select(props: SelectProps): Node;"
       },
       "SelectOption": {
-        "kind": "interface",
-        "signature": "export interface SelectOption { readonly value: string | number; readonly label: Children; readonly disabled?: boolean | undefined; }"
+        "kind": "type",
+        "signature": "export type SelectOption = ListboxOption;"
       },
       "SelectProps": {
         "kind": "interface",
-        "signature": "export interface SelectProps { readonly options: readonly SelectOption[]; readonly value?: string | number | readonly (string | number)[] | undefined; readonly field?: BoundField<string | number | readonly string[]> | undefined; readonly label?: Children; readonly hint?: Children; readonly error?: Children; readonly placeholder?: string | undefined; readonly multiple?: boolean | undefined; readonly name?: string | undefined; readonly id?: string | undefined; readonly required?: boolean | undefined; readonly disabled?: boolean | undefined; readonly size?: ControlSize | undefined; readonly bare?: boolean | undefined; readonly describedBy?: string | undefined; readonly onChange?: ((event: Event) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly onFocus?: ((event: FocusEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+        "signature": "export interface SelectProps { readonly options: readonly SelectItem[]; /** Значение: строка/число или массив для `multiple`. */ readonly value?: SelectValue | readonly SelectValue[] | undefined; readonly defaultValue?: SelectValue | readonly SelectValue[] | undefined; readonly onValueChange?: ((value: SelectValue | readonly SelectValue[]) => void) | undefined; readonly field?: BoundField<string | number | readonly string[]> | undefined; /** Ветка рендера. По умолчанию `custom`; `native` — прежний `<select>`. */ readonly variant?: SelectVariant | undefined; readonly label?: Children; readonly hint?: Children; readonly error?: Children; readonly placeholder?: string | undefined; readonly searchPlaceholder?: string | undefined; readonly empty?: Children; readonly loadingText?: Children; readonly multiple?: boolean | undefined; readonly searchable?: SelectSearchable | undefined; readonly clearable?: boolean | undefined; readonly loading?: boolean | undefined; readonly loadOptions?: ((query: string, signal: AbortSignal) => Promise<readonly SelectItem[]>) | undefined; readonly renderOption?: ((option: SelectOption) => Children) | undefined; readonly renderValue?: ((options: readonly SelectOption[]) => Children) | undefined; readonly maxVisible?: number | undefined; readonly open?: boolean | undefined; readonly defaultOpen?: boolean | undefined; readonly onOpenChange?: ((open: boolean) => void) | undefined; readonly name?: string | undefined; readonly id?: string | undefined; readonly required?: boolean | undefined; readonly disabled?: boolean | undefined; readonly readOnly?: boolean | undefined; readonly size?: ControlSize | undefined; readonly bare?: boolean | undefined; readonly describedBy?: string | undefined; /** Доступное имя, если видимой подписи нет. */ readonly ariaLabel?: string | undefined; readonly onChange?: ((event: Event) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly onFocus?: ((event: FocusEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
       },
       "SemanticColorRole": {
         "kind": "type",
@@ -3102,7 +3645,7 @@
       },
       "SwitchProps": {
         "kind": "interface",
-        "signature": "export interface SwitchProps { readonly checked?: boolean | undefined; readonly field?: BoundField<boolean> | undefined; readonly label?: Children; readonly description?: Children; readonly hint?: Children; readonly error?: Children; readonly name?: string | undefined; readonly id?: string | undefined; readonly required?: boolean | undefined; readonly disabled?: boolean | undefined; readonly readOnly?: boolean | undefined; /** Размер трека: `sm` компактный, `md` базовый, `lg` крупный. */ readonly size?: ControlSize | undefined; readonly describedBy?: string | undefined; readonly onChange?: ((event: Event) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly onFocus?: ((event: FocusEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+        "signature": "export interface SwitchProps { readonly checked?: boolean | undefined; readonly field?: BoundField<boolean> | undefined; readonly label?: Children; readonly description?: Children; readonly hint?: Children; readonly error?: Children; /** Ошибка без текста: контрол невалиден, сообщения ещё нет. */ readonly invalid?: boolean | undefined; /** `switch` — трек + подпись рядом; `toggler` — подпись внутри трека. */ readonly variant?: SwitchVariant | undefined; /** Положение подписи относительно трека (вариант `switch`). */ readonly labelPosition?: SwitchLabelPosition | undefined; readonly name?: string | undefined; readonly id?: string | undefined; readonly required?: boolean | undefined; readonly disabled?: boolean | undefined; readonly readOnly?: boolean | undefined; /** Ожидание: input заблокирован, в бегунке спиннер, `aria-busy`. */ readonly loading?: boolean | undefined; /** Иконка в бегунке независимо от состояния. */ readonly icon?: Children; /** Иконка в бегунке во включённом состоянии (сильнее `icon`). */ readonly onIcon?: Children; /** Иконка в бегунке в выключенном состоянии (сильнее `icon`). */ readonly offIcon?: Children; /** Размер трека: `sm` компактный, `md` базовый, `lg` крупный. */ readonly size?: ControlSize | undefined; readonly describedBy?: string | undefined; /** Уведомление о новом значении (после `field.onChange`). */ readonly onValueChange?: ((checked: boolean) => void) | undefined; readonly onChange?: ((event: Event) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly onFocus?: ((event: FocusEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
       },
       "Tab": {
         "kind": "function",
@@ -3304,8 +3847,8 @@
       },
       "typeScale": {
         "kind": "variable",
-        "type": "{ readonly \"display-large\": { readonly family: \"display\"; readonly size: \"clamp(2.75rem, 2.1rem + 1.9vw, 4rem)\"; readonly lineHeight: \"1.06\"; readonly weight: \"600\"; readonly tracking: \"-0.02em\"; }; readonly \"display-medium\": { readonly family: \"display\"; readonly size: \"clamp(2.25rem, 1.8rem + 1.4vw, 3.25rem)\"; readonly lineHeight: \"1.1\"; readonly weight: \"600\"; readonly tracking: \"-0.015em\"; }; readonly \"display-small\": { readonly family: \"display\"; readonly size: \"clamp(1.875rem, 1.55rem + 1.1vw, 2.5rem)\"; readonly lineHeight: \"1.16\"; readonly weight: \"600\"; readonly tracking: \"-0.01em\"; }; readonly \"headline-large\": { readonly family: \"display\"; readonly size: \"clamp(1.625rem, 1.45rem + 0.7vw, 2.125rem)\"; readonly lineHeight: \"1.2\"; readonly weight: \"600\"; readonly tracking: \"-0.005em\"; }; readonly \"headline-medium\": { readonly family: \"display\"; readonly size: \"clamp(1.375rem, 1.27rem + 0.5vw, 1.75rem)\"; readonly lineHeight: \"1.25\"; readonly weight: \"600\"; readonly tracking: \"0\"; }; readonly \"headline-small\": { readonly family: \"display\"; readonly size: \"clamp(1.25rem, 1.18rem + 0.3vw, 1.5rem)\"; readonly lineHeight: \"1.3\"; readonly weight: \"600\"; readonly tracking: \"0\"; }; readonly \"title-large\": { readonly family: \"sans\"; readonly size: \"clamp(1.25rem, 1.2rem + 0.2vw, 1.375rem)\"; readonly lineHeight: \"1.35\"; readonly weight: \"600\"; readonly tracking: \"0\"; }; readonly \"title-medium\": { readonly family: \"sans\"; readonly size: \"1.125rem\"; readonly lineHeight: \"1.4\"; readonly weight: \"600\"; readonly tracking: \"0.002em\"; }; readonly \"title-small\": { readonly family: \"sans\"; readonly size: \"1rem\"; readonly lineHeight: \"1.45\"; readonly weight: \"600\"; readonly tracking: \"0.005em\"; }; readonly \"body-large\": { readonly family: \"sans\"; readonly size: \"clamp(1.125rem, 1.08rem + 0.2vw, 1.25rem)\"; readonly lineHeight: \"1.6\"; readonly weight: \"400\"; readonly tracking: \"0\"; }; readonly \"body-medium\": { readonly family: \"sans\"; readonly size: \"1.0625rem\"; readonly lineHeight: \"1.6\"; readonly weight: \"400\"; readonly tracking: \"0.002em\"; }; readonly \"body-small\": { readonly family: \"sans\"; readonly size: \"1rem\"; readonly lineHeight: \"1.55\"; readonly weight: \"400\"; readonly tracking: \"0.005em\"; }; readonly \"label-large\": { readonly family: \"sans\"; readonly size: \"0.9375rem\"; readonly lineHeight: \"1.4\"; readonly weight: \"600\"; readonly tracking: \"0.01em\"; }; readonly \"label-medium\": { readonly family: \"sans\"; readonly size: \"0.875rem\"; readonly lineHeight: \"1.4\"; readonly weight: \"600\"; readonly tracking: \"0.015em\"; }; readonly \"label-small\": { readonly family: \"sans\"; readonly size: \"0.75rem\"; readonly lineHeight: \"1.35\"; readonly weight: \"600\"; readonly tracking: \"0.04em\"; }; }",
-        "signature": "export declare const typeScale: { readonly \"display-large\": { readonly family: \"display\"; readonly size: \"clamp(2.75rem, 2.1rem + 1.9vw, 4rem)\"; readonly lineHeight: \"1.06\"; readonly weight: \"600\"; readonly tracking: \"-0.02em\"; }; readonly \"display-medium\": { readonly family: \"display\"; readonly size: \"clamp(2.25rem, 1.8rem + 1.4vw, 3.25rem)\"; readonly lineHeight: \"1.1\"; readonly weight: \"600\"; readonly tracking: \"-0.015em\"; }; readonly \"display-small\": { readonly family: \"display\"; readonly size: \"clamp(1.875rem, 1.55rem + 1.1vw, 2.5rem)\"; readonly lineHeight: \"1.16\"; readonly weight: \"600\"; readonly tracking: \"-0.01em\"; }; readonly \"headline-large\": { readonly family: \"display\"; readonly size: \"clamp(1.625rem, 1.45rem + 0.7vw, 2.125rem)\"; readonly lineHeight: \"1.2\"; readonly weight: \"600\"; readonly tracking: \"-0.005em\"; }; readonly \"headline-medium\": { readonly family: \"display\"; readonly size: \"clamp(1.375rem, 1.27rem + 0.5vw, 1.75rem)\"; readonly lineHeight: \"1.25\"; readonly weight: \"600\"; readonly tracking: \"0\"; }; readonly \"headline-small\": { readonly family: \"display\"; readonly size: \"clamp(1.25rem, 1.18rem + 0.3vw, 1.5rem)\"; readonly lineHeight: \"1.3\"; readonly weight: \"600\"; readonly tracking: \"0\"; }; readonly \"title-large\": { readonly family: \"sans\"; readonly size: \"clamp(1.25rem, 1.2rem + 0.2vw, 1.375rem)\"; readonly lineHeight: \"1.35\"; readonly weight: \"600\"; readonly tracking: \"0\"; }; readonly \"title-medium\": { readonly family: \"sans\"; readonly size: \"1.125rem\"; readonly lineHeight: \"1.4\"; readonly weight: \"600\"; readonly tracking: \"0.002em\"; }; readonly \"title-small\": { readonly family: \"sans\"; readonly size: \"1rem\"; readonly lineHeight: \"1.45\"; readonly weight: \"600\"; readonly tracking: \"0.005em\"; }; readonly \"body-large\": { readonly family: \"sans\"; readonly size: \"clamp(1.125rem, 1.08rem + 0.2vw, 1.25rem)\"; readonly lineHeight: \"1.6\"; readonly weight: \"400\"; readonly tracking: \"0\"; }; readonly \"body-medium\": { readonly family: \"sans\"; readonly size: \"1.0625rem\"; readonly lineHeight: \"1.6\"; readonly weight: \"400\"; readonly tracking: \"0.002em\"; }; readonly \"body-small\": { readonly family: \"sans\"; readonly size: \"1rem\"; readonly lineHeight: \"1.55\"; readonly weight: \"400\"; readonly tracking: \"0.005em\"; }; readonly \"label-large\": { readonly family: \"sans\"; readonly size: \"0.9375rem\"; readonly lineHeight: \"1.4\"; readonly weight: \"600\"; readonly tracking: \"0.01em\"; }; readonly \"label-medium\": { readonly family: \"sans\"; readonly size: \"0.875rem\"; readonly lineHeight: \"1.4\"; readonly weight: \"600\"; readonly tracking: \"0.015em\"; }; readonly \"label-small\": { readonly family: \"sans\"; readonly size: \"0.75rem\"; readonly lineHeight: \"1.35\"; readonly weight: \"600\"; readonly tracking: \"0.04em\"; }; };"
+        "type": "{ readonly \"display-large\": { readonly family: \"display\"; readonly size: \"clamp(2.125rem, 1.8rem + 1.1vw, 2.75rem)\"; readonly lineHeight: \"1.2\"; readonly weight: \"600\"; readonly tracking: \"-0.015em\"; }; readonly \"display-medium\": { readonly family: \"display\"; readonly size: \"clamp(1.875rem, 1.62rem + 0.85vw, 2.375rem)\"; readonly lineHeight: \"1.2\"; readonly weight: \"600\"; readonly tracking: \"-0.012em\"; }; readonly \"display-small\": { readonly family: \"display\"; readonly size: \"clamp(1.6875rem, 1.5rem + 0.6vw, 2.125rem)\"; readonly lineHeight: \"1.2\"; readonly weight: \"600\"; readonly tracking: \"-0.01em\"; }; readonly \"headline-large\": { readonly family: \"display\"; readonly size: \"clamp(1.5rem, 1.38rem + 0.45vw, 2rem)\"; readonly lineHeight: \"1.25\"; readonly weight: \"600\"; readonly tracking: \"-0.008em\"; }; readonly \"headline-medium\": { readonly family: \"display\"; readonly size: \"clamp(1.375rem, 1.28rem + 0.35vw, 1.75rem)\"; readonly lineHeight: \"1.3\"; readonly weight: \"600\"; readonly tracking: \"-0.005em\"; }; readonly \"headline-small\": { readonly family: \"display\"; readonly size: \"clamp(1.25rem, 1.18rem + 0.25vw, 1.5rem)\"; readonly lineHeight: \"1.3\"; readonly weight: \"600\"; readonly tracking: \"0\"; }; readonly \"title-large\": { readonly family: \"sans\"; readonly size: \"clamp(1.125rem, 1.09rem + 0.15vw, 1.25rem)\"; readonly lineHeight: \"1.35\"; readonly weight: \"600\"; readonly tracking: \"0\"; }; readonly \"title-medium\": { readonly family: \"sans\"; readonly size: \"1.125rem\"; readonly lineHeight: \"1.4\"; readonly weight: \"600\"; readonly tracking: \"0\"; }; readonly \"title-small\": { readonly family: \"sans\"; readonly size: \"1rem\"; readonly lineHeight: \"1.45\"; readonly weight: \"600\"; readonly tracking: \"0\"; }; readonly \"body-large\": { readonly family: \"sans\"; readonly size: \"1.0625rem\"; readonly lineHeight: \"1.55\"; readonly weight: \"400\"; readonly tracking: \"0\"; }; readonly \"body-medium\": { readonly family: \"sans\"; readonly size: \"1rem\"; readonly lineHeight: \"1.55\"; readonly weight: \"400\"; readonly tracking: \"0\"; }; readonly \"body-small\": { readonly family: \"sans\"; readonly size: \"0.875rem\"; readonly lineHeight: \"1.5\"; readonly weight: \"400\"; readonly tracking: \"0\"; }; readonly \"label-large\": { readonly family: \"sans\"; readonly size: \"0.8125rem\"; readonly lineHeight: \"1.35\"; readonly weight: \"600\"; readonly tracking: \"0.005em\"; }; readonly \"label-medium\": { readonly family: \"sans\"; readonly size: \"0.75rem\"; readonly lineHeight: \"1.35\"; readonly weight: \"600\"; readonly tracking: \"0.01em\"; }; readonly \"label-small\": { readonly family: \"sans\"; readonly size: \"0.75rem\"; readonly lineHeight: \"1.3\"; readonly weight: \"600\"; readonly tracking: \"0.04em\"; }; }",
+        "signature": "export declare const typeScale: { readonly \"display-large\": { readonly family: \"display\"; readonly size: \"clamp(2.125rem, 1.8rem + 1.1vw, 2.75rem)\"; readonly lineHeight: \"1.2\"; readonly weight: \"600\"; readonly tracking: \"-0.015em\"; }; readonly \"display-medium\": { readonly family: \"display\"; readonly size: \"clamp(1.875rem, 1.62rem + 0.85vw, 2.375rem)\"; readonly lineHeight: \"1.2\"; readonly weight: \"600\"; readonly tracking: \"-0.012em\"; }; readonly \"display-small\": { readonly family: \"display\"; readonly size: \"clamp(1.6875rem, 1.5rem + 0.6vw, 2.125rem)\"; readonly lineHeight: \"1.2\"; readonly weight: \"600\"; readonly tracking: \"-0.01em\"; }; readonly \"headline-large\": { readonly family: \"display\"; readonly size: \"clamp(1.5rem, 1.38rem + 0.45vw, 2rem)\"; readonly lineHeight: \"1.25\"; readonly weight: \"600\"; readonly tracking: \"-0.008em\"; }; readonly \"headline-medium\": { readonly family: \"display\"; readonly size: \"clamp(1.375rem, 1.28rem + 0.35vw, 1.75rem)\"; readonly lineHeight: \"1.3\"; readonly weight: \"600\"; readonly tracking: \"-0.005em\"; }; readonly \"headline-small\": { readonly family: \"display\"; readonly size: \"clamp(1.25rem, 1.18rem + 0.25vw, 1.5rem)\"; readonly lineHeight: \"1.3\"; readonly weight: \"600\"; readonly tracking: \"0\"; }; readonly \"title-large\": { readonly family: \"sans\"; readonly size: \"clamp(1.125rem, 1.09rem + 0.15vw, 1.25rem)\"; readonly lineHeight: \"1.35\"; readonly weight: \"600\"; readonly tracking: \"0\"; }; readonly \"title-medium\": { readonly family: \"sans\"; readonly size: \"1.125rem\"; readonly lineHeight: \"1.4\"; readonly weight: \"600\"; readonly tracking: \"0\"; }; readonly \"title-small\": { readonly family: \"sans\"; readonly size: \"1rem\"; readonly lineHeight: \"1.45\"; readonly weight: \"600\"; readonly tracking: \"0\"; }; readonly \"body-large\": { readonly family: \"sans\"; readonly size: \"1.0625rem\"; readonly lineHeight: \"1.55\"; readonly weight: \"400\"; readonly tracking: \"0\"; }; readonly \"body-medium\": { readonly family: \"sans\"; readonly size: \"1rem\"; readonly lineHeight: \"1.55\"; readonly weight: \"400\"; readonly tracking: \"0\"; }; readonly \"body-small\": { readonly family: \"sans\"; readonly size: \"0.875rem\"; readonly lineHeight: \"1.5\"; readonly weight: \"400\"; readonly tracking: \"0\"; }; readonly \"label-large\": { readonly family: \"sans\"; readonly size: \"0.8125rem\"; readonly lineHeight: \"1.35\"; readonly weight: \"600\"; readonly tracking: \"0.005em\"; }; readonly \"label-medium\": { readonly family: \"sans\"; readonly size: \"0.75rem\"; readonly lineHeight: \"1.35\"; readonly weight: \"600\"; readonly tracking: \"0.01em\"; }; readonly \"label-small\": { readonly family: \"sans\"; readonly size: \"0.75rem\"; readonly lineHeight: \"1.3\"; readonly weight: \"600\"; readonly tracking: \"0.04em\"; }; };"
       },
       "TypeStyle": {
         "kind": "interface",
@@ -3335,7 +3878,7 @@
       },
       "UiStrings": {
         "kind": "interface",
-        "signature": "export interface UiStrings { readonly close: string; readonly loading: string; readonly showPassword: string; readonly hidePassword: string; readonly required: string; readonly addItem: string; readonly removeItem: string; readonly moveUp: string; readonly moveDown: string; readonly submit: string; readonly reset: string; readonly chooseFile: string; readonly navigation: string; readonly actions: string; readonly breadcrumbs: string; readonly pagination: string; readonly previousPage: string; readonly nextPage: string; /** Шаблон статуса: `{page}` и `{pageCount}` подставляются компонентом. */ readonly pageStatus: string; readonly search: string; readonly clear: string; readonly sortAscending: string; readonly sortDescending: string; readonly noData: string; }"
+        "signature": "export interface UiStrings { readonly close: string; readonly loading: string; readonly showPassword: string; readonly hidePassword: string; readonly required: string; readonly addItem: string; readonly removeItem: string; readonly moveUp: string; readonly moveDown: string; readonly submit: string; readonly reset: string; readonly chooseFile: string; readonly navigation: string; readonly actions: string; readonly breadcrumbs: string; readonly pagination: string; readonly previousPage: string; readonly nextPage: string; /** Шаблон статуса: `{page}` и `{pageCount}` подставляются компонентом. */ readonly pageStatus: string; readonly search: string; readonly clear: string; readonly sortAscending: string; readonly sortDescending: string; readonly noData: string; /** Подсказка группы чекбоксов: `{count}` подставляется компонентом. */ readonly minSelections: string; /** Подсказка группы чекбоксов: `{count}` подставляется компонентом. */ readonly maxSelections: string; readonly increment: string; readonly decrement: string; readonly removeTag: string; /** Подпись разряда OTP: `{index}` и `{count}` подставляются компонентом. */ readonly otpDigit: string; }"
       },
       "UploadIcon": {
         "kind": "function",
@@ -3798,6 +4341,83 @@
       "ValidationPluginOptions": {
         "kind": "interface",
         "signature": "export interface ValidationPluginOptions { readonly include?: RegExp; readonly exclude?: RegExp; readonly tsconfig?: string; readonly base?: string; readonly strict?: boolean; }"
+      }
+    },
+    "@ivlev-dev/silent-virtual": {
+      "computeRange": {
+        "kind": "function",
+        "type": "{ (options: ComputeRangeOptions): Range; (options: RangeSourceOptions): Range; }",
+        "signature": "export declare function computeRange(options: ComputeRangeOptions): Range; export declare function computeRange(options: RangeSourceOptions): Range;"
+      },
+      "computeServerSlice": {
+        "kind": "function",
+        "type": "(options: ServerSliceOptions) => ServerSlice",
+        "signature": "export declare function computeServerSlice(options: ServerSliceOptions): ServerSlice;"
+      },
+      "createVirtualizer": {
+        "kind": "function",
+        "type": "(options: CreateVirtualizerOptions) => Virtualizer",
+        "signature": "export declare function createVirtualizer(options: CreateVirtualizerOptions): Virtualizer;"
+      },
+      "CreateVirtualizerOptions": {
+        "kind": "interface",
+        "signature": "export interface CreateVirtualizerOptions { /** Количество элементов. */ count: MaybeAccessor<number>; /** Оценка размера элемента по индексу вдоль главной оси. */ estimateSize: (index: number) => number; /** Ключ элемента; по умолчанию — индекс. */ getItemKey?: ((index: number) => VirtualKey) | undefined; /** Запас рендера в элементах с каждой стороны. По умолчанию `5`. */ overscan?: MaybeAccessor<number> | undefined; /** Горизонтальная прокрутка: `translateX`/`scrollLeft` вместо `translateY`/`scrollTop`. */ horizontal?: MaybeAccessor<boolean> | undefined; /** Отступ перед содержимым. */ paddingStart?: MaybeAccessor<number> | undefined; /** Отступ после содержимого. */ paddingEnd?: MaybeAccessor<number> | undefined; /** Промежуток между соседними элементами. */ gap?: MaybeAccessor<number> | undefined; /** Смещение списка внутри прокручиваемого контейнера. */ scrollMargin?: MaybeAccessor<number> | undefined; /** Количество дорожек masonry. По умолчанию `1`. */ lanes?: MaybeAccessor<number> | undefined; /** Пользовательское расширение окна рендера. */ rangeExtractor?: RangeExtractor | undefined; /** Начальное смещение для SSR-среза. По умолчанию `0`. */ initialOffset?: MaybeAccessor<number> | undefined; /** Начальный размер вьюпорта для SSR-среза. По умолчанию `0`. */ initialViewportSize?: MaybeAccessor<number> | undefined; /** `false` отключает виртуализацию. */ enabled?: MaybeAccessor<boolean> | undefined; /** Задержка сброса `isScrolling`, мс. По умолчанию `150`. */ isScrollingResetDelay?: MaybeAccessor<number> | undefined; }"
+      },
+      "defaultKey": {
+        "kind": "function",
+        "type": "(index: number) => number",
+        "signature": "export declare function defaultKey(index: number): number;"
+      },
+      "defaultRangeExtractor": {
+        "kind": "function",
+        "type": "(range: Range) => number[]",
+        "signature": "export declare function defaultRangeExtractor(range: Range): number[];"
+      },
+      "LaneAssignmentMode": {
+        "kind": "type",
+        "signature": "export type LaneAssignmentMode = \"estimate\" | \"measured\";"
+      },
+      "Range": {
+        "kind": "interface",
+        "signature": "export interface Range { /** Первый видимый индекс (включительно). */ startIndex: number; /** Последний видимый индекс (включительно); `-1` для пустого диапазона. */ endIndex: number; /** Первый индекс окна с overscan (включительно). */ overscanStartIndex: number; /** Последний индекс окна с overscan (включительно); `-1` для пустого. */ overscanEndIndex: number; /** Общее число элементов в списке. */ count: number; }"
+      },
+      "ScrollAlignment": {
+        "kind": "type",
+        "signature": "export type ScrollAlignment = \"start\" | \"center\" | \"end\" | \"auto\";"
+      },
+      "VirtualGrid": {
+        "kind": "function",
+        "type": "<T>(props: VirtualGridProps<T>) => Node",
+        "signature": "export declare function VirtualGrid<T>(props: VirtualGridProps<T>): Node;"
+      },
+      "VirtualGridProps": {
+        "kind": "interface",
+        "signature": "export interface VirtualGridProps<T> extends Omit<VirtualListProps<T>, \"estimateSize\" | \"horizontal\" | \"children\"> { /** Число колонок; строка всегда содержит до `columns` ячеек. */ readonly columns: number | (() => number); /** Высота строки в пикселях или функция оценки по номеру строки. */ readonly estimateRowHeight: ((rowIndex: number) => number) | number; /** Рендер ячейки: элемент, его индекс и позиция строки. */ readonly children: (item: T, index: number, virtualItem: VirtualItem) => Children; }"
+      },
+      "VirtualItem": {
+        "kind": "interface",
+        "signature": "export interface VirtualItem { /** Порядковый номер элемента в исходном списке. */ index: number; /** Ключ элемента из `getItemKey` (по умолчанию — сам индекс). */ key: VirtualKey; /** Начало элемента (включительно). */ start: number; /** Конец элемента (исключительно): `start + size`. */ end: number; /** Размер элемента вдоль главной оси. */ size: number; /** Номер дорожки, в которую распределён элемент (0 при `lanes = 1`). */ lane: number; }"
+      },
+      "Virtualizer": {
+        "kind": "interface",
+        "signature": "export interface Virtualizer { /** Видимые элементы вместе с overscan, в порядке индексов. */ virtualItems: () => VirtualItem[]; /** Текущий диапазон индексов. */ range: () => Range; /** Полный размер содержимого вдоль главной оси. */ totalSize: () => number; /** Идёт ли прокрутка прямо сейчас. */ isScrolling: () => boolean; /** Ref-колбэк прокручиваемого контейнера. */ setScrollElement: (node: Element | null) => void; /** Прокрутить к элементу по индексу. */ scrollToIndex: (index: number, options?: { align?: ScrollAlignment | undefined; behavior?: ScrollBehavior | undefined; }) => void; /** Прокрутить к координате вдоль главной оси. */ scrollToOffset: (offset: number, options?: { behavior?: ScrollBehavior | undefined; }) => void; /** Прокрутить в конец содержимого. */ scrollToEnd: () => void; /** Ref-колбэк строки: измеряет размер узла с `data-index`. */ measureElement: (node: Element | null) => void; /** Координата прокрутки для индекса с учётом выравнивания. */ getOffsetForIndex: (index: number, align?: ScrollAlignment) => number; /** Частично обновить настройки. */ setOptions: (patch: Partial<CreateVirtualizerOptions>) => void; /** JSON-сериализуемый снимок измерений и позиции. */ snapshot: () => unknown; /** Восстановить снимок, полученный из `snapshot()`. */ restore: (snapshot: unknown) => void; /** Освободить эффекты и слушатели. Идемпотентно. */ dispose: () => void; }"
+      },
+      "VirtualizerCore": {
+        "kind": "class",
+        "signature": "export declare class VirtualizerCore { constructor(options: VirtualizerOptions); setOptions(partial: Partial<VirtualizerOptions>): void; getOptions(): Readonly<ResolvedVirtualizerOptions>; measurements(): VirtualItem[]; totalSize(): number; rangeFor(scrollOffset: number, viewportSize: number): Range; indexAtOffset(offset: number): number; offsetForIndex(index: number, align?: ScrollAlignment): number; measureItem(index: number, size: number): void; resizeItem(index: number, size: number): void; invalidate(index?: number): void; setLanes(lanes: number): void; snapshot(): VirtualizerSnapshot; restore(snapshot: VirtualizerSnapshot): void; }"
+      },
+      "VirtualizerOptions": {
+        "kind": "interface",
+        "signature": "export interface VirtualizerOptions { /** Количество элементов; отрицательные и дробные значения нормализуются. */ count: number; /** * Оценка размера элемента по индексу. Вызывается только для элементов, * у которых ещё нет измерения. Отрицательные/`NaN`/бесконечные значения * трактуются как `0`. */ estimateSize: (index: number) => number; /** * Ключ элемента для кэша измерений. По умолчанию — индекс * (`defaultKey`). Ключи должны быть уникальными, иначе измерения * разделяются между элементами с одинаковым ключом. */ getItemKey?: (index: number) => VirtualKey; /** Запас рендера в элементах с каждой стороны. По умолчанию `5`. */ overscan?: number; /** * Флаг горизонтальной прокрутки. Ядро всегда считает смещения вдоль * главной оси и не меняет математику; флаг доступен потребителю через * `getOptions()` (например, для выбора `translateX`/`translateY`). */ horizontal?: boolean; /** Отступ перед содержимым (входит в `start` первого элемента). По умолчанию `0`. */ paddingStart?: number; /** Отступ после содержимого (входит в `totalSize`). По умолчанию `0`. */ paddingEnd?: number; /** Промежуток между соседними элементами одной дорожки. По умолчанию `0`. */ gap?: number; /** Смещение списка внутри прокручиваемого контейнера. По умолчанию `0`. */ scrollMargin?: number; /** Количество дорожек masonry. По умолчанию `1`. */ lanes?: number; /** Стратегия распределения по дорожкам. По умолчанию `\"estimate\"`. */ laneAssignmentMode?: LaneAssignmentMode; /** Пользовательское расширение окна рендера. */ rangeExtractor?: RangeExtractor; /** `false` полностью отключает виртуализацию (пустые измерения, `totalSize = 0`). */ enabled?: boolean; }"
+      },
+      "VirtualList": {
+        "kind": "function",
+        "type": "<T>(props: VirtualListProps<T>) => Node",
+        "signature": "export declare function VirtualList<T>(props: VirtualListProps<T>): Node;"
+      },
+      "VirtualListProps": {
+        "kind": "interface",
+        "signature": "export interface VirtualListProps<T> { /** Исходные элементы: массив или аксессор массива. */ readonly each: readonly T[] | (() => readonly T[]); /** Стабильный ключ элемента. */ readonly keyOf: (item: T, index: number) => VirtualKey; /** Размер строки в пикселях или функция оценки по элементу и индексу. */ readonly estimateSize: ((item: T, index: number) => number) | number; /** Запас рендера в строках с каждой стороны. */ readonly overscan?: MaybeAccessor<number> | undefined; /** Горизонтальная прокрутка. */ readonly horizontal?: MaybeAccessor<boolean> | undefined; /** Промежуток между строками. */ readonly gap?: MaybeAccessor<number> | undefined; /** Отступ перед первой строкой. */ readonly paddingStart?: MaybeAccessor<number> | undefined; /** Отступ после последней строки. */ readonly paddingEnd?: MaybeAccessor<number> | undefined; /** Смещение списка внутри прокручиваемого контейнера. */ readonly scrollMargin?: MaybeAccessor<number> | undefined; /** Начальное смещение для SSR-среза. */ readonly initialOffset?: MaybeAccessor<number> | undefined; /** Начальный размер вьюпорта для SSR-среза. */ readonly initialViewportSize?: MaybeAccessor<number> | undefined; /** Класс прокручиваемого контейнера. */ readonly class?: ClassNameValue | undefined; /** Инлайн-стили прокручиваемого контейнера. */ readonly style?: StyleInput; /** Дополнительные атрибуты прокручиваемого контейнера. */ readonly attrs?: VirtualAttrs | undefined; /** Класс внутреннего spacer-элемента. */ readonly containerClass?: ClassNameValue | undefined; /** Содержимое пустого списка. */ readonly empty?: Children; /** Колбэк при изменении видимого диапазона. */ readonly onRangeChange?: ((range: Range) => void) | undefined; /** Рендер строки: элемент, его индекс и виртуальная позиция. */ readonly children: (item: T, index: number, virtualItem: VirtualItem) => Children; }"
       }
     },
     "@ivlev-dev/silent-vite": {

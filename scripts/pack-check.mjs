@@ -43,6 +43,8 @@ const expectations = {
   protocol: ["package/README.md", "package/dist/index.js", "package/dist/index.d.ts"],
   "protocol-vite": ["package/README.md", "package/dist/index.js", "package/dist/index.d.ts"],
   form: ["package/README.md", "package/dist/index.js", "package/dist/index.d.ts"],
+  virtual: ["package/README.md", "package/dist/index.js", "package/dist/index.d.ts"],
+  dnd: ["package/README.md", "package/dist/index.js", "package/dist/index.d.ts"],
   ui: [
     "package/README.md",
     "package/dist/index.js",

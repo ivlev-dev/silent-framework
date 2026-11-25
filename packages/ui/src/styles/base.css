@@ -7,7 +7,7 @@
   :where(:root) {
     font-family: var(--sui-font-sans);
     font-size: 100%;
-    line-height: 1.6;
+    line-height: 1.55;
     color: var(--sui-color-on-surface);
     background-color: var(--sui-color-surface);
     font-synthesis: none;
@@ -24,7 +24,7 @@
     text-wrap: pretty;
   }
 
-  /* Сырые заголовки вне компонентов получают редакционный serif. */
+  /* Сырые заголовки вне компонентов используют тот же современный sans. */
   :where(h1, h2, h3, h4, h5, h6) {
     font-family: var(--sui-font-display);
     font-weight: 600;
@@ -132,9 +132,8 @@
  */
 @layer sui.overrides {
   /*
-   * Display/headline — редакционный serif. Компонентные CSS уже используют
-   * `--sui-font-sans`; следующие проходы переведут их на `family` из
-   * `typeScale`. До этого override держит визуальный контракт шкалы.
+   * Display/headline используют тот же sans-stack, что и UI: `--sui-font-display`
+   * оставлен как семантический алиас для совместимости и явного переопределения.
    */
   :where(.sui-heading)[data-variant^="display"],
   :where(.sui-heading)[data-variant^="headline"] {

@@ -321,18 +321,18 @@ export const spacing = {
 
 export type SpacingStep = keyof typeof spacing;
 
-/** Радиусы: сдержанные 4/8/12/16/24, `full` — только для аватаров и кругов. */
+/** Радиусы: сдержанные 4/6/10/14/20, `full` — только для аватаров и чипов. */
 export const radii = {
   none: "0",
   xs: "0.25rem",
-  sm: "0.5rem",
-  md: "0.75rem",
-  lg: "1rem",
-  xl: "1.5rem",
+  sm: "0.375rem",
+  md: "0.625rem",
+  lg: "0.875rem",
+  xl: "1.25rem",
   full: "999px",
-  card: "1rem",
-  dialog: "1.5rem",
-  sheet: "1.5rem",
+  card: "0.875rem",
+  dialog: "1.25rem",
+  sheet: "1.25rem",
 } as const;
 
 export type Radius = keyof typeof radii;
@@ -343,16 +343,16 @@ export type Radius = keyof typeof radii;
  */
 export const elevation = {
   0: "none",
-  1: "0 1px 2px rgba(var(--sui-color-shadow-rgb), 0.10), 0 1px 3px 1px rgba(var(--sui-color-shadow-rgb), 0.06)",
-  2: "0 2px 4px rgba(var(--sui-color-shadow-rgb), 0.10), 0 4px 12px 2px rgba(var(--sui-color-shadow-rgb), 0.08)",
-  3: "0 6px 16px 4px rgba(var(--sui-color-shadow-rgb), 0.10), 0 2px 6px rgba(var(--sui-color-shadow-rgb), 0.08)",
-  4: "0 10px 24px 6px rgba(var(--sui-color-shadow-rgb), 0.12), 0 4px 8px rgba(var(--sui-color-shadow-rgb), 0.08)",
-  5: "0 16px 36px 8px rgba(var(--sui-color-shadow-rgb), 0.14), 0 6px 12px rgba(var(--sui-color-shadow-rgb), 0.10)",
+  1: "0 1px 2px rgba(var(--sui-color-shadow-rgb), 0.06), 0 1px 2px rgba(var(--sui-color-shadow-rgb), 0.04)",
+  2: "0 2px 8px rgba(var(--sui-color-shadow-rgb), 0.08), 0 1px 3px rgba(var(--sui-color-shadow-rgb), 0.05)",
+  3: "0 8px 24px rgba(var(--sui-color-shadow-rgb), 0.10), 0 2px 6px rgba(var(--sui-color-shadow-rgb), 0.06)",
+  4: "0 12px 32px rgba(var(--sui-color-shadow-rgb), 0.12), 0 4px 10px rgba(var(--sui-color-shadow-rgb), 0.06)",
+  5: "0 20px 48px rgba(var(--sui-color-shadow-rgb), 0.14), 0 8px 16px rgba(var(--sui-color-shadow-rgb), 0.08)",
 } as const;
 
 export type Elevation = keyof typeof elevation;
 
-/** Семейство шрифта для варианта шкалы: display — serif, UI — sans. */
+/** Семейство шрифта для варианта шкалы: display и UI — один sans, mono — код. */
 export type TypeFamily = "display" | "sans" | "mono";
 
 /** Типографическая шкала: fluid через `clamp`, но с верхней границей на 4K. */
@@ -365,21 +365,21 @@ export interface TypeStyle {
 }
 
 export const typeScale = {
-  "display-large": { family: "display", size: "clamp(2.75rem, 2.1rem + 1.9vw, 4rem)", lineHeight: "1.06", weight: "600", tracking: "-0.02em" },
-  "display-medium": { family: "display", size: "clamp(2.25rem, 1.8rem + 1.4vw, 3.25rem)", lineHeight: "1.1", weight: "600", tracking: "-0.015em" },
-  "display-small": { family: "display", size: "clamp(1.875rem, 1.55rem + 1.1vw, 2.5rem)", lineHeight: "1.16", weight: "600", tracking: "-0.01em" },
-  "headline-large": { family: "display", size: "clamp(1.625rem, 1.45rem + 0.7vw, 2.125rem)", lineHeight: "1.2", weight: "600", tracking: "-0.005em" },
-  "headline-medium": { family: "display", size: "clamp(1.375rem, 1.27rem + 0.5vw, 1.75rem)", lineHeight: "1.25", weight: "600", tracking: "0" },
-  "headline-small": { family: "display", size: "clamp(1.25rem, 1.18rem + 0.3vw, 1.5rem)", lineHeight: "1.3", weight: "600", tracking: "0" },
-  "title-large": { family: "sans", size: "clamp(1.25rem, 1.2rem + 0.2vw, 1.375rem)", lineHeight: "1.35", weight: "600", tracking: "0" },
-  "title-medium": { family: "sans", size: "1.125rem", lineHeight: "1.4", weight: "600", tracking: "0.002em" },
-  "title-small": { family: "sans", size: "1rem", lineHeight: "1.45", weight: "600", tracking: "0.005em" },
-  "body-large": { family: "sans", size: "clamp(1.125rem, 1.08rem + 0.2vw, 1.25rem)", lineHeight: "1.6", weight: "400", tracking: "0" },
-  "body-medium": { family: "sans", size: "1.0625rem", lineHeight: "1.6", weight: "400", tracking: "0.002em" },
-  "body-small": { family: "sans", size: "1rem", lineHeight: "1.55", weight: "400", tracking: "0.005em" },
-  "label-large": { family: "sans", size: "0.9375rem", lineHeight: "1.4", weight: "600", tracking: "0.01em" },
-  "label-medium": { family: "sans", size: "0.875rem", lineHeight: "1.4", weight: "600", tracking: "0.015em" },
-  "label-small": { family: "sans", size: "0.75rem", lineHeight: "1.35", weight: "600", tracking: "0.04em" },
+  "display-large": { family: "display", size: "clamp(2.125rem, 1.8rem + 1.1vw, 2.75rem)", lineHeight: "1.2", weight: "600", tracking: "-0.015em" },
+  "display-medium": { family: "display", size: "clamp(1.875rem, 1.62rem + 0.85vw, 2.375rem)", lineHeight: "1.2", weight: "600", tracking: "-0.012em" },
+  "display-small": { family: "display", size: "clamp(1.6875rem, 1.5rem + 0.6vw, 2.125rem)", lineHeight: "1.2", weight: "600", tracking: "-0.01em" },
+  "headline-large": { family: "display", size: "clamp(1.5rem, 1.38rem + 0.45vw, 2rem)", lineHeight: "1.25", weight: "600", tracking: "-0.008em" },
+  "headline-medium": { family: "display", size: "clamp(1.375rem, 1.28rem + 0.35vw, 1.75rem)", lineHeight: "1.3", weight: "600", tracking: "-0.005em" },
+  "headline-small": { family: "display", size: "clamp(1.25rem, 1.18rem + 0.25vw, 1.5rem)", lineHeight: "1.3", weight: "600", tracking: "0" },
+  "title-large": { family: "sans", size: "clamp(1.125rem, 1.09rem + 0.15vw, 1.25rem)", lineHeight: "1.35", weight: "600", tracking: "0" },
+  "title-medium": { family: "sans", size: "1.125rem", lineHeight: "1.4", weight: "600", tracking: "0" },
+  "title-small": { family: "sans", size: "1rem", lineHeight: "1.45", weight: "600", tracking: "0" },
+  "body-large": { family: "sans", size: "1.0625rem", lineHeight: "1.55", weight: "400", tracking: "0" },
+  "body-medium": { family: "sans", size: "1rem", lineHeight: "1.55", weight: "400", tracking: "0" },
+  "body-small": { family: "sans", size: "0.875rem", lineHeight: "1.5", weight: "400", tracking: "0" },
+  "label-large": { family: "sans", size: "0.8125rem", lineHeight: "1.35", weight: "600", tracking: "0.005em" },
+  "label-medium": { family: "sans", size: "0.75rem", lineHeight: "1.35", weight: "600", tracking: "0.01em" },
+  "label-small": { family: "sans", size: "0.75rem", lineHeight: "1.3", weight: "600", tracking: "0.04em" },
 } as const satisfies Readonly<Record<string, TypeStyle>>;
 
 export type TypeVariant = keyof typeof typeScale;
@@ -418,10 +418,10 @@ export const density = {
 
 export type Density = keyof typeof density;
 
-/** Размеры контролов по умолчанию: md уже touch-target 44px. */
+/** Размеры контролов: компактная шкала, на coarse-pointer минимум 44px. */
 export const controlHeight = {
-  sm: "2.25rem",
-  md: "2.75rem",
+  sm: "2rem",
+  md: "2.5rem",
   lg: "3rem",
 } as const;
 

@@ -1,7 +1,7 @@
 /*
  * Dialog: нативный <dialog> в top layer. Fallback (без showModal) —
  * fixed-позиционирование + scrim-сосед. Поверхность — ivory/navy,
- * радиус 24, тень, спокойная анимация 240ms.
+ * радиус 20, мягкая тень, спокойная анимация 240ms.
  */
 @layer sui.components {
   .sui-dialog {
@@ -13,7 +13,7 @@
         - env(safe-area-inset-top, 0px)
         - env(safe-area-inset-bottom, 0px)
     );
-    --sui-dialog-shadow: var(--sui-elevation-4);
+    --sui-dialog-shadow: var(--sui-elevation-3);
     --sui-dialog-duration: var(--sui-motion-slow);
     --sui-dialog-title-font: var(--sui-font-display);
     --sui-dialog-scrim-opacity: var(--sui-overlay-scrim, 0.42);
@@ -78,8 +78,8 @@
     align-items: flex-start;
     gap: var(--sui-space-3);
     flex: none;
-    padding: var(--sui-space-5) var(--sui-space-4) var(--sui-space-2)
-      var(--sui-space-6);
+    padding: var(--sui-space-4) var(--sui-space-4) var(--sui-space-2)
+      var(--sui-space-5);
   }
 
   .sui-dialog__title {
@@ -107,7 +107,7 @@
 
   .sui-dialog__description {
     margin: 0;
-    padding: 0 var(--sui-space-6) var(--sui-space-2);
+    padding: 0 var(--sui-space-5) var(--sui-space-2);
     max-inline-size: var(--sui-measure);
     font-size: var(--sui-type-body-medium-size);
     line-height: var(--sui-type-body-medium-line);
@@ -119,7 +119,7 @@
     flex: 1;
     min-height: 0;
     min-inline-size: 0;
-    padding: var(--sui-space-3) var(--sui-space-6) var(--sui-space-5);
+    padding: var(--sui-space-2) var(--sui-space-5) var(--sui-space-4);
     overflow: auto;
     overscroll-behavior: contain;
     font-size: var(--sui-type-body-medium-size);
@@ -134,8 +134,8 @@
     gap: var(--sui-space-2);
     flex: none;
     padding: var(--sui-space-3) var(--sui-space-4)
-      calc(var(--sui-space-4) + env(safe-area-inset-bottom, 0px))
-      var(--sui-space-6);
+      calc(var(--sui-space-3) + env(safe-area-inset-bottom, 0px))
+      var(--sui-space-5);
     border-block-start: var(--sui-hairline) solid var(--sui-color-outline-variant);
   }
 

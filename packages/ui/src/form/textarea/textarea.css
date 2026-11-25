@@ -166,7 +166,7 @@
     .sui-textarea__input {
       min-block-size: max(
         var(--sui-textarea-min-block-size),
-        var(--sui-touch-target-cozy)
+        var(--sui-touch-target)
       );
     }
   }

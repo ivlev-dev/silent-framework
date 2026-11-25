@@ -2,7 +2,7 @@
 @layer sui.components {
   .sui-icon-button {
     --sui-icon-button-size: calc(var(--sui-control-height-md) * var(--sui-density));
-    --sui-icon-button-radius: var(--sui-radius-full);
+    --sui-icon-button-radius: var(--sui-radius-md);
     --sui-icon-button-icon-size: var(--sui-icon-size-md);
 
     position: relative;
@@ -15,7 +15,7 @@
     block-size: var(--sui-icon-button-size, calc(var(--sui-control-height-md) * var(--sui-density)));
     padding: 0;
     border: var(--sui-hairline) solid transparent;
-    border-radius: var(--sui-icon-button-radius, var(--sui-radius-full));
+    border-radius: var(--sui-icon-button-radius, var(--sui-radius-md));
     background-color: transparent;
     color: var(--sui-color-on-surface-variant);
     cursor: pointer;

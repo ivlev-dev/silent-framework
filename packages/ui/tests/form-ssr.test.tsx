@@ -22,6 +22,7 @@ function SsrForm(): Node {
         value="user@example.com"
       />
       <Select
+        variant="native"
         id="role"
         name="role"
         label="Роль"
@@ -77,6 +78,7 @@ describe("SSR форм", () => {
     function Multi(): Node {
       return (
         <Select
+          variant="native"
           id="roles"
           name="roles"
           multiple
@@ -111,6 +113,7 @@ describe("SSR форм", () => {
     function SelectOnly(): Node {
       return (
         <Select
+          variant="native"
           id="letter"
           name="letter"
           placeholder="Выберите"

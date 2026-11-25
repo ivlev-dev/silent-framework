@@ -240,7 +240,7 @@ describe("Typography", () => {
     expect(measured.hasAttribute("data-measure")).toBe(true);
   });
 
-  it("Heading: display/headline переключаются на serif в CSS", () => {
+  it("Heading: display/headline используют sans-алиас, title — sans", () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const css = readFileSync(join(here, "..", "src", "components", "heading", "heading.css"), "utf8");
     expect(css).toContain('[data-variant^="display"]');

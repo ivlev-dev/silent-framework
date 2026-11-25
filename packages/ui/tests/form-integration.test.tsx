@@ -177,7 +177,7 @@ describe("Контролы + Form", () => {
   it("Select пишет строку", () => {
     const form = profile();
     const root = rootOf(
-      mount(handles, Select, {
+      mount(handles, Select, { variant: "native",
         field: form.getFieldProps("role"),
         options: [
           { value: "user", label: "Пользователь" },

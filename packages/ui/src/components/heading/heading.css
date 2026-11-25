@@ -17,7 +17,7 @@
     letter-spacing: var(--sui-type-headline-medium-tracking);
   }
 
-  /* Display/headline — редакционный serif, UI-title остаётся sans. */
+  /* Display/headline — тот же современный sans-алиас, что и UI-title. */
   .sui-heading[data-variant^="display"],
   .sui-heading[data-variant^="headline"] {
     font-family: var(--sui-font-display);

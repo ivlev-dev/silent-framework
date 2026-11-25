@@ -1,0 +1,61 @@
+{
+  "name": "@ivlev-dev/silent-dnd",
+  "version": "0.14.0",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@ivlev-dev/silent-core": ">=0.14.0 <0.15.0",
+    "@ivlev-dev/silent-reactivity": ">=0.14.0 <0.15.0"
+  },
+  "devDependencies": {
+    "@ivlev-dev/silent-core": "workspace:*",
+    "@ivlev-dev/silent-reactivity": "workspace:*",
+    "@ivlev-dev/silent-swc": "workspace:*",
+    "@ivlev-dev/silent-virtual": "workspace:*",
+    "@ivlev-dev/silent-vite": "workspace:*",
+    "jsdom": "^31.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ivlev-dev/silent-framework.git"
+  },
+  "homepage": "https://github.com/ivlev-dev/silent-framework#readme",
+  "bugs": {
+    "url": "https://github.com/ivlev-dev/silent-framework/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "description": "Headless drag-and-drop for Silent Framework: sensors, collisions, modifiers, sortable strategies",
+  "keywords": [
+    "dnd",
+    "drag-and-drop",
+    "sortable",
+    "headless",
+    "a11y",
+    "typescript"
+  ]
+}

@@ -1,6 +1,7 @@
 import type { Children, ClassNameValue, StyleInput } from "@ivlev-dev/silent-core";
 import { Show } from "@ivlev-dev/silent-core";
 import type { Attrs } from "../../internal/props.js";
+import { Spinner } from "../../components/spinner/spinner.js";
 import {
   NO_WRITE,
   type BoundField,
@@ -13,6 +14,9 @@ import {
   resolveControlId,
 } from "../internal/control.js";
 
+export type SwitchVariant = "switch" | "toggler";
+export type SwitchLabelPosition = "start" | "end";
+
 export interface SwitchProps {
   readonly checked?: boolean | undefined;
   readonly field?: BoundField<boolean> | undefined;
@@ -20,14 +24,30 @@ export interface SwitchProps {
   readonly description?: Children;
   readonly hint?: Children;
   readonly error?: Children;
+  /** Ошибка без текста: контрол невалиден, сообщения ещё нет. */
+  readonly invalid?: boolean | undefined;
+  /** `switch` — трек + подпись рядом; `toggler` — подпись внутри трека. */
+  readonly variant?: SwitchVariant | undefined;
+  /** Положение подписи относительно трека (вариант `switch`). */
+  readonly labelPosition?: SwitchLabelPosition | undefined;
   readonly name?: string | undefined;
   readonly id?: string | undefined;
   readonly required?: boolean | undefined;
   readonly disabled?: boolean | undefined;
   readonly readOnly?: boolean | undefined;
+  /** Ожидание: input заблокирован, в бегунке спиннер, `aria-busy`. */
+  readonly loading?: boolean | undefined;
+  /** Иконка в бегунке независимо от состояния. */
+  readonly icon?: Children;
+  /** Иконка в бегунке во включённом состоянии (сильнее `icon`). */
+  readonly onIcon?: Children;
+  /** Иконка в бегунке в выключенном состоянии (сильнее `icon`). */
+  readonly offIcon?: Children;
   /** Размер трека: `sm` компактный, `md` базовый, `lg` крупный. */
   readonly size?: ControlSize | undefined;
   readonly describedBy?: string | undefined;
+  /** Уведомление о новом значении (после `field.onChange`). */
+  readonly onValueChange?: ((checked: boolean) => void) | undefined;
   readonly onChange?: ((event: Event) => void) | undefined;
   readonly onBlur?: ((event: FocusEvent) => void) | undefined;
   readonly onFocus?: ((event: FocusEvent) => void) | undefined;
@@ -64,7 +84,20 @@ export function Switch(props: SwitchProps): Node {
     props.required !== undefined
       ? props.required
       : props.field?.isRequired === true;
-  const invalidOf = (): boolean => hasContent(errorOf());
+  const invalidOf = (): boolean =>
+    props.invalid === true || hasContent(errorOf());
+  const variantOf = (): SwitchVariant => props.variant ?? "switch";
+  const loadingOf = (): boolean => props.loading === true;
+  const disabledOf = (): boolean =>
+    props.disabled === true || loadingOf();
+  const busyOf = (): boolean =>
+    loadingOf() || props.field?.isValidating === true;
+  const iconOf = (): Children => {
+    if (checkedOf()) {
+      return props.onIcon !== undefined ? props.onIcon : props.icon;
+    }
+    return props.offIcon !== undefined ? props.offIcon : props.icon;
+  };
   const described = (): string | undefined =>
     describedBy(
       props.describedBy,
@@ -78,7 +111,10 @@ export function Switch(props: SwitchProps): Node {
       class={["sui-switch", props.class]}
       style={props.style}
       data-size={props.size ?? "md"}
+      data-variant={variantOf()}
+      data-label-position={props.labelPosition ?? "end"}
       data-checked={checkedOf() ? "" : undefined}
+      data-loading={loadingOf() ? "" : undefined}
       data-invalid={invalidOf() ? "" : undefined}
       data-disabled={props.disabled === true ? "" : undefined}
       data-readonly={props.readOnly === true ? "" : undefined}
@@ -93,25 +129,31 @@ export function Switch(props: SwitchProps): Node {
             type="checkbox"
             role="switch"
             name={nameOf()}
-            disabled={props.disabled === true}
+            disabled={disabledOf()}
             required={requiredOf()}
             aria-required={requiredOf() ? "true" : undefined}
             aria-invalid={invalidOf() ? "true" : undefined}
             aria-checked={checkedOf() ? "true" : "false"}
             aria-readonly={props.readOnly === true ? "true" : undefined}
-            aria-busy={props.field?.isValidating === true ? "true" : undefined}
+            aria-busy={busyOf() ? "true" : undefined}
             aria-describedby={described()}
             bindChecked={[readChecked, NO_WRITE]}
             onClick={(event) => {
-              if (props.readOnly === true) event.preventDefault();
+              if (props.readOnly === true || loadingOf()) event.preventDefault();
             }}
             onChange={(event) => {
-              if (props.readOnly === true) {
+              if (props.readOnly === true || loadingOf()) {
                 event.preventDefault();
                 return;
               }
+              const target = event.target;
+              const next =
+                target instanceof HTMLInputElement
+                  ? target.checked
+                  : !checkedOf();
               props.field?.onChange(event);
               props.onChange?.(event);
+              props.onValueChange?.(next);
             }}
             onBlur={(event) => {
               props.field?.onBlur(event);
@@ -122,11 +164,23 @@ export function Switch(props: SwitchProps): Node {
               props.onFocus?.(event);
             }}
           />
-          <span class="sui-switch__track" aria-hidden="true">
-            <span class="sui-switch__thumb" />
+          <span class="sui-switch__track">
+            <span class="sui-switch__thumb">
+              <Show when={loadingOf()}>
+                <Spinner size="sm" class="sui-switch__spinner" />
+              </Show>
+              <Show when={!loadingOf() && hasContent(iconOf())}>
+                <span class="sui-switch__icon" aria-hidden="true">
+                  {iconOf()}
+                </span>
+              </Show>
+            </span>
+            <Show when={variantOf() === "toggler" && hasContent(labelOf())}>
+              <span class="sui-switch__track-label">{labelOf()}</span>
+            </Show>
           </span>
         </span>
-        <Show when={hasContent(labelOf())}>
+        <Show when={variantOf() === "switch" && hasContent(labelOf())}>
           <span class="sui-switch__label">{labelOf()}</span>
         </Show>
       </label>

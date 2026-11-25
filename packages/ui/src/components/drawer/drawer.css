@@ -6,8 +6,8 @@
  */
 @layer sui.components {
   .sui-drawer {
-    --sui-drawer-inline-min: 17rem;
-    --sui-drawer-inline-max: 24rem;
+    --sui-drawer-inline-min: 16rem;
+    --sui-drawer-inline-max: 22rem;
     --sui-drawer-surface: var(--sui-color-surface-container-low);
     --sui-drawer-duration: var(--sui-motion-slow);
     --sui-drawer-scrim-opacity: var(--sui-overlay-scrim, 0.42);
@@ -54,7 +54,7 @@
     overflow: hidden;
     background-color: var(--sui-drawer-surface);
     color: var(--sui-color-on-surface);
-    box-shadow: var(--sui-elevation-4);
+    box-shadow: var(--sui-elevation-3);
     pointer-events: auto;
   }
 
@@ -97,7 +97,7 @@
     gap: var(--sui-space-3);
     flex: none;
     min-block-size: calc(
-      var(--sui-control-height-lg) * var(--sui-density) + var(--sui-space-2)
+      var(--sui-control-height-md) * var(--sui-density) + var(--sui-space-2)
     );
     padding: calc(var(--sui-space-2) + env(safe-area-inset-top, 0px))
       var(--sui-space-2) var(--sui-space-2) var(--sui-space-4);

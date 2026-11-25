@@ -6,15 +6,15 @@
  */
 @layer sui.components {
   .sui-navigation-rail {
-    --sui-rail-width-collapsed: 5rem;
-    --sui-rail-width-expanded: clamp(14rem, 18vw, 17rem);
+    --sui-rail-width-collapsed: 4.5rem;
+    --sui-rail-width-expanded: clamp(13rem, 17vw, 16rem);
     --sui-rail-surface: var(--sui-color-surface-container);
     --sui-rail-indicator: var(--sui-color-accent);
 
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    gap: var(--sui-space-3);
+    gap: var(--sui-space-2);
     box-sizing: border-box;
     inline-size: var(--sui-rail-width-collapsed);
     max-inline-size: 100%;
@@ -82,7 +82,7 @@
     inline-size: 100%;
     min-inline-size: 0;
     min-block-size: calc(
-      var(--sui-control-height-lg) * var(--sui-density) + var(--sui-space-2)
+      var(--sui-control-height-md) * var(--sui-density) + var(--sui-space-2)
     );
     padding: var(--sui-space-1) var(--sui-space-2);
     border: 0;

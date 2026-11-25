@@ -22,6 +22,8 @@
 | `@ivlev-dev/silent-validation` | [validation.md](./validation.md) | классовая валидация: декораторы, схемы из TS-типов, i18n |
 | `@ivlev-dev/silent-validation-vite` | [validation-vite.md](./validation-vite.md) | Vite-плагин генерации схем валидации |
 | `@ivlev-dev/silent-form` | [form.md](./form.md) | реактивные формы: `@Field`, метаданные полей, вложенные формы, серверные ошибки |
+| `@ivlev-dev/silent-virtual` | [virtual.md](./virtual.md) | headless-виртуализация: диапазоны, раскладка по линиям, SSR-срезы |
+| `@ivlev-dev/silent-dnd` | [dnd.md](./dnd.md) | headless drag-and-drop: контекст, сенсоры, коллизии, модификаторы, сортировка |
 | `@ivlev-dev/silent-ui` | [ui.md](./ui.md) | дизайн-система: токены, темы, layout, типографика, компоненты, формы, иконки |
 | `@ivlev-dev/silent-protocol` | [protocol.md](./protocol.md) | бинарный протокол: схема из класса, encode/decode, oneof |
 | `@ivlev-dev/silent-protocol-vite` | [protocol-vite.md](./protocol-vite.md) | Vite-плагин схем и статических кодеков |

@@ -1,0 +1,71 @@
+/*
+ * Listbox: встроенный список без всплывающей панели. Строки и поверхность
+ * берут общие классы `.sui-popup*`; здесь — только контейнер и поиск.
+ */
+@layer sui.components {
+  .sui-listbox {
+    --sui-listbox-max-block: 20rem;
+
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+    border: var(--sui-hairline) solid var(--sui-color-outline-variant);
+    border-radius: var(--sui-radius-lg);
+    background-color: var(--sui-color-surface-container-low);
+    color: var(--sui-color-on-surface);
+    overflow: hidden;
+  }
+
+  .sui-listbox[data-disabled] {
+    opacity: var(--sui-state-disabled);
+  }
+
+  .sui-listbox__search {
+    flex: none;
+    padding: var(--sui-space-2) var(--sui-space-3);
+    border: 0;
+    border-block-end: var(--sui-hairline) solid var(--sui-color-outline-variant);
+    background: transparent;
+    color: inherit;
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-body-medium-size);
+    line-height: var(--sui-type-body-medium-line);
+  }
+
+  .sui-listbox__search:focus,
+  .sui-listbox__search:focus-visible {
+    outline: none;
+    border-block-end-color: var(--sui-color-primary);
+  }
+
+  .sui-listbox__list {
+    min-block-size: 0;
+    max-block-size: min(
+      calc(
+        var(--sui-popup-option-block, 2.5rem) * var(--sui-popup-max-visible, 8)
+          + 2 * var(--sui-space-1)
+      ),
+      var(--sui-listbox-max-block)
+    );
+    padding: var(--sui-space-1);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .sui-listbox__list:focus {
+    outline: none;
+  }
+
+  .sui-listbox__list:focus-visible {
+    outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
+    outline-offset: calc(var(--sui-focus-ring-width) * -1);
+  }
+
+  .sui-listbox[data-size="sm"] {
+    --sui-popup-option-block: 2rem;
+  }
+
+  .sui-listbox[data-size="lg"] {
+    --sui-popup-option-block: 3rem;
+  }
+}

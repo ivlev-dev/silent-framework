@@ -82,7 +82,7 @@
     justify-content: center;
     gap: var(--sui-space-2);
     flex: none;
-    min-block-size: calc(var(--sui-control-height-lg) * var(--sui-density));
+    min-block-size: calc(var(--sui-control-height-md) * var(--sui-density) + var(--sui-space-1));
     padding-inline: var(--sui-space-4);
     border: 0;
     border-start-start-radius: var(--sui-radius-sm);
@@ -160,7 +160,7 @@
   }
 
   .sui-tabs[data-size="lg"] .sui-tabs__tab {
-    min-block-size: calc(var(--sui-control-height-lg) * var(--sui-density) + var(--sui-space-2));
+    min-block-size: calc(var(--sui-control-height-lg) * var(--sui-density));
     padding-inline: var(--sui-space-5);
     font-size: var(--sui-type-title-small-size);
   }

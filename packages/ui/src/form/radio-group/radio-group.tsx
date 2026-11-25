@@ -4,25 +4,45 @@ import type { Attrs } from "../../internal/props.js";
 import {
   NO_WRITE,
   type BoundField,
+  type ChoiceVariant,
+  type ControlSize,
+  type GroupColumns,
+  type GroupOrientation,
   describedBy,
   descriptionIdFor,
   errorIdFor,
   hasContent,
   hintIdFor,
+  optionDomId,
   resolveControlId,
+  valueKey,
 } from "../internal/control.js";
 
 export interface RadioOption {
   readonly value: string | number;
   readonly label: Children;
   readonly description?: Children;
+  readonly icon?: Children;
   readonly disabled?: boolean | undefined;
 }
+
+export type RadioGroupVariant = ChoiceVariant;
+export type RadioGroupSize = ControlSize;
+export type RadioGroupOrientation = GroupOrientation;
 
 export interface RadioGroupProps {
   readonly options: readonly RadioOption[];
   readonly field?: BoundField<string | number> | undefined;
   readonly value?: string | number | undefined;
+  /** Оформление пункта: обычная строка, карточка или плитка. */
+  readonly variant?: RadioGroupVariant | undefined;
+  /** Размер точки и текста: `sm` компактный, `md` базовый, `lg` крупный. */
+  readonly size?: RadioGroupSize | undefined;
+  readonly orientation?: RadioGroupOrientation | undefined;
+  /** Сетка пунктов: 1–4 колонки (на узком экране схлопывается в одну). */
+  readonly columns?: GroupColumns | undefined;
+  /** Уведомление о выбранном значении (после `field.onChange`). */
+  readonly onValueChange?: ((value: string | number) => void) | undefined;
   readonly label?: Children;
   readonly hint?: Children;
   readonly error?: Children;
@@ -38,14 +58,6 @@ export interface RadioGroupProps {
   readonly class?: ClassNameValue;
   readonly style?: StyleInput;
   readonly attrs?: Attrs;
-}
-
-function valueKey(value: string | number): string {
-  return String(value);
-}
-
-function optionDomId(base: string, option: RadioOption): string {
-  return `${base}-${valueKey(option.value).replace(/[^A-Za-z0-9_-]+/gu, "-")}`;
 }
 
 interface RadioItemProps {
@@ -107,6 +119,11 @@ function RadioItem(props: RadioItemProps): Node {
         />
         <span class="sui-radio__dot" aria-hidden="true" />
       </span>
+      <Show when={hasContent(props.option.icon)}>
+        <span class="sui-radio__icon" aria-hidden="true">
+          {props.option.icon}
+        </span>
+      </Show>
       <span class="sui-radio__text">
         <span class="sui-radio__label">{props.option.label}</span>
         <Show when={hasContent(props.option.description)}>
@@ -116,6 +133,52 @@ function RadioItem(props: RadioItemProps): Node {
         </Show>
       </span>
     </label>
+  );
+}
+
+interface RadioItemsProps {
+  readonly options: readonly RadioOption[];
+  readonly baseId: string;
+  readonly name: string;
+  readonly isSelected: (option: RadioOption) => boolean;
+  readonly tabIndexOf: (option: RadioOption, index: number) => number;
+  readonly isDisabled: (option: RadioOption) => boolean;
+  readonly readOnly: boolean;
+  readonly required: boolean;
+  readonly invalid: boolean;
+  readonly busy: boolean;
+  readonly describedBy: string | undefined;
+  readonly onSelect: (option: RadioOption, event: Event) => void;
+  readonly onBlur: (event: FocusEvent) => void;
+  readonly onFocus: (event: FocusEvent) => void;
+}
+
+/**
+ * Обёртка над `For`: прямой `For` внутри компонента теряет разметку списка
+ * при SSR, поэтому пункты рендерятся отдельным компонентом.
+ */
+function RadioItems(props: RadioItemsProps): Node {
+  return (
+    <For each={props.options} keyOf={(option) => valueKey(option.value)}>
+      {(option, index) => (
+        <RadioItem
+          option={option}
+          id={optionDomId(props.baseId, option.value)}
+          name={props.name}
+          checked={() => props.isSelected(option)}
+          tabIndex={props.tabIndexOf(option, index())}
+          disabled={props.isDisabled(option)}
+          readOnly={props.readOnly}
+          required={props.required}
+          invalid={props.invalid}
+          busy={props.busy}
+          describedBy={props.describedBy}
+          onSelect={(event) => props.onSelect(option, event)}
+          onBlur={props.onBlur}
+          onFocus={props.onFocus}
+        />
+      )}
+    </For>
   );
 }
 
@@ -141,6 +204,10 @@ export function RadioGroup(props: RadioGroupProps): Node {
       ? props.required
       : props.field?.isRequired === true;
   const invalidOf = (): boolean => hasContent(errorOf());
+  const variantOf = (): RadioGroupVariant => props.variant ?? "default";
+  const sizeOf = (): RadioGroupSize => props.size ?? "md";
+  const orientationOf = (): RadioGroupOrientation =>
+    props.orientation ?? "vertical";
   const currentValue = (): unknown =>
     props.value !== undefined ? props.value : props.field?.value;
   const selectedOf = (option: RadioOption): boolean => {
@@ -174,6 +241,10 @@ export function RadioGroup(props: RadioGroupProps): Node {
       {...props.attrs}
       class={["sui-radio-group", props.class]}
       style={props.style}
+      data-variant={variantOf()}
+      data-size={sizeOf()}
+      data-orientation={orientationOf()}
+      data-columns={props.columns === undefined ? undefined : String(props.columns)}
       data-invalid={invalidOf() ? "" : undefined}
       data-disabled={props.disabled === true ? "" : undefined}
       data-readonly={props.readOnly === true ? "" : undefined}
@@ -234,35 +305,32 @@ export function RadioGroup(props: RadioGroupProps): Node {
         </span>
       </Show>
       <div class="sui-radio-group__body">
-        <For each={props.options} keyOf={(option) => valueKey(option.value)}>
-          {(option, index) => (
-            <RadioItem
-              option={option}
-              id={optionDomId(baseId, option)}
-              name={nameOf()}
-              checked={() => selectedOf(option)}
-              tabIndex={tabIndexOf(option, index())}
-              disabled={disabledOf(option)}
-              readOnly={props.readOnly === true}
-              required={requiredOf()}
-              invalid={invalidOf()}
-              busy={props.field?.isValidating === true}
-              describedBy={described()}
-              onSelect={(event) => {
-                props.field?.onChange(event);
-                props.onChange?.(event);
-              }}
-              onBlur={(event) => {
-                props.field?.onBlur(event);
-                props.onBlur?.(event);
-              }}
-              onFocus={(event) => {
-                props.field?.onFocus(event);
-                props.onFocus?.(event);
-              }}
-            />
-          )}
-        </For>
+        <RadioItems
+          options={props.options}
+          baseId={baseId}
+          name={nameOf()}
+          isSelected={selectedOf}
+          tabIndexOf={tabIndexOf}
+          isDisabled={disabledOf}
+          readOnly={props.readOnly === true}
+          required={requiredOf()}
+          invalid={invalidOf()}
+          busy={props.field?.isValidating === true}
+          describedBy={described()}
+          onSelect={(option, event) => {
+            props.field?.onChange(event);
+            props.onChange?.(event);
+            props.onValueChange?.(option.value);
+          }}
+          onBlur={(event) => {
+            props.field?.onBlur(event);
+            props.onBlur?.(event);
+          }}
+          onFocus={(event) => {
+            props.field?.onFocus(event);
+            props.onFocus?.(event);
+          }}
+        />
       </div>
       <Show when={hasContent(errorOf())}>
         <span class="sui-radio-group__error" id={errorIdFor(baseId)}>

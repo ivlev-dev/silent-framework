@@ -58,6 +58,19 @@ export function eventValue(event: { readonly currentTarget?: unknown }): unknown
     }
     return target.value;
   }
+  // Синтетические события кастомных контролов: `{ value }` / `{ multiple,
+  // selectedOptions }` без DOM-узла.
+  if (typeof target === "object" && target !== null) {
+    const record = target as {
+      readonly value?: unknown;
+      readonly multiple?: unknown;
+      readonly selectedOptions?: unknown;
+    };
+    if (record.multiple === true && Array.isArray(record.selectedOptions)) {
+      return record.selectedOptions.map((option: { readonly value: string }) => option.value);
+    }
+    if ("value" in record) return record.value;
+  }
   return undefined;
 }
 

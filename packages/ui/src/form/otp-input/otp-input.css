@@ -1,0 +1,130 @@
+/*
+ * OTP: ряд разрядов. Группы визуально разделяются отступом или явным
+ * сепаратором, но клавиатурный порядок остаётся плоским — как у формы.
+ */
+@layer sui.components {
+  .sui-otp {
+    --sui-otp-cell-inline: 2.75rem;
+    --sui-otp-cell-block: 3rem;
+    --sui-otp-gap: var(--sui-space-1);
+    --sui-otp-group-gap: var(--sui-space-2);
+    --sui-otp-radius: var(--sui-radius-control);
+    --sui-otp-font-size: var(--sui-type-title-medium-size);
+    --sui-otp-bg: var(--sui-color-surface-container-lowest);
+    --sui-otp-border-color: var(--sui-color-outline-variant);
+    --sui-otp-hover-color: var(--sui-color-outline);
+    --sui-otp-focus-color: var(--sui-focus-ring-color);
+    --sui-otp-error-color: var(--sui-color-error);
+    --sui-otp-disabled-bg: var(--sui-color-surface-container);
+    --sui-otp-separator-color: var(--sui-color-on-surface-muted);
+
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sui-otp-gap);
+    min-inline-size: 0;
+    max-inline-size: 100%;
+  }
+
+  .sui-otp__slot {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sui-otp-gap);
+    min-inline-size: 0;
+  }
+
+  .sui-otp__slot[data-group-end] {
+    margin-inline-end: calc(var(--sui-otp-group-gap) - var(--sui-otp-gap));
+  }
+
+  .sui-otp__input {
+    box-sizing: border-box;
+    inline-size: var(--sui-otp-cell-inline);
+    block-size: var(--sui-otp-cell-block);
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    border: var(--sui-hairline) solid var(--sui-otp-border-color);
+    border-radius: var(--sui-otp-radius);
+    background-color: var(--sui-otp-bg);
+    color: var(--sui-color-on-surface);
+    font-family: var(--sui-font-mono);
+    font-size: var(--sui-otp-font-size);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    text-transform: uppercase;
+    caret-color: var(--sui-otp-focus-color);
+    transition:
+      border-color var(--sui-motion-short-3) var(--sui-easing-standard),
+      background-color var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  .sui-otp__input:hover:not(:disabled):not(:read-only) {
+    border-color: var(--sui-otp-hover-color);
+  }
+
+  .sui-otp__input:focus,
+  .sui-otp__input:focus-visible {
+    border-color: var(--sui-otp-focus-color);
+    outline: var(--sui-focus-ring-width) solid var(--sui-otp-focus-color);
+    outline-offset: calc(var(--sui-focus-ring-offset) * -1);
+  }
+
+  .sui-otp[data-invalid] .sui-otp__input {
+    border-color: var(--sui-otp-error-color);
+  }
+
+  .sui-otp[data-invalid] .sui-otp__input:focus,
+  .sui-otp[data-invalid] .sui-otp__input:focus-visible {
+    outline-color: var(--sui-otp-error-color);
+  }
+
+  .sui-otp[data-disabled] {
+    opacity: var(--sui-state-disabled);
+  }
+
+  .sui-otp[data-disabled] .sui-otp__input {
+    background-color: var(--sui-otp-disabled-bg);
+    cursor: not-allowed;
+  }
+
+  .sui-otp[data-readonly] .sui-otp__input {
+    border-style: dashed;
+    background-color: transparent;
+  }
+
+  .sui-otp[data-size="sm"] {
+    --sui-otp-cell-inline: 2.25rem;
+    --sui-otp-cell-block: 2.5rem;
+    --sui-otp-font-size: var(--sui-type-body-large-size);
+  }
+
+  .sui-otp[data-size="lg"] {
+    --sui-otp-cell-inline: 3.25rem;
+    --sui-otp-cell-block: 3.5rem;
+    --sui-otp-font-size: var(--sui-type-headline-small-size);
+  }
+
+  .sui-otp__separator {
+    flex: none;
+    color: var(--sui-otp-separator-color);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-body-medium-size);
+    line-height: 1;
+    user-select: none;
+  }
+
+  @media (pointer: coarse) {
+    .sui-otp {
+      --sui-otp-cell-inline: var(--sui-touch-target);
+      --sui-otp-cell-block: var(--sui-touch-target);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sui-otp__input {
+      transition: none;
+    }
+  }
+}

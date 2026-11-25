@@ -21,6 +21,8 @@
 - Опциональный `@ivlev-dev/silent-router`: класс `Router`, компоненты `Link`/`RouterView`, guards/loaders и memory history для SSR.
 - Опциональный `@ivlev-dev/silent-validation`: декораторы + валидация из TS-типов через Vite-плагин `@ivlev-dev/silent-validation-vite` (`@Required`, `@IsEmail`, `@Min` — всего 51 правило, `accessor`-поля без дублирования типов), кастомные сообщения, встроенные ru/en и интеграция с i18n.
 - Опциональный `@ivlev-dev/silent-form`: реактивные формы на тех же `accessor`-декораторах — метаданные полей (`@Label`, `@Placeholder`, `@Hint`, `@Required`), вложенные формы, серверные ошибки и асинхронная готовность полей.
+- Опциональный `@ivlev-dev/silent-virtual`: headless-виртуализация списков и сеток — расчёт видимого диапазона, раскладка по линиям и детерминированный SSR-срез без DOM.
+- Опциональный `@ivlev-dev/silent-dnd`: headless drag-and-drop — контекст, сенсоры, стратегии коллизий, модификаторы, сортируемые списки и доступность для скринридеров.
 - Опциональный `@ivlev-dev/silent-protocol`: бинарный протокол вместо JSON — схема из класса, без имён полей, bitmap optional, oneof, массивы/map/set/nested; TS, Rust, Kotlin и PHP.
 - Опциональный `@ivlev-dev/silent-ui`: дизайн-система — токены Material 3, светлая/тёмная темы, layout-примитивы, типографика, компоненты данных/оверлеев/навигации, формы, иконки и Storybook.
 - Справочник API с автопроверкой полноты (`pnpm api:check`).
@@ -49,6 +51,10 @@ pnpm add @ivlev-dev/silent-validation
 pnpm add -D @ivlev-dev/silent-validation-vite
 # для форм:
 pnpm add @ivlev-dev/silent-form
+# для виртуализации списков:
+pnpm add @ivlev-dev/silent-virtual
+# для drag-and-drop:
+pnpm add @ivlev-dev/silent-dnd
 # протокол:
 pnpm add @ivlev-dev/silent-protocol
 pnpm add -D @ivlev-dev/silent-protocol-vite

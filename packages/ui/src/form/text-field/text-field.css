@@ -145,7 +145,7 @@
     .sui-text-field {
       --sui-text-field-affix-size: var(--sui-touch-target);
 
-      min-block-size: var(--sui-touch-target-cozy);
+      min-block-size: var(--sui-touch-target);
     }
   }
 

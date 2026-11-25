@@ -47,7 +47,7 @@
     max-inline-size: var(--sui-top-app-bar-max);
     min-inline-size: 0;
     min-block-size: calc(
-      var(--sui-control-height-lg) * var(--sui-density) + var(--sui-space-2)
+      var(--sui-control-height-lg) * var(--sui-density) + var(--sui-space-1)
     );
     margin-inline: auto;
     padding-inline: var(--sui-gutter) var(--sui-space-2);

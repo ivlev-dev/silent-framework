@@ -272,7 +272,7 @@ describe("Select", () => {
 
   it("placeholder и selected на option", () => {
     const root = rootOf(
-      mount(handles, Select, {
+      mount(handles, Select, { variant: "native",
         label: "Буква",
         placeholder: "Выберите",
         options,
@@ -291,7 +291,7 @@ describe("Select", () => {
   it("multiple и поле-массив значений", () => {
     const fake = fakeField<readonly string[]>(["a", "b"]);
     const root = rootOf(
-      mount(handles, Select, { options, multiple: true, field: fake.field }),
+      mount(handles, Select, { variant: "native", options, multiple: true, field: fake.field }),
     );
     const select = query<HTMLSelectElement>(root, "select");
     expect(select.multiple).toBe(true);
@@ -309,7 +309,7 @@ describe("Select", () => {
       { value: "b", label: "B" },
     ]);
     const root = rootOf(
-      mount(handles, Select, {
+      mount(handles, Select, { variant: "native",
         label: "Буква",
         get options() {
           return options();
@@ -342,7 +342,7 @@ describe("Select", () => {
     ]);
     const [value, setValue] = createSignal<string | number>("b");
     const root = rootOf(
-      mount(handles, Select, {
+      mount(handles, Select, { variant: "native",
         get options() {
           return options();
         },
@@ -373,7 +373,7 @@ describe("Select", () => {
   it("не теряет placeholder при изменении options", () => {
     const [options, setOptions] = createSignal<readonly SelectOption[]>([]);
     const root = rootOf(
-      mount(handles, Select, {
+      mount(handles, Select, { variant: "native",
         placeholder: "Выберите",
         value: "",
         get options() {
@@ -410,7 +410,7 @@ describe("Select", () => {
     ]);
     const fake = fakeField<readonly string[]>(["a", "b"]);
     const root = rootOf(
-      mount(handles, Select, {
+      mount(handles, Select, { variant: "native",
         multiple: true,
         field: fake.field,
         get options() {
@@ -440,7 +440,7 @@ describe("Select", () => {
     const [options, setOptions] = createSignal<readonly SelectOption[]>([]);
     const fake = fakeField("a");
     const root = rootOf(
-      mount(handles, Select, {
+      mount(handles, Select, { variant: "native",
         field: fake.field,
         get options() {
           return options();

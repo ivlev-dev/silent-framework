@@ -10,7 +10,7 @@
     );
     --sui-search-field-padding-inline: var(--sui-space-3);
     --sui-search-field-gap: var(--sui-space-2);
-    --sui-search-field-radius: var(--sui-radius-full);
+    --sui-search-field-radius: var(--sui-radius-md);
     --sui-search-field-font-size: var(--sui-type-body-medium-size);
     --sui-search-field-line-height: var(--sui-type-body-medium-line);
     --sui-search-field-bg: var(--sui-color-surface-container-lowest);
@@ -97,7 +97,7 @@
     .sui-search-field {
       --sui-search-field-clear-size: var(--sui-touch-target);
 
-      min-block-size: var(--sui-touch-target-cozy);
+      min-block-size: var(--sui-touch-target);
     }
   }
 

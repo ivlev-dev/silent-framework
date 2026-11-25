@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const names = ["reactivity", "di", "core", "swc", "vite", "server", "router", "validation", "validation-vite", "protocol", "protocol-vite", "form", "ui", "silent"];
+const names = ["reactivity", "di", "core", "swc", "vite", "server", "router", "validation", "validation-vite", "protocol", "protocol-vite", "form", "ui", "virtual", "dnd", "silent"];
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const output = mkdtempSync(join(tmpdir(), "silent-install-"));
 const packs = join(output, "packs");
@@ -81,6 +81,8 @@ import silent from "@ivlev-dev/silent-vite";
 import { transform, version } from "@ivlev-dev/silent-swc";
 import { mount as metaMount, Router as metaRouter, silent as metaSilent } from "@ivlev-dev/silent";
 import { Button as uiButton, applyTheme as uiApplyTheme } from "@ivlev-dev/silent-ui";
+import { VirtualizerCore } from "@ivlev-dev/silent-virtual";
+import { DndContext } from "@ivlev-dev/silent-dnd";
 
 const [read, write] = createSignal(1);
 write(2);
@@ -99,6 +101,8 @@ if (typeof Field !== "function" || typeof Label !== "function" || typeof Require
 if (typeof silent !== "function") throw new Error("vite: plugin export");
 if (typeof uiButton !== "function") throw new Error("ui: Button missing");
 if (typeof uiApplyTheme !== "function") throw new Error("ui: applyTheme missing");
+if (typeof VirtualizerCore !== "function") throw new Error("virtual: VirtualizerCore missing");
+if (typeof DndContext !== "function") throw new Error("dnd: DndContext missing");
 if (typeof metaMount !== "function") throw new Error("silent: mount re-export");
 if (typeof metaSilent !== "function") throw new Error("silent: plugin re-export");
 if (typeof metaRouter !== "function") throw new Error("silent: router re-export");

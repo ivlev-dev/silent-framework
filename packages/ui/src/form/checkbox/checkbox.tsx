@@ -4,6 +4,8 @@ import type { Attrs } from "../../internal/props.js";
 import {
   NO_WRITE,
   type BoundField,
+  type ChoiceVariant,
+  type ControlSize,
   describedBy,
   descriptionIdFor,
   errorIdFor,
@@ -12,6 +14,9 @@ import {
   resolveControlId,
 } from "../internal/control.js";
 
+export type CheckboxVariant = ChoiceVariant;
+export type CheckboxSize = ControlSize;
+
 export interface CheckboxProps {
   readonly checked?: boolean | undefined;
   readonly field?: BoundField<boolean> | undefined;
@@ -19,12 +24,22 @@ export interface CheckboxProps {
   readonly description?: Children;
   readonly hint?: Children;
   readonly error?: Children;
+  /** Значение для отправки формы и групп чекбоксов. */
+  readonly value?: string | number | undefined;
   readonly indeterminate?: boolean | undefined;
   readonly name?: string | undefined;
   readonly id?: string | undefined;
   readonly required?: boolean | undefined;
   readonly disabled?: boolean | undefined;
   readonly readOnly?: boolean | undefined;
+  /** Оформление: обычная строка, кликабельная карточка или плитка. */
+  readonly variant?: CheckboxVariant | undefined;
+  /** Размер квадрата и текста: `sm` компактный, `md` базовый, `lg` крупный. */
+  readonly size?: CheckboxSize | undefined;
+  /** Декоративная иконка рядом с подписью или в карточке. */
+  readonly icon?: Children;
+  /** Ошибка без текста: контрол невалиден, сообщения ещё нет. */
+  readonly invalid?: boolean | undefined;
   readonly describedBy?: string | undefined;
   readonly onChange?: ((event: Event) => void) | undefined;
   readonly onBlur?: ((event: FocusEvent) => void) | undefined;
@@ -32,6 +47,58 @@ export interface CheckboxProps {
   readonly class?: ClassNameValue;
   readonly style?: StyleInput;
   readonly attrs?: Attrs;
+}
+
+interface CheckboxInputProps {
+  readonly id: string;
+  readonly name: string;
+  readonly value?: string | number | undefined;
+  readonly checked: boolean;
+  readonly indeterminate: boolean;
+  readonly disabled: boolean;
+  readonly required: boolean;
+  readonly readOnly: boolean;
+  readonly invalid: boolean;
+  readonly busy: boolean;
+  readonly describedBy: string | undefined;
+  readonly onChange: ((event: Event) => void) | undefined;
+  readonly onBlur: ((event: FocusEvent) => void) | undefined;
+  readonly onFocus: ((event: FocusEvent) => void) | undefined;
+}
+
+/** Нативный input: единая разметка для строки, карточки и группы. */
+function CheckboxInput(props: CheckboxInputProps): Node {
+  const readChecked = (): boolean | "mixed" =>
+    props.indeterminate ? "mixed" : props.checked;
+  return (
+    <input
+      id={props.id}
+      class="sui-checkbox__input"
+      type="checkbox"
+      name={props.name}
+      value={props.value === undefined ? undefined : String(props.value)}
+      disabled={props.disabled}
+      required={props.required}
+      aria-required={props.required ? "true" : undefined}
+      aria-invalid={props.invalid ? "true" : undefined}
+      aria-checked={
+        props.indeterminate ? "mixed" : props.checked ? "true" : "false"
+      }
+      aria-readonly={props.readOnly ? "true" : undefined}
+      aria-busy={props.busy ? "true" : undefined}
+      aria-describedby={props.describedBy}
+      bindChecked={[readChecked, NO_WRITE]}
+      onChange={(event) => {
+        if (props.readOnly) {
+          event.preventDefault();
+          return;
+        }
+        props.onChange?.(event);
+      }}
+      onBlur={(event) => props.onBlur?.(event)}
+      onFocus={(event) => props.onFocus?.(event)}
+    />
+  );
 }
 
 /** Чекбокс с необязательным `indeterminate`, описанием и связкой с `field`. */
@@ -46,8 +113,6 @@ export function Checkbox(props: CheckboxProps): Node {
       ? props.checked
       : props.field?.value === true;
   const indeterminateOf = (): boolean => props.indeterminate === true;
-  const readChecked = (): boolean | "mixed" =>
-    indeterminateOf() ? "mixed" : checkedOf();
   const labelOf = (): Children =>
     props.label !== undefined ? props.label : props.field?.label;
   const descriptionOf = (): Children =>
@@ -61,7 +126,12 @@ export function Checkbox(props: CheckboxProps): Node {
     props.required !== undefined
       ? props.required
       : props.field?.isRequired === true;
-  const invalidOf = (): boolean => hasContent(errorOf());
+  const invalidOf = (): boolean =>
+    props.invalid === true || hasContent(errorOf());
+  const variantOf = (): CheckboxVariant => props.variant ?? "default";
+  const sizeOf = (): CheckboxSize => props.size ?? "md";
+  const isBoxed = (): boolean => variantOf() !== "default";
+  const busyOf = (): boolean => props.field?.isValidating === true;
   const described = (): string | undefined =>
     describedBy(
       props.describedBy,
@@ -69,61 +139,92 @@ export function Checkbox(props: CheckboxProps): Node {
       hasContent(hintOf()) ? hintIdFor(id) : undefined,
       hasContent(errorOf()) ? errorIdFor(id) : undefined,
     );
+
+  function CheckboxInputBound(): Node {
+    return (
+      <CheckboxInput
+        id={id}
+        name={nameOf()}
+        value={props.value}
+        checked={checkedOf()}
+        indeterminate={indeterminateOf()}
+        disabled={props.disabled === true}
+        required={requiredOf()}
+        readOnly={props.readOnly === true}
+        invalid={invalidOf()}
+        busy={busyOf()}
+        describedBy={described()}
+        onChange={(event) => {
+          props.field?.onChange(event);
+          props.onChange?.(event);
+        }}
+        onBlur={(event) => {
+          props.field?.onBlur(event);
+          props.onBlur?.(event);
+        }}
+        onFocus={(event) => {
+          props.field?.onFocus(event);
+          props.onFocus?.(event);
+        }}
+      />
+    );
+  }
+
   return (
     <div
       {...props.attrs}
       class={["sui-checkbox", props.class]}
       style={props.style}
+      data-variant={variantOf()}
+      data-size={sizeOf()}
       data-checked={checkedOf() ? "" : undefined}
       data-indeterminate={indeterminateOf() ? "" : undefined}
       data-invalid={invalidOf() ? "" : undefined}
       data-disabled={props.disabled === true ? "" : undefined}
       data-readonly={props.readOnly === true ? "" : undefined}
-      data-validating={props.field?.isValidating === true ? "" : undefined}
+      data-validating={busyOf() ? "" : undefined}
       data-touched={props.field?.touched === true ? "" : undefined}
     >
-      <label class="sui-checkbox__row" for={id}>
-        <span class="sui-checkbox__control">
-          <input
-            id={id}
-            class="sui-checkbox__input"
-            type="checkbox"
-            name={nameOf()}
-            disabled={props.disabled === true}
-            required={requiredOf()}
-            aria-required={requiredOf() ? "true" : undefined}
-            aria-invalid={invalidOf() ? "true" : undefined}
-            aria-checked={
-              indeterminateOf() ? "mixed" : checkedOf() ? "true" : "false"
-            }
-            aria-readonly={props.readOnly === true ? "true" : undefined}
-            aria-busy={props.field?.isValidating === true ? "true" : undefined}
-            aria-describedby={described()}
-            bindChecked={[readChecked, NO_WRITE]}
-            onChange={(event) => {
-              if (props.readOnly === true) {
-                event.preventDefault();
-                return;
-              }
-              props.field?.onChange(event);
-              props.onChange?.(event);
-            }}
-            onBlur={(event) => {
-              props.field?.onBlur(event);
-              props.onBlur?.(event);
-            }}
-            onFocus={(event) => {
-              props.field?.onFocus(event);
-              props.onFocus?.(event);
-            }}
-          />
+      <Show
+        when={isBoxed()}
+        fallback={
+          <label class="sui-checkbox__row" for={id}>
+            <span class="sui-checkbox__control">
+              <CheckboxInputBound />
+              <span class="sui-checkbox__box" aria-hidden="true" />
+            </span>
+            <Show when={hasContent(props.icon)}>
+              <span class="sui-checkbox__icon" aria-hidden="true">
+                {props.icon}
+              </span>
+            </Show>
+            <Show when={hasContent(labelOf())}>
+              <span class="sui-checkbox__label">{labelOf()}</span>
+            </Show>
+          </label>
+        }
+      >
+        <label class="sui-checkbox__card" for={id}>
+          <CheckboxInputBound />
           <span class="sui-checkbox__box" aria-hidden="true" />
-        </span>
-        <Show when={hasContent(labelOf())}>
-          <span class="sui-checkbox__label">{labelOf()}</span>
-        </Show>
-      </label>
-      <Show when={hasContent(descriptionOf())}>
+          <Show when={hasContent(props.icon)}>
+            <span class="sui-checkbox__icon" aria-hidden="true">
+              {props.icon}
+            </span>
+          </Show>
+          <span class="sui-checkbox__text">
+            <Show when={hasContent(labelOf())}>
+              <span class="sui-checkbox__label">{labelOf()}</span>
+            </Show>
+            <Show when={hasContent(descriptionOf())}>
+              <span class="sui-checkbox__description" id={descriptionIdFor(id)}>
+                {descriptionOf()}
+              </span>
+            </Show>
+          </span>
+        </label>
+      </Show>
+      <Show when={!isBoxed() && hasContent(descriptionOf())}>
         <span class="sui-checkbox__description" id={descriptionIdFor(id)}>
           {descriptionOf()}
         </span>

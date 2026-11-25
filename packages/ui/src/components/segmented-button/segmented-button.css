@@ -11,7 +11,7 @@
     max-inline-size: 100%;
     min-inline-size: 0;
     border: var(--sui-hairline) solid var(--sui-color-outline);
-    border-radius: var(--sui-radius-full);
+    border-radius: var(--sui-radius-md);
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-width: none;

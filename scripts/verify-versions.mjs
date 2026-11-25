@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const packages = ["reactivity", "di", "core", "swc", "vite", "server", "router", "validation", "validation-vite", "protocol", "protocol-vite", "form", "ui", "silent"];
+const packages = ["reactivity", "di", "core", "swc", "vite", "server", "router", "validation", "validation-vite", "protocol", "protocol-vite", "form", "ui", "virtual", "dnd", "silent"];
 const phpProtocolPath = "php/src/Protocol.php";
 // Единственная версия в PHP-пакете: composer.json поле `version` не содержит
 // (Packagist берёт версию из тега), поэтому сверяем константу вручную.

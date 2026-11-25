@@ -124,4 +124,24 @@ describe("Контракт оформления", () => {
     );
     expect(css("empty-state/empty-state.css")).toContain("max-inline-size");
   });
+
+  it("кнопки не pill по умолчанию, оверлеи компактнее", () => {
+    expect(css("button/button.css")).toContain(
+      "--sui-button-radius: var(--sui-radius-md);",
+    );
+    expect(css("button/button.css")).not.toContain(
+      "--sui-button-radius: var(--sui-radius-full);",
+    );
+    expect(css("icon-button/icon-button.css")).toContain(
+      "--sui-icon-button-radius: var(--sui-radius-md);",
+    );
+
+    for (const file of [
+      "dialog/dialog.css",
+      "sheet/sheet.css",
+      "alert-dialog/alert-dialog.css",
+    ]) {
+      expect(css(file), file).not.toContain("var(--sui-space-6) var(--sui-space-6)");
+    }
+  });
 });

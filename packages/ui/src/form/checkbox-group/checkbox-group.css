@@ -1,0 +1,140 @@
+/*
+ * Группа чекбоксов: fieldset/legend и сетка опций. Сами опции — обычные
+ * `.sui-checkbox`, поэтому все варианты (`card`/`tile`), размеры и состояния
+ * берутся из checkbox.css. Здесь только раскладка группы.
+ */
+@layer sui.components {
+  .sui-checkbox-group {
+    --sui-checkbox-group-gap: var(--sui-space-2);
+    --sui-checkbox-group-item-gap: var(--sui-space-1);
+
+    display: flex;
+    flex-direction: column;
+    gap: var(--sui-checkbox-group-gap);
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    font-family: var(--sui-font-sans);
+    color: var(--sui-color-on-surface);
+  }
+
+  .sui-checkbox-group__legend {
+    padding: 0;
+    font-size: var(--sui-type-label-large-size);
+    line-height: var(--sui-type-label-large-line);
+    font-weight: var(--sui-type-label-large-weight);
+    letter-spacing: var(--sui-type-label-large-tracking);
+    overflow-wrap: anywhere;
+  }
+
+  .sui-checkbox-group__hint,
+  .sui-checkbox-group__error {
+    font-size: var(--sui-type-body-small-size);
+    line-height: var(--sui-type-body-small-line);
+    overflow-wrap: anywhere;
+  }
+
+  .sui-checkbox-group__hint {
+    color: var(--sui-color-on-surface-variant);
+  }
+
+  .sui-checkbox-group__error {
+    color: var(--sui-color-error);
+  }
+
+  /* Подсказка о лимитах читается скринридером, но не занимает место. */
+  .sui-checkbox-group__constraint {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .sui-checkbox-group__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sui-checkbox-group-item-gap);
+    min-inline-size: 0;
+  }
+
+  .sui-checkbox-group__body > .sui-checkbox {
+    inline-size: 100%;
+  }
+
+  .sui-checkbox-group[data-orientation="horizontal"] .sui-checkbox-group__body {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--sui-checkbox-group-gap);
+  }
+
+  .sui-checkbox-group[data-orientation="horizontal"]
+    .sui-checkbox-group__body
+    > .sui-checkbox {
+    inline-size: auto;
+    flex: 0 1 auto;
+  }
+
+  /* Сетка: на мобильном одна колонка, дальше — по брейкпоинтам. */
+  .sui-checkbox-group[data-columns] .sui-checkbox-group__body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sui-checkbox-group[data-columns="1"] .sui-checkbox-group__body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sui-checkbox-group[data-columns="2"] .sui-checkbox-group__body,
+  .sui-checkbox-group[data-columns="3"] .sui-checkbox-group__body,
+  .sui-checkbox-group[data-columns="4"] .sui-checkbox-group__body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  @media (min-width: 37.5em) {
+    .sui-checkbox-group[data-columns="2"] .sui-checkbox-group__body,
+    .sui-checkbox-group[data-columns="3"] .sui-checkbox-group__body,
+    .sui-checkbox-group[data-columns="4"] .sui-checkbox-group__body {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (min-width: 52.5em) {
+    .sui-checkbox-group[data-columns="3"] .sui-checkbox-group__body {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .sui-checkbox-group[data-columns="4"] .sui-checkbox-group__body {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+
+  /* Сетка и горизонтальный режим несовместимы: колонки сильнее. */
+  .sui-checkbox-group[data-columns][data-orientation="horizontal"]
+    .sui-checkbox-group__body
+    > .sui-checkbox {
+    inline-size: 100%;
+  }
+
+  .sui-checkbox-group[data-invalid] .sui-checkbox-group__legend {
+    color: var(--sui-color-error);
+  }
+
+  .sui-checkbox-group[data-disabled] .sui-checkbox-group__legend,
+  .sui-checkbox-group[data-disabled] .sui-checkbox-group__hint {
+    color: var(--sui-color-on-surface-muted);
+  }
+
+  @media (forced-colors: active) {
+    .sui-checkbox-group__legend {
+      color: CanvasText;
+    }
+  }
+}

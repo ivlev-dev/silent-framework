@@ -1,7 +1,7 @@
 /*
  * AlertDialog: alertdialog на нативном <dialog>. Не закрывается по backdrop,
  * акцент на confirm/cancel. Destructive — красная кнопка подтверждения.
- * Поверхность ivory/navy, радиус 24, serif-заголовок, стек действий на мобильном.
+ * Поверхность ivory/navy, радиус 20, sans-заголовок, стек действий на мобильном.
  */
 @layer sui.components {
   .sui-alert-dialog {
@@ -13,7 +13,7 @@
         - env(safe-area-inset-top, 0px)
         - env(safe-area-inset-bottom, 0px)
     );
-    --sui-alert-dialog-shadow: var(--sui-elevation-4);
+    --sui-alert-dialog-shadow: var(--sui-elevation-3);
     --sui-alert-dialog-duration: var(--sui-motion-slow);
     --sui-alert-dialog-title-font: var(--sui-font-display);
     --sui-alert-dialog-scrim-opacity: var(--sui-overlay-scrim, 0.42);
@@ -80,7 +80,7 @@
     flex-direction: column;
     gap: var(--sui-space-2);
     min-inline-size: 0;
-    padding: var(--sui-space-6) var(--sui-space-6) var(--sui-space-3);
+    padding: var(--sui-space-5) var(--sui-space-5) var(--sui-space-3);
     overflow: auto;
     overscroll-behavior: contain;
     overflow-wrap: anywhere;
@@ -112,8 +112,8 @@
     gap: var(--sui-space-2);
     flex: none;
     padding: var(--sui-space-2) var(--sui-space-4)
-      calc(var(--sui-space-4) + env(safe-area-inset-bottom, 0px))
-      var(--sui-space-6);
+      calc(var(--sui-space-3) + env(safe-area-inset-bottom, 0px))
+      var(--sui-space-5);
     border-block-start: var(--sui-hairline) solid var(--sui-color-outline-variant);
   }
 

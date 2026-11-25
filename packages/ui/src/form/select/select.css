@@ -101,7 +101,7 @@
 
   @media (pointer: coarse) {
     .sui-select {
-      min-block-size: var(--sui-touch-target-cozy);
+      min-block-size: var(--sui-touch-target);
     }
   }
 
@@ -158,5 +158,205 @@
     transform: rotate(45deg);
     pointer-events: none;
     color: var(--sui-select-arrow-color);
+  }
+}
+
+/*
+ * Кастомная ветка Select: trigger + anchored `.sui-popup` + hidden inputs.
+ * Геометрия повторяет нативный контрол, но фокус остаётся на триггере,
+ * а строки списка не пересоздаются.
+ */
+@layer sui.components {
+  .sui-select[data-variant="custom"] {
+    --sui-select-block-size: auto;
+
+    position: relative;
+    display: block;
+    min-block-size: calc(var(--sui-control-height-md) * var(--sui-density));
+  }
+
+  /* У кастомной ветки своя стрелка-иконка, нативный псевдоэлемент не нужен. */
+  .sui-select[data-variant="custom"]::after {
+    content: none;
+  }
+
+  .sui-select[data-variant="custom"][data-multiple] {
+    min-block-size: calc(var(--sui-control-height-md) * var(--sui-density));
+  }
+
+  .sui-select__control {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sui-space-1);
+    box-sizing: border-box;
+    inline-size: 100%;
+    min-block-size: inherit;
+    padding: var(--sui-space-1) var(--sui-space-8) var(--sui-space-1)
+      var(--sui-select-padding-inline-start);
+    border-radius: inherit;
+    color: inherit;
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-select-font-size);
+    line-height: var(--sui-select-line-height);
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .sui-select__control:focus,
+  .sui-select__control:focus-visible,
+  .sui-select__search:focus,
+  .sui-select__search:focus-visible {
+    outline: none;
+  }
+
+  .sui-select[data-disabled] .sui-select__control,
+  .sui-select[data-disabled] .sui-select__search {
+    cursor: not-allowed;
+  }
+
+  .sui-select[data-readonly] .sui-select__control {
+    cursor: default;
+  }
+
+  .sui-select__value {
+    flex: 1;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sui-select__placeholder {
+    color: var(--sui-color-on-surface-variant);
+  }
+
+  .sui-select__search {
+    flex: 1;
+    min-inline-size: 4rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+  }
+
+  .sui-select__search::placeholder {
+    color: var(--sui-color-on-surface-variant);
+    opacity: 1;
+  }
+
+  .sui-select__chips {
+    display: contents;
+  }
+
+  .sui-select__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sui-space-1);
+    max-inline-size: 100%;
+    padding-block: 0.125rem;
+    padding-inline: var(--sui-space-2) var(--sui-space-1);
+    border-radius: var(--sui-radius-full);
+    background-color: var(--sui-color-surface-container-high);
+    color: var(--sui-color-on-surface);
+    font-size: var(--sui-type-label-large-size);
+    line-height: var(--sui-type-label-large-line);
+  }
+
+  .sui-select__chip-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sui-select__chip-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 1rem;
+    block-size: 1rem;
+    padding: 0;
+    border: 0;
+    border-radius: var(--sui-radius-full);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .sui-select__chip-remove:hover:not(:disabled) {
+    background-color: var(--sui-color-surface-container-highest);
+  }
+
+  .sui-select__indicators {
+    display: inline-flex;
+    position: absolute;
+    inset-inline-end: var(--sui-space-3);
+    inset-block-start: 50%;
+    align-items: center;
+    gap: var(--sui-space-1);
+    color: var(--sui-select-arrow-color);
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+
+  .sui-select__clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--sui-space-1);
+    border: 0;
+    border-radius: var(--sui-radius-full);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    pointer-events: auto;
+  }
+
+  .sui-select__clear:hover {
+    background-color: var(--sui-color-surface-container-high);
+    color: var(--sui-color-on-surface);
+  }
+
+  .sui-select__arrow {
+    display: inline-flex;
+    align-items: center;
+    transition: transform var(--sui-motion-short-3)
+      var(--sui-easing-standard);
+  }
+
+  .sui-select[data-open] .sui-select__arrow {
+    transform: rotate(180deg);
+  }
+
+  .sui-select[data-variant="custom"] > .sui-popup {
+    min-inline-size: 100%;
+  }
+
+  .sui-select[data-variant="custom"][data-size="sm"] .sui-select__control {
+    padding-inline-end: var(--sui-space-7);
+  }
+
+  .sui-select[data-variant="custom"][data-size="lg"] .sui-select__control {
+    padding-inline-end: var(--sui-space-9);
+  }
+
+  .sui-select[data-variant="custom"][data-bare] {
+    border: 0;
+    background-color: transparent;
+  }
+
+  .sui-select[data-variant="custom"][data-bare] .sui-select__control {
+    padding-inline-start: 0;
+    padding-inline-end: var(--sui-space-6);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sui-select__arrow {
+      transition: none;
+    }
   }
 }

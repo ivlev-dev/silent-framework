@@ -2,6 +2,8 @@
  * Чекбокс: нативный input поверх кастомного квадрата.
  * Строка не ниже touch-target, поэтому клик по подписи и «воздуху» вокруг
  * квадрата попадает в input; размеры настраиваются переменными.
+ * Варианты `card`/`tile` превращают всю карточку в `<label>`: input растянут
+ * на её площадь, а квадрат становится индикатором в углу.
  */
 @layer sui.components {
   .sui-checkbox {
@@ -15,6 +17,16 @@
     --sui-checkbox-on-accent-color: var(--sui-color-on-primary);
     --sui-checkbox-error-color: var(--sui-color-error);
     --sui-checkbox-hint-color: var(--sui-color-on-surface-variant);
+    --sui-checkbox-label-size: var(--sui-type-body-medium-size);
+    --sui-checkbox-label-line: var(--sui-type-body-medium-line);
+    --sui-checkbox-label-tracking: var(--sui-type-body-medium-tracking);
+    --sui-checkbox-card-padding: calc(var(--sui-space-3) * var(--sui-density));
+    --sui-checkbox-card-gap: var(--sui-space-2);
+    --sui-checkbox-card-radius: var(--sui-radius-control);
+    --sui-checkbox-card-bg: var(--sui-color-surface-container-low);
+    --sui-checkbox-card-border: var(--sui-color-outline-variant);
+    --sui-checkbox-card-checked-bg: var(--sui-color-primary-container);
+    --sui-checkbox-card-checked-color: var(--sui-color-on-primary-container);
 
     display: flex;
     flex-direction: column;
@@ -22,6 +34,24 @@
     min-inline-size: 0;
     font-family: var(--sui-font-sans);
     color: var(--sui-color-on-surface);
+  }
+
+  .sui-checkbox[data-size="sm"] {
+    --sui-checkbox-box-size: var(--sui-icon-size-sm);
+    --sui-checkbox-gap: var(--sui-space-1);
+    --sui-checkbox-label-size: var(--sui-type-body-small-size);
+    --sui-checkbox-label-line: var(--sui-type-body-small-line);
+    --sui-checkbox-label-tracking: var(--sui-type-body-small-tracking);
+    --sui-checkbox-card-padding: calc(var(--sui-space-2) * var(--sui-density));
+  }
+
+  .sui-checkbox[data-size="lg"] {
+    --sui-checkbox-box-size: var(--sui-icon-size-lg);
+    --sui-checkbox-gap: var(--sui-space-3);
+    --sui-checkbox-label-size: var(--sui-type-body-large-size);
+    --sui-checkbox-label-line: var(--sui-type-body-large-line);
+    --sui-checkbox-label-tracking: var(--sui-type-body-large-tracking);
+    --sui-checkbox-card-padding: calc(var(--sui-space-4) * var(--sui-density));
   }
 
   .sui-checkbox__row {
@@ -42,7 +72,7 @@
     /* Центр квадрата — на оптической середине первой строки подписи. */
     margin-block-start: calc(
       (
-          var(--sui-type-body-medium-size) * var(--sui-type-body-medium-line) -
+          var(--sui-checkbox-label-size) * var(--sui-checkbox-label-line) -
             var(--sui-checkbox-box-size)
         ) /
         2
@@ -114,11 +144,21 @@
     background-color: var(--sui-checkbox-on-accent-color);
   }
 
+  .sui-checkbox__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    min-inline-size: var(--sui-checkbox-box-size);
+    min-block-size: var(--sui-checkbox-box-size);
+    color: var(--sui-checkbox-hint-color);
+  }
+
   .sui-checkbox__label {
     min-inline-size: 0;
-    font-size: var(--sui-type-body-medium-size);
-    line-height: var(--sui-type-body-medium-line);
-    letter-spacing: var(--sui-type-body-medium-tracking);
+    font-size: var(--sui-checkbox-label-size);
+    line-height: var(--sui-checkbox-label-line);
+    letter-spacing: var(--sui-checkbox-label-tracking);
     overflow-wrap: anywhere;
   }
 
@@ -140,11 +180,117 @@
     color: var(--sui-checkbox-error-color);
   }
 
+  /* --- card / tile ---------------------------------------------------- */
+
+  .sui-checkbox[data-variant="card"],
+  .sui-checkbox[data-variant="tile"] {
+    inline-size: 100%;
+  }
+
+  .sui-checkbox__card {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: var(--sui-checkbox-card-gap);
+    box-sizing: border-box;
+    min-inline-size: 0;
+    min-block-size: var(--sui-checkbox-hit-size);
+    padding: var(--sui-checkbox-card-padding);
+    padding-inline-end: calc(
+      var(--sui-checkbox-card-padding) + var(--sui-checkbox-box-size) +
+        var(--sui-space-2)
+    );
+    border: var(--sui-hairline) solid var(--sui-checkbox-card-border);
+    border-radius: var(--sui-checkbox-card-radius);
+    background-color: var(--sui-checkbox-card-bg);
+    color: var(--sui-color-on-surface);
+    cursor: pointer;
+    transition:
+      background-color var(--sui-motion-short-3) var(--sui-easing-standard),
+      border-color var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  /* Индикатор — в углу карточки, input растянут на всю площадь. */
+  .sui-checkbox__card > .sui-checkbox__box {
+    position: absolute;
+    inset-block-start: var(--sui-checkbox-card-padding);
+    inset-inline-end: var(--sui-checkbox-card-padding);
+    inline-size: var(--sui-checkbox-box-size);
+    block-size: var(--sui-checkbox-box-size);
+    pointer-events: none;
+  }
+
+  .sui-checkbox__card > .sui-checkbox__icon {
+    align-self: start;
+  }
+
+  .sui-checkbox__text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sui-checkbox-row-gap);
+    grid-column: 1 / -1;
+    min-inline-size: 0;
+  }
+
+  /* С иконкой текст занимает вторую колонку, без неё — всю ширину. */
+  .sui-checkbox__card:has(> .sui-checkbox__icon) > .sui-checkbox__text {
+    grid-column: 2;
+  }
+
+  .sui-checkbox__card .sui-checkbox__description {
+    margin-inline-start: 0;
+  }
+
+  .sui-checkbox__card:hover {
+    border-color: var(--sui-checkbox-accent-color);
+  }
+
+  .sui-checkbox__card:has(.sui-checkbox__input:focus-visible) {
+    outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
+    outline-offset: var(--sui-focus-ring-offset);
+  }
+
+  .sui-checkbox__card:has(.sui-checkbox__input:checked) {
+    border-color: var(--sui-checkbox-accent-color);
+    background-color: var(--sui-checkbox-card-checked-bg);
+    color: var(--sui-checkbox-card-checked-color);
+  }
+
+  .sui-checkbox__card:has(.sui-checkbox__input:checked) .sui-checkbox__description {
+    color: inherit;
+    opacity: 0.85;
+  }
+
+  /* Плитка: иконка сверху, текст по центру. */
+  .sui-checkbox[data-variant="tile"] .sui-checkbox__card {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    text-align: center;
+    padding-block-start: calc(var(--sui-checkbox-card-padding) * 1.5);
+  }
+
+  .sui-checkbox[data-variant="tile"] .sui-checkbox__card > .sui-checkbox__icon {
+    grid-row: auto;
+    min-block-size: calc(var(--sui-checkbox-box-size) * 2);
+  }
+
+  .sui-checkbox[data-variant="tile"] .sui-checkbox__text {
+    align-items: center;
+  }
+
+  .sui-checkbox[data-variant="tile"] .sui-checkbox__card {
+    padding-inline: var(--sui-checkbox-card-padding);
+  }
+
+  /* --- состояния ------------------------------------------------------ */
+
   .sui-checkbox[data-disabled] {
     opacity: var(--sui-state-disabled);
   }
 
-  .sui-checkbox[data-readonly] .sui-checkbox__row {
+  .sui-checkbox[data-readonly] .sui-checkbox__row,
+  .sui-checkbox[data-readonly] .sui-checkbox__card {
     cursor: default;
   }
 
@@ -152,7 +298,8 @@
     cursor: progress;
   }
 
-  .sui-checkbox[data-disabled] .sui-checkbox__row {
+  .sui-checkbox[data-disabled] .sui-checkbox__row,
+  .sui-checkbox[data-disabled] .sui-checkbox__card {
     cursor: not-allowed;
   }
 
@@ -161,7 +308,56 @@
     border-color: var(--sui-checkbox-error-color);
   }
 
+  .sui-checkbox[data-invalid] .sui-checkbox__card {
+    border-color: var(--sui-checkbox-error-color);
+  }
+
   .sui-checkbox[data-invalid] .sui-checkbox__input:focus-visible + .sui-checkbox__box {
     outline-color: var(--sui-checkbox-error-color);
+  }
+
+  .sui-checkbox[data-invalid]
+    .sui-checkbox__card:has(.sui-checkbox__input:focus-visible) {
+    outline-color: var(--sui-checkbox-error-color);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sui-checkbox__box,
+    .sui-checkbox__card {
+      transition: none;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .sui-checkbox__box {
+      border-color: CanvasText;
+    }
+
+    .sui-checkbox__input:checked + .sui-checkbox__box,
+    .sui-checkbox__input:indeterminate + .sui-checkbox__box {
+      border-color: Highlight;
+      background-color: Highlight;
+    }
+
+    .sui-checkbox__input:checked + .sui-checkbox__box::after {
+      border-color: HighlightText;
+    }
+
+    .sui-checkbox__input:indeterminate + .sui-checkbox__box::after {
+      background-color: HighlightText;
+    }
+
+    .sui-checkbox__card {
+      border-color: CanvasText;
+    }
+
+    .sui-checkbox__card:has(.sui-checkbox__input:checked) {
+      border-color: Highlight;
+    }
+
+    .sui-checkbox__input:focus-visible + .sui-checkbox__box,
+    .sui-checkbox__card:has(.sui-checkbox__input:focus-visible) {
+      outline-color: Highlight;
+    }
   }
 }

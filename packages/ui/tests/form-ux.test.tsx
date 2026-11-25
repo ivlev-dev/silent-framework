@@ -124,7 +124,7 @@ describe("Контролы: размеры и адаптив", () => {
 
   it("Select: длинная подпись выбранного варианта попадает в title", () => {
     const root = rootOf(
-      mount(handles, Select, {
+      mount(handles, Select, { variant: "native",
         label: "Роль",
         value: "long",
         options: [
@@ -304,7 +304,7 @@ describe("CSS-контракт форм и адаптива", () => {
     const textField = read("form/text-field/text-field.css");
     expect(textField).toContain("@media (pointer: coarse)");
     expect(textField).toContain("--sui-text-field-block-size");
-    expect(textField).toContain("min-block-size: var(--sui-touch-target-cozy)");
+    expect(textField).toContain("min-block-size: var(--sui-touch-target)");
 
     const group = read("form/field-group/field-group.css");
     expect(group).toContain("@media (min-width: 37.5em)");

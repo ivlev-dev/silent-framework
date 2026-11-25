@@ -64,6 +64,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "test": "node scripts/build.mjs && vitest run"
   },
+  "dependencies": {
+    "@ivlev-dev/silent-virtual": ">=0.14.0 <0.15.0"
+  },
   "peerDependencies": {
     "@ivlev-dev/silent-core": ">=0.14.0 <0.15.0",
     "@ivlev-dev/silent-form": ">=0.14.0 <0.15.0",
@@ -81,6 +84,7 @@
     "@ivlev-dev/silent-server": "workspace:*",
     "@ivlev-dev/silent-swc": "workspace:*",
     "@ivlev-dev/silent-vite": "workspace:*",
+    "@ivlev-dev/silent-virtual": "workspace:*",
     "@types/node": "^26.6.6",
     "jsdom": "^31.0.0",
     "typescript": "^7.0.2",

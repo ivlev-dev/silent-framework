@@ -1,0 +1,156 @@
+/*
+ * Combobox: текстовое поле с combobox-семантикой и общей панелью `.sui-popup`.
+ * Индикаторы (очистка, стрелка) — absolute справа; панель примыкает снизу.
+ */
+@layer sui.components {
+  .sui-combobox {
+    --sui-combobox-block-size: calc(
+      var(--sui-control-height-md) * var(--sui-density)
+    );
+    --sui-combobox-radius: var(--sui-radius-control);
+    --sui-combobox-bg: var(--sui-color-surface-container-lowest);
+
+    position: relative;
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+    min-inline-size: 0;
+    block-size: var(--sui-combobox-block-size);
+    border: var(--sui-hairline) solid var(--sui-color-outline-variant);
+    border-radius: var(--sui-combobox-radius);
+    background-color: var(--sui-combobox-bg);
+    color: var(--sui-color-on-surface);
+    transition: border-color var(--sui-motion-short-3)
+      var(--sui-easing-standard);
+  }
+
+  .sui-combobox:hover:not([data-disabled]) {
+    border-color: var(--sui-color-outline);
+  }
+
+  .sui-combobox:focus-within {
+    border-color: var(--sui-focus-ring-color);
+    outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
+    outline-offset: calc(var(--sui-focus-ring-offset) * -1);
+  }
+
+  .sui-combobox[data-invalid] {
+    border-color: var(--sui-color-error);
+  }
+
+  .sui-combobox[data-invalid]:focus-within {
+    outline-color: var(--sui-color-error);
+  }
+
+  .sui-combobox[data-disabled] {
+    background-color: var(--sui-color-surface-container);
+    opacity: var(--sui-state-disabled);
+  }
+
+  .sui-combobox[data-size="sm"] {
+    --sui-combobox-block-size: calc(
+      var(--sui-control-height-sm) * var(--sui-density)
+    );
+  }
+
+  .sui-combobox[data-size="lg"] {
+    --sui-combobox-block-size: calc(
+      var(--sui-control-height-lg) * var(--sui-density)
+    );
+  }
+
+  .sui-combobox[data-bare] {
+    --sui-combobox-block-size: auto;
+
+    border: 0;
+    background-color: transparent;
+  }
+
+  .sui-combobox[data-bare]:focus-within {
+    outline: none;
+  }
+
+  .sui-combobox__input {
+    box-sizing: border-box;
+    inline-size: 100%;
+    block-size: 100%;
+    min-inline-size: 0;
+    padding: 0 var(--sui-space-9) 0 var(--sui-space-3);
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    color: inherit;
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-body-medium-size);
+    line-height: var(--sui-type-body-medium-line);
+    text-overflow: ellipsis;
+  }
+
+  .sui-combobox__input::placeholder {
+    color: var(--sui-color-on-surface-variant);
+    opacity: 1;
+  }
+
+  .sui-combobox__input:focus,
+  .sui-combobox__input:focus-visible {
+    outline: none;
+  }
+
+  .sui-combobox[data-size="sm"] .sui-combobox__input {
+    font-size: var(--sui-type-body-small-size);
+  }
+
+  .sui-combobox[data-size="lg"] .sui-combobox__input {
+    font-size: var(--sui-type-body-large-size);
+  }
+
+  .sui-combobox__indicators {
+    display: inline-flex;
+    position: absolute;
+    inset-inline-end: var(--sui-space-3);
+    align-items: center;
+    gap: var(--sui-space-1);
+    color: var(--sui-color-on-surface-variant);
+    pointer-events: none;
+  }
+
+  .sui-combobox__clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--sui-space-1);
+    border: 0;
+    border-radius: var(--sui-radius-full);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    pointer-events: auto;
+  }
+
+  .sui-combobox__clear:hover {
+    background-color: var(--sui-color-surface-container-high);
+    color: var(--sui-color-on-surface);
+  }
+
+  .sui-combobox__arrow {
+    display: inline-flex;
+    align-items: center;
+    transition: transform var(--sui-motion-short-3)
+      var(--sui-easing-standard);
+  }
+
+  .sui-combobox[data-open] .sui-combobox__arrow {
+    transform: rotate(180deg);
+  }
+
+  .sui-combobox > .sui-popup {
+    min-inline-size: 100%;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sui-combobox,
+    .sui-combobox__arrow {
+      transition: none;
+    }
+  }
+}

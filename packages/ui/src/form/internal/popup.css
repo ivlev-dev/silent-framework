@@ -1,0 +1,260 @@
+/*
+ * Общая поверхность выпадающего списка (Select, Combobox).
+ *
+ * Панель — absolute относительно корня контрола; сторона приходит из
+ * `data-side`, сдвиг у краёв viewport — из `--sui-floating-inline-shift`.
+ * Высота ограничена `--sui-popup-max-visible` опциями, остальное скроллится.
+ * Строки статичны: активное/выбранное состояние живёт в `data-active` и
+ * `aria-selected`, поэтому перерисовка списка не нужна.
+ */
+@layer sui.components {
+  .sui-popup {
+    --sui-popup-surface: var(--sui-color-surface-container-low);
+    --sui-popup-radius: var(--sui-radius-lg);
+    --sui-popup-max-inline: 26rem;
+    --sui-popup-option-block: 2.5rem;
+    --sui-popup-max-visible: 8;
+    --sui-popup-padding: var(--sui-space-1);
+    --sui-popup-gap: var(--sui-space-1);
+    --sui-popup-extra: 0px;
+    --sui-popup-duration: var(--sui-motion-short-4);
+
+    position: absolute;
+    z-index: var(--sui-z-popover, 1100);
+    inset-inline-start: 0;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    inline-size: 100%;
+    min-inline-size: 11rem;
+    max-inline-size: min(
+      var(--sui-popup-max-inline),
+      calc(100vw - 2 * var(--sui-space-4))
+    );
+    max-block-size: min(
+      calc(
+        var(--sui-popup-option-block) * var(--sui-popup-max-visible)
+          + 2 * var(--sui-popup-padding) + var(--sui-popup-extra)
+      ),
+      calc(100dvh - 2 * var(--sui-space-4))
+    );
+    padding: var(--sui-popup-padding);
+    border: var(--sui-hairline) solid var(--sui-color-outline-variant);
+    border-radius: var(--sui-popup-radius);
+    background-color: var(--sui-popup-surface);
+    color: var(--sui-color-on-surface);
+    box-shadow: var(--sui-elevation-3);
+    overflow: hidden;
+    overscroll-behavior: contain;
+    transform: translateX(var(--sui-floating-inline-shift, 0px));
+    animation: sui-popup-in var(--sui-popup-duration)
+      var(--sui-easing-standard) both;
+  }
+
+  .sui-popup[data-side="bottom"] {
+    top: calc(100% + var(--sui-popup-gap));
+    bottom: auto;
+  }
+
+  .sui-popup[data-side="top"] {
+    top: auto;
+    bottom: calc(100% + var(--sui-popup-gap));
+  }
+
+  .sui-popup[hidden] {
+    display: none;
+  }
+
+  .sui-popup__search {
+    flex: none;
+    margin-block-end: var(--sui-space-1);
+    padding: var(--sui-space-2) var(--sui-space-3);
+    border: 0;
+    border-block-end: var(--sui-hairline) solid var(--sui-color-outline-variant);
+    background: transparent;
+    color: inherit;
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-body-medium-size);
+    line-height: var(--sui-type-body-medium-line);
+  }
+
+  .sui-popup__search:focus,
+  .sui-popup__search:focus-visible {
+    outline: none;
+  }
+
+  .sui-popup__list {
+    min-block-size: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .sui-popup__virtual-spacer {
+    position: relative;
+    box-sizing: border-box;
+    inline-size: 100%;
+    min-block-size: 0;
+  }
+
+  .sui-popup__virtual-row {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline: 0;
+    box-sizing: border-box;
+    inline-size: 100%;
+  }
+
+  .sui-popup__group-label {
+    padding: var(--sui-space-2) var(--sui-space-3) var(--sui-space-1);
+    color: var(--sui-color-on-surface-variant);
+    font-size: var(--sui-type-label-small-size);
+    font-weight: var(--sui-type-label-large-weight);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .sui-popup__option {
+    display: flex;
+    align-items: center;
+    gap: var(--sui-space-2);
+    box-sizing: border-box;
+    inline-size: 100%;
+    min-block-size: var(--sui-popup-option-block);
+    padding: var(--sui-space-2) var(--sui-space-3);
+    border: 0;
+    border-radius: var(--sui-radius-sm);
+    background-color: transparent;
+    color: var(--sui-color-on-surface);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-body-medium-size);
+    line-height: var(--sui-type-body-medium-line);
+    text-align: start;
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color var(--sui-motion-short-2)
+      var(--sui-easing-standard);
+  }
+
+  .sui-popup__option[data-active],
+  .sui-popup__option:hover:not([aria-disabled="true"]) {
+    background-color: var(--sui-color-surface-container-high);
+  }
+
+  .sui-popup__option[aria-selected="true"] {
+    background-color: var(--sui-color-secondary-container);
+    color: var(--sui-color-on-secondary-container);
+  }
+
+  .sui-popup__option[aria-selected="true"][data-active] {
+    background-color: var(--sui-color-secondary-container);
+  }
+
+  .sui-popup__option[aria-disabled="true"] {
+    opacity: var(--sui-state-disabled);
+    cursor: not-allowed;
+  }
+
+  .sui-popup__option-leading,
+  .sui-popup__option-trailing {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .sui-popup__option-leading:empty,
+  .sui-popup__option-trailing:empty {
+    display: none;
+  }
+
+  .sui-popup__option-text {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-inline-size: 0;
+  }
+
+  .sui-popup__option-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sui-popup__option-description {
+    overflow: hidden;
+    color: var(--sui-color-on-surface-variant);
+    font-size: var(--sui-type-body-small-size);
+    line-height: var(--sui-type-body-small-line);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sui-popup__option[aria-selected="true"] .sui-popup__option-description {
+    color: inherit;
+    opacity: 0.8;
+  }
+
+  .sui-popup__check {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    inline-size: 1rem;
+    block-size: 1rem;
+    color: var(--sui-color-primary);
+  }
+
+  .sui-popup__empty,
+  .sui-popup__loading {
+    display: flex;
+    align-items: center;
+    gap: var(--sui-space-2);
+    justify-content: center;
+    min-block-size: var(--sui-popup-option-block);
+    padding: var(--sui-space-3);
+    color: var(--sui-color-on-surface-variant);
+    font-size: var(--sui-type-body-small-size);
+    line-height: var(--sui-type-body-small-line);
+    text-align: center;
+  }
+
+  .sui-popup__loading::before {
+    content: "";
+    inline-size: 0.875rem;
+    block-size: 0.875rem;
+    border: 2px solid currentColor;
+    border-block-start-color: transparent;
+    border-radius: var(--sui-radius-full);
+    animation: sui-popup-spin 700ms linear infinite;
+  }
+
+  @keyframes sui-popup-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes sui-popup-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sui-popup {
+      animation: none;
+    }
+
+    .sui-popup__option {
+      transition: none;
+    }
+
+    .sui-popup__loading::before {
+      animation: none;
+    }
+  }
+}

@@ -237,27 +237,35 @@ describe("токены", () => {
     expect(css).not.toContain("light-dark(");
   });
 
-  it("типографика: serif display, sans UI, mono, measure и минимальный body 16px", () => {
+  it("типографика: единый sans, компактная шкала, measure и body 16/14px", () => {
     const tokens = readText("src", "tokens", "tokens.css");
     expect(tokens).toContain("--sui-font-display:");
-    expect(tokens).toContain("\"Iowan Old Style\"");
+    expect(tokens).toContain("--sui-font-display: var(--sui-font-sans);");
+    expect(tokens).not.toContain("Iowan Old Style");
+    expect(tokens).not.toContain("Georgia");
     expect(tokens).toContain("--sui-font-sans:");
     expect(tokens).toContain("--sui-font-mono:");
     expect(tokens).toContain("--sui-measure: 68ch;");
     expect(tokens).toContain("--sui-measure-narrow: 52ch;");
     expect(tokens).toContain("--sui-touch-target: 2.75rem;");
     expect(tokens).toContain("--sui-touch-target-cozy: 3rem;");
+    expect(tokens).toContain("--sui-control-height-sm: 2rem;");
+    expect(tokens).toContain("--sui-control-height-md: 2.5rem;");
+    expect(tokens).toContain("--sui-control-height-lg: 3rem;");
 
-    const bodyVariants: readonly TypeVariant[] = ["body-large", "body-medium", "body-small"];
-    for (const variant of bodyVariants) {
-      const match = typeScale[variant].size.match(/([\d.]+)rem/u);
-      const rem = match?.[1] === undefined ? Number.NaN : Number.parseFloat(match[1]);
+    for (const variant of ["body-large", "body-medium"] as const) {
+      const rem = Number.parseFloat(typeScale[variant].size);
       expect(rem, `${variant} ≥ 16px`).toBeGreaterThanOrEqual(1);
       expect(typeScale[variant].family).toBe("sans");
     }
+    const smallRem = Number.parseFloat(typeScale["body-small"].size);
+    expect(smallRem, "body-small = 14px").toBeGreaterThanOrEqual(0.875);
     for (const variant of ["display-large", "display-medium", "display-small", "headline-large", "headline-medium", "headline-small"] as const) {
       expect(typeScale[variant].family).toBe("display");
+      expect(Number.parseFloat(typeScale[variant].lineHeight), variant).toBeGreaterThanOrEqual(1.2);
     }
+    // Display не раздувается на 4K: верхняя граница ≤ 3rem.
+    expect(typeScale["display-large"].size).toContain("2.75rem)");
     // Fluid-шкала всегда с верхней границей: никакого «бесконечного» роста.
     for (const [name, style] of Object.entries(typeScale)) {
       if (!style.size.startsWith("clamp(")) continue;
@@ -269,10 +277,10 @@ describe("токены", () => {
     const tokens = readText("src", "tokens", "tokens.css");
     for (const [name, value] of [
       ["xs", "0.25rem"],
-      ["sm", "0.5rem"],
-      ["md", "0.75rem"],
-      ["lg", "1rem"],
-      ["xl", "1.5rem"],
+      ["sm", "0.375rem"],
+      ["md", "0.625rem"],
+      ["lg", "0.875rem"],
+      ["xl", "1.25rem"],
       ["full", "999px"],
     ] as const) {
       expect(tokens, `radius ${name}`).toContain(`--sui-radius-${name}: ${value};`);
@@ -280,6 +288,7 @@ describe("токены", () => {
     expect(tokens).toContain("--sui-radius-card: var(--sui-radius-lg);");
     expect(tokens).toContain("--sui-radius-dialog: var(--sui-radius-xl);");
     expect(tokens).toContain("--sui-radius-sheet: var(--sui-radius-xl);");
+    expect(tokens).toContain("--sui-radius-control: var(--sui-radius-md);");
     expect(tokens).toContain("--sui-motion-fast: 120ms;");
     expect(tokens).toContain("--sui-motion-base: 180ms;");
     expect(tokens).toContain("--sui-motion-slow: 240ms;");

@@ -1,15 +1,15 @@
 /*
  * Sheet: боковая/нижняя панель. Закрытый лист скрыт visibility, чтобы не
  * попадал в tab-порядок и дерево доступности. Поверхность ivory/navy,
- * радиус 24, анимация 240ms, safe-area, scroll длинного содержимого.
+ * радиус 20, анимация 240ms, safe-area, scroll длинного содержимого.
  */
 @layer sui.components {
   .sui-sheet {
     --sui-sheet-surface: var(--sui-color-surface-container-low);
     --sui-sheet-radius: var(--sui-radius-sheet);
-    --sui-sheet-inline: 28rem;
+    --sui-sheet-inline: 24rem;
     --sui-sheet-block: 88dvh;
-    --sui-sheet-shadow: var(--sui-elevation-4);
+    --sui-sheet-shadow: var(--sui-elevation-3);
     --sui-sheet-duration: var(--sui-motion-slow);
     --sui-sheet-title-font: var(--sui-font-display);
     --sui-sheet-scrim-opacity: var(--sui-overlay-scrim, 0.42);
@@ -147,7 +147,7 @@
     gap: var(--sui-space-3);
     flex: none;
     padding: calc(var(--sui-space-3) + env(safe-area-inset-top, 0px))
-      var(--sui-space-4) var(--sui-space-2) var(--sui-space-6);
+      var(--sui-space-4) var(--sui-space-2) var(--sui-space-5);
   }
 
   .sui-sheet__title {
@@ -175,7 +175,7 @@
 
   .sui-sheet__description {
     margin: 0;
-    padding: 0 var(--sui-space-6) var(--sui-space-2);
+    padding: 0 var(--sui-space-5) var(--sui-space-2);
     max-inline-size: var(--sui-measure);
     font-size: var(--sui-type-body-medium-size);
     line-height: var(--sui-type-body-medium-line);
@@ -187,7 +187,7 @@
     flex: 1;
     min-height: 0;
     min-inline-size: 0;
-    padding: var(--sui-space-3) var(--sui-space-6) var(--sui-space-5);
+    padding: var(--sui-space-2) var(--sui-space-5) var(--sui-space-4);
     overflow: auto;
     overscroll-behavior: contain;
     font-size: var(--sui-type-body-medium-size);
@@ -202,8 +202,8 @@
     gap: var(--sui-space-2);
     flex: none;
     padding: var(--sui-space-3) var(--sui-space-4)
-      calc(var(--sui-space-4) + env(safe-area-inset-bottom, 0px))
-      var(--sui-space-6);
+      calc(var(--sui-space-3) + env(safe-area-inset-bottom, 0px))
+      var(--sui-space-5);
     border-block-start: var(--sui-hairline) solid var(--sui-color-outline-variant);
   }
 

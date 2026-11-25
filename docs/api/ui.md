@@ -87,7 +87,7 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `radii`
 
-`const radii` — радиусы: `none`, `xs` (4px), `sm` (8px), `md` (12px), `lg` (16px), `xl` (24px), `full` (999px), плюс семантические `card` (16px), `dialog`/`sheet` (24px).
+`const radii` — радиусы: `none`, `xs` (4px), `sm` (6px), `md` (10px), `lg` (14px), `xl` (20px), `full` (999px), плюс семантические `card` (14px), `dialog`/`sheet` (20px).
 
 ### `Radius`
 
@@ -103,11 +103,11 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `typeScale`
 
-`const typeScale: Record<TypeVariant, TypeStyle>` — типографическая шкала `display-*`/`headline-*`/`title-*`/`body-*`/`label-*` с полями `family`, `size` (fluid `clamp` с верхней границей на 4K), `lineHeight`, `weight`, `tracking`. `family: "display"` — редакционный serif у `display-*`/`headline-*`; `family: "sans"` — UI-шрифт у `title-*`/`body-*`/`label-*`. Body не меньше 16px.
+`const typeScale: Record<TypeVariant, TypeStyle>` — типографическая шкала `display-*`/`headline-*`/`title-*`/`body-*`/`label-*` с полями `family`, `size` (fluid `clamp` с верхней границей на 4K), `lineHeight`, `weight`, `tracking`. `family: "display"` — семантический алиас того же sans-stack (без serif) у `display-*`/`headline-*`; `family: "sans"` — UI-шрифт у `title-*`/`body-*`/`label-*`. Display ≤ 2.75rem, headline ≤ 2rem, title ≤ 1.25rem, body 1rem/0.875rem, label 0.8125rem/0.75rem.
 
 ### `TypeFamily`
 
-`type TypeFamily = "display" | "sans" | "mono"` — семейство шрифта варианта шкалы: `display` — редакционный serif, `sans` — UI, `mono` — код.
+`type TypeFamily = "display" | "sans" | "mono"` — семейство шрифта варианта шкалы: `display` и `sans` резолвятся в один современный sans (`--sui-font-display` — алиас `--sui-font-sans`), `mono` — код.
 
 ### `TypeStyle`
 
@@ -131,7 +131,7 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `controlHeight`
 
-`const controlHeight` — высоты контролов по размеру: `sm 2.25rem`, `md 2.75rem` (44px touch target), `lg 3rem` (48px).
+`const controlHeight` — высоты контролов по размеру: `sm 2rem` (32px), `md 2.5rem` (40px), `lg 3rem` (48px). На `pointer: coarse` компоненты поднимают цель нажатия до `--sui-touch-target` (44px).
 
 ### `ControlSize`
 

@@ -158,8 +158,8 @@ import { UiConfigProvider } from "@ivlev-dev/silent-ui";
 ```css
 @layer sui.overrides {
   .brand-cta {
-    --sui-control-height-md: 3rem;
-    border-radius: var(--sui-radius-full);
+    --sui-control-height-md: 2.5rem;
+    border-radius: var(--sui-radius-md);
   }
 }
 ```
@@ -189,9 +189,9 @@ mediaDown("md"); // "(max-width: 29.9375em)"
 mediaUp("xs");   // null — ограничение не нужно
 ```
 
-Стили mobile-first: базовые правила действуют всегда, расширения — через `@media (min-width: …)`. Гуттеры: 16/24 на мобильном, 24/32 на планшете, 32/48 на десктопе; `--sui-content-max` растёт до 2400px на 4K, а `--sui-content-wide-max` — до 2600px, при этом кегль не «уезжает» в бесконечность. Единицы — `rem`, иконки — SVG, границы — hairline `1px` (`--sui-hairline` = `0.5px` на high-DPI). Текст ограничивается мерой `--sui-measure: 68ch` / `--sui-measure-narrow: 52ch`. TV-профиль (10-foot UI) в v1 не проектировался: токены совместимы со старыми WebView, но отдельного TV-набора нет.
+Стили mobile-first: базовые правила действуют всегда, расширения — через `@media (min-width: …)`. Гуттеры: 16/24 на мобильном, 24/32 на планшете, 32/48 на десктопе; `--sui-content-max` ограничен 100–112rem на 4K, `--sui-content-wide-max` — 128–144rem, при этом кегль не «уезжает» в бесконечность. Единицы — `rem`, иконки — SVG, границы — hairline `1px` (`--sui-hairline`). Текст ограничивается мерой `--sui-measure: 68ch` / `--sui-measure-narrow: 52ch`. TV-профиль (10-foot UI) в v1 не проектировался: токены совместимы со старыми WebView, но отдельного TV-набора нет.
 
-Адаптивы компонентов: `FieldGroup.columns={2|3}` даёт 1 колонку на мобильном, 2 на `≥600px` и 3 на `≥840px` (`auto` — auto-fit по минимальной ширине); `FieldGroup.maxWidth` ограничивает меру формы. `Table` рендерит корень `.sui-table-scroll` и скроллит широкую таблицу по горизонтали, не ломая страницу. `Grid`/`Inline` переносятся по `wrap`, `TopAppBar` учитывает `safe-area-inset-top`, а `NavigationBar` — нижний safe-area. Touch targets контролов — 44px (`md`) и 48px (`lg`/cozy), поэтому плотные раскладки не уменьшают цель нажатия ниже 44px.
+Адаптивы компонентов: `FieldGroup.columns={2|3}` даёт 1 колонку на мобильном, 2 на `≥600px` и 3 на `≥840px` (`auto` — auto-fit по минимальной ширине); `FieldGroup.maxWidth` ограничивает меру формы. `Table` рендерит корень `.sui-table-scroll` и скроллит широкую таблицу по горизонтали, не ломая страницу. `Grid`/`Inline` переносятся по `wrap`, `TopAppBar` учитывает `safe-area-inset-top`, а `NavigationBar` — нижний safe-area. Высоты контролов — 32/40/48px (`sm`/`md`/`lg`), на `pointer: coarse` цель нажатия не ниже 44px, поэтому плотные раскладки не уменьшают её.
 
 ## Layout и типографика
 
@@ -239,10 +239,11 @@ import { Heading, Text, Label, Icon } from "@ivlev-dev/silent-ui";
 
 ### Типографика, форма и переполнение
 
-- `--sui-font-display` — редакционный serif (`Iowan Old Style`, `Palatino`, `Georgia`) для display/headline; `--sui-font-sans` — Inter/system для UI и body; `--sui-font-mono` — код.
-- Type scale остаётся fluid, но с верхней границей на 4K. Display/headline используют serif-семейство, title/body/label — sans. Основной body — не меньше 16px (`body-medium` = 17px, `body-small` = 16px), длинный текст — `--sui-measure: 68ch` / `--sui-measure-narrow: 52ch`.
-- Радиусы: `xs 4`, `sm 8`, `md 12`, `lg 16`, `xl 24`, `full 999`; не всё — pill. Семантические `--sui-radius-card` (16), `--sui-radius-dialog`/`--sui-radius-sheet` (24), `--sui-radius-control` (8).
-- Touch targets: `--sui-touch-target: 2.75rem` (44px), `--sui-touch-target-cozy: 3rem` (48px); `control-height-md` = 44px.
+- `--sui-font-display` — тот же современный sans-stack (`Inter`/system), что и `--sui-font-sans`; никакого serif. `--sui-font-mono` — код.
+- Type scale fluid, но с жёсткой верхней границей на 4K: display ≤ 44px, headline ≤ 32px, title ≤ 20px, body 16/14px, label 13/12px; line-height 1.2–1.55, трекинг спокойный. Длинный текст — `--sui-measure: 68ch` / `--sui-measure-narrow: 52ch`.
+- Радиусы: `xs 4`, `sm 6`, `md 10`, `lg 14`, `xl 20`, `full 999`; pill — только для чипов/аватаров, кнопки — 10/12. Семантические `--sui-radius-card` (14), `--sui-radius-dialog`/`--sui-radius-sheet` (20), `--sui-radius-control` (10).
+- Высоты контролов: `--sui-control-height-sm` 32px, `md` 40px, `lg` 48px; на `pointer: coarse` минимум `--sui-touch-target: 2.75rem` (44px), cozy — 48px.
+- Плотность: card 16–20px, dialog/sheet 20–24px, section 24–40px; тени мягкие (`--sui-elevation-*`), граница — hairline 1px.
 - Motion сдержанный: `--sui-motion-fast` 120ms, `--sui-motion-base` 180ms, `--sui-motion-slow` 240ms, `--sui-easing-editorial`; при `prefers-reduced-motion` анимации отключаются.
 - Утилиты переполнения: `.sui-truncate` (ellipsis), `.sui-clamp-2`/`.sui-clamp-3` (line-clamp), `.sui-scroll-x`, `.sui-break-words`, `.sui-measure`, `.sui-measure-narrow`. У детей `Stack`/`Inline`/`Grid` стоит `min-inline-size: 0`, у контейнера — `max-inline-size` и safe-area.
 
@@ -435,8 +436,8 @@ const uploader = async (file: File) => api.upload(file);
 
 ## UX-правила
 
-- **Иерархия**: один `Heading` первого уровня на экран; display/headline — serif, интерфейс и body — sans. Не повышайте уровень заголовка ради размера — для этого есть `variant`.
-- **Акцент**: золотой `accent` — для одного ключевого действия на экране (`Button`/`IconButton`/`Badge`). Остальные действия — `filled`/`tonal`/`outlined`/`text`. Не превращайте все поверхности в pill: радиусы 4/8/12/16/24, `full` — только аватары и круги.
+- **Иерархия**: один `Heading` первого уровня на экран; display/headline и UI — один современный sans, разница только в размере и весе. Не повышайте уровень заголовка ради размера — для этого есть `variant`.
+- **Акцент**: золотой `accent` — для одного ключевого действия на экране (`Button`/`IconButton`/`Badge`). Остальные действия — `filled`/`tonal`/`outlined`/`text`. Не превращайте все поверхности в pill: радиусы 4/6/10/14/20, `full` — только аватары, чипы и круги.
 - **Длина текста**: длинный повествовательный текст ограничивайте `Text.measure` (68ch) или `.sui-measure`; для строк списков, карточек, таблиц и аккордеона используйте осознанную обрезку (`lines`/`truncate`/`headerLines`) вместо «прыгающей» высоты строки. Обрезка не должна скрывать единственное действие.
 - **Формы**: ошибка видна сразу, как только передана; `validating` — отдельное состояние, не подменяет `error`. Подписи секций — `Label.uppercase`, только осознанно. На широких экранах форма ограничивается `FieldGroup.maxWidth`, а не растягивается на всю ширину.
 - **Таблицы**: на узких экранах `Table` скроллит по горизонтали; не уменьшайте шрифт ради влезания. Длинные значения — `TableColumn.truncate`/`lines`, заголовки остаются видимыми.
