@@ -195,97 +195,7 @@ function SmallListboxRows(props: ListboxRowsProps): Node {
 interface VirtualRow {
   readonly entry: FlatListboxOption;
   readonly start: number;
-}
-
-interface VirtualRowViewProps {
-  readonly row: VirtualRow;
-  readonly options: () => readonly FlatListboxOption[];
-  readonly baseId: string;
-  readonly activeKey: () => string | null;
-  readonly selected: (key: string) => boolean;
-  readonly renderOption?: ((option: ListboxOption) => Children) | undefined;
-  readonly onPick: (option: ListboxOption, event: Event) => void;
-  readonly onActivate?: ((option: ListboxOption) => void) | undefined;
-  readonly count: () => number;
-  readonly measure: (node: Element | null) => void;
   readonly pinned?: boolean | undefined;
-}
-
-function VirtualRowView(props: VirtualRowViewProps): Node {
-  const entry = props.row.entry;
-  return (
-    <div
-      class="sui-popup__virtual-row"
-      data-index={entry.index}
-      data-pinned={props.pinned === true ? "" : undefined}
-      ref={props.measure}
-      style={optionStyle(props.row.start)}
-    >
-      <Show when={groupStart(props.options(), entry.index)}>
-        <div
-          class="sui-popup__group-label"
-          id={groupLabelId(
-            props.baseId,
-            groupStart(props.options(), entry.index)!,
-          )}
-          role="presentation"
-        >
-          {groupStart(props.options(), entry.index)?.group?.label}
-        </div>
-      </Show>
-      <div
-        id={listboxOptionId(props.baseId, entry.index)}
-        class="sui-popup__option"
-        role="option"
-        aria-selected={props.selected(entry.key) ? "true" : "false"}
-        aria-disabled={entry.option.disabled === true ? "true" : undefined}
-        aria-setsize={props.count()}
-        aria-posinset={entry.index + 1}
-        data-active={props.activeKey() === entry.key ? "" : undefined}
-        data-value={entry.key}
-        data-option-index={entry.index}
-        onPointerMove={() => {
-          props.onActivate?.(entry.option);
-        }}
-        onClick={(event) => {
-          props.onPick(entry.option, event);
-        }}
-      >
-        <span class="sui-popup__option-leading" aria-hidden="true">
-          {entry.option.leading}
-        </span>
-        <span class="sui-popup__option-text">
-          <Show
-            when={props.renderOption !== undefined}
-            fallback={
-              <>
-                <span class="sui-popup__option-label">
-                  {entry.option.label}
-                </span>
-                <Show when={entry.option.description}>
-                  <span class="sui-popup__option-description">
-                    {entry.option.description}
-                  </span>
-                </Show>
-              </>
-            }
-          >
-            <span class="sui-popup__option-label">
-              {props.renderOption?.(entry.option)}
-            </span>
-          </Show>
-        </span>
-        <span class="sui-popup__option-trailing">
-          {entry.option.trailing}
-        </span>
-        <span class="sui-popup__check" aria-hidden="true">
-          <Show when={props.selected(entry.key)}>
-            <CheckIcon size="sm" />
-          </Show>
-        </span>
-      </div>
-    </div>
-  );
 }
 
 /** Оконный рендер больших наборов поверх `createVirtualizer`. */
@@ -418,21 +328,14 @@ function VirtualListboxRows(props: ListboxRowsProps): Node {
     return {
       entry,
       start: virtualizer.getOffsetForIndex(index, "start"),
+      pinned: true,
     };
   });
 
-  const rowProps = (row: VirtualRow, pinned = false): VirtualRowViewProps => ({
-    row,
-    options: entries,
-    baseId: props.baseId,
-    activeKey: props.activeKey,
-    selected: props.selected,
-    renderOption: props.renderOption,
-    onPick: props.onPick,
-    onActivate: props.onActivate,
-    count: optionCount,
-    measure: measureRow,
-    pinned,
+  const renderRows = createMemo<VirtualRow[]>(() => {
+    const windowRows = rows();
+    const pinned = pinnedRow();
+    return pinned === null ? windowRows : [...windowRows, pinned];
   });
 
   return (
@@ -443,12 +346,85 @@ function VirtualListboxRows(props: ListboxRowsProps): Node {
       }}
       style={spacerStyle()}
     >
-      <For each={rows} keyOf={(row) => row.entry.key}>
-        {(row) => <VirtualRowView {...rowProps(row)} />}
+      <For each={renderRows} keyOf={(row) => row.entry.key}>
+        {(row) => (
+          <div
+            class="sui-popup__virtual-row"
+            data-index={row.entry.index}
+            data-pinned={row.pinned === true ? "" : undefined}
+            ref={measureRow}
+            style={optionStyle(row.start)}
+          >
+            <Show when={groupStart(entries(), row.entry.index)}>
+              <div
+                class="sui-popup__group-label"
+                id={groupLabelId(
+                  props.baseId,
+                  groupStart(entries(), row.entry.index) ?? row.entry,
+                )}
+                role="presentation"
+              >
+                {groupStart(entries(), row.entry.index)?.group?.label}
+              </div>
+            </Show>
+            <div
+              id={listboxOptionId(props.baseId, row.entry.index)}
+              class="sui-popup__option"
+              role="option"
+              aria-selected={props.selected(row.entry.key) ? "true" : "false"}
+              aria-disabled={
+                row.entry.option.disabled === true ? "true" : undefined
+              }
+              aria-setsize={optionCount()}
+              aria-posinset={row.entry.index + 1}
+              data-active={
+                props.activeKey() === row.entry.key ? "" : undefined
+              }
+              data-value={row.entry.key}
+              data-option-index={row.entry.index}
+              onPointerMove={() => {
+                props.onActivate?.(row.entry.option);
+              }}
+              onClick={(event) => {
+                props.onPick(row.entry.option, event);
+              }}
+            >
+              <span class="sui-popup__option-leading" aria-hidden="true">
+                {row.entry.option.leading}
+              </span>
+              <span class="sui-popup__option-text">
+                <Show
+                  when={props.renderOption !== undefined}
+                  fallback={
+                    <>
+                      <span class="sui-popup__option-label">
+                        {row.entry.option.label}
+                      </span>
+                      <Show when={row.entry.option.description}>
+                        <span class="sui-popup__option-description">
+                          {row.entry.option.description}
+                        </span>
+                      </Show>
+                    </>
+                  }
+                >
+                  <span class="sui-popup__option-label">
+                    {props.renderOption?.(row.entry.option)}
+                  </span>
+                </Show>
+              </span>
+              <span class="sui-popup__option-trailing">
+                {row.entry.option.trailing}
+              </span>
+              <span class="sui-popup__check" aria-hidden="true">
+                <Show when={props.selected(row.entry.key)}>
+                  <CheckIcon size="sm" />
+                </Show>
+              </span>
+            </div>
+          </div>
+        )}
       </For>
-      <Show when={pinnedRow()}>
-        <VirtualRowView {...rowProps(pinnedRow()!, true)} />
-      </Show>
     </div>
   );
 }

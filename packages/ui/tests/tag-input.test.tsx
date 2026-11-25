@@ -340,6 +340,62 @@ describe("TagInput: подсказки и клавиатура", () => {
     paste(singleInput, "one, two");
     expect(singleChanges.at(-1)).toEqual(["one, two"]);
   });
+  it("1000 подсказок: окно, активная строка и выбор", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "clientHeight",
+    );
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.getAttribute("role") === "listbox" ? 320 : 0;
+      },
+    });
+    try {
+      const changes: Array<readonly string[]> = [];
+      const suggestions = Array.from(
+        { length: 1000 },
+        (_, index) => `Suggestion ${index}`,
+      );
+      const root = rootOf(
+        mount(handles, TagInput, {
+          id: "tags",
+          value: [],
+          suggestions,
+          onValueChange: (value: readonly string[]) => changes.push(value),
+        }),
+      );
+      const input = tagInput(root);
+      input.focus();
+      flush();
+
+      const list = query<HTMLElement>(root, '[role="listbox"]');
+      const optionList = Array.from(
+        root.querySelectorAll<HTMLElement>('[role="option"]'),
+      );
+      expect(optionList.length).toBeGreaterThan(0);
+      expect(optionList.length).toBeLessThanOrEqual(31);
+      expect(query<HTMLElement>(root, ".sui-popup__virtual-spacer").style.height)
+        .toBe("40000px");
+      expect(optionList[0]?.getAttribute("aria-setsize")).toBe("1000");
+
+      press(input, "ArrowUp");
+      const activeId = input.getAttribute("aria-activedescendant");
+      expect(activeId).toBe("tags-option-999");
+      expect(list.querySelector(`#${activeId}`)).not.toBeNull();
+
+      press(input, "Enter");
+      expect(changes.at(-1)).toEqual(["Suggestion 999"]);
+    } finally {
+      if (descriptor === undefined) {
+        delete (HTMLElement.prototype as unknown as Record<string, unknown>)
+          .clientHeight;
+      } else {
+        Object.defineProperty(HTMLElement.prototype, "clientHeight", descriptor);
+      }
+    }
+  });
+
 });
 
 describe("TagInput: форма и SSR", () => {

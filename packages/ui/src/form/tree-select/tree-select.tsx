@@ -1,10 +1,12 @@
-import type { Children } from "@ivlev-dev/silent-core";
+import type { Children, StyleInput } from "@ivlev-dev/silent-core";
 import {
   For,
   Show,
+  createMemo,
   createSignal,
   untrack,
 } from "@ivlev-dev/silent-core";
+import { createVirtualizer } from "@ivlev-dev/silent-virtual";
 import { CheckIcon } from "../../icons/check.js";
 import { ChevronDownIcon } from "../../icons/chevron-down.js";
 import { CloseIcon } from "../../icons/close.js";
@@ -25,6 +27,7 @@ import {
   hasContent,
   hintIdFor,
   resolveControlId,
+  type ControlSize,
 } from "../internal/control.js";
 import { childrenText } from "../internal/listbox-filter.js";
 import {
@@ -61,6 +64,69 @@ function selectedKeysOf(value: unknown, multiple: boolean): string[] {
   const keys = keysOf(value);
   if (multiple) return keys;
   return keys.length === 0 ? [] : [keys[0]!];
+}
+
+/** С этого количества строк дерево переключается на оконный рендер. */
+const TREE_VIRTUAL_THRESHOLD = 30;
+
+const FALLBACK_ROOT_FONT_SIZE = 16;
+
+/** Оценка высоты строки по плотности контрола (совпадает с CSS). */
+function optionBlockForSize(size: ControlSize | undefined): number {
+  if (size === "sm") return 32;
+  if (size === "lg") return 48;
+  return 40;
+}
+
+function readRootFontSize(): number {
+  if (typeof getComputedStyle !== "function" || typeof document === "undefined") {
+    return FALLBACK_ROOT_FONT_SIZE;
+  }
+  const parsed = Number.parseFloat(
+    getComputedStyle(document.documentElement).fontSize,
+  );
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : FALLBACK_ROOT_FONT_SIZE;
+}
+
+function parseCssLength(value: string): number | null {
+  const match = /^\s*(-?\d*\.?\d+)\s*(px|rem|em)?\s*$/u.exec(value);
+  if (match === null) return null;
+  const amount = Number.parseFloat(match[1] ?? "");
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  const unit = match[2] ?? "px";
+  if (unit === "px") return amount;
+  return amount * readRootFontSize();
+}
+
+/**
+ * Высота строки из `--sui-popup-option-block` (её выставляет `.sui-popup` и
+ * уточняет `data-size`). Вне styled-окружения (SSR, тесты) остаётся
+ * детерминированный фолбэк по `size`.
+ */
+function readOptionBlock(
+  list: Element | null,
+  size: ControlSize | undefined,
+): number {
+  const fallback = optionBlockForSize(size);
+  if (list === null || typeof getComputedStyle !== "function") return fallback;
+  const parsed = parseCssLength(
+    getComputedStyle(list).getPropertyValue("--sui-popup-option-block").trim(),
+  );
+  return parsed ?? fallback;
+}
+
+/** Позиция строки в окне: абсолютный `start` и признак закреплённой строки. */
+interface TreeRowPlacement {
+  readonly start: number;
+  readonly pinned: boolean;
+}
+
+interface TreeWindowRow {
+  readonly row: FlatTreeNodeRow;
+  readonly start: number;
+  readonly pinned: boolean;
 }
 
 interface SummaryItem {
@@ -192,7 +258,9 @@ export function TreeSelect(props: TreeSelectProps): Node {
   // --- поиск ------------------------------------------------------------
   const [querySignal, setQuerySignal] = createSignal("");
   const searchText = (): string => (visible() ? querySignal() : "");
-  const rows = (): readonly FlatTreeNodeRow[] =>
+  // Мемо: внутри одного flush дерево запрашивается многократно (сводка,
+  // окно рендера, `getItemKey` виртуализатора), а `flattenTreeView` — O(n).
+  const rows = createMemo<readonly FlatTreeNodeRow[]>(() =>
     flattenTreeView(index(), {
       expanded: expandedKeys(),
       selected: selectedSet(),
@@ -200,7 +268,8 @@ export function TreeSelect(props: TreeSelectProps): Node {
       search: searchText(),
       searchStrategy: props.searchStrategy,
       flattenOnSearch: props.flattenOnSearch,
-    });
+    }),
+  );
   const searching = (): boolean => searchText().trim() !== "";
 
   // --- активная строка --------------------------------------------------
@@ -249,6 +318,11 @@ export function TreeSelect(props: TreeSelectProps): Node {
     null,
   );
   const [pendingSearchFocus, setPendingSearchFocus] = createSignal(false);
+  // Прокручиваемый контейнер — сам `.sui-popup__list` (`role="tree"`).
+  const [listElement, setListElement] = createSignal<HTMLElement | null>(null);
+  const [optionBlock, setOptionBlock] = createSignal(
+    optionBlockForSize(props.size),
+  );
   const side = useFloating({
     anchor: controlElement,
     panel: panelElement,
@@ -256,7 +330,106 @@ export function TreeSelect(props: TreeSelectProps): Node {
     preferred: () => "bottom",
   });
 
+  // --- виртуализация ----------------------------------------------------
+  // До порога дерево рендерится целиком (прежнее поведение). Начиная с
+  // `TREE_VIRTUAL_THRESHOLD` строк работает окно: spacer держит полную высоту,
+  // строки позиционируются абсолютно, прокрутка живёт на `role="tree"`.
+  const virtualized = (): boolean => rows().length >= TREE_VIRTUAL_THRESHOLD;
+  const activeIndex = (): number => activeRow()?.index ?? -1;
+
+  const virtualizer = createVirtualizer({
+    count: () => rows().length,
+    estimateSize: () => optionBlock(),
+    getItemKey: (index) => rows()[index]?.key ?? String(index),
+    initialViewportSize: () => optionBlock() * Math.max(1, maxVisible()),
+    // Активную строку добавляем в окно, пока она не дальше страницы от
+    // видимой области. Дальний прыжок (End/typeahead) не растягивает окно до
+    // всего списка: строка рендерится закреплённой, а эффект ниже прокручивает
+    // список, после чего окно включает её естественно.
+    rangeExtractor: (range) => {
+      const index = activeIndex();
+      if (index < 0) return [];
+      const reach = Math.max(1, maxVisible());
+      return index >= range.startIndex - reach && index <= range.endIndex + reach
+        ? [index]
+        : [];
+    },
+  });
+
   clientEffect(() => {
+    const node = listElement();
+    const active = node !== null && visible() && virtualized();
+    virtualizer.setScrollElement(active ? node : null);
+    if (!active) return;
+    const block = readOptionBlock(node, props.size);
+    if (block !== optionBlock()) setOptionBlock(block);
+  });
+
+  // Смена активной строки — минимальная прокрутка (`align: "auto"`). Ключ
+  // сравнивается, чтобы ручной скролл не возвращал список назад.
+  let lastActiveKey: string | null = null;
+  let lastActiveList: HTMLElement | null = null;
+  clientEffect(() => {
+    const node = listElement();
+    const key = activeKey();
+    if (node === null || key === null || !virtualized()) return;
+    if (key === lastActiveKey && node === lastActiveList) return;
+    lastActiveKey = key;
+    lastActiveList = node;
+    const index = activeIndex();
+    if (index >= 0) virtualizer.scrollToIndex(index, { align: "auto" });
+  });
+
+  // Строки окна: непрерывный диапазон виртуализатора плюс активная строка,
+  // если окно её не содержит. Ядро отдаёт пустой диапазон при нулевом
+  // вьюпорте, поэтому закреплённая строка — единственный способ гарантировать
+  // живой `aria-activedescendant` в этой ситуации.
+  const windowRows = (): readonly TreeWindowRow[] => {
+    if (!virtualized()) return [];
+    const list = rows();
+    const result: TreeWindowRow[] = [];
+    for (const item of virtualizer.virtualItems()) {
+      const row = list[item.index];
+      if (row !== undefined) {
+        result.push({ row, start: item.start, pinned: false });
+      }
+    }
+    const index = activeIndex();
+    if (index >= 0 && !result.some((entry) => entry.row.index === index)) {
+      const row = list[index];
+      if (row !== undefined) {
+        result.push({
+          row,
+          start: virtualizer.getOffsetForIndex(index, "start"),
+          pinned: true,
+        });
+      }
+    }
+    return result;
+  };
+
+  const spacerStyle = (): StyleInput => ({
+    position: "relative",
+    top: 0,
+    left: 0,
+    width: "100%",
+    height: virtualizer.totalSize(),
+    minHeight: 0,
+  });
+
+  const measureRow = (node: Element | null): void => {
+    if (node === null) return;
+    virtualizer.measureElement(node);
+    // `ref` выполняется до вставки детей в документ: повторное измерение
+    // микрозадачей видит уже собранную строку.
+    queueMicrotask(() => {
+      virtualizer.measureElement(node);
+    });
+  };
+
+  clientEffect(() => {
+    // При оконном рендере прокруткой управляет виртуализатор.
+    if (virtualized()) return;
     const row = activeRow();
     if (!visible() || row === null) return;
     const panel = panelElement();
@@ -622,7 +795,10 @@ export function TreeSelect(props: TreeSelectProps): Node {
     selectedKeys().map((key) => String(key));
   const readSingleHiddenValue = (): string => readHiddenValues()[0] ?? "";
 
-  const renderRow = (row: FlatTreeNodeRow): Node => (
+  const renderRow = (
+    row: FlatTreeNodeRow,
+    placement?: TreeRowPlacement | undefined,
+  ): Node => (
     <div
       id={listboxOptionId(id, row.index)}
       class="sui-tree-select__row"
@@ -646,12 +822,26 @@ export function TreeSelect(props: TreeSelectProps): Node {
       aria-disabled={row.option.disabled === true ? "true" : undefined}
       data-active={activeKey() === row.key ? "" : undefined}
       data-checked={row.checked ? "" : undefined}
+      data-index={placement === undefined ? undefined : row.index}
       data-indeterminate={row.indeterminate ? "" : undefined}
       data-disabled={row.option.disabled === true ? "" : undefined}
       data-depth={String(row.depth)}
       data-option-index={row.index}
+      data-pinned={placement?.pinned === true ? "" : undefined}
       data-value={row.key}
-      style={{ "--sui-tree-select-level": String(row.depth) }}
+      ref={placement === undefined ? undefined : measureRow}
+      style={
+        placement === undefined
+          ? { "--sui-tree-select-level": String(row.depth) }
+          : {
+              "--sui-tree-select-level": String(row.depth),
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "100%",
+              transform: `translateY(${placement.start}px)`,
+            }
+      }
       onPointerMove={() => {
         setActiveKeySignal(row.key);
       }}
@@ -904,6 +1094,9 @@ export function TreeSelect(props: TreeSelectProps): Node {
             </Show>
             <div
               id={listId}
+              ref={(node: Element | null) => {
+                setListElement(node as HTMLElement | null);
+              }}
               class="sui-popup__list sui-tree-select__tree"
               role="tree"
               aria-multiselectable={multiple() ? "true" : undefined}
@@ -926,7 +1119,28 @@ export function TreeSelect(props: TreeSelectProps): Node {
                   </Show>
                 }
               >
-                <For each={rows()}>{(row) => renderRow(row)}</For>
+                <Show
+                  when={virtualized()}
+                  fallback={
+                    <For each={rows()} keyOf={(row) => row.key}>
+                      {(row) => renderRow(row)}
+                    </For>
+                  }
+                >
+                  <div class="sui-popup__virtual-spacer" style={spacerStyle()}>
+                    <For
+                      each={windowRows()}
+                      keyOf={(entry) => entry.row.key}
+                    >
+                      {(entry) =>
+                        renderRow(entry.row, {
+                          start: entry.start,
+                          pinned: entry.pinned,
+                        })
+                      }
+                    </For>
+                  </div>
+                </Show>
               </Show>
             </div>
           </div>

@@ -331,4 +331,59 @@ describe("Combobox", () => {
     flush();
     expect(calls).toEqual([""]);
   });
+  it("1000 опций: окно, активная строка и выбор", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "clientHeight",
+    );
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.getAttribute("role") === "listbox" ? 320 : 0;
+      },
+    });
+    try {
+      const changes: unknown[] = [];
+      const big: readonly SelectItem[] = Array.from({ length: 1000 }, (_, index) => ({
+        value: `v${index}`,
+        label: `Опция ${index}`,
+      }));
+      const root = rootOf(
+        mount(handles, Combobox, {
+          id: "big-city",
+          options: big,
+          onValueChange: (value: unknown) => changes.push(value),
+        }),
+      );
+      const field = open(root);
+      const list = query<HTMLElement>(root, '[role="listbox"]');
+      const optionList = rows(root);
+
+      expect(optionList.length).toBeGreaterThan(0);
+      expect(optionList.length).toBeLessThanOrEqual(31);
+      expect(query<HTMLElement>(root, ".sui-popup__virtual-spacer").style.height)
+        .toBe("40000px");
+      expect(optionList[0]?.getAttribute("aria-setsize")).toBe("1000");
+
+      const activeId = field.getAttribute("aria-activedescendant");
+      expect(activeId).not.toBeNull();
+      expect(list.querySelector(`#${activeId}`)).not.toBeNull();
+
+      const target = optionList.find(
+        (row) => row.getAttribute("data-option-index") === "5",
+      );
+      expect(target).toBeDefined();
+      click(target!);
+      expect(changes.at(-1)).toBe("v5");
+      expect(root.querySelector(".sui-popup")).toBeNull();
+    } finally {
+      if (descriptor === undefined) {
+        delete (HTMLElement.prototype as unknown as Record<string, unknown>)
+          .clientHeight;
+      } else {
+        Object.defineProperty(HTMLElement.prototype, "clientHeight", descriptor);
+      }
+    }
+  });
+
 });

@@ -258,6 +258,33 @@
     background-color: var(--sui-table-header-bg);
   }
 
+  /*
+   * Виртуализация: обёртка — вертикальный скролл-контейнер с ограниченной
+   * высотой. `thead` остаётся внутри таблицы, поэтому sticky-заголовок
+   * липнет к верху контейнера. Горизонтальный скролл на узких экранах задаёт
+   * медиазапрос выше — `overflow-x` с ним не конфликтует.
+   */
+  .sui-table-scroll[data-virtual] {
+    --sui-table-virtual-max-height: 30rem;
+
+    max-block-size: var(--sui-table-virtual-max-height);
+    overflow-y: auto;
+    overscroll-behavior-block: contain;
+    scrollbar-width: thin;
+  }
+
+  /* Spacer-строка держит полную высоту окна и не участвует в hover/сетке. */
+  .sui-table__spacer-row {
+    pointer-events: none;
+  }
+
+  .sui-table__spacer-cell {
+    padding: 0;
+    border: 0;
+    font-size: 0;
+    line-height: 0;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .sui-table__sort-icon {
       transition: none;

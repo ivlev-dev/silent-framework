@@ -1,5 +1,6 @@
 import type { Children, ClassNameValue, StyleInput } from "@ivlev-dev/silent-core";
-import { For, Show } from "@ivlev-dev/silent-core";
+import { For, Show, createMemo } from "@ivlev-dev/silent-core";
+import { createVirtualizer } from "@ivlev-dev/silent-virtual";
 import type { Attrs } from "../../internal/props.js";
 import { resolveSlot } from "../../internal/slot.js";
 import { ExpandMoreIcon } from "../../icons/expand-more.js";
@@ -38,6 +39,18 @@ export interface TableProps<Row> {
   readonly onSort?:
     | ((key: string, direction: TableSortDirection) => void)
     | undefined;
+  /**
+   * Оконный рендер строк. `false` — выключено, `true` — окно для любой
+   * непустой таблицы, число — порог по количеству строк. По умолчанию
+   * виртуализация включается начиная с 50 строк.
+   */
+  readonly virtual?: boolean | number | undefined;
+  /** Оценка высоты строки в пикселях; по умолчанию 49, для `dense` — 41. */
+  readonly rowHeight?: number | undefined;
+  /** Максимальная высота скролл-контейнера при виртуализации; по умолчанию 480. */
+  readonly maxHeight?: number | undefined;
+  /** Высота вьюпорта для детерминированного SSR-среза; по умолчанию 480. */
+  readonly initialViewportSize?: number | undefined;
   readonly dense?: boolean | undefined;
   readonly stickyHeader?: boolean | undefined;
   readonly caption?: Children;
@@ -51,6 +64,17 @@ export interface TableProps<Row> {
   readonly attrs?: Attrs;
   readonly ref?: ((node: Element | null) => void) | undefined;
 }
+
+const DEFAULT_VIRTUAL_THRESHOLD = 50;
+const DEFAULT_ROW_HEIGHT = 49;
+const DENSE_ROW_HEIGHT = 41;
+const DEFAULT_MAX_HEIGHT = 480;
+const DEFAULT_INITIAL_VIEWPORT_SIZE = 480;
+const VIRTUAL_OVERSCAN = 8;
+
+/** Ключи spacer-строк не пересекаются с ключами данных. */
+const SPACER_TOP_KEY = "\u0000sui-table-spacer-top";
+const SPACER_BOTTOM_KEY = "\u0000sui-table-spacer-bottom";
 
 function widthStyle(width: string | number | undefined): StyleInput {
   if (width === undefined) return undefined;
@@ -66,6 +90,24 @@ function defaultCell<Row>(row: Row, key: string): Children {
   }
   if (typeof value === "boolean") return value;
   return String(value);
+}
+
+/** Порог строк, ниже которого окно не включается (`null` — выключено). */
+function virtualThreshold(
+  value: boolean | number | undefined,
+): number | null {
+  if (value === false) return null;
+  if (value === true) return 1;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.floor(value));
+  }
+  return DEFAULT_VIRTUAL_THRESHOLD;
+}
+
+function positive(value: number | undefined, fallback: number): number {
+  return value !== undefined && Number.isFinite(value) && value > 0
+    ? value
+    : fallback;
 }
 
 interface TableRowListProps<Row> {
@@ -105,6 +147,78 @@ function TableRowList<Row>(props: TableRowListProps<Row>): Node {
   );
 }
 
+interface VirtualSpacerEntry {
+  readonly kind: "spacer";
+  readonly key: string;
+  readonly height: number;
+}
+
+interface VirtualRowEntry<Row> {
+  readonly kind: "row";
+  readonly key: string | number;
+  readonly index: number;
+  readonly row: Row;
+}
+
+type VirtualEntry<Row> = VirtualSpacerEntry | VirtualRowEntry<Row>;
+
+interface VirtualTableRowsProps<Row> {
+  readonly entries: () => readonly VirtualEntry<Row>[];
+  readonly columns: readonly TableColumn<Row>[];
+  readonly measure: (node: Element | null) => void;
+}
+
+/**
+ * Оконные строки. `For` — корень компонента, поэтому SSR/hydration видят ту
+ * же разметку, что и обычный список. Spacer-строки — обычные `<tr>` с
+ * фиксированной высотой: таблица остаётся нативной, без absolute-позиций.
+ */
+function VirtualTableRows<Row>(props: VirtualTableRowsProps<Row>): Node {
+  return (
+    <For each={props.entries} keyOf={(entry) => entry.key}>
+      {(entry) =>
+        entry.kind === "spacer" ? (
+          <tr
+            class="sui-table__spacer-row"
+            aria-hidden="true"
+            style={{ height: `${entry.height}px` }}
+          >
+            <td
+              class="sui-table__spacer-cell"
+              colspan={props.columns.length}
+              style={{ height: `${entry.height}px` }}
+            />
+          </tr>
+        ) : (
+          <tr
+            class="sui-table__row"
+            data-index={entry.index}
+            aria-rowindex={entry.index + 2}
+            ref={props.measure}
+          >
+            {props.columns.map((column) => (
+              <td
+                class="sui-table__cell"
+                data-align={column.align ?? "start"}
+                data-truncate={column.truncate === true ? "" : undefined}
+                data-lines={column.lines}
+              >
+                <span class="sui-table__cell-content">
+                  {resolveSlot(
+                    column.renderCell !== undefined
+                      ? column.renderCell(entry.row, entry.index)
+                      : defaultCell(entry.row, column.key),
+                  )}
+                </span>
+              </td>
+            ))}
+          </tr>
+        )
+      }
+    </For>
+  );
+}
+
 /**
  * Таблица: семантические `table/thead/tbody/th/td`, `scope="col"`,
  * `aria-sort` и управляемая сортировка через `onSort`. Строки не
@@ -113,14 +227,109 @@ function TableRowList<Row>(props: TableRowListProps<Row>): Node {
  * Корень — `.sui-table-scroll`: на узких экранах он скроллит таблицу по
  * горизонтали, поэтому широкая таблица не ломает страницу. Сам `<table>`
  * сохраняет `class`/`style`/`attrs`/`ref` и остаётся семантической таблицей.
+ *
+ * При `virtual` корень становится ещё и вертикальным скролл-контейнером:
+ * `thead` остаётся внутри, поэтому sticky-заголовок продолжает работать, а
+ * видимые строки рендерятся окном с `data-index` для измерения высоты.
  */
 export function Table<Row>(props: TableProps<Row>): Node {
   const config = useUiConfig();
   const hasCaption =
     props.caption !== undefined && props.caption !== null && props.caption !== "";
 
+  const threshold = virtualThreshold(props.virtual);
+  const isVirtual = (): boolean =>
+    threshold !== null && props.rows.length > 0 && props.rows.length >= threshold;
+
+  const rowHeight = positive(
+    props.rowHeight,
+    props.dense === true ? DENSE_ROW_HEIGHT : DEFAULT_ROW_HEIGHT,
+  );
+  const maxHeight = positive(props.maxHeight, DEFAULT_MAX_HEIGHT);
+  const initialViewportSize = positive(
+    props.initialViewportSize,
+    DEFAULT_INITIAL_VIEWPORT_SIZE,
+  );
+
+  // Контроллер создаётся всегда, но при выключенной виртуализации его count
+  // равен нулю: разметка обычной таблицы не меняется, слушатели не мешают.
+  const virtualizer = createVirtualizer({
+    count: () => (isVirtual() ? props.rows.length : 0),
+    estimateSize: () => rowHeight,
+    getItemKey: (index) => {
+      const row = props.rows[index];
+      return row === undefined ? index : props.rowKey(row, index);
+    },
+    overscan: VIRTUAL_OVERSCAN,
+    initialViewportSize,
+  });
+
+  // Кэш сохраняет идентичность записей между прокрутками: `For` двигает
+  // существующие `<tr>`, а не пересоздаёт весь видимый диапазон.
+  let rowCache = new Map<string | number, VirtualRowEntry<Row>>();
+
+  const entries = createMemo<VirtualEntry<Row>[]>(() => {
+    const rows = props.rows;
+    const items = virtualizer.virtualItems();
+    const total = virtualizer.totalSize();
+    const nextCache = new Map<string | number, VirtualRowEntry<Row>>();
+    const visible: VirtualRowEntry<Row>[] = [];
+    const first = items[0];
+    const last = items[items.length - 1];
+
+    for (const item of items) {
+      const row = rows[item.index];
+      if (row === undefined) continue;
+      const key = props.rowKey(row, item.index);
+      const cached = rowCache.get(key);
+      const entry =
+        cached !== undefined &&
+        cached.row === row &&
+        cached.index === item.index
+          ? cached
+          : { kind: "row" as const, key, index: item.index, row };
+      nextCache.set(key, entry);
+      visible.push(entry);
+    }
+    rowCache = nextCache;
+
+    return [
+      {
+        kind: "spacer" as const,
+        key: SPACER_TOP_KEY,
+        height: first === undefined ? 0 : Math.max(0, first.start),
+      },
+      ...visible,
+      {
+        kind: "spacer" as const,
+        key: SPACER_BOTTOM_KEY,
+        height: last === undefined ? 0 : Math.max(0, total - last.end),
+      },
+    ];
+  });
+
+  const measureRow = (node: Element | null): void => {
+    if (node === null) return;
+    // `measureElement` читает `getBoundingClientRect().height` у `<tr>`.
+    virtualizer.measureElement(node);
+    // Ref срабатывает до вставки детей; повторное измерение видит уже
+    // собранную строку.
+    queueMicrotask(() => {
+      virtualizer.measureElement(node);
+    });
+  };
+
   return (
-    <div class="sui-table-scroll">
+    <div
+      class="sui-table-scroll"
+      data-virtual={isVirtual() ? "" : undefined}
+      style={
+        isVirtual()
+          ? { "--sui-table-virtual-max-height": `${maxHeight}px` }
+          : undefined
+      }
+      ref={virtualizer.setScrollElement}
+    >
       <table
         {...props.attrs}
         ref={props.ref}
@@ -128,13 +337,14 @@ export function Table<Row>(props: TableProps<Row>): Node {
         style={props.style}
         data-dense={props.dense === true ? "" : undefined}
         data-sticky-header={props.stickyHeader === true ? "" : undefined}
+        aria-rowcount={isVirtual() ? props.rows.length + 1 : undefined}
         aria-label={hasCaption ? undefined : props.label}
       >
         <Show when={hasCaption}>
           {() => <caption class="sui-table__caption">{props.caption}</caption>}
         </Show>
         <thead class="sui-table__head">
-          <tr class="sui-table__row">
+          <tr class="sui-table__row" aria-rowindex={isVirtual() ? 1 : undefined}>
             {props.columns.map((column) => {
               const sorted =
                 props.sortKey === column.key && props.sortDirection !== undefined;
@@ -191,11 +401,22 @@ export function Table<Row>(props: TableProps<Row>): Node {
           <Show
             when={props.rows.length === 0}
             fallback={() => (
-              <TableRowList
-                rows={props.rows}
-                columns={props.columns}
-                rowKey={props.rowKey}
-              />
+              <Show
+                when={isVirtual()}
+                fallback={() => (
+                  <TableRowList
+                    rows={props.rows}
+                    columns={props.columns}
+                    rowKey={props.rowKey}
+                  />
+                )}
+              >
+                <VirtualTableRows
+                  entries={entries}
+                  columns={props.columns}
+                  measure={measureRow}
+                />
+              </Show>
             )}
           >
             {() => (

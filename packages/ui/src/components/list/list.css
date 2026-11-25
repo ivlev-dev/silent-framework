@@ -15,6 +15,15 @@
     color: var(--sui-color-on-surface);
   }
 
+  /* Виртуальный режим: невидимые строки-распорки держат полную высоту. */
+  .sui-list__spacer {
+    flex: none;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    pointer-events: none;
+  }
+
   .sui-list-item {
     --sui-list-item-block-size: calc(var(--sui-control-height-md) * var(--sui-density));
     --sui-list-item-padding-inline: var(--sui-space-4);
