@@ -2909,6 +2909,11 @@
         "type": "(props: GlyphProps) => Node",
         "signature": "export declare function CloseIcon(props: GlyphProps): Node;"
       },
+      "CodeIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function CodeIcon(props: GlyphProps): Node;"
+      },
       "Container": {
         "kind": "function",
         "type": "(props: ContainerProps) => Node",
@@ -3129,6 +3134,91 @@
         "kind": "interface",
         "signature": "export interface FormActionsProps { /** Свой набор действий: заменяет кнопки submit/reset. */ readonly actions?: Children; readonly submitLabel?: string | undefined; readonly resetLabel?: string | undefined; readonly submit?: boolean | undefined; readonly reset?: boolean | undefined; readonly loading?: boolean | undefined; readonly disabled?: boolean | undefined; readonly align?: FormActionsAlign | undefined; /** Прижать подвал к нижней кромке скроллящегося диалога/страницы. */ readonly sticky?: boolean | undefined; readonly onSubmit?: ((event: MouseEvent) => void) | undefined; readonly onReset?: ((event: MouseEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; /** Дополнительные действия после основных. */ readonly children?: Children; }"
       },
+      "FormatAlignCenterIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function FormatAlignCenterIcon(props: GlyphProps): Node;"
+      },
+      "FormatAlignLeftIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function FormatAlignLeftIcon(props: GlyphProps): Node;"
+      },
+      "FormatAlignRightIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function FormatAlignRightIcon(props: GlyphProps): Node;"
+      },
+      "FormatBoldIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function FormatBoldIcon(props: GlyphProps): Node;"
+      },
+      "FormatClearIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function FormatClearIcon(props: GlyphProps): Node;"
+      },
+      "FormatH1Icon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function FormatH1Icon(props: GlyphProps): Node;"
+      },
+      "FormatH2Icon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function FormatH2Icon(props: GlyphProps): Node;"
+      },
+      "FormatH3Icon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function FormatH3Icon(props: GlyphProps): Node;"
+      },
+      "FormatIndentDecreaseIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function FormatIndentDecreaseIcon(props: GlyphProps): Node;"
+      },
+      "FormatIndentIncreaseIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function FormatIndentIncreaseIcon(props: GlyphProps): Node;"
+      },
+      "FormatItalicIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function FormatItalicIcon(props: GlyphProps): Node;"
+      },
+      "FormatListBulletedIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function FormatListBulletedIcon(props: GlyphProps): Node;"
+      },
+      "FormatListNumberedIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function FormatListNumberedIcon(props: GlyphProps): Node;"
+      },
+      "FormatParagraphIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function FormatParagraphIcon(props: GlyphProps): Node;"
+      },
+      "FormatQuoteIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function FormatQuoteIcon(props: GlyphProps): Node;"
+      },
+      "FormatStrikethroughIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function FormatStrikethroughIcon(props: GlyphProps): Node;"
+      },
+      "FormatUnderlineIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function FormatUnderlineIcon(props: GlyphProps): Node;"
+      },
       "GlyphProps": {
         "kind": "interface",
         "signature": "export interface GlyphProps extends Omit<IconProps, \"children\"> { readonly title?: string | undefined; }"
@@ -3232,6 +3322,16 @@
         "kind": "variable",
         "type": "SemanticColors",
         "signature": "export declare const lightColors: SemanticColors;"
+      },
+      "LinkIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function LinkIcon(props: GlyphProps): Node;"
+      },
+      "LinkOffIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function LinkOffIcon(props: GlyphProps): Node;"
       },
       "List": {
         "kind": "function",
@@ -3444,6 +3544,11 @@
         "kind": "function",
         "type": "(storageKey?: string) => ThemeMode | null",
         "signature": "export declare function readStoredTheme(storageKey?: string): ThemeMode | null;"
+      },
+      "RedoIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function RedoIcon(props: GlyphProps): Node;"
       },
       "RefreshIcon": {
         "kind": "function",
@@ -3896,6 +4001,11 @@
       "UiStrings": {
         "kind": "interface",
         "signature": "export interface UiStrings { readonly close: string; readonly loading: string; readonly showPassword: string; readonly hidePassword: string; readonly required: string; readonly addItem: string; readonly removeItem: string; readonly moveUp: string; readonly moveDown: string; readonly submit: string; readonly reset: string; readonly chooseFile: string; readonly navigation: string; readonly actions: string; readonly breadcrumbs: string; readonly pagination: string; readonly previousPage: string; readonly nextPage: string; /** Шаблон статуса: `{page}` и `{pageCount}` подставляются компонентом. */ readonly pageStatus: string; readonly search: string; readonly clear: string; readonly sortAscending: string; readonly sortDescending: string; readonly noData: string; /** Подсказка группы чекбоксов: `{count}` подставляется компонентом. */ readonly minSelections: string; /** Подсказка группы чекбоксов: `{count}` подставляется компонентом. */ readonly maxSelections: string; readonly increment: string; readonly decrement: string; readonly removeTag: string; /** Подпись разряда OTP: `{index}` и `{count}` подставляются компонентом. */ readonly otpDigit: string; }"
+      },
+      "UndoIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function UndoIcon(props: GlyphProps): Node;"
       },
       "UploadIcon": {
         "kind": "function",

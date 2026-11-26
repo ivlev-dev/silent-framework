@@ -501,6 +501,94 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 `function StarFilledIcon(props: GlyphProps): Node` — Material Symbols `star` (заливка).
 
+### `FormatBoldIcon`
+
+`function FormatBoldIcon(props: GlyphProps): Node` — Material Symbols `format_bold`: полужирное начертание. Без `label` декоративна (`aria-hidden`), с `label`/`title` — `role="img"`. В кнопке: `<IconButton label="Полужирный">{<FormatBoldIcon />}</IconButton>`.
+
+### `FormatItalicIcon`
+
+`function FormatItalicIcon(props: GlyphProps): Node` — Material Symbols `format_italic`: курсив. Без `label` декоративна (`aria-hidden`), с `label`/`title` — `role="img"`. В кнопке: `<IconButton label="Курсив">{<FormatItalicIcon />}</IconButton>`.
+
+### `FormatUnderlineIcon`
+
+`function FormatUnderlineIcon(props: GlyphProps): Node` — Material Symbols `format_underlined`: подчёркивание. Без `label` декоративна (`aria-hidden`), с `label`/`title` — `role="img"`. В кнопке: `<IconButton label="Подчёркнутый">{<FormatUnderlineIcon />}</IconButton>`.
+
+### `FormatStrikethroughIcon`
+
+`function FormatStrikethroughIcon(props: GlyphProps): Node` — Material Symbols `format_strikethrough`: зачёркивание. Без `label` декоративна (`aria-hidden`), с `label`/`title` — `role="img"`. В кнопке: `<IconButton label="Зачёркнутый">{<FormatStrikethroughIcon />}</IconButton>`.
+
+### `FormatH1Icon`
+
+`function FormatH1Icon(props: GlyphProps): Node` — Material Symbols `format_h1`: заголовок первого уровня. Без `label` декоративна (`aria-hidden`), с `label`/`title` — `role="img"`. В кнопке: `<IconButton label="Заголовок 1">{<FormatH1Icon />}</IconButton>`.
+
+### `FormatH2Icon`
+
+`function FormatH2Icon(props: GlyphProps): Node` — Material Symbols `format_h2`: заголовок второго уровня. Без `label` декоративна (`aria-hidden`), с `label`/`title` — `role="img"`. В кнопке: `<IconButton label="Заголовок 2">{<FormatH2Icon />}</IconButton>`.
+
+### `FormatH3Icon`
+
+`function FormatH3Icon(props: GlyphProps): Node` — Material Symbols `format_h3`: заголовок третьего уровня. Без `label` декоративна (`aria-hidden`), с `label`/`title` — `role="img"`. В кнопке: `<IconButton label="Заголовок 3">{<FormatH3Icon />}</IconButton>`.
+
+### `FormatParagraphIcon`
+
+`function FormatParagraphIcon(props: GlyphProps): Node` — Material Symbols `subject`: обычный абзац. Без `label` декоративна (`aria-hidden`), с `label`/`title` — `role="img"`. В кнопке: `<IconButton label="Обычный текст">{<FormatParagraphIcon />}</IconButton>`.
+
+### `FormatListBulletedIcon`
+
+`function FormatListBulletedIcon(props: GlyphProps): Node` — Material Symbols `format_list_bulleted`: маркированный список. Без `label` декоративна (`aria-hidden`), с `label`/`title` — `role="img"`. В кнопке: `<IconButton label="Маркированный список">{<FormatListBulletedIcon />}</IconButton>`.
+
+### `FormatListNumberedIcon`
+
+`function FormatListNumberedIcon(props: GlyphProps): Node` — Material Symbols `format_list_numbered`: нумерованный список. Без `label` декоративна (`aria-hidden`), с `label`/`title` — `role="img"`. В кнопке: `<IconButton label="Нумерованный список">{<FormatListNumberedIcon />}</IconButton>`.
+
+### `FormatIndentIncreaseIcon`
+
+`function FormatIndentIncreaseIcon(props: GlyphProps): Node` — Material Symbols `format_indent_increase`: увеличить отступ. Без `label` декоративна (`aria-hidden`), с `label`/`title` — `role="img"`. В кнопке: `<IconButton label="Увеличить отступ">{<FormatIndentIncreaseIcon />}</IconButton>`.
+
+### `FormatIndentDecreaseIcon`
+
+`function FormatIndentDecreaseIcon(props: GlyphProps): Node` — Material Symbols `format_indent_decrease`: уменьшить отступ. Без `label` декоративна (`aria-hidden`), с `label`/`title` — `role="img"`. В кнопке: `<IconButton label="Уменьшить отступ">{<FormatIndentDecreaseIcon />}</IconButton>`.
+
+### `FormatQuoteIcon`
+
+`function FormatQuoteIcon(props: GlyphProps): Node` — Material Symbols `format_quote`: цитата. Без `label` декоративна (`aria-hidden`), с `label`/`title` — `role="img"`. В кнопке: `<IconButton label="Цитата">{<FormatQuoteIcon />}</IconButton>`.
+
+### `CodeIcon`
+
+`function CodeIcon(props: GlyphProps): Node` — Material Symbols `code`: фрагмент кода. Без `label` декоративна (`aria-hidden`), с `label`/`title` — `role="img"`. В кнопке: `<IconButton label="Код">{<CodeIcon />}</IconButton>`.
+
+### `LinkIcon`
+
+`function LinkIcon(props: GlyphProps): Node` — Material Symbols `link`: вставить или изменить ссылку. Без `label` декоративна (`aria-hidden`), с `label`/`title` — `role="img"`. В кнопке: `<IconButton label="Ссылка">{<LinkIcon />}</IconButton>`.
+
+### `LinkOffIcon`
+
+`function LinkOffIcon(props: GlyphProps): Node` — Material Symbols `link_off`: убрать ссылку. Без `label` декоративна (`aria-hidden`), с `label`/`title` — `role="img"`. В кнопке: `<IconButton label="Убрать ссылку">{<LinkOffIcon />}</IconButton>`.
+
+### `FormatAlignLeftIcon`
+
+`function FormatAlignLeftIcon(props: GlyphProps): Node` — Material Symbols `format_align_left`: выравнивание по левому краю. Без `label` декоративна (`aria-hidden`), с `label`/`title` — `role="img"`. В кнопке: `<IconButton label="По левому краю">{<FormatAlignLeftIcon />}</IconButton>`.
+
+### `FormatAlignCenterIcon`
+
+`function FormatAlignCenterIcon(props: GlyphProps): Node` — Material Symbols `format_align_center`: выравнивание по центру. Без `label` декоративна (`aria-hidden`), с `label`/`title` — `role="img"`. В кнопке: `<IconButton label="По центру">{<FormatAlignCenterIcon />}</IconButton>`.
+
+### `FormatAlignRightIcon`
+
+`function FormatAlignRightIcon(props: GlyphProps): Node` — Material Symbols `format_align_right`: выравнивание по правому краю. Без `label` декоративна (`aria-hidden`), с `label`/`title` — `role="img"`. В кнопке: `<IconButton label="По правому краю">{<FormatAlignRightIcon />}</IconButton>`.
+
+### `UndoIcon`
+
+`function UndoIcon(props: GlyphProps): Node` — Material Symbols `undo`: отменить действие. Без `label` декоративна (`aria-hidden`), с `label`/`title` — `role="img"`. В кнопке: `<IconButton label="Отменить">{<UndoIcon />}</IconButton>`.
+
+### `RedoIcon`
+
+`function RedoIcon(props: GlyphProps): Node` — Material Symbols `redo`: повторить действие. Без `label` декоративна (`aria-hidden`), с `label`/`title` — `role="img"`. В кнопке: `<IconButton label="Повторить">{<RedoIcon />}</IconButton>`.
+
+### `FormatClearIcon`
+
+`function FormatClearIcon(props: GlyphProps): Node` — Material Symbols `format_clear`: очистить форматирование. Без `label` декоративна (`aria-hidden`), с `label`/`title` — `role="img"`. В кнопке: `<IconButton label="Очистить форматирование">{<FormatClearIcon />}</IconButton>`.
+
 Готовые глифы доступны и точечно: `@ivlev-dev/silent-ui/icons/close` и т. п.
 
 ## Кнопки и действия
@@ -1105,7 +1193,7 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `RichTextEditor`
 
-`function RichTextEditor(props: RichTextEditorProps): Node` — WYSIWYG-редактор без сторонних библиотек и без `document.execCommand`: форматирование и история работают на `Range`/DOM. `value` — controlled-HTML, `defaultValue` — uncontrolled; `field` из `@ivlev-dev/silent-form` даёт значение, подпись, подсказку, ошибку и `onChange`, а явные пропсы его перекрывают. `onValueChange` получает уже санитизированный и нормализованный HTML при вводе, командах и вставке; `onChange` — синтетическое событие с `target.value` (HTML) и `target.type = "text"`. Блочные команды применяются консервативно: тип меняют `p`/`h1`–`h3`/`pre` (включая внутренние `p` в `li`/`blockquote`), но сами `ul`/`ol`/`li`/`blockquote` не разворачиваются и не меняют уровень при частичном пересечении. `clear` снимает inline-формат и `data-align`, не ломая списки/цитаты; заголовок превращается в `p` только при выделении целиком внутри него. `indent`/`outdent` управляют вложенностью списков: `Tab`/`Shift+Tab` внутри `li` работают как эти команды; outdent вложенного первого `li` поднимает его во внешний список (следующие sibling сохраняются nested-списком под ним), а top-level первый `li` буквально делит список новым списком перед исходным. `toolbar` по умолчанию показывает полный набор команд, `false` убирает панель, массив оставляет только перечисленные пункты (`"|"` — разделитель). `readOnly` запрещает правки, но сохраняет значение и отправку формы; `disabled` убирает редактор из tab-порядка и отключает скрытый input. `minHeight`/`maxHeight` задают пиксели контентной области (по умолчанию минимум — примерно три строки контрола `lg`, максимум не ограничен). `placeholder` рисуется CSS-псевдоэлементом, пока контент пуст. Без `id`/`name` каждый экземпляр получает детерминированный `useId("sui-rte")`, поэтому несколько редакторов на странице не конфликтуют.
+`function RichTextEditor(props: RichTextEditorProps): Node` — WYSIWYG-редактор без сторонних библиотек и без `document.execCommand`: форматирование и история работают на `Range`/DOM. `value` — controlled-HTML, `defaultValue` — uncontrolled; `field` из `@ivlev-dev/silent-form` даёт значение, подпись, подсказку, ошибку и `onChange`, а явные пропсы его перекрывают. `onValueChange` получает уже санитизированный и нормализованный HTML при вводе, командах и вставке; `onChange` — синтетическое событие с `target.value` (HTML) и `target.type = "text"`. Тулбар использует иконки из `@ivlev-dev/silent-ui/icons`: у кнопок только иконка, доступное имя и `title`. На узкой ширине раскладка измеряет доступное место и уводит команды в меню «Ещё» (`role="menu"`, `menuitemcheckbox`/`menuitem`); первый SSR/клиентский рендер детерминированный, перераскладка — после mount. На мобильных (`<=600px`) кнопки имеют touch-цель 44px. Блочные команды применяются консервативно: тип меняют `p`/`h1`–`h3`/`pre` (включая внутренние `p` в `li`/`blockquote`), но сами `ul`/`ol`/`li`/`blockquote` не разворачиваются и не меняют уровень при частичном пересечении. `clear` снимает inline-формат и `data-align`, не ломая списки/цитаты; заголовок превращается в `p` только при выделении целиком внутри него. `indent`/`outdent` управляют вложенностью списков: `Tab`/`Shift+Tab` внутри `li` работают как эти команды; outdent вложенного первого `li` поднимает его во внешний список (следующие sibling сохраняются nested-списком под ним), а top-level первый `li` буквально делит список новым списком перед исходным. `toolbar` по умолчанию показывает полный набор команд, `false` убирает панель, массив оставляет только перечисленные пункты (`"|"` — разделитель). `readOnly` запрещает правки, но сохраняет значение и отправку формы; `disabled` убирает редактор из tab-порядка и отключает скрытый input. `minHeight`/`maxHeight` задают пиксели контентной области (по умолчанию минимум — примерно три строки контрола `lg`, максимум не ограничен). `placeholder` рисуется CSS-псевдоэлементом, пока контент пуст. Без `id`/`name` каждый экземпляр получает детерминированный `useId("sui-rte")`, поэтому несколько редакторов на странице не конфликтуют.
 
 SSR отдаёт пустую контентную область: HTML не попадает в `contenteditable` ни в серверную разметку, ни в гидрацию, иначе браузер нормализовал бы DOM и дал mismatch. Начальное значение живёт в скрытом `input[type=hidden]` (`name` = `name` → `field.name` → `id`) и подставляется в редактор после монтирования: санитизация → нормализация → `innerHTML`; готовность отмечают `data-mounted` на рамке и `data-ready` на области. Санитайзер не зависит от DOM и выполняется уже на сервере, поэтому hidden input в SSR-разметке очищен и нормализован. Внешний `value` применяется только когда фокус вне редактора (иначе — после `blur`), поэтому набор текста не затирается. `reset` формы возвращает `defaultValue`, если редактор не в фокусе. История хранит HTML и точные DOM-пути (`NodePath` + offset) для anchor/focus и направления, поэтому undo/redo возвращает каретку в пустые абзацы и вокруг `<br>`.
 
@@ -1121,7 +1209,7 @@ SSR отдаёт пустую контентную область: HTML не п�
 
 ### `ToolbarItem`
 
-`type ToolbarItem = RichTextCommand | "|"` — пункт панели: команда или разделитель `"|"`, который рендерится как `role="separator"` с вертикальной ориентацией. Массив `toolbar` задаёт состав и порядок кнопок; команда `link` дополнительно отражает состояние панели через `aria-expanded`/`aria-controls`.
+`type ToolbarItem = RichTextCommand | "|"` — пункт панели: команда или разделитель `"|"`, который рендерится как `role="separator"` с вертикальной ориентацией. Массив `toolbar` задаёт состав и порядок кнопок; команда `link` дополнительно отражает состояние панели через `aria-expanded`/`aria-controls`. Видимые кнопки содержат только иконку, `aria-label` и `title`; overflow-меню показывает иконку и текстовую подпись, а toggle-пункты получают `role="menuitemcheckbox"` и `aria-checked`. Раскладка (`computeToolbarLayout`/`splitToolbarItems`) учитывает ширины кнопок, разделители, gap и приоритеты, закрывается по `Escape`/клику вне и не теряет выделение при `mousedown`.
 
 ### `Select`
 

@@ -8,9 +8,9 @@
       var(--sui-control-height-lg) * var(--sui-density) * 3
     );
     --sui-rte-max-block-size: none;
-    --sui-rte-padding-block: var(--sui-space-3);
-    --sui-rte-padding-inline: var(--sui-space-3);
-    --sui-rte-radius: var(--sui-radius-control);
+    --sui-rte-padding-block: var(--sui-space-5);
+    --sui-rte-padding-inline: var(--sui-space-6);
+    --sui-rte-radius: 1rem;
     --sui-rte-bg: var(--sui-color-surface-container-lowest);
     --sui-rte-toolbar-bg: var(--sui-color-surface-container-low);
     --sui-rte-border-color: var(--sui-color-outline-variant);
@@ -21,20 +21,21 @@
     --sui-rte-disabled-bg: var(--sui-color-surface-container);
     --sui-rte-active-bg: var(--sui-color-primary-container);
     --sui-rte-active-fg: var(--sui-color-on-primary-container);
-    --sui-rte-hover-bg: var(--sui-color-surface-container-high);
 
     position: relative;
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
     min-inline-size: 0;
-    overflow: hidden;
+    overflow: visible;
     border: var(--sui-hairline) solid var(--sui-rte-border-color);
     border-radius: var(--sui-rte-radius);
     background-color: var(--sui-rte-bg);
+    box-shadow: var(--sui-elevation-1);
     color: var(--sui-color-on-surface);
     transition:
       border-color var(--sui-motion-short-3) var(--sui-easing-standard),
+      box-shadow var(--sui-motion-short-3) var(--sui-easing-standard),
       background-color var(--sui-motion-short-3) var(--sui-easing-standard);
   }
 
@@ -70,47 +71,67 @@
   .sui-rte__toolbar {
     position: sticky;
     inset-block-start: 0;
-    z-index: 1;
+    z-index: 2;
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
-    gap: var(--sui-space-1);
-    padding: var(--sui-space-1);
+    gap: 2px;
+    min-inline-size: 0;
+    padding: 6px;
+    border-start-start-radius: inherit;
+    border-start-end-radius: inherit;
     border-block-end: var(--sui-hairline) solid var(--sui-rte-border-color);
     background-color: var(--sui-rte-toolbar-bg);
   }
 
   .sui-rte__divider {
+    flex: 0 0 auto;
     inline-size: var(--sui-hairline);
     block-size: 1.5rem;
-    margin-inline: var(--sui-space-1);
     background-color: var(--sui-color-outline-variant);
   }
 
   .sui-rte__button {
+    position: relative;
     display: inline-flex;
+    flex: 0 0 auto;
     align-items: center;
     justify-content: center;
-    min-inline-size: 2rem;
+    inline-size: 2rem;
     block-size: 2rem;
-    padding: 0 var(--sui-space-1);
+    padding: 0;
     border: 0;
-    border-radius: var(--sui-radius-sm);
+    border-radius: 0.5rem;
     background-color: transparent;
     color: var(--sui-color-on-surface-variant);
-    font-family: var(--sui-font-sans);
-    font-size: var(--sui-type-label-small-size);
-    font-weight: 600;
-    line-height: 1;
+    font: inherit;
     cursor: pointer;
     transition:
       background-color var(--sui-motion-short-3) var(--sui-easing-standard),
       color var(--sui-motion-short-3) var(--sui-easing-standard);
   }
 
+  .sui-rte__button::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background-color: currentColor;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--sui-motion-short-2) var(--sui-easing-standard);
+  }
+
   .sui-rte__button:hover:not(:disabled) {
-    background-color: var(--sui-rte-hover-bg);
     color: var(--sui-color-on-surface);
+  }
+
+  .sui-rte__button:hover:not(:disabled)::before {
+    opacity: var(--sui-state-hover);
+  }
+
+  .sui-rte__button:active:not(:disabled)::before {
+    opacity: var(--sui-state-pressed);
   }
 
   .sui-rte__button[aria-pressed="true"] {
@@ -128,25 +149,103 @@
     cursor: not-allowed;
   }
 
-  .sui-rte__glyph {
-    line-height: 1;
+  .sui-rte__icon {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: inherit;
+    pointer-events: none;
+  }
+
+  .sui-rte__more {
+    position: relative;
+    display: inline-flex;
+    flex: 0 0 auto;
+  }
+
+  .sui-rte__menu {
+    position: absolute;
+    inset-block-start: calc(100% + 6px);
+    inset-inline-end: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    box-sizing: border-box;
+    min-inline-size: 13rem;
+    max-block-size: min(60vh, 22rem);
+    padding: 4px;
+    overflow: auto;
+    border: var(--sui-hairline) solid var(--sui-rte-border-color);
+    border-radius: var(--sui-radius-md);
+    background-color: var(--sui-color-surface-container-lowest);
+    box-shadow: var(--sui-elevation-2);
+    translate:
+      var(--sui-floating-inline-shift, 0)
+      var(--sui-floating-block-shift, 0);
+  }
+
+  .sui-rte__menu[data-side="top"] {
+    inset-block-start: auto;
+    inset-block-end: calc(100% + 6px);
+  }
+
+  .sui-rte__menu-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--sui-space-2);
+    box-sizing: border-box;
+    inline-size: 100%;
+    min-block-size: 2rem;
+    padding: 0 var(--sui-space-2);
+    border: 0;
+    border-radius: var(--sui-radius-sm);
+    background-color: transparent;
+    color: var(--sui-color-on-surface);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-body-small-size);
+    line-height: var(--sui-type-body-small-line);
+    text-align: start;
+    cursor: pointer;
+    transition: background-color var(--sui-motion-short-2) var(--sui-easing-standard);
+  }
+
+  .sui-rte__menu-item:hover:not(:disabled) {
+    background-color: var(--sui-color-surface-container-high);
+  }
+
+  .sui-rte__menu-item[role="menuitemcheckbox"][aria-checked="true"] {
+    background-color: var(--sui-rte-active-bg);
+    color: var(--sui-rte-active-fg);
+  }
+
+  .sui-rte__menu-item:focus-visible {
+    outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
+    outline-offset: calc(var(--sui-focus-ring-offset) * -1);
+  }
+
+  .sui-rte__menu-item:disabled {
+    opacity: var(--sui-state-disabled);
+    cursor: not-allowed;
+  }
+
+  .sui-rte__menu-icon {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    inline-size: 1.125rem;
+    block-size: 1.125rem;
+  }
+
+  .sui-rte__menu-label {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .sui-rte__button[data-command="bold"] .sui-rte__glyph {
-    font-weight: 700;
-  }
-
-  .sui-rte__button[data-command="italic"] .sui-rte__glyph {
-    font-style: italic;
-  }
-
-  .sui-rte__button[data-command="underline"] .sui-rte__glyph {
-    text-decoration: underline;
-  }
-
-  .sui-rte__button[data-command="strike"] .sui-rte__glyph {
-    text-decoration: line-through;
   }
 
   .sui-rte__content {
@@ -154,6 +253,8 @@
     min-block-size: var(--sui-rte-min-block-size);
     max-block-size: var(--sui-rte-max-block-size);
     padding: var(--sui-rte-padding-block) var(--sui-rte-padding-inline);
+    border-end-start-radius: inherit;
+    border-end-end-radius: inherit;
     overflow: auto;
     color: inherit;
     font-family: var(--sui-font-sans);
@@ -279,7 +380,7 @@
   .sui-rte__content code {
     padding: 0.1em 0.3em;
     border-radius: var(--sui-radius-xs);
-    background-color: var(--sui-color-surface-container-high);
+    background-color: var(--sui-color-surface-container);
     font-family: var(--sui-font-mono);
     font-size: 0.9em;
   }
@@ -397,10 +498,39 @@
     line-height: var(--sui-type-body-small-line);
   }
 
+  @media (max-width: 600px) {
+    .sui-rte {
+      --sui-rte-padding-block: var(--sui-space-4);
+      --sui-rte-padding-inline: var(--sui-space-4);
+    }
+
+    .sui-rte__toolbar {
+      padding: 4px;
+    }
+
+    .sui-rte__button {
+      inline-size: var(--sui-touch-target);
+      block-size: var(--sui-touch-target);
+    }
+
+    .sui-rte__menu-item {
+      min-block-size: var(--sui-touch-target);
+    }
+
+    .sui-rte__link-input,
+    .sui-rte__link-action {
+      block-size: var(--sui-touch-target);
+    }
+  }
+
   @media (pointer: coarse) {
     .sui-rte__button {
-      min-inline-size: var(--sui-touch-target);
+      inline-size: var(--sui-touch-target);
       block-size: var(--sui-touch-target);
+    }
+
+    .sui-rte__menu-item {
+      min-block-size: var(--sui-touch-target);
     }
 
     .sui-rte__content {
@@ -410,7 +540,9 @@
 
   @media (prefers-reduced-motion: reduce) {
     .sui-rte,
-    .sui-rte__button {
+    .sui-rte__button,
+    .sui-rte__button::before,
+    .sui-rte__menu-item {
       transition: none;
     }
   }

@@ -8,8 +8,42 @@ import {
   useId,
 } from "@ivlev-dev/silent-core";
 import type { Attrs } from "../../internal/props.js";
-import { clientEffect } from "../../internal/overlay.js";
+import {
+  bindOpenState,
+  clientEffect,
+  useDismiss,
+  useFloating,
+} from "../../internal/overlay.js";
 import { Label } from "../../components/label/label.js";
+import {
+  CodeIcon,
+  FormatAlignCenterIcon,
+  FormatAlignLeftIcon,
+  FormatAlignRightIcon,
+  FormatBoldIcon,
+  FormatClearIcon,
+  FormatH1Icon,
+  FormatH2Icon,
+  FormatH3Icon,
+  FormatIndentDecreaseIcon,
+  FormatIndentIncreaseIcon,
+  FormatItalicIcon,
+  FormatListBulletedIcon,
+  FormatListNumberedIcon,
+  FormatParagraphIcon,
+  FormatQuoteIcon,
+  FormatStrikethroughIcon,
+  FormatUnderlineIcon,
+  LinkIcon,
+  LinkOffIcon,
+  MoreHorizIcon,
+  RedoIcon,
+  UndoIcon,
+} from "../../icons/index.js";
+import {
+  computeToolbarLayout,
+  type ToolbarLayout,
+} from "./internal/toolbar-layout.js";
 import { useUiConfig } from "../../theme/config.js";
 import {
   NO_WRITE,
@@ -169,30 +203,50 @@ const COMMAND_LABELS: Readonly<Record<RichTextCommand, string>> = {
   clear: "Очистить форматирование",
 };
 
-const COMMAND_GLYPHS: Readonly<Record<RichTextCommand, string>> = {
-  bold: "B",
-  italic: "I",
-  underline: "U",
-  strike: "S",
-  h1: "H1",
-  h2: "H2",
-  h3: "H3",
-  paragraph: "¶",
-  ul: "•",
-  ol: "1.",
-  indent: "⇥",
-  outdent: "⇤",
-  blockquote: "❝",
-  code: "</>",
-  link: "↗",
-  unlink: "⛔",
-  "align-left": "L",
-  "align-center": "C",
-  "align-right": "R",
-  undo: "↶",
-  redo: "↷",
-  clear: "⌫",
+const COMMAND_ICONS: Readonly<Record<RichTextCommand, () => Node>> = {
+  bold: () => <FormatBoldIcon size="md" />,
+  italic: () => <FormatItalicIcon size="md" />,
+  underline: () => <FormatUnderlineIcon size="md" />,
+  strike: () => <FormatStrikethroughIcon size="md" />,
+  h1: () => <FormatH1Icon size="md" />,
+  h2: () => <FormatH2Icon size="md" />,
+  h3: () => <FormatH3Icon size="md" />,
+  paragraph: () => <FormatParagraphIcon size="md" />,
+  ul: () => <FormatListBulletedIcon size="md" />,
+  ol: () => <FormatListNumberedIcon size="md" />,
+  indent: () => <FormatIndentIncreaseIcon size="md" />,
+  outdent: () => <FormatIndentDecreaseIcon size="md" />,
+  blockquote: () => <FormatQuoteIcon size="md" />,
+  code: () => <CodeIcon size="md" />,
+  link: () => <LinkIcon size="md" />,
+  unlink: () => <LinkOffIcon size="md" />,
+  "align-left": () => <FormatAlignLeftIcon size="md" />,
+  "align-center": () => <FormatAlignCenterIcon size="md" />,
+  "align-right": () => <FormatAlignRightIcon size="md" />,
+  undo: () => <UndoIcon size="md" />,
+  redo: () => <RedoIcon size="md" />,
+  clear: () => <FormatClearIcon size="md" />,
 };
+
+const MORE_LABEL = "Ещё";
+const MORE_MENU_LABEL = "Дополнительные команды";
+
+interface ToolbarMetrics {
+  readonly availableWidth: number;
+  readonly widths: Readonly<Partial<Record<RichTextCommand, number>>>;
+  readonly gap: number;
+  readonly buttonWidth: number;
+  readonly separatorWidth: number;
+  readonly moreWidth: number;
+}
+
+function enabledMenuItems(panel: HTMLElement): HTMLElement[] {
+  return Array.from(
+    panel.querySelectorAll<HTMLElement>(
+      '[role="menuitem"]:not([disabled]), [role="menuitemcheckbox"]:not([disabled])',
+    ),
+  );
+}
 
 const LINK_ERROR_TEXT =
   "Укажите безопасную ссылку: http(s), mailto, tel или относительный адрес";
@@ -291,12 +345,57 @@ function ToolbarList(props: ToolbarListProps): Node {
               props.onCommand(item);
             }}
           >
-            <span class="sui-rte__glyph" aria-hidden="true">
-              {COMMAND_GLYPHS[item]}
+            <span class="sui-rte__icon" aria-hidden="true">
+              {COMMAND_ICONS[item]()}
             </span>
           </button>
         )
       }
+    </For>
+  );
+}
+
+interface ToolbarMenuItemsProps {
+  readonly items: readonly RichTextCommand[];
+  readonly isActive: (command: RichTextCommand) => boolean;
+  readonly isDisabled: (command: RichTextCommand) => boolean;
+  readonly onCommand: (command: RichTextCommand) => void;
+}
+
+/** Пункты overflow-меню: checkbox для toggle-команд, menuitem для действий. */
+function ToolbarMenuItems(props: ToolbarMenuItemsProps): Node {
+  return (
+    <For each={props.items} keyOf={(command) => command}>
+      {(command) => {
+        const toggle = isToggleCommand(command);
+        const disabled = props.isDisabled(command);
+        return (
+          <button
+            type="button"
+            class="sui-rte__menu-item"
+            data-command={command}
+            role={toggle ? "menuitemcheckbox" : "menuitem"}
+            aria-checked={toggle ? (props.isActive(command) ? "true" : "false") : undefined}
+            aria-label={COMMAND_LABELS[command]}
+            title={COMMAND_LABELS[command]}
+            aria-disabled={disabled ? "true" : undefined}
+            disabled={disabled}
+            tabindex="-1"
+            onMouseDown={(event: MouseEvent) => {
+              event.preventDefault();
+            }}
+            onClick={() => {
+              if (disabled) return;
+              props.onCommand(command);
+            }}
+          >
+            <span class="sui-rte__menu-icon" aria-hidden="true">
+              {COMMAND_ICONS[command]()}
+            </span>
+            <span class="sui-rte__menu-label">{COMMAND_LABELS[command]}</span>
+          </button>
+        );
+      }}
     </For>
   );
 }
@@ -316,6 +415,7 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
   const config = useUiConfig();
   const labelId = `${id}-label`;
   const toolbarId = `${id}-toolbar`;
+  const moreMenuId = `${id}-toolbar-more-menu`;
   const linkPanelId = `${id}-link`;
   const linkErrorId = `${id}-link-error`;
   const hintId = hintIdFor(id);
@@ -356,6 +456,26 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
   const [linkValue, setLinkValue] = createSignal("");
   const [linkError, setLinkError] = createSignal("");
   const [linkInput, setLinkInput] = createSignal<HTMLInputElement | null>(null);
+
+  const [toolbarNode, setToolbarNode] = createSignal<HTMLDivElement | null>(null);
+  const [toolbarMetrics, setToolbarMetrics] = createSignal<ToolbarMetrics | null>(null);
+  const [moreRoot, setMoreRoot] = createSignal<HTMLSpanElement | null>(null);
+  const [moreButton, setMoreButton] = createSignal<HTMLButtonElement | null>(null);
+  const [menuPanel, setMenuPanel] = createSignal<HTMLDivElement | null>(null);
+  const moreMenuState = bindOpenState({
+    open: () => undefined,
+    defaultOpen: () => false,
+  });
+  const menuVisible = (): boolean => mounted() && moreMenuState.isOpen();
+  const menuSide = useFloating({
+    anchor: moreRoot,
+    panel: menuPanel,
+    isOpen: menuVisible,
+    preferred: () => "bottom",
+  });
+  useDismiss(moreRoot, menuVisible, () => {
+    moreMenuState.requestOpen(false);
+  });
 
   const history = new RichTextHistory();
   let savedRange: Range | null = null;
@@ -1033,6 +1153,221 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
     return DEFAULT_TOOLBAR;
   };
 
+  const toolbarLayout = (): ToolbarLayout => {
+    const items = toolbarItems();
+    const metrics = toolbarMetrics();
+    if (!mounted() || metrics === null) {
+      return computeToolbarLayout({ items, availableWidth: Infinity, widths: {} });
+    }
+    return computeToolbarLayout({
+      items,
+      availableWidth: metrics.availableWidth,
+      widths: metrics.widths,
+      gap: metrics.gap,
+      buttonWidth: metrics.buttonWidth,
+      separatorWidth: metrics.separatorWidth,
+      moreWidth: metrics.moreWidth,
+    });
+  };
+
+  let measuredWidths: Partial<Record<RichTextCommand, number>> = {};
+
+  // Измеряем ширины после mount. До измерения рендерим все кнопки — так
+  // SSR и первый клиентский рендер совпадают, а overflow появляется позже.
+  clientEffect(() => {
+    const toolbar = toolbarNode();
+    if (!mounted() || toolbar === null) return;
+
+    const update = (): void => {
+      const style = toolbar.ownerDocument.defaultView?.getComputedStyle(toolbar);
+      const padding =
+        (Number.parseFloat(style?.paddingLeft ?? "0") || 0) +
+        (Number.parseFloat(style?.paddingRight ?? "0") || 0);
+      const rect = toolbar.getBoundingClientRect();
+      const rawWidth = rect.width > 0 ? rect.width : toolbar.clientWidth;
+      if (!(rawWidth > 0)) {
+        setToolbarMetrics(null);
+        return;
+      }
+
+      const narrow = toolbar.ownerDocument.defaultView?.matchMedia?.(
+        "(max-width: 600px)",
+      ).matches === true;
+      const fallbackButton = narrow ? 44 : 32;
+      const widths: Partial<Record<RichTextCommand, number>> = {
+        ...measuredWidths,
+      };
+      for (const button of toolbar.querySelectorAll<HTMLElement>("[data-command]")) {
+        const command = button.dataset.command as RichTextCommand | undefined;
+        if (command === undefined) continue;
+        const buttonRect = button.getBoundingClientRect();
+        const width = buttonRect.width > 0 ? buttonRect.width : button.offsetWidth;
+        if (width > 0) widths[command] = width;
+      }
+      measuredWidths = widths;
+
+      const gap = Number.parseFloat(style?.columnGap || style?.gap || "") || 2;
+      const divider = toolbar.querySelector<HTMLElement>(".sui-rte__divider");
+      const dividerRect = divider?.getBoundingClientRect();
+      const separatorWidth =
+        dividerRect !== undefined && dividerRect.width > 0
+          ? dividerRect.width
+          : 1;
+
+      setToolbarMetrics({
+        availableWidth: Math.max(0, rawWidth - padding),
+        widths,
+        gap,
+        buttonWidth: fallbackButton,
+        separatorWidth,
+        moreWidth: fallbackButton,
+      });
+    };
+
+    update();
+    const observer =
+      typeof ResizeObserver === "function"
+        ? new ResizeObserver(() => update())
+        : null;
+    observer?.observe(toolbar);
+    window.addEventListener("resize", update, { passive: true });
+    onCleanup(() => {
+      observer?.disconnect();
+      window.removeEventListener("resize", update);
+    });
+  });
+
+  // Если при ресайзе всё поместилось или редактор заблокировали, меню не нужно.
+  clientEffect(() => {
+    if (
+      (toolbarLayout().overflow.length === 0 || disabled() || readOnly())
+      && moreMenuState.isOpen()
+    ) {
+      moreMenuState.requestOpen(false);
+    }
+  });
+
+  // Фокус в первый доступный пункт меню при открытии.
+  clientEffect(() => {
+    if (!menuVisible()) return;
+    const panel = menuPanel();
+    if (panel === null) return;
+    const items = enabledMenuItems(panel);
+    for (const item of panel.querySelectorAll<HTMLElement>(
+      '[role="menuitem"], [role="menuitemcheckbox"]',
+    )) {
+      item.tabIndex = -1;
+    }
+    const first = items[0];
+    if (first !== undefined) {
+      first.tabIndex = 0;
+      first.focus({ preventScroll: true });
+    }
+  });
+
+  const closeMoreMenu = (focusTrigger: boolean): void => {
+    moreMenuState.requestOpen(false);
+    if (focusTrigger) moreButton()?.focus({ preventScroll: true });
+  };
+
+  const rememberSelection = (): void => {
+    const content = contentNode();
+    if (content === null) return;
+    const range = getEditorRange(content);
+    if (range !== null) savedRange = cloneEditorRange(range);
+  };
+
+  const toggleMoreMenu = (): void => {
+    if (disabled() || readOnly()) return;
+    if (menuVisible()) {
+      closeMoreMenu(true);
+      return;
+    }
+    rememberSelection();
+    moreMenuState.requestOpen(true);
+  };
+
+  const focusMenuEdge = (last: boolean): boolean => {
+    const panel = menuPanel();
+    if (panel === null) return false;
+    const items = enabledMenuItems(panel);
+    const target = last ? items[items.length - 1] : items[0];
+    if (target === undefined) return false;
+    for (const item of items) item.tabIndex = item === target ? 0 : -1;
+    target.focus({ preventScroll: true });
+    return true;
+  };
+
+  const handleMoreKeyDown = (event: KeyboardEvent): void => {
+    if (disabled() || readOnly()) return;
+    if (
+      event.key === "ArrowDown" ||
+      event.key === "ArrowUp" ||
+      event.key === "Enter" ||
+      event.key === " "
+    ) {
+      event.preventDefault();
+      if (menuVisible()) {
+        focusMenuEdge(event.key === "ArrowUp");
+        return;
+      }
+      rememberSelection();
+      moreMenuState.requestOpen(true);
+      return;
+    }
+    if (event.key === "Escape" && menuVisible()) {
+      event.preventDefault();
+      closeMoreMenu(true);
+    }
+  };
+
+  const handleMenuKeyDown = (event: KeyboardEvent): void => {
+    const panel = menuPanel();
+    if (panel === null) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeMoreMenu(true);
+      return;
+    }
+    if (event.key === "Tab") {
+      closeMoreMenu(false);
+      return;
+    }
+    if (
+      event.key !== "ArrowDown" &&
+      event.key !== "ArrowUp" &&
+      event.key !== "Home" &&
+      event.key !== "End"
+    ) {
+      return;
+    }
+    const items = enabledMenuItems(panel);
+    if (items.length === 0) return;
+    event.preventDefault();
+    const active = panel.ownerDocument.activeElement;
+    let index = items.indexOf(active as HTMLElement);
+    if (event.key === "Home") index = 0;
+    else if (event.key === "End") index = items.length - 1;
+    else if (event.key === "ArrowDown") index = (index + 1) % items.length;
+    else index = index <= 0 ? items.length - 1 : index - 1;
+    for (let position = 0; position < items.length; position += 1) {
+      items[position]!.tabIndex = position === index ? 0 : -1;
+    }
+    items[index]?.focus({ preventScroll: true });
+  };
+
+  const runMenuCommand = (command: RichTextCommand): void => {
+    runCommand(command);
+    moreMenuState.requestOpen(false);
+    if (command !== "link" && command !== "undo" && command !== "redo") {
+      const content = contentNode();
+      if (content !== null) {
+        focusEditor(content);
+        if (savedRange !== null) restoreRange(content, savedRange);
+      }
+    }
+  };
+
   const described = (): string | undefined =>
     describedBy(
       hasContent(hints()) ? hintId : undefined,
@@ -1091,6 +1426,9 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
         >
           <Show when={toolbarItems().length > 0}>
             <div
+              ref={(node: Element | null) => {
+                setToolbarNode(node instanceof HTMLDivElement ? node : null);
+              }}
               id={toolbarId}
               class="sui-rte__toolbar"
               role="toolbar"
@@ -1098,13 +1436,71 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
               aria-controls={id}
             >
               <ToolbarList
-                items={toolbarItems()}
+                items={toolbarLayout().visible}
                 isActive={active}
                 isDisabled={toolbarDisabled}
                 isLinkOpen={() => linkOpen()}
                 linkPanelId={linkPanelId}
                 onCommand={runCommand}
               />
+              <Show when={toolbarLayout().overflow.length > 0}>
+                <span
+                  class="sui-rte__more"
+                  ref={(node: Element | null) => {
+                    setMoreRoot(node instanceof HTMLSpanElement ? node : null);
+                  }}
+                >
+                  <button
+                    ref={(node: Element | null) => {
+                      setMoreButton(
+                        node instanceof HTMLButtonElement ? node : null,
+                      );
+                    }}
+                    type="button"
+                    class="sui-rte__button sui-rte__more-button"
+                    aria-label={MORE_LABEL}
+                    title={MORE_LABEL}
+                    aria-haspopup="menu"
+                    aria-expanded={menuVisible() ? "true" : "false"}
+                    aria-controls={moreMenuId}
+                    disabled={disabled() || readOnly()}
+                    onMouseDown={(event: MouseEvent) => {
+                      event.preventDefault();
+                    }}
+                    onClick={toggleMoreMenu}
+                    onKeyDown={(event: KeyboardEvent) => {
+                      handleMoreKeyDown(event);
+                    }}
+                  >
+                    <span class="sui-rte__icon" aria-hidden="true">
+                      <MoreHorizIcon size="md" />
+                    </span>
+                  </button>
+                  <div
+                    ref={(node: Element | null) => {
+                      setMenuPanel(
+                        node instanceof HTMLDivElement ? node : null,
+                      );
+                    }}
+                    id={moreMenuId}
+                    class="sui-rte__menu"
+                    role="menu"
+                    aria-label={MORE_MENU_LABEL}
+                    data-side={menuSide()}
+                    hidden={!menuVisible()}
+                    onKeyDown={(event: KeyboardEvent) => {
+                      handleMenuKeyDown(event);
+                    }}
+                  >
+                    <ToolbarMenuItems
+                      items={toolbarLayout().overflow}
+                      isActive={active}
+                      isDisabled={toolbarDisabled}
+                      onCommand={runMenuCommand}
+                    />
+                  </div>
+                </span>
+              </Show>
             </div>
           </Show>
           <Show when={linkOpen()}>

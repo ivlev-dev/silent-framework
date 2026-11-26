@@ -59,9 +59,17 @@ describe("RichTextEditor: SSR", () => {
     expect(html).not.toContain("<script");
     expect(html).not.toContain("javascript:");
     expect(container.querySelector(".sui-rte__content strong")).toBeNull();
-    expect(
-      container.querySelectorAll(".sui-rte__toolbar .sui-rte__button").length,
-    ).toBeGreaterThan(0);
+    const buttons = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        ".sui-rte__toolbar .sui-rte__button",
+      ),
+    );
+    expect(buttons.length).toBeGreaterThan(0);
+    for (const button of buttons) {
+      expect(button.querySelector("svg")).not.toBeNull();
+      expect(button.textContent?.trim()).toBe("");
+    }
+    expect(container.querySelector('[aria-haspopup="menu"]')).toBeNull();
   });
 
   it("hydrate проходит без mismatch и заполняет редактор после монтирования", async () => {

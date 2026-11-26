@@ -33,3 +33,27 @@ export { ErrorIcon } from "./error.js";
 export { SuccessIcon } from "./success.js";
 export { StarIcon } from "./star.js";
 export { StarFilledIcon } from "./star-filled.js";
+
+/* Форматирование текста */
+export { FormatBoldIcon } from "./format-bold.js";
+export { FormatItalicIcon } from "./format-italic.js";
+export { FormatUnderlineIcon } from "./format-underline.js";
+export { FormatStrikethroughIcon } from "./format-strikethrough.js";
+export { FormatH1Icon } from "./format-h1.js";
+export { FormatH2Icon } from "./format-h2.js";
+export { FormatH3Icon } from "./format-h3.js";
+export { FormatParagraphIcon } from "./format-paragraph.js";
+export { FormatListBulletedIcon } from "./format-list-bulleted.js";
+export { FormatListNumberedIcon } from "./format-list-numbered.js";
+export { FormatIndentIncreaseIcon } from "./format-indent-increase.js";
+export { FormatIndentDecreaseIcon } from "./format-indent-decrease.js";
+export { FormatQuoteIcon } from "./format-quote.js";
+export { CodeIcon } from "./code.js";
+export { LinkIcon } from "./link.js";
+export { LinkOffIcon } from "./link-off.js";
+export { FormatAlignLeftIcon } from "./format-align-left.js";
+export { FormatAlignCenterIcon } from "./format-align-center.js";
+export { FormatAlignRightIcon } from "./format-align-right.js";
+export { UndoIcon } from "./undo.js";
+export { RedoIcon } from "./redo.js";
+export { FormatClearIcon } from "./format-clear.js";

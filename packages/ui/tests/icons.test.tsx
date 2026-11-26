@@ -9,7 +9,33 @@ import * as icons from "../src/icons/index.js";
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 const iconsDirectory = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "icons");
 
+const FORMATTING_GLYPHS = {
+  CodeIcon: icons.CodeIcon,
+  FormatAlignCenterIcon: icons.FormatAlignCenterIcon,
+  FormatAlignLeftIcon: icons.FormatAlignLeftIcon,
+  FormatAlignRightIcon: icons.FormatAlignRightIcon,
+  FormatBoldIcon: icons.FormatBoldIcon,
+  FormatClearIcon: icons.FormatClearIcon,
+  FormatH1Icon: icons.FormatH1Icon,
+  FormatH2Icon: icons.FormatH2Icon,
+  FormatH3Icon: icons.FormatH3Icon,
+  FormatIndentDecreaseIcon: icons.FormatIndentDecreaseIcon,
+  FormatIndentIncreaseIcon: icons.FormatIndentIncreaseIcon,
+  FormatItalicIcon: icons.FormatItalicIcon,
+  FormatListBulletedIcon: icons.FormatListBulletedIcon,
+  FormatListNumberedIcon: icons.FormatListNumberedIcon,
+  FormatParagraphIcon: icons.FormatParagraphIcon,
+  FormatQuoteIcon: icons.FormatQuoteIcon,
+  FormatStrikethroughIcon: icons.FormatStrikethroughIcon,
+  FormatUnderlineIcon: icons.FormatUnderlineIcon,
+  LinkIcon: icons.LinkIcon,
+  LinkOffIcon: icons.LinkOffIcon,
+  RedoIcon: icons.RedoIcon,
+  UndoIcon: icons.UndoIcon,
+} as const;
+
 const GLYPHS = {
+  ...FORMATTING_GLYPHS,
   AddIcon: icons.AddIcon,
   ArrowBackIcon: icons.ArrowBackIcon,
   ArrowForwardIcon: icons.ArrowForwardIcon,
@@ -106,6 +132,21 @@ describe("иконки Material Symbols", () => {
       }
       const markup = svg.outerHTML;
       expect(markup).not.toMatch(/<script|javascript:|data:text\/html/iu);
+    });
+  }
+
+  for (const [name, Glyph] of Object.entries(FORMATTING_GLYPHS)) {
+    it(`${name}: декоративна без label и именована с label`, () => {
+      const decorative = mount(Glyph);
+      expect(decorative.getAttribute("fill")).toBe("currentColor");
+      expect(decorative.getAttribute("aria-hidden")).toBe("true");
+      expect(decorative.getAttribute("role")).toBeNull();
+
+      const labelled = mount(Glyph, { title: "Форматирование" });
+      expect(labelled.getAttribute("role")).toBe("img");
+      expect(labelled.getAttribute("aria-label")).toBe("Форматирование");
+      expect(labelled.hasAttribute("aria-hidden")).toBe(false);
+      expect(labelled.querySelector("title")?.textContent).toBe("Форматирование");
     });
   }
 

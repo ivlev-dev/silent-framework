@@ -136,6 +136,15 @@ function toolbarButton(root: Element, command: string): HTMLButtonElement {
   return button;
 }
 
+function mockToolbarWidth(toolbar: HTMLElement, width: number): void {
+  Object.defineProperty(toolbar, "clientWidth", {
+    configurable: true,
+    value: width,
+  });
+  window.dispatchEvent(new Event("resize"));
+  flushSync();
+}
+
 describe("RichTextEditor: разметка и доступность", () => {
   it("рендерит textbox, toolbar и связи label/hint", () => {
     const field = fakeField("<p>Hello</p>", {
@@ -184,6 +193,95 @@ describe("RichTextEditor: разметка и доступность", () => {
     expect(toolbar?.querySelectorAll("button")).toHaveLength(2);
     expect(toolbar?.querySelectorAll('[role="separator"]')).toHaveLength(1);
     expect(toolbarButton(toolbar as Element, "bold")).toBeTruthy();
+  });
+
+  it("кнопки тулбара содержат иконки, а не текстовые глифы", () => {
+    const { root, toolbar } = parts(mount({ value: "<p>x</p>" }));
+    const buttons = Array.from(
+      toolbar?.querySelectorAll<HTMLButtonElement>(".sui-rte__button") ?? [],
+    );
+    expect(buttons.length).toBeGreaterThan(0);
+    for (const button of buttons) {
+      expect(button.querySelector("svg")).not.toBeNull();
+      expect(button.textContent?.trim()).toBe("");
+    }
+    const bold = toolbarButton(root, "bold");
+    expect(bold.getAttribute("aria-label")).toBe("Полужирный");
+    expect(bold.getAttribute("title")).toBe("Полужирный");
+    expect(bold.querySelector("svg")).not.toBeNull();
+  });
+
+  it("узкий тулбар уводит команды в меню «Ещё» и применяет их", () => {
+    const { root, content, toolbar } = parts(mount({ value: "<p>Hello</p>" }));
+    selectText(content, "Hello");
+    expect(toolbar).not.toBeNull();
+    mockToolbarWidth(toolbar as HTMLElement, 80);
+
+    expect(
+      toolbar?.querySelectorAll(".sui-rte__toolbar .sui-rte__button[data-command]"),
+    ).toHaveLength(1);
+    const more = toolbar?.querySelector<HTMLButtonElement>(
+      'button[aria-haspopup="menu"]',
+    );
+    expect(more).not.toBeNull();
+    expect(more?.getAttribute("aria-label")).toBe("Ещё");
+    expect(more?.getAttribute("aria-expanded")).toBe("false");
+    expect(more?.querySelector("svg")).not.toBeNull();
+    expect(more?.textContent?.trim()).toBe("");
+
+    click(more!);
+    const panel = toolbar?.querySelector<HTMLElement>('[role="menu"]');
+    expect(panel).not.toBeNull();
+    expect(panel?.hidden).toBe(false);
+    expect(panel?.getAttribute("role")).toBe("menu");
+    expect(panel?.getAttribute("aria-label")).toBe("Дополнительные команды");
+    expect(more?.getAttribute("aria-expanded")).toBe("true");
+    expect(more?.getAttribute("aria-controls")).toBe(panel?.id);
+
+    const italic = panel?.querySelector<HTMLButtonElement>(
+      '[role="menuitemcheckbox"][data-command="italic"]',
+    );
+    expect(italic).not.toBeNull();
+    expect(italic?.getAttribute("aria-checked")).toBe("false");
+    expect(panel?.querySelector('[role="menuitem"][data-command="undo"]')).not.toBeNull();
+    expect(italic?.textContent).toContain("Курсив");
+
+    const mouseDown = new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+    });
+    italic?.dispatchEvent(mouseDown);
+    expect(mouseDown.defaultPrevented).toBe(true);
+
+    click(italic!);
+    expect(content.innerHTML).toBe("<p><em>Hello</em></p>");
+    expect(panel?.hidden).toBe(true);
+    expect(more?.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("меню «Ещё» закрывается Escape и кликом вне", () => {
+    const { toolbar } = parts(mount({ value: "<p>x</p>" }));
+    mockToolbarWidth(toolbar as HTMLElement, 80);
+    const more = toolbar?.querySelector<HTMLButtonElement>(
+      'button[aria-haspopup="menu"]',
+    );
+    const panel = toolbar?.querySelector<HTMLElement>('[role="menu"]');
+    click(more!);
+    expect(panel?.hidden).toBe(false);
+
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    );
+    flushSync();
+    expect(panel?.hidden).toBe(true);
+
+    click(more!);
+    expect(panel?.hidden).toBe(false);
+    document.body.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true }),
+    );
+    flushSync();
+    expect(panel?.hidden).toBe(true);
   });
 
   it("readOnly: редактирование запрещено, но значение остаётся и отправляется", () => {

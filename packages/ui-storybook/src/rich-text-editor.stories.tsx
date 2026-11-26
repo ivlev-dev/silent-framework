@@ -42,9 +42,11 @@ const meta = {
           "uncontrolled, `toolbar` принимает `false` или массив команд с",
           "разделителями `|`. SSR отдаёт пустую контентную область, а скрытый",
           "input уже санитизирован серверным DOM-независимым парсером; поэтому",
-          "гидрация проходит без mismatch. Вход, результат, paste и drop",
-          "проходят allowlist-санитайзер и нормализацию блоков, а блочные",
-          "команды консервативно сохраняют списки и цитаты.",
+          "гидрация проходит без mismatch. Тулбар на иконках автоматически",
+          "ужимается: не поместившиеся команды уходят в меню «Ещё».",
+          "Вход, результат, paste и drop проходят allowlist-санитайзер и",
+          "нормализацию блоков, а блочные команды консервативно сохраняют",
+          "списки и цитаты.",
         ].join(" "),
       },
       canvas: { sourceState: "shown" },
@@ -82,7 +84,8 @@ const meta = {
     },
     toolbar: {
       control: "boolean",
-      description: "Панель команд; `false` скрывает её",
+      description:
+        "Панель команд; `false` скрывает её. На узкой ширине лишние кнопки уходят в меню «Ещё»",
       table: { defaultValue: { summary: "true" } },
     },
     minHeight: {
@@ -222,5 +225,63 @@ export const Empty: Story = {
       onValueChange={args.onValueChange}
       onChange={args.onChange}
     />
+  )),
+};
+
+export const Narrow: Story = {
+  parameters: {
+    controls: { disable: true },
+    docs: {
+      description: {
+        story:
+          "Контейнер 360px: часть команд автоматически уходит в overflow-меню «Ещё».",
+      },
+    },
+  },
+  args: {
+    label: "Узкая колонка",
+    hint: "Тулбар адаптируется к доступной ширине",
+    defaultValue: INITIAL_HTML,
+  },
+  render: silentStory<RichTextEditorArgs>((args) => (
+    <div style="inline-size: 360px; max-inline-size: 100%;">
+      <RichTextEditor
+        defaultValue={args.defaultValue}
+        label={args.label}
+        hint={args.hint}
+        minHeight={args.minHeight}
+        onChange={args.onChange}
+        onValueChange={args.onValueChange}
+      />
+    </div>
+  )),
+};
+
+export const OverflowMenu: Story = {
+  parameters: {
+    controls: { disable: true },
+    docs: {
+      description: {
+        story:
+          "Ширина 280px: почти все команды в меню «Ещё»; меню доступно с клавиатуры и не теряет выделение.",
+      },
+    },
+  },
+  args: {
+    label: "Компактный тулбар",
+    hint: "Нажмите «Ещё», чтобы открыть дополнительные команды",
+    defaultValue: INITIAL_HTML,
+  },
+  render: silentStory<RichTextEditorArgs>((args) => (
+    <div style="inline-size: 280px; max-inline-size: 100%;">
+      <RichTextEditor
+        defaultValue={args.defaultValue}
+        label={args.label}
+        hint={args.hint}
+        minHeight={args.minHeight}
+        onChange={args.onChange}
+        onValueChange={args.onValueChange}
+      />
+    </div>
   )),
 };
