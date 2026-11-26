@@ -66,9 +66,6 @@ function selectedKeysOf(value: unknown, multiple: boolean): string[] {
   return keys.length === 0 ? [] : [keys[0]!];
 }
 
-/** С этого количества строк дерево переключается на оконный рендер. */
-const TREE_VIRTUAL_THRESHOLD = 30;
-
 const FALLBACK_ROOT_FONT_SIZE = 16;
 
 /** Оценка высоты строки по плотности контрола (совпадает с CSS). */
@@ -331,12 +328,10 @@ export function TreeSelect(props: TreeSelectProps): Node {
   });
 
   // --- виртуализация ----------------------------------------------------
-  // До порога дерево рендерится целиком (прежнее поведение). Начиная с
-  // `TREE_VIRTUAL_THRESHOLD` строк работает окно: spacer держит полную высоту,
-  // строки позиционируются абсолютно, прокрутка живёт на `role="tree"`.
-  const virtualized = (): boolean => rows().length >= TREE_VIRTUAL_THRESHOLD;
+  // Окно включается всегда, когда есть видимые строки: spacer держит полную
+  // высоту, строки позиционируются абсолютно, прокрутка живёт на `role="tree"`.
+  const virtualized = (): boolean => rows().length > 0;
   const activeIndex = (): number => activeRow()?.index ?? -1;
-
   const virtualizer = createVirtualizer({
     count: () => rows().length,
     estimateSize: () => optionBlock(),
@@ -381,18 +376,28 @@ export function TreeSelect(props: TreeSelectProps): Node {
   });
 
   // Строки окна: непрерывный диапазон виртуализатора плюс активная строка,
-  // если окно её не содержит. Ядро отдаёт пустой диапазон при нулевом
-  // вьюпорте, поэтому закреплённая строка — единственный способ гарантировать
-  // живой `aria-activedescendant` в этой ситуации.
+  // если окно её не содержит. Когда вьюпорт ещё не измерен (нет layout —
+  // jsdom или скрытая панель), ядро отдаёт пустой диапазон: тогда отдаём всё
+  // дерево, иначе строки и `aria-activedescendant` остались бы без целей.
   const windowRows = (): readonly TreeWindowRow[] => {
-    if (!virtualized()) return [];
     const list = rows();
+    if (list.length === 0) return [];
     const result: TreeWindowRow[] = [];
     for (const item of virtualizer.virtualItems()) {
       const row = list[item.index];
       if (row !== undefined) {
         result.push({ row, start: item.start, pinned: false });
       }
+    }
+    if (result.length === 0) {
+      for (const row of list) {
+        result.push({
+          row,
+          start: virtualizer.getOffsetForIndex(row.index, "start"),
+          pinned: false,
+        });
+      }
+      return result;
     }
     const index = activeIndex();
     if (index >= 0 && !result.some((entry) => entry.row.index === index)) {
@@ -426,21 +431,6 @@ export function TreeSelect(props: TreeSelectProps): Node {
       virtualizer.measureElement(node);
     });
   };
-
-  clientEffect(() => {
-    // При оконном рендере прокруткой управляет виртуализатор.
-    if (virtualized()) return;
-    const row = activeRow();
-    if (!visible() || row === null) return;
-    const panel = panelElement();
-    if (panel === null) return;
-    const element = panel.querySelector<HTMLElement>(
-      `[data-option-index="${row.index}"]`,
-    );
-    if (element !== null && typeof element.scrollIntoView === "function") {
-      element.scrollIntoView({ block: "nearest" });
-    }
-  });
 
   clientEffect(() => {
     if (!pendingSearchFocus() || !visible()) return;
@@ -1119,28 +1109,16 @@ export function TreeSelect(props: TreeSelectProps): Node {
                   </Show>
                 }
               >
-                <Show
-                  when={virtualized()}
-                  fallback={
-                    <For each={rows()} keyOf={(row) => row.key}>
-                      {(row) => renderRow(row)}
-                    </For>
-                  }
-                >
-                  <div class="sui-popup__virtual-spacer" style={spacerStyle()}>
-                    <For
-                      each={windowRows()}
-                      keyOf={(entry) => entry.row.key}
-                    >
-                      {(entry) =>
-                        renderRow(entry.row, {
-                          start: entry.start,
-                          pinned: entry.pinned,
-                        })
-                      }
-                    </For>
-                  </div>
-                </Show>
+                <div class="sui-popup__virtual-spacer" style={spacerStyle()}>
+                  <For each={windowRows()} keyOf={(entry) => entry.row.key}>
+                    {(entry) =>
+                      renderRow(entry.row, {
+                        start: entry.start,
+                        pinned: entry.pinned,
+                      })
+                    }
+                  </For>
+                </div>
               </Show>
             </div>
           </div>

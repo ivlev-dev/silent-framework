@@ -117,15 +117,16 @@ function rowIndices(root: Element): number[] {
   ).map((node) => Number(node.getAttribute("data-index")));
 }
 
-function spacerHeights(root: Element): readonly [number, number] {
-  const rows = Array.from(
-    root.querySelectorAll<HTMLElement>("tr.sui-table__spacer-row"),
+function spacerHeight(root: Element, edge: "top" | "bottom"): number {
+  const row = root.querySelector<HTMLElement>(
+    `tr.sui-table__spacer-row[data-edge="${edge}"]`,
   );
-  const heightOf = (row: HTMLElement | undefined): number => {
-    const cell = row?.querySelector<HTMLElement>("td");
-    return Number.parseFloat(cell?.style.height ?? "0");
-  };
-  return [heightOf(rows[0]), heightOf(rows[1])];
+  const cell = row?.querySelector<HTMLElement>("td");
+  return Number.parseFloat(cell?.style.height ?? "0");
+}
+
+function spacerHeights(root: Element): readonly [number, number] {
+  return [spacerHeight(root, "top"), spacerHeight(root, "bottom")];
 }
 
 function virtualProps(
@@ -135,7 +136,6 @@ function virtualProps(
     columns,
     rows: ROWS_1000,
     rowKey,
-    virtual: true,
     caption: "Люди",
     ...overrides,
   };
@@ -184,7 +184,9 @@ describe("Table: виртуализация", () => {
     const spacers = Array.from(
       root.querySelectorAll<HTMLElement>("tr.sui-table__spacer-row"),
     );
-    expect(spacers).toHaveLength(2);
+    // Сверху spacer нулевой и не рендерится; снизу — весь остаток таблицы.
+    expect(spacers.length).toBeGreaterThan(0);
+    expect(root.querySelector('tr.sui-table__spacer-row[data-edge="top"]')).toBeNull();
     for (const spacer of spacers) {
       expect(spacer.getAttribute("aria-hidden")).toBe("true");
       expect(spacer.querySelector("td")?.getAttribute("colspan")).toBe("2");
@@ -213,6 +215,8 @@ describe("Table: виртуализация", () => {
     expect(indices[0]).toBeLessThanOrEqual(500);
     expect(indices[indices.length - 1]).toBeGreaterThan(500);
 
+    // В середине списка нужны оба spacer'а.
+    expect(root.querySelectorAll("tr.sui-table__spacer-row")).toHaveLength(2);
     const [top, bottom] = spacerHeights(root);
     expect(top).toBeCloseTo((indices[0] ?? 0) * 49, 5);
     expect(bottom).toBeCloseTo(
@@ -226,7 +230,7 @@ describe("Table: виртуализация", () => {
     );
   });
 
-  it("virtual={false} и малые списки рендерятся полностью", () => {
+  it("virtual={false} рендерит все строки, малая таблица — окно", () => {
     const full = mount(virtualProps({ virtual: false }));
     expect(full.root.querySelectorAll("tbody tr")).toHaveLength(1000);
     expect(full.root.hasAttribute("data-virtual")).toBe(false);
@@ -238,31 +242,43 @@ describe("Table: виртуализация", () => {
       full.root.querySelector("thead tr")?.hasAttribute("aria-rowindex"),
     ).toBe(false);
 
-    const small = mount({
-      ...virtualProps(),
-      virtual: undefined,
-      rows: ROWS_1000.slice(0, 10),
-    });
-    expect(small.root.querySelectorAll("tbody tr")).toHaveLength(10);
-    expect(small.root.hasAttribute("data-virtual")).toBe(false);
+    // Три строки: окно включено по умолчанию, spacer-строки нулевые и не
+    // добавляются, поэтому в DOM ровно три `<tr>`.
+    const small = mount(virtualProps({ rows: ROWS_1000.slice(0, 3) }));
+    expect(small.root.hasAttribute("data-virtual")).toBe(true);
+    expect(small.root.querySelectorAll("tbody tr")).toHaveLength(3);
+    expect(rowIndices(small.root)).toEqual([0, 1, 2]);
     expect(small.root.querySelectorAll(".sui-table__spacer-row")).toHaveLength(0);
+    expect(spacerHeights(small.root)).toEqual([0, 0]);
+    expect(small.root.querySelector("table")?.getAttribute("aria-rowcount")).toBe(
+      "4",
+    );
 
-    // Порог по умолчанию — 50 строк.
-    const below = mount({
-      ...virtualProps(),
-      virtual: undefined,
-      rows: ROWS_1000.slice(0, 49),
-    });
-    expect(below.root.querySelectorAll("tbody tr")).toHaveLength(49);
-    expect(below.root.hasAttribute("data-virtual")).toBe(false);
+    const smallRows = Array.from(
+      small.root.querySelectorAll<HTMLElement>("tbody tr[data-index]"),
+    );
+    expect(smallRows.map((row) => row.getAttribute("aria-rowindex"))).toEqual([
+      "2",
+      "3",
+      "4",
+    ]);
+  });
 
-    const atThreshold = mount({
-      ...virtualProps(),
-      virtual: undefined,
-      rows: ROWS_1000.slice(0, 50),
-    });
-    expect(atThreshold.root.hasAttribute("data-virtual")).toBe(true);
-    expect(rowIndices(atThreshold.root).length).toBeLessThan(50);
+  it("пустая таблица показывает empty state без spacer-строк", () => {
+    const { root } = mount(virtualProps({ rows: [] }));
+
+    expect(root.hasAttribute("data-virtual")).toBe(false);
+    expect(root.querySelectorAll("tbody tr")).toHaveLength(1);
+    expect(root.querySelector(".sui-empty-state")?.textContent).toContain(
+      "Нет данных",
+    );
+    expect(
+      root.querySelector(".sui-table__empty-cell")?.getAttribute("colspan"),
+    ).toBe("2");
+    expect(root.querySelectorAll(".sui-table__spacer-row")).toHaveLength(0);
+    expect(root.querySelector("table")?.hasAttribute("aria-rowcount")).toBe(
+      false,
+    );
   });
 
   it("rowHeight и dense задают оценку высоты", () => {

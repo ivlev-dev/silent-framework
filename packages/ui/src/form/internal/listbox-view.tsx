@@ -9,9 +9,6 @@ import type {
 } from "./listbox-engine.js";
 import { listboxOptionId } from "./listbox-engine.js";
 
-/** С этого количества строк список переключается на оконный рендер. */
-export const LISTBOX_VIRTUAL_THRESHOLD = 30;
-
 /** Сколько строк видно в панели по умолчанию (совпадает с CSS). */
 export const LISTBOX_DEFAULT_MAX_VISIBLE = 8;
 
@@ -116,82 +113,6 @@ function optionStyle(start: number): StyleInput {
   };
 }
 
-/** Полный список для небольших наборов: прежнее поведение без окна. */
-function SmallListboxRows(props: ListboxRowsProps): Node {
-  return (
-    <For each={props.options} keyOf={(entry) => entry.key}>
-      {(entry, index) => {
-        const start = (): FlatListboxOption | null =>
-          groupStart(props.options(), index());
-        return (
-          <>
-            <Show when={start()}>
-              <div
-                class="sui-popup__group-label"
-                id={groupLabelId(props.baseId, start()!)}
-                role="presentation"
-              >
-                {start()?.group?.label}
-              </div>
-            </Show>
-            <div
-              id={listboxOptionId(props.baseId, entry.index)}
-              class="sui-popup__option"
-              role="option"
-              aria-selected={props.selected(entry.key) ? "true" : "false"}
-              aria-disabled={entry.option.disabled === true ? "true" : undefined}
-              aria-setsize={props.options().length}
-              aria-posinset={entry.index + 1}
-              data-active={props.activeKey() === entry.key ? "" : undefined}
-              data-value={entry.key}
-              data-option-index={entry.index}
-              onPointerMove={() => {
-                props.onActivate?.(entry.option);
-              }}
-              onClick={(event) => {
-                props.onPick(entry.option, event);
-              }}
-            >
-              <span class="sui-popup__option-leading" aria-hidden="true">
-                {entry.option.leading}
-              </span>
-              <span class="sui-popup__option-text">
-                <Show
-                  when={props.renderOption !== undefined}
-                  fallback={
-                    <>
-                      <span class="sui-popup__option-label">
-                        {entry.option.label}
-                      </span>
-                      <Show when={entry.option.description}>
-                        <span class="sui-popup__option-description">
-                          {entry.option.description}
-                        </span>
-                      </Show>
-                    </>
-                  }
-                >
-                  <span class="sui-popup__option-label">
-                    {props.renderOption?.(entry.option)}
-                  </span>
-                </Show>
-              </span>
-              <span class="sui-popup__option-trailing">
-                {entry.option.trailing}
-              </span>
-              <span class="sui-popup__check" aria-hidden="true">
-                <Show when={props.selected(entry.key)}>
-                  <CheckIcon size="sm" />
-                </Show>
-              </span>
-            </div>
-          </>
-        );
-      }}
-    </For>
-  );
-}
-
 interface VirtualRow {
   readonly entry: FlatListboxOption;
   readonly start: number;
@@ -269,8 +190,11 @@ function VirtualListboxRows(props: ListboxRowsProps): Node {
     }
     const list = node.closest('[role="listbox"]');
     setScrollHost(list);
-    virtualizer.setScrollElement(list);
     if (list === null) return;
+    // В окружении без layout (SSR-гидратация, скрытая панель, jsdom)
+    // clientHeight равен нулю. Не активируем окно с нулевым вьюпортом:
+    // остаётся детерминированный начальный срез по CSS-оценке.
+    virtualizer.setScrollElement(list.clientHeight > 0 ? list : null);
     const nextBlock = readOptionBlock(list);
     const nextVisible = props.maxVisible ?? readMaxVisible(
       list,
@@ -431,21 +355,7 @@ function VirtualListboxRows(props: ListboxRowsProps): Node {
 
 export function ListboxRows(props: ListboxRowsProps): Node {
   return (
-    <Show
-      when={props.options().length >= LISTBOX_VIRTUAL_THRESHOLD}
-      fallback={
-        <SmallListboxRows
-          options={props.options}
-          baseId={props.baseId}
-          activeKey={props.activeKey}
-          selected={props.selected}
-          renderOption={props.renderOption}
-          onPick={props.onPick}
-          onActivate={props.onActivate}
-          maxVisible={props.maxVisible}
-        />
-      }
-    >
+    <Show when={props.options().length > 0}>
       <VirtualListboxRows
         options={props.options}
         baseId={props.baseId}

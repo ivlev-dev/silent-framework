@@ -113,6 +113,12 @@ const smallNodes: readonly TreeSelectNode[] = Array.from(
   (_, index) => ({ value: `s${index}`, label: `Строка ${index}` }),
 );
 
+// Малое дерево: 6 строк по 40px полностью помещаются в тестовый вьюпорт 320px.
+const tinyNodes: readonly TreeSelectNode[] = Array.from(
+  { length: 6 },
+  (_, index) => ({ value: `t${index}`, label: `Малое ${index}` }),
+);
+
 function treeRows(root: Element): HTMLElement[] {
   return Array.from(
     root.querySelectorAll<HTMLElement>(".sui-tree-select__row"),
@@ -262,14 +268,67 @@ describe("TreeSelect: виртуализация больших деревьев
     expect(windowRows(root).length).toBeGreaterThan(0);
   });
 
-  it("малый список (< 30) рендерится полностью, без окна", () => {
-    const { root } = openTree(smallNodes);
-    expect(treeRows(root)).toHaveLength(29);
-    expect(root.querySelector(".sui-popup__virtual-spacer")).toBeNull();
-    expect(root.querySelector('[role="treeitem"][data-index]')).toBeNull();
+  it("малое дерево тоже виртуализируется, все строки в DOM", () => {
+    const { root } = openTree(tinyNodes);
+    expect(treeRows(root)).toHaveLength(tinyNodes.length);
+    const rows = virtualRows(root);
+    expect(rows).toHaveLength(tinyNodes.length);
+    expect(rows.map((row) => Number(row.getAttribute("data-index")))).toEqual(
+      tinyNodes.map((_, index) => index),
+    );
+    const spacer = query<HTMLElement>(root, ".sui-popup__virtual-spacer");
+    expect(spacer.style.height).toBe(`${tinyNodes.length * 40}px`);
     expect(controlOf(root).getAttribute("aria-activedescendant")).toBe(
       "tree-option-0",
     );
+  });
+
+  it("29 строк рендерятся окном, а не целиком", () => {
+    const { root } = openTree(smallNodes);
+    expect(query<HTMLElement>(root, ".sui-popup__virtual-spacer")).not.toBeNull();
+    expect(windowRows(root).length).toBeGreaterThan(0);
+    expect(windowRows(root).length).toBeLessThan(smallNodes.length);
+  });
+
+  it("одна строка: окно из одной строки", () => {
+    const { root } = openTree([{ value: "only", label: "Единственный" }]);
+    const rows = virtualRows(root);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.getAttribute("data-index")).toBe("0");
+    expect(rows[0]?.getAttribute("role")).toBe("treeitem");
+    expect(
+      query<HTMLElement>(root, ".sui-popup__virtual-spacer").style.height,
+    ).toBe("40px");
+    expect(controlOf(root).getAttribute("aria-activedescendant")).toBe(
+      "tree-option-0",
+    );
+  });
+
+  it("пустое дерево: spacer не рендерится, показывается заглушка", () => {
+    const { root } = openTree([]);
+    expect(treeRows(root)).toHaveLength(0);
+    expect(root.querySelector(".sui-popup__virtual-spacer")).toBeNull();
+    expect(root.querySelector(".sui-popup__empty")?.textContent).toBe(
+      "Нет данных",
+    );
+    expect(controlOf(root).getAttribute("aria-activedescendant")).toBeNull();
+  });
+
+  it("нулевой вьюпорт не теряет строки и aria-activedescendant", () => {
+    const { root, list } = openTree(tinyNodes);
+    // Нет layout (jsdom/скрытая панель): диапазон ядра пуст.
+    Object.defineProperty(list, "clientHeight", {
+      configurable: true,
+      value: 0,
+    });
+    list.dispatchEvent(new Event("scroll"));
+    flush();
+
+    expect(treeRows(root)).toHaveLength(tinyNodes.length);
+    expect(controlOf(root).getAttribute("aria-activedescendant")).toBe(
+      "tree-option-0",
+    );
+    expect(list.querySelector("#tree-option-0")).not.toBeNull();
   });
 });
 

@@ -5,8 +5,6 @@ import type { Attrs } from "../../internal/props.js";
 
 export type ListItemRole = "option" | "button" | "link";
 
-/** Порог, после которого `items`-режим включает виртуализацию. */
-const DEFAULT_VIRTUAL_THRESHOLD = 50;
 /** Оценка высоты строки по умолчанию (обычный/плотный режим). */
 const DEFAULT_ITEM_HEIGHT = 41;
 const DENSE_ITEM_HEIGHT = 33;
@@ -41,10 +39,10 @@ export interface ListProps<T = unknown> {
   /** Стабильный ключ элемента для `items`-режима. По умолчанию — индекс. */
   readonly keyOf?: ((item: T, index: number) => string | number) | undefined;
   /**
-   * Виртуализация: `false` — выключена, `true`/`undefined` — порог 50,
-   * число — собственный порог по количеству `items`.
+   * Виртуализация `items`-режима: включена по умолчанию, `false` — opt-out
+   * и полный рендер коллекции.
    */
-  readonly virtual?: boolean | number | undefined;
+  readonly virtual?: boolean | undefined;
   /** Оценка высоты строки, px. По умолчанию 41 (33 при `dense`). */
   readonly itemHeight?: number | undefined;
   /** Максимальная высота прокручиваемого `ul` в виртуальном режиме. */
@@ -160,12 +158,7 @@ function ListItems<T>(props: ListItemsProps<T>): Node {
     props.itemHeight ?? (dense ? DENSE_ITEM_HEIGHT : DEFAULT_ITEM_HEIGHT),
     dense ? DENSE_ITEM_HEIGHT : DEFAULT_ITEM_HEIGHT,
   );
-  const threshold =
-    typeof props.virtual === "number"
-      ? Math.max(0, props.virtual)
-      : DEFAULT_VIRTUAL_THRESHOLD;
-  const virtualEnabled =
-    props.virtual !== false && count > 0 && count >= threshold;
+  const virtualEnabled = props.virtual !== false && count > 0;
   const maxHeight = normalizeSize(
     props.maxHeight ?? DEFAULT_VIEWPORT,
     DEFAULT_VIEWPORT,

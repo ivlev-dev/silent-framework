@@ -208,14 +208,46 @@ describe("Listbox: виртуализация больших наборов", ()
     expect(atEnd[0]?.id).toBe("groups-group-3");
   });
 
-  it("малый список рендерится полностью, без окна", () => {
-    const options = Array.from({ length: 29 }, (_, index) => ({
+  it("малый список тоже виртуализируется, все строки в DOM", () => {
+    const options = Array.from({ length: 5 }, (_, index) => ({
       value: `s${index}`,
       label: `Строка ${index}`,
     }));
     const root = rootOf(mount(handles, Listbox, { id: "small", options }));
-    expect(optionRows(root)).toHaveLength(29);
+    const rows = virtualRows(root);
+    expect(rows).toHaveLength(5);
+    expect(rows.map((row) => row.getAttribute("data-index"))).toEqual([
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+    ]);
+    expect(query<HTMLElement>(root, ".sui-popup__virtual-spacer").style.height)
+      .toBe("200px");
+  });
+
+  it("одна опция проходит через окно", () => {
+    const root = rootOf(
+      mount(handles, Listbox, {
+        id: "one",
+        options: [{ value: "only", label: "Единственная" }],
+      }),
+    );
+    expect(virtualRows(root)).toHaveLength(1);
+    expect(query<HTMLElement>(root, ".sui-popup__virtual-spacer").style.height)
+      .toBe("40px");
+    expect(query<HTMLElement>(root, "#one-option-0").textContent)
+      .toContain("Единственная");
+  });
+
+  it("пустой список показывает empty state без окна", () => {
+    const root = rootOf(
+      mount(handles, Listbox, { id: "empty", options: [], empty: "Пусто" }),
+    );
+    expect(virtualRows(root)).toHaveLength(0);
     expect(root.querySelector(".sui-popup__virtual-spacer")).toBeNull();
+    expect(root.querySelector(".sui-popup__empty")?.textContent).toBe("Пусто");
   });
 });
 

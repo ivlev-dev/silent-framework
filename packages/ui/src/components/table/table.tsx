@@ -1,6 +1,13 @@
 import type { Children, ClassNameValue, StyleInput } from "@ivlev-dev/silent-core";
-import { For, Show, createMemo } from "@ivlev-dev/silent-core";
+import {
+  For,
+  Show,
+  createMemo,
+  createSignal,
+  onCleanup,
+} from "@ivlev-dev/silent-core";
 import { createVirtualizer } from "@ivlev-dev/silent-virtual";
+import { clientEffect } from "../../internal/overlay.js";
 import type { Attrs } from "../../internal/props.js";
 import { resolveSlot } from "../../internal/slot.js";
 import { ExpandMoreIcon } from "../../icons/expand-more.js";
@@ -40,11 +47,10 @@ export interface TableProps<Row> {
     | ((key: string, direction: TableSortDirection) => void)
     | undefined;
   /**
-   * Оконный рендер строк. `false` — выключено, `true` — окно для любой
-   * непустой таблицы, число — порог по количеству строк. По умолчанию
-   * виртуализация включается начиная с 50 строк.
+   * Оконный рендер строк. Включён по умолчанию для любой непустой таблицы;
+   * `false` — единственный способ отключить окно и отрендерить все строки.
    */
-  readonly virtual?: boolean | number | undefined;
+  readonly virtual?: boolean | undefined;
   /** Оценка высоты строки в пикселях; по умолчанию 49, для `dense` — 41. */
   readonly rowHeight?: number | undefined;
   /** Максимальная высота скролл-контейнера при виртуализации; по умолчанию 480. */
@@ -65,7 +71,6 @@ export interface TableProps<Row> {
   readonly ref?: ((node: Element | null) => void) | undefined;
 }
 
-const DEFAULT_VIRTUAL_THRESHOLD = 50;
 const DEFAULT_ROW_HEIGHT = 49;
 const DENSE_ROW_HEIGHT = 41;
 const DEFAULT_MAX_HEIGHT = 480;
@@ -90,18 +95,6 @@ function defaultCell<Row>(row: Row, key: string): Children {
   }
   if (typeof value === "boolean") return value;
   return String(value);
-}
-
-/** Порог строк, ниже которого окно не включается (`null` — выключено). */
-function virtualThreshold(
-  value: boolean | number | undefined,
-): number | null {
-  if (value === false) return null;
-  if (value === true) return 1;
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return Math.max(0, Math.floor(value));
-  }
-  return DEFAULT_VIRTUAL_THRESHOLD;
 }
 
 function positive(value: number | undefined, fallback: number): number {
@@ -150,6 +143,7 @@ function TableRowList<Row>(props: TableRowListProps<Row>): Node {
 interface VirtualSpacerEntry {
   readonly kind: "spacer";
   readonly key: string;
+  readonly edge: "top" | "bottom";
   readonly height: number;
 }
 
@@ -180,6 +174,7 @@ function VirtualTableRows<Row>(props: VirtualTableRowsProps<Row>): Node {
         entry.kind === "spacer" ? (
           <tr
             class="sui-table__spacer-row"
+            data-edge={entry.edge}
             aria-hidden="true"
             style={{ height: `${entry.height}px` }}
           >
@@ -237,9 +232,8 @@ export function Table<Row>(props: TableProps<Row>): Node {
   const hasCaption =
     props.caption !== undefined && props.caption !== null && props.caption !== "";
 
-  const threshold = virtualThreshold(props.virtual);
   const isVirtual = (): boolean =>
-    threshold !== null && props.rows.length > 0 && props.rows.length >= threshold;
+    props.virtual !== false && props.rows.length > 0;
 
   const rowHeight = positive(
     props.rowHeight,
@@ -262,6 +256,35 @@ export function Table<Row>(props: TableProps<Row>): Node {
     },
     overscan: VIRTUAL_OVERSCAN,
     initialViewportSize,
+  });
+
+  // Подключаем контроллер к `.sui-table-scroll` только после реального
+  // измерения контейнера: нулевой `clientHeight` (jsdom, скрытая вкладка)
+  // иначе схлопнул бы окно в пустой список. ResizeObserver дожидается
+  // появления размера, не меняя SSR-срез.
+  const [scrollElement, setScrollElement] = createSignal<Element | null>(null);
+  clientEffect(() => {
+    const node = scrollElement();
+    virtualizer.setScrollElement(null);
+    if (node === null) return;
+    let observer: ResizeObserver | null = null;
+    const attach = (): boolean => {
+      if (node.clientHeight <= 0) return false;
+      virtualizer.setScrollElement(node);
+      observer?.disconnect();
+      observer = null;
+      return true;
+    };
+    if (!attach() && typeof ResizeObserver === "function") {
+      observer = new ResizeObserver(() => {
+        attach();
+      });
+      observer.observe(node);
+    }
+    onCleanup(() => {
+      observer?.disconnect();
+      observer = null;
+    });
   });
 
   // Кэш сохраняет идентичность записей между прокрутками: `For` двигает
@@ -293,19 +316,30 @@ export function Table<Row>(props: TableProps<Row>): Node {
     }
     rowCache = nextCache;
 
-    return [
-      {
-        kind: "spacer" as const,
+    const topHeight = first === undefined ? 0 : Math.max(0, first.start);
+    const bottomHeight =
+      last === undefined ? 0 : Math.max(0, total - last.end);
+    const result: VirtualEntry<Row>[] = [];
+    // Нулевые spacer-строки не рендерим: в начале и в конце списка они не
+    // нужны, а разметка малой таблицы остаётся без лишних `<tr>`.
+    if (topHeight > 0) {
+      result.push({
+        kind: "spacer",
         key: SPACER_TOP_KEY,
-        height: first === undefined ? 0 : Math.max(0, first.start),
-      },
-      ...visible,
-      {
-        kind: "spacer" as const,
+        edge: "top",
+        height: topHeight,
+      });
+    }
+    result.push(...visible);
+    if (bottomHeight > 0) {
+      result.push({
+        kind: "spacer",
         key: SPACER_BOTTOM_KEY,
-        height: last === undefined ? 0 : Math.max(0, total - last.end),
-      },
-    ];
+        edge: "bottom",
+        height: bottomHeight,
+      });
+    }
+    return result;
   });
 
   const measureRow = (node: Element | null): void => {
@@ -328,7 +362,7 @@ export function Table<Row>(props: TableProps<Row>): Node {
           ? { "--sui-table-virtual-max-height": `${maxHeight}px` }
           : undefined
       }
-      ref={virtualizer.setScrollElement}
+      ref={setScrollElement}
     >
       <table
         {...props.attrs}

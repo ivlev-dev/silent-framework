@@ -213,22 +213,30 @@ describe("List items: виртуализация", () => {
     expect(root.hasAttribute("data-virtual")).toBe(false);
     expect(root.style.maxHeight).toBe("");
     expect(rowAt(root, 999)!.getAttribute("aria-posinset")).toBe("1000");
-  });
 
-  it("малый список и числовой порог: полный рендер или окно", () => {
-    const small = mount(baseProps(rows(5)));
-    expect(indices(small)).toHaveLength(5);
+    const small = mount(baseProps(rows(3), { virtual: false }));
+    expect(indices(small)).toHaveLength(3);
     expect(spacers(small)).toHaveLength(0);
     expect(small.hasAttribute("data-virtual")).toBe(false);
+  });
 
-    const custom = mount(baseProps(rows(30), { virtual: 20 }));
-    expect(custom.hasAttribute("data-virtual")).toBe(true);
-    expect(indices(custom)).toHaveLength(20);
-    expect(spacers(custom)).toHaveLength(2);
+  it("малый список из 3 элементов виртуализируется целиком", () => {
+    const root = mount(baseProps(rows(3)));
 
-    const above = mount(baseProps(rows(30), { virtual: 100 }));
-    expect(above.hasAttribute("data-virtual")).toBe(false);
-    expect(indices(above)).toHaveLength(30);
+    expect(root.hasAttribute("data-virtual")).toBe(true);
+    expect(indices(root)).toEqual([0, 1, 2]);
+    expect(spacers(root)).toHaveLength(2);
+    expect(spacers(root).map((node) => parseFloat(node.style.height))).toEqual([0, 0]);
+    expect(rowAt(root, 0)!.getAttribute("aria-setsize")).toBe("3");
+    expect(rowAt(root, 2)!.getAttribute("aria-posinset")).toBe("3");
+  });
+
+  it("пустой items-список: без spacer и без окна", () => {
+    const root = mount(baseProps([]));
+
+    expect(root.hasAttribute("data-virtual")).toBe(false);
+    expect(indices(root)).toHaveLength(0);
+    expect(spacers(root)).toHaveLength(0);
   });
 
   it("dense и itemHeight меняют оценку строки", () => {
