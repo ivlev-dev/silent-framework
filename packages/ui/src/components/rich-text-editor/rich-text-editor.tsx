@@ -24,6 +24,7 @@ import {
   plainTextToHtml,
   sanitizeHref,
   sanitizeHtml,
+  sanitizeHtmlStructure,
 } from "./internal/sanitize.js";
 import {
   applyAlignFormat,
@@ -44,17 +45,18 @@ import {
   type ListFormat,
 } from "./internal/format.js";
 import {
-  captureOffsets,
+  captureSelection,
   cloneEditorRange,
   closestWithin,
+  findBlock,
   focusEditor,
   getEditorRange,
   insertHtml,
   insertText,
   placeCaret,
   restoreRange,
+  restoreSelection,
   selectNodeContents,
-  setOffsets,
   stripZeroWidthSpaces,
 } from "./internal/selection.js";
 
@@ -194,6 +196,9 @@ const COMMAND_GLYPHS: Readonly<Record<RichTextCommand, string>> = {
 
 const LINK_ERROR_TEXT =
   "Укажите безопасную ссылку: http(s), mailto, tel или относительный адрес";
+
+const BLOCK_HTML_PATTERN =
+  /<\/?(?:p|div|section|article|header|footer|h[1-6]|ul|ol|li|blockquote|pre|hr|table)\b/iu;
 
 const INLINE_COMMANDS = new Set<RichTextCommand>([
   "bold",
@@ -341,7 +346,7 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
     return props.defaultValue ?? "";
   };
 
-  const [html, setHtml] = createSignal(initialValue());
+  const [html, setHtml] = createSignal(sanitizeHtml(initialValue()));
   const [contentNode, setContentNode] = createSignal<HTMLDivElement | null>(null);
   const [rootNode, setRootNode] = createSignal<HTMLDivElement | null>(null);
   const [selectionTick, setSelectionTick] = createSignal(0);
@@ -364,13 +369,10 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
 
   function readSnapshot(): HistorySnapshot {
     const content = contentNode();
-    if (content === null) return { html: "", start: 0, end: 0 };
-    const offsets = captureOffsets(content);
-    const output = sanitizeHtml(content.innerHTML);
+    if (content === null) return { html: "", selection: null };
     return {
-      html: output,
-      start: offsets?.start ?? 0,
-      end: offsets?.end ?? 0,
+      html: sanitizeHtmlStructure(content.innerHTML),
+      selection: captureSelection(content),
     };
   }
 
@@ -496,8 +498,8 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
     if (content === null) return;
     content.innerHTML = snapshot.html;
     setHtml(snapshot.html);
-    setOffsets(content, snapshot.start, snapshot.end);
     focusEditor(content);
+    restoreSelection(content, snapshot.selection);
     emitValue();
     setSelectionTick((value) => value + 1);
     setHistoryTick((value) => value + 1);
@@ -701,6 +703,82 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
     syncSelection();
   }
 
+  function adaptPastedHtml(
+    content: HTMLDivElement,
+    html: string,
+    preferBlocks: boolean,
+  ): string {
+    if (preferBlocks) return html;
+    const range = getEditorRange(content);
+    if (range === null) return html;
+    const block = findBlock(content, range.startContainer);
+    if (
+      block === content ||
+      !["p", "h1", "h2", "h3", "pre", "li", "blockquote"].includes(
+        block.localName,
+      )
+    ) {
+      return html;
+    }
+    // Один абзац из inline-буфера вставляем inline в текущий текстовый блок,
+    // чтобы не создавать вложенный p. Блочный источник не переупаковываем.
+    if (!html.startsWith("<p>") || !html.endsWith("</p>")) return html;
+    const inner = html.slice(3, -4);
+    return inner.includes("</p>") ? html : inner;
+  }
+
+  function insertBlockHtml(content: HTMLDivElement, html: string): boolean {
+    const range = getEditorRange(content);
+    if (range === null) return false;
+    const block = findBlock(content, range.startContainer);
+    if (
+      block === content ||
+      !["p", "h1", "h2", "h3", "pre"].includes(block.localName)
+    ) {
+      return insertHtml(content, html);
+    }
+
+    const documentRef = content.ownerDocument;
+    const tailRange = documentRef.createRange();
+    tailRange.setStart(range.endContainer, range.endOffset);
+    tailRange.setEnd(block, block.childNodes.length);
+    const tail = tailRange.extractContents();
+    const fragment = range.createContextualFragment(html);
+    const last = fragment.lastChild;
+    block.after(fragment);
+
+    let afterBlock: HTMLElement | null = null;
+    if (tail.textContent !== "" || tail.querySelector("br,hr") !== null) {
+      afterBlock = block.cloneNode(false) as HTMLElement;
+      afterBlock.appendChild(tail);
+      if (last !== null) last.after(afterBlock);
+      else block.after(afterBlock);
+    }
+    if ((block.textContent ?? "") === "" && block.querySelector("hr") === null) {
+      block.remove();
+    }
+
+    if (afterBlock !== null && afterBlock.isConnected) {
+      selectNodeContents(content, afterBlock, true);
+    } else if (last !== null && last.isConnected) {
+      selectNodeContents(content, last, false);
+    }
+    return true;
+  }
+
+  function insertSanitized(
+    content: HTMLDivElement,
+    html: string,
+    preferBlocks: boolean,
+  ): boolean {
+    const adapted = adaptPastedHtml(content, html, preferBlocks);
+    if (adapted === "") return false;
+    if (/^<(?:p|h[1-3]|ul|ol|blockquote|pre|hr)(?:\s|>)/iu.test(adapted)) {
+      return insertBlockHtml(content, adapted);
+    }
+    return insertHtml(content, adapted);
+  }
+
   function handlePaste(event: ClipboardEvent): void {
     const content = contentNode();
     if (content === null) return;
@@ -709,13 +787,15 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
     const data = event.clipboardData as DataTransfer | null | undefined;
     if (data === null || data === undefined) return;
     const htmlData = data.getData("text/html");
+    let preferBlocks = BLOCK_HTML_PATTERN.test(htmlData);
     let safe = htmlData === "" ? "" : sanitizeHtml(htmlData);
     if (safe === "") {
-      safe = plainTextToHtml(data.getData("text/plain"));
+      safe = sanitizeHtml(plainTextToHtml(data.getData("text/plain")));
+      preferBlocks = false;
     }
     if (safe === "") return;
     ensureSelection(content);
-    if (insertHtml(content, safe)) {
+    if (insertSanitized(content, safe, preferBlocks)) {
       stripZeroWidthSpaces(content);
       finishCommand(true);
     }
@@ -729,13 +809,15 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
     const data = event.dataTransfer as DataTransfer | null | undefined;
     if (data === null || data === undefined) return;
     const htmlData = data.getData("text/html");
+    let preferBlocks = BLOCK_HTML_PATTERN.test(htmlData);
     let safe = htmlData === "" ? "" : sanitizeHtml(htmlData);
     if (safe === "") {
-      safe = plainTextToHtml(data.getData("text/plain"));
+      safe = sanitizeHtml(plainTextToHtml(data.getData("text/plain")));
+      preferBlocks = false;
     }
     if (safe === "") return;
     ensureSelection(content);
-    if (insertHtml(content, safe)) {
+    if (insertSanitized(content, safe, preferBlocks)) {
       stripZeroWidthSpaces(content);
       finishCommand(true);
     }

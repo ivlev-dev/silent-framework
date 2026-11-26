@@ -21,37 +21,55 @@ describe("RichTextEditor: санитайзер", () => {
   });
 
   it("срезает javascript: и data: URL", () => {
-    expect(sanitizeHtml('<a href="javascript:alert(1)">x</a>')).toBe("<a>x</a>");
-    expect(sanitizeHtml('<a href="data:text/html,<script>alert(1)</script>">x</a>')).toBe(
-      "<a>x</a>",
+    expect(sanitizeHtml('<a href="javascript:alert(1)">x</a>')).toBe(
+      "<p><a>x</a></p>",
     );
-    expect(sanitizeHtml('<a href="java\nscript:alert(1)">x</a>')).toBe("<a>x</a>");
-    expect(sanitizeHtml('<a href="vbscript:msgbox(1)">x</a>')).toBe("<a>x</a>");
-    expect(sanitizeHtml('<a href=" file:///etc/passwd ">x</a>')).toBe("<a>x</a>");
+    expect(sanitizeHtml('<a href="data:text/html,<script>alert(1)</script>">x</a>')).toBe(
+      "<p><a>x</a></p>",
+    );
+    expect(sanitizeHtml('<a href="java\nscript:alert(1)">x</a>')).toBe(
+      "<p><a>x</a></p>",
+    );
+    expect(sanitizeHtml('<a href="java&#x09;script:alert(1)">x</a>')).toBe(
+      "<p><a>x</a></p>",
+    );
+    expect(sanitizeHtml('<a href="java&#58;script:alert(1)">x</a>')).toBe(
+      "<p><a>x</a></p>",
+    );
+    expect(sanitizeHtml('<a href="vbscript:msgbox(1)">x</a>')).toBe(
+      "<p><a>x</a></p>",
+    );
+    expect(sanitizeHtml('<a href=" file:///etc/passwd ">x</a>')).toBe(
+      "<p><a>x</a></p>",
+    );
   });
 
   it("оставляет безопасные схемы и относительные ссылки", () => {
     expect(sanitizeHtml('<a href="https://example.com/a?b=1#c">x</a>')).toBe(
-      '<a href="https://example.com/a?b=1#c">x</a>',
+      '<p><a href="https://example.com/a?b=1#c">x</a></p>',
     );
     expect(sanitizeHtml('<a href="mailto:a@example.com">x</a>')).toBe(
-      '<a href="mailto:a@example.com">x</a>',
+      '<p><a href="mailto:a@example.com">x</a></p>',
     );
     expect(sanitizeHtml('<a href="tel:+79000000000">x</a>')).toBe(
-      '<a href="tel:+79000000000">x</a>',
+      '<p><a href="tel:+79000000000">x</a></p>',
     );
-    expect(sanitizeHtml('<a href="/docs/page">x</a>')).toBe('<a href="/docs/page">x</a>');
-    expect(sanitizeHtml('<a href="#section">x</a>')).toBe('<a href="#section">x</a>');
+    expect(sanitizeHtml('<a href="/docs/page">x</a>')).toBe(
+      '<p><a href="/docs/page">x</a></p>',
+    );
+    expect(sanitizeHtml('<a href="#section">x</a>')).toBe(
+      '<p><a href="#section">x</a></p>',
+    );
   });
 
   it("добавляет rel для target=_blank и не трогает _self", () => {
     expect(
       sanitizeHtml('<a href="https://example.com" target="_blank" onclick="x">x</a>'),
     ).toBe(
-      '<a href="https://example.com" target="_blank" rel="noopener noreferrer">x</a>',
+      '<p><a href="https://example.com" target="_blank" rel="noopener noreferrer">x</a></p>',
     );
     expect(sanitizeHtml('<a href="https://example.com" target="_self" rel="noopener">x</a>')).toBe(
-      '<a href="https://example.com" target="_self" rel="noopener">x</a>',
+      '<p><a href="https://example.com" target="_self" rel="noopener">x</a></p>',
     );
   });
 
@@ -60,7 +78,7 @@ describe("RichTextEditor: санитайзер", () => {
       sanitizeHtml(
         '<div class="x"><span style="color:red" onclick="evil()">t</span></div>',
       ),
-    ).toBe("t");
+    ).toBe("<p>t</p>");
     expect(
       sanitizeHtml(
         '<p style="color:red" data-align="center" class="x" id="p">t</p>',
@@ -69,9 +87,26 @@ describe("RichTextEditor: санитайзер", () => {
     expect(sanitizeHtml('<h2 data-align="right">t</h2>')).toBe(
       '<h2 data-align="right">t</h2>',
     );
-    expect(sanitizeHtml('<div data-align="center">t</div>')).toBe("t");
+    expect(sanitizeHtml('<div data-align="center">t</div>')).toBe(
+      '<p data-align="center">t</p>',
+    );
     expect(sanitizeHtml('<p data-align="justify">t</p>')).toBe("<p>t</p>");
-    expect(sanitizeHtml("<button>Click</button>")).toBe("Click");
+    expect(sanitizeHtml("<button>Click</button>")).toBe("<p>Click</p>");
+  });
+
+  it("нормализует div/header/footer и вложенные блоки", () => {
+    expect(sanitizeHtml("<div>a</div><div>b</div>")).toBe(
+      "<p>a</p><p>b</p>",
+    );
+    expect(sanitizeHtml("<div><p>x</p></div>")).toBe("<p>x</p>");
+    expect(sanitizeHtml("text")).toBe("<p>text</p>");
+    expect(sanitizeHtml("<header>h</header><footer>f</footer>")).toBe(
+      "<p>h</p><p>f</p>",
+    );
+    expect(sanitizeHtml("<div>a<span>b</span></div>")).toBe("<p>ab</p>");
+    expect(sanitizeHtml('<p title="a>b" data-align=\'center\'>x</p>')).toBe(
+      '<p data-align="center">x</p>',
+    );
   });
 
   it("рекурсивно сохраняет вложенные списки", () => {
@@ -79,13 +114,13 @@ describe("RichTextEditor: санитайзер", () => {
       "<ul><li>A<ul><li>B<ol><li>C</li></ol></li></ul></li></ul>";
     expect(sanitizeHtml(nested)).toBe(nested);
     expect(sanitizeHtml("<ul><li>A<section>B</section></li></ul>")).toBe(
-      "<ul><li>AB</li></ul>",
+      "<ul><li>A<p>B</p></li></ul>",
     );
   });
 
   it("сохраняет разрешённую разметку", () => {
     const html =
-      "<h1>H</h1><h2>H2</h2><h3>H3</h3><p><strong>s</strong><em>e</em><u>u</u><s>x</s><code>c</code></p><blockquote>q</blockquote><pre>p</pre><ul><li>i</li></ul><ol><li>j</li></ol><hr><br>";
+      "<h1>H</h1><h2>H2</h2><h3>H3</h3><p><strong>s</strong><em>e</em><u>u</u><s>x</s><code>c</code></p><blockquote>q</blockquote><pre>p</pre><ul><li>i</li></ul><ol><li>j</li></ol><hr>";
     expect(sanitizeHtml(html)).toBe(html);
   });
 

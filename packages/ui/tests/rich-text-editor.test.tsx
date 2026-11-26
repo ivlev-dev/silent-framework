@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createComponent, createSignal, flushSync } from "@ivlev-dev/silent-core";
 import { RichTextEditor } from "../src/components/rich-text-editor/index.js";
+import { captureSelection } from "../src/components/rich-text-editor/internal/selection.js";
 import { fakeField } from "./form-test-utils.js";
 
 interface Handle {
@@ -306,6 +307,20 @@ describe("RichTextEditor: значение и форма", () => {
     expect(hidden.value).toBe("<p>ok</p>");
   });
 
+  it("начальное значение нормализует блоки и inline вне блоков", () => {
+    const first = parts(
+      mount({ defaultValue: "<div>a</div><div>b</div>" }),
+    );
+    expect(first.content.innerHTML).toBe("<p>a</p><p>b</p>");
+    expect(first.hidden.value).toBe("<p>a</p><p>b</p>");
+
+    const second = parts(mount({ defaultValue: "<div><p>x</p></div>" }));
+    expect(second.content.innerHTML).toBe("<p>x</p>");
+
+    const third = parts(mount({ defaultValue: "plain <strong>text</strong>" }));
+    expect(third.content.innerHTML).toBe("<p>plain <strong>text</strong></p>");
+  });
+
   it("onBlur срабатывает только при выходе фокуса из корня", () => {
     const blurs = vi.fn();
     const { root } = parts(
@@ -513,6 +528,36 @@ describe("RichTextEditor: команды через Range", () => {
     expect(content.innerHTML).toBe("<p><strong>Hello</strong></p>");
   });
 
+  it("undo/redo точно возвращает каретку в пустой абзац после br", () => {
+    const { content } = parts(mount({ value: "<p>Hello</p>" }));
+    caret(content, "Hello", 5);
+    fireKey(content, { key: "Enter" });
+
+    const afterEnter = captureSelection(content);
+    expect(afterEnter).not.toBeNull();
+    const empty =
+      content.querySelectorAll("p")[1] ?? content.querySelector("p");
+    expect(empty).not.toBeNull();
+    const text = content.ownerDocument.createTextNode("X");
+    empty!.insertBefore(text, empty!.firstChild);
+    const range = content.ownerDocument.createRange();
+    range.setStart(text, 1);
+    range.collapse(true);
+    const selection = content.ownerDocument.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    fireInput(content);
+
+    fireKey(content, { key: "z", ctrlKey: true });
+    expect(captureSelection(content)).toEqual(afterEnter);
+
+    fireKey(content, { key: "z", ctrlKey: true, shiftKey: true });
+    const redone = captureSelection(content);
+    expect(redone?.anchor.path).toEqual([1, 0]);
+    expect(redone?.anchor.offset).toBe(1);
+    expect((content.querySelectorAll("p")[1]?.firstChild as Text).data).toBe("X");
+  });
+
   it("Ctrl/Cmd+B применяет bold без кнопки тулбара", () => {
     const { content } = parts(mount({ value: "<p>Hello</p>" }));
     selectText(content, "Hello");
@@ -536,26 +581,82 @@ describe("RichTextEditor: команды через Range", () => {
     expect(first.content.innerHTML).toBe("<ul><li>A</li><li>B</li></ul>");
   });
 
-  it("outdent первого ребёнка сохраняет порядок и тип списка", () => {
+  it("outdent вложенного первого li поднимает его на уровень выше", () => {
     const { root, content } = parts(
       mount({
-        value: "<ul><li>A<ul><li>B</li><li>C</li></ul></li><li>D</li></ul>",
+        value: "<ul><li>A<ul><li>B</li></ul></li></ul>",
+      }),
+    );
+    caret(content, "B", 0);
+    click(toolbarButton(root, "outdent"));
+    expect(content.innerHTML).toBe("<ul><li>A</li><li>B</li></ul>");
+    expect(content.querySelector("ul ul")).toBeNull();
+    expect(content.textContent).toBe("AB");
+  });
+
+  it("outdent вложенного первого li сохраняет следующие sibling под ним", () => {
+    const { root, content } = parts(
+      mount({
+        value:
+          "<ul><li>A<ul><li>B</li><li>C</li><li>D</li></ul></li><li>E</li></ul>",
       }),
     );
     caret(content, "B", 0);
     click(toolbarButton(root, "outdent"));
     expect(content.innerHTML).toBe(
-      "<ul><li>A</li><li>B<ul><li>C</li></ul></li><li>D</li></ul>",
+      "<ul><li>A</li><li>B<ul><li>C</li><li>D</li></ul></li><li>E</li></ul>",
+    );
+    expect(content.textContent).toBe("ABCDE");
+    expect(content.querySelector("ul")?.children.length).toBe(3);
+  });
+
+  it("outdent top-level первого li делит список на два", () => {
+    const { root, content } = parts(
+      mount({ value: "<ul><li>A</li><li>B</li><li>C</li></ul>" }),
+    );
+    caret(content, "A", 0);
+    click(toolbarButton(root, "outdent"));
+    expect(content.innerHTML).toBe(
+      "<ul><li>A</li></ul><ul><li>B</li><li>C</li></ul>",
+    );
+    expect(content.querySelectorAll(":scope > ul")).toHaveLength(2);
+  });
+
+  it("outdent среднего и последнего поднимает li на уровень выше", () => {
+    const middle = parts(
+      mount({
+        value: "<ol><li>A<ol><li>B</li><li>C</li><li>D</li></ol></li></ol>",
+      }),
+    );
+    caret(middle.content, "C", 0);
+    click(toolbarButton(middle.root, "outdent"));
+    expect(middle.content.innerHTML).toBe(
+      "<ol><li>A<ol><li>B</li></ol></li><li>C<ol><li>D</li></ol></li></ol>",
+    );
+
+    const last = parts(
+      mount({
+        value: "<ul><li>A<ul><li>B</li><li>C</li></ul></li></ul>",
+      }),
+    );
+    caret(last.content, "C", 0);
+    click(toolbarButton(last.root, "outdent"));
+    expect(last.content.innerHTML).toBe(
+      "<ul><li>A<ul><li>B</li></ul></li><li>C</li></ul>",
     );
   });
 
   it("Tab/Shift+Tab в списке делают indent/outdent", () => {
     const { content } = parts(
-      mount({ value: "<ul><li>A</li><li>B</li></ul>" }),
+      mount({
+        value: "<ul><li>A<ul><li>B</li></ul></li><li>C</li></ul>",
+      }),
     );
-    caret(content, "B", 0);
+    caret(content, "C", 0);
     fireKey(content, { key: "Tab" });
-    expect(content.innerHTML).toBe("<ul><li>A<ul><li>B</li></ul></li></ul>");
+    expect(content.innerHTML).toBe(
+      "<ul><li>A<ul><li>B</li><li>C</li></ul></li></ul>",
+    );
 
     const shiftTab = new KeyboardEvent("keydown", {
       key: "Tab",
@@ -566,7 +667,9 @@ describe("RichTextEditor: команды через Range", () => {
     content.dispatchEvent(shiftTab);
     flushSync();
     expect(shiftTab.defaultPrevented).toBe(true);
-    expect(content.innerHTML).toBe("<ul><li>A</li><li>B</li></ul>");
+    expect(content.innerHTML).toBe(
+      "<ul><li>A<ul><li>B</li></ul></li><li>C</li></ul>",
+    );
   });
 
   it("h2 применяется ко всем абзацам выделения", () => {
@@ -580,16 +683,31 @@ describe("RichTextEditor: команды через Range", () => {
     );
   });
 
-  it("h2 по выделению li поднимает все пункты без потери порядка", () => {
+  it("h2 не разворачивает list, но меняет соседний абзац", () => {
     const { root, content } = parts(
-      mount({
-        value: "<ul><li>One</li><li>Two</li><li>Three</li></ul>",
-      }),
+      mount({ value: "<ul><li>One</li></ul><p>Two</p>" }),
     );
-    selectRange(content, "One", 0, "Three", 5);
+    selectRange(content, "One", 0, "Two", 3);
     click(toolbarButton(root, "h2"));
-    expect(content.innerHTML).toBe("<h2>One</h2><h2>Two</h2><h2>Three</h2>");
-    expect(content.querySelector("ul")).toBeNull();
+    expect(content.innerHTML).toBe("<ul><li>One</li></ul><h2>Two</h2>");
+  });
+
+  it("h2 внутри blockquote сохраняет цитату", () => {
+    const { root, content } = parts(
+      mount({ value: "<blockquote><p>Quote</p></blockquote>" }),
+    );
+    selectText(content, "Quote");
+    click(toolbarButton(root, "h2"));
+    expect(content.innerHTML).toBe(
+      "<blockquote><h2>Quote</h2></blockquote>",
+    );
+
+    const direct = parts(mount({ value: "<blockquote>Direct</blockquote>" }));
+    selectText(direct.content, "Direct");
+    click(toolbarButton(direct.root, "h2"));
+    expect(direct.content.innerHTML).toBe(
+      "<blockquote><h2>Direct</h2></blockquote>",
+    );
   });
 
   it("align применяется ко всем блокам выделения", () => {
@@ -601,6 +719,18 @@ describe("RichTextEditor: команды через Range", () => {
     for (const block of content.querySelectorAll("p")) {
       expect(block.getAttribute("data-align")).toBe("center");
     }
+  });
+
+  it("align внутри списка ставит data-align на li", () => {
+    const { root, content } = parts(
+      mount({ value: "<ul><li>One</li><li>Two</li></ul>" }),
+    );
+    selectText(content, "One");
+    click(toolbarButton(root, "align-center"));
+    expect(content.querySelector("li")?.getAttribute("data-align")).toBe(
+      "center",
+    );
+    expect(content.querySelectorAll("li")[1]?.getAttribute("data-align")).toBeNull();
   });
 
   it("ul объединяет несколько абзацев в один список без дублей", () => {
@@ -616,7 +746,7 @@ describe("RichTextEditor: команды через Range", () => {
     expect(content.querySelectorAll("li")).toHaveLength(3);
   });
 
-  it("ul склеивает абзацы вокруг существующего списка в один список", () => {
+  it("ul не трогает частично пересечённый список", () => {
     const { root, content } = parts(
       mount({
         value:
@@ -626,10 +756,9 @@ describe("RichTextEditor: команды через Range", () => {
     selectRange(content, "Before", 0, "After", 5);
     click(toolbarButton(root, "ul"));
     expect(content.innerHTML).toBe(
-      "<ul><li>Before</li><li>One</li><li>Two</li><li>After</li></ul>",
+      "<ul><li>Before</li></ul><ul><li>One</li><li>Two</li></ul><ul><li>After</li></ul>",
     );
-    expect(content.querySelectorAll("ul")).toHaveLength(1);
-    expect(content.querySelectorAll("li")).toHaveLength(4);
+    expect(content.querySelectorAll("ul")).toHaveLength(3);
   });
 
   it("повторный ul по выделению поднимает все li без дублей", () => {
@@ -668,16 +797,45 @@ describe("RichTextEditor: команды через Range", () => {
     expect(content.innerHTML).toBe("<p>One</p><p>Two</p><p>Three</p>");
   });
 
-  it("clear превращает заголовки, списки и цитаты в абзацы", () => {
+  it("clear не разворачивает частично выделенные список и цитату", () => {
     const { root, content } = parts(
       mount({
         value:
-          "<h2>One</h2><ul><li>Two</li></ul><blockquote>Three</blockquote>",
+          '<h2 data-align="center"><strong>One</strong></h2><ul><li data-align="center"><strong>Two</strong></li></ul><blockquote data-align="center"><strong>Three</strong></blockquote>',
       }),
     );
     selectRange(content, "One", 0, "Three", 5);
     click(toolbarButton(root, "clear"));
-    expect(content.innerHTML).toBe("<p>One</p><p>Two</p><p>Three</p>");
+    expect(content.innerHTML).toBe(
+      "<h2>One</h2><ul><li>Two</li></ul><blockquote>Three</blockquote>",
+    );
+  });
+
+  it("clear превращает в p только заголовок целиком внутри выделения", () => {
+    const { root, content } = parts(
+      mount({ value: "<h2><strong>Title</strong></h2>" }),
+    );
+    selectText(content, "Title");
+    click(toolbarButton(root, "clear"));
+    expect(content.innerHTML).toBe("<p>Title</p>");
+  });
+
+  it("clear внутри списка не ломает список и цитату", () => {
+    const list = parts(
+      mount({ value: "<ul><li><strong>One</strong></li><li>Two</li></ul>" }),
+    );
+    selectText(list.content, "One");
+    click(toolbarButton(list.root, "clear"));
+    expect(list.content.innerHTML).toBe("<ul><li>One</li><li>Two</li></ul>");
+
+    const quote = parts(
+      mount({ value: "<blockquote><p><strong>Quote</strong></p></blockquote>" }),
+    );
+    selectText(quote.content, "Quote");
+    click(toolbarButton(quote.root, "clear"));
+    expect(quote.content.innerHTML).toBe(
+      "<blockquote><p>Quote</p></blockquote>",
+    );
   });
 });
 
@@ -825,5 +983,46 @@ describe("RichTextEditor: вставка", () => {
     expect(content.innerHTML).toBe(
       "<p>start&lt;i&gt;x&lt;/i&gt;<br>y<b>bold</b></p>",
     );
+  });
+
+  it("paste нескольких блоков в p разделяет текущий абзац", () => {
+    const { content } = parts(mount({ value: "<p>start</p>" }));
+    caret(content, "start", 2);
+    const clipboard = {
+      getData: (type: string) =>
+        type === "text/html" ? "<div>a</div><div>b</div>" : "",
+    };
+    const paste = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, "clipboardData", { value: clipboard });
+    content.dispatchEvent(paste);
+    flushSync();
+    expect(content.innerHTML).toBe(
+      "<p>st</p><p>a</p><p>b</p><p>art</p>",
+    );
+  });
+
+  it("paste plain text в пустой редактор оборачивает в p", () => {
+    const { content } = parts(mount({ defaultValue: "" }));
+    const clipboard = {
+      getData: (type: string) => (type === "text/plain" ? "hello" : ""),
+    };
+    const paste = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, "clipboardData", { value: clipboard });
+    content.dispatchEvent(paste);
+    flushSync();
+    expect(content.innerHTML).toBe("<p>hello</p>");
+  });
+
+  it("paste блоков нормализует div в отдельные p", () => {
+    const { content } = parts(mount({ defaultValue: "" }));
+    const clipboard = {
+      getData: (type: string) =>
+        type === "text/html" ? "<div>a</div><div>b</div>" : "",
+    };
+    const paste = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, "clipboardData", { value: clipboard });
+    content.dispatchEvent(paste);
+    flushSync();
+    expect(content.innerHTML).toBe("<p>a</p><p>b</p>");
   });
 });

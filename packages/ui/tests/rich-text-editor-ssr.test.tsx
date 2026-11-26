@@ -50,11 +50,14 @@ describe("RichTextEditor: SSR", () => {
 
     const hidden = container.querySelector<HTMLInputElement>('input[type="hidden"]');
     expect(hidden?.getAttribute("name")).toBe("bio");
-    expect(hidden?.value).toBe(INITIAL_HTML);
+    expect(hidden?.value).toBe("<p>Hello <strong>world</strong></p>");
 
     const root = container.querySelector<HTMLElement>(".sui-rte");
     expect(root?.hasAttribute("data-mounted")).toBe(false);
     expect(html).not.toContain('data-mounted=""');
+    expect(html).not.toContain("onerror");
+    expect(html).not.toContain("<script");
+    expect(html).not.toContain("javascript:");
     expect(container.querySelector(".sui-rte__content strong")).toBeNull();
     expect(
       container.querySelectorAll(".sui-rte__toolbar .sui-rte__button").length,

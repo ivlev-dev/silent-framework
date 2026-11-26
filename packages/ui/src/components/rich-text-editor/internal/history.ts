@@ -1,12 +1,13 @@
 /**
- * Стек снапшотов HTML + позиции каретки. Ограничение ~100 шагов;
- * склейка ввода выполняется в компоненте (debounce 300 мс).
+ * Стек снапшотов HTML + точные DOM-позиции выделения. Ограничение ~100
+ * шагов; склейка ввода выполняется в компоненте (debounce 300 мс).
  */
+
+import type { SelectionSnapshot } from "./selection.js";
 
 export interface HistorySnapshot {
   readonly html: string;
-  readonly start: number;
-  readonly end: number;
+  readonly selection: SelectionSnapshot | null;
 }
 
 export const HISTORY_LIMIT = 100;

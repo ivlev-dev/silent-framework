@@ -25,6 +25,19 @@ export interface SelectionOffsets {
   readonly collapsed: boolean;
 }
 
+export type NodePath = number[];
+
+export interface DomPosition {
+  readonly path: NodePath;
+  readonly offset: number;
+}
+
+export interface SelectionSnapshot {
+  readonly anchor: DomPosition;
+  readonly focus: DomPosition;
+  readonly direction: "forward" | "backward" | "none";
+}
+
 export function isElementNode(node: Node | null | undefined): node is Element {
   return node !== null && node !== undefined && node.nodeType === 1;
 }
@@ -84,6 +97,154 @@ export function restoreRange(root: HTMLElement, range: Range | null): boolean {
   selection.removeAllRanges();
   selection.addRange(range);
   return true;
+}
+
+/** Путь от корня редактора до узла: индексы childNodes на каждом уровне. */
+export function nodePath(root: Node, node: Node): NodePath | null {
+  if (root === node) return [];
+  const path: number[] = [];
+  let current: Node | null = node;
+  while (current !== null && current !== root) {
+    const parent: Node | null = current.parentNode;
+    if (parent === null) return null;
+    let index = -1;
+    for (let position = 0; position < parent.childNodes.length; position += 1) {
+      if (parent.childNodes[position] === current) {
+        index = position;
+        break;
+      }
+    }
+    if (index === -1) return null;
+    path.unshift(index);
+    current = parent;
+  }
+  return current === root ? path : null;
+}
+
+/** Восстанавливает узел по пути; `null`, если структура не совпала. */
+export function resolveNodePath(root: Node, path: NodePath): Node | null {
+  let current: Node = root;
+  for (const index of path) {
+    const child = current.childNodes[index];
+    if (child === undefined) return null;
+    current = child;
+  }
+  return current;
+}
+
+function clampPointOffset(node: Node, offset: number): number {
+  const max =
+    node.nodeType === 3
+      ? (node as Text).data.length
+      : node.nodeType === 1
+        ? node.childNodes.length
+        : 0;
+  if (!Number.isFinite(offset)) return 0;
+  if (offset < 0) return 0;
+  return offset > max ? max : offset;
+}
+
+export function placeCaretAtEnd(root: HTMLElement): void {
+  const selection = root.ownerDocument.getSelection();
+  if (selection === null) return;
+  const range = root.ownerDocument.createRange();
+  range.selectNodeContents(root);
+  range.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function serializedChildCount(node: Node, before: number): number {
+  let count = 0;
+  const limit = Math.min(Math.max(before, 0), node.childNodes.length);
+  for (let index = 0; index < limit; index += 1) {
+    const child = node.childNodes[index];
+    if (child === undefined) continue;
+    if (child.nodeType === 1) count += 1;
+    else if (child.nodeType === 3 && (child as Text).data.length > 0) count += 1;
+  }
+  return count;
+}
+
+/**
+ * Позиция, устойчивая к сериализации HTML: пустые текстовые узлы исчезают
+ * после innerHTML → parse, поэтому offset пересчитывается по «видимым» детям.
+ */
+function stablePosition(root: HTMLElement, node: Node, offset: number): DomPosition | null {
+  if (node.nodeType === 3 && (node as Text).data.length === 0) {
+    const parent = node.parentNode;
+    if (parent === null) return null;
+    let index = 0;
+    for (let position = 0; position < parent.childNodes.length; position += 1) {
+      if (parent.childNodes[position] === node) {
+        index = position;
+        break;
+      }
+    }
+    const path = nodePath(root, parent);
+    if (path === null) return null;
+    return { path, offset: serializedChildCount(parent, index) };
+  }
+  const path = nodePath(root, node);
+  if (path === null) return null;
+  const stableOffset =
+    node.nodeType === 1 ? serializedChildCount(node, offset) : clampPointOffset(node, offset);
+  return { path, offset: stableOffset };
+}
+
+/** Точный снимок выделения: anchor/focus + направление. */
+export function captureSelection(root: HTMLElement): SelectionSnapshot | null {
+  const selection = root.ownerDocument.getSelection();
+  if (selection === null || selection.rangeCount === 0) return null;
+  const anchorNode = selection.anchorNode;
+  const focusNode = selection.focusNode;
+  if (anchorNode === null || focusNode === null) return null;
+  const anchor = stablePosition(root, anchorNode, selection.anchorOffset);
+  const focus = stablePosition(root, focusNode, selection.focusOffset);
+  if (anchor === null || focus === null) return null;
+  const direction =
+    selection.direction === "forward" || selection.direction === "backward"
+      ? selection.direction
+      : "none";
+  return { anchor, focus, direction };
+}
+
+/** Восстанавливает выделение по путям; при несовпадении — конец документа. */
+export function restoreSelection(
+  root: HTMLElement,
+  snapshot: SelectionSnapshot | null,
+): boolean {
+  const selection = root.ownerDocument.getSelection();
+  if (selection === null) return false;
+  if (snapshot === null) {
+    placeCaretAtEnd(root);
+    return false;
+  }
+
+  const anchor = resolveNodePath(root, snapshot.anchor.path);
+  const focus = resolveNodePath(root, snapshot.focus.path);
+  if (anchor === null || focus === null) {
+    placeCaretAtEnd(root);
+    return false;
+  }
+
+  const anchorOffset = clampPointOffset(anchor, snapshot.anchor.offset);
+  const focusOffset = clampPointOffset(focus, snapshot.focus.offset);
+  try {
+    if (typeof selection.setBaseAndExtent === "function") {
+      selection.setBaseAndExtent(anchor, anchorOffset, focus, focusOffset);
+    } else {
+      const range = root.ownerDocument.createRange();
+      range.setStart(anchor, anchorOffset);
+      range.setEnd(focus, focusOffset);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+    return true;
+  } catch {
+    placeCaretAtEnd(root);
+    return false;
+  }
 }
 
 function pointOffset(root: HTMLElement, node: Node, offset: number): number {

@@ -12,6 +12,7 @@ import {
   inlineElementsInRange,
   insertMarker,
   insertText,
+  isNodeWithin,
   normalizeInline,
   selectNodeContents,
   setOffsets,
@@ -54,7 +55,8 @@ const BLOCK_TARGET: Readonly<Record<BlockFormat, string>> = {
 };
 
 const BLOCK_SELECTOR = "p,h1,h2,h3,blockquote,pre,li,div";
-const BLOCK_TAGS = new Set(BLOCK_SELECTOR.split(","));
+const EDITABLE_BLOCK_SELECTOR = "p,h1,h2,h3,pre";
+const EDITABLE_BLOCK_TAGS = new Set(EDITABLE_BLOCK_SELECTOR.split(","));
 const LIST_TAGS = new Set(["ul", "ol"]);
 const ALIGN_VALUES = new Set(["left", "center", "right"]);
 const REL_TOKENS = ["noopener", "noreferrer", "nofollow", "ugc", "sponsored"] as const;
@@ -101,16 +103,6 @@ function copyAlign(from: Element, to: Element): void {
   if (align !== null && ALIGN_VALUES.has(align.toLowerCase())) {
     to.setAttribute("data-align", align.toLowerCase());
   }
-}
-
-function depthOfBlock(element: Element): number {
-  let depth = 0;
-  let current: Element | null = element;
-  while (current !== null) {
-    depth += 1;
-    current = current.parentElement;
-  }
-  return depth;
 }
 
 /**
@@ -172,27 +164,45 @@ function blocksInRange(root: HTMLElement, range: Range): HTMLElement[] {
   return result;
 }
 
+function rangeFullyInside(range: Range, container: Node): boolean {
+  return (
+    isNodeWithin(container, range.startContainer) &&
+    isNodeWithin(container, range.endContainer)
+  );
+}
+
 /**
- * Содержательные блоки для блочных команд: самые глубокие из пересекающих
- * диапазон. Так `li > p` даёт `p`, а цитата без абзаца — саму `blockquote`.
+ * Только редактируемые блоки: p/h1–h3/pre (включая внутренние p в li и
+ * blockquote). Сам li/ul/ol/blockquote не меняют тип этим набором.
  */
-function contentBlocks(root: HTMLElement, range: Range): HTMLElement[] {
+function editableBlocks(root: HTMLElement, range: Range): HTMLElement[] {
   if (range.collapsed) {
     const block = findBlock(root, range.startContainer);
-    if (block !== root) return [block];
-    const top = topLevelNodeAt(root, range.startContainer, range.startOffset);
-    if (top !== null && top.nodeType === 1) {
-      const element = top as HTMLElement;
-      if (BLOCK_TAGS.has(element.localName)) return [element];
-      const nested = element.querySelector(BLOCK_SELECTOR);
-      if (nested !== null) return [nested as HTMLElement];
+    if (block !== root && EDITABLE_BLOCK_TAGS.has(block.localName)) {
+      return [block];
+    }
+    if (block === root) {
+      const top = topLevelNodeAt(root, range.startContainer, range.startOffset);
+      if (
+        top !== null &&
+        top.nodeType === 1 &&
+        EDITABLE_BLOCK_TAGS.has((top as Element).localName)
+      ) {
+        return [top as HTMLElement];
+      }
     }
     return [];
   }
-  const all = blocksInRange(root, range);
-  return all.filter(
-    (element) => !all.some((other) => other !== element && element.contains(other)),
-  );
+  const result: HTMLElement[] = [];
+  for (const element of root.querySelectorAll(EDITABLE_BLOCK_SELECTOR)) {
+    if (range.intersectsNode(element)) result.push(element as HTMLElement);
+  }
+  return result;
+}
+
+function topLevelBlockTagAt(root: HTMLElement, range: Range): Element | null {
+  const top = topLevelNodeAt(root, range.startContainer, range.startOffset);
+  return top !== null && top.nodeType === 1 ? (top as Element) : null;
 }
 
 function materializeRootBlock(root: HTMLElement, targetTag: string): HTMLElement {
@@ -208,9 +218,42 @@ function setBlock(root: HTMLElement, format: BlockFormat): boolean {
   if (range === null) return false;
   const offsets = captureOffsets(root);
   const targetTag = BLOCK_TARGET[format];
-  const blocks = contentBlocks(root, range);
+  const blocks = editableBlocks(root, range);
 
   if (blocks.length === 0) {
+    const block = findBlock(root, range.startContainer);
+    if (block !== root) {
+      // Прямой текст blockquote можно обернуть блоком внутри цитаты,
+      // не удаляя саму цитату. Прямой текст li не меняем.
+      if (
+        block.localName === "blockquote" &&
+        targetTag !== "blockquote" &&
+        rangeFullyInside(range, block) &&
+        block.querySelector("p,h1,h2,h3,ul,ol,blockquote,pre,hr") === null
+      ) {
+        const replacement = root.ownerDocument.createElement(
+          targetTag,
+        ) as HTMLElement;
+        copyAlign(block, replacement);
+        moveChildren(block, replacement);
+        ensureNonEmptyBlock(root, replacement);
+        block.appendChild(replacement);
+        normalizeInline(root);
+        if (offsets !== null) setOffsets(root, offsets.start, offsets.end);
+        return true;
+      }
+      return false;
+    }
+    const top = topLevelBlockTagAt(root, range);
+    if (
+      top !== null &&
+      (top.localName === "ul" ||
+        top.localName === "ol" ||
+        top.localName === "blockquote" ||
+        top.localName === "li")
+    ) {
+      return false;
+    }
     materializeRootBlock(root, targetTag);
     normalizeInline(root);
     if (offsets !== null) setOffsets(root, offsets.start, offsets.end);
@@ -221,14 +264,6 @@ function setBlock(root: HTMLElement, format: BlockFormat): boolean {
   for (const block of blocks) {
     if (!block.isConnected) continue;
     if (block.localName === targetTag) continue;
-
-    // Пункт списка: заголовок/цитата не должны оставаться внутри ul/ol.
-    const list = block.parentElement;
-    if (block.localName === "li" && list !== null && LIST_TAGS.has(list.localName)) {
-      liftListItem(root, block, targetTag, targetTag === "p");
-      changed = true;
-      continue;
-    }
 
     const replacement = root.ownerDocument.createElement(targetTag) as HTMLElement;
     copyAlign(block, replacement);
@@ -283,17 +318,20 @@ function collectListItems(root: HTMLElement, range: Range): HTMLElement[] {
     const item = closestWithin(root, range.startContainer, ["li"]);
     return item === null ? [] : [item as HTMLElement];
   }
-  const result: HTMLElement[] = [];
+  const all: HTMLElement[] = [];
   for (const item of root.querySelectorAll("li")) {
-    if (range.intersectsNode(item)) result.push(item as HTMLElement);
+    if (range.intersectsNode(item)) all.push(item as HTMLElement);
   }
-  return result;
+  // Для вложенных списков работаем с самыми глубокими выбранными li:
+  // иначе один клик затронул бы сразу и родительский, и дочерний список.
+  return all.filter(
+    (item) => !all.some((other) => other !== item && item.contains(other)),
+  );
 }
 
 /**
- * Превращает набор соседних блоков в список. Непрерывные группы и разные
- * родители обрабатываются отдельно, поэтому порядок и вложенность не ломаются.
- * Существующий соседний список того же типа переиспользуется — `li` не дублируются.
+ * Превращает набор блоков в новые списки. Непрерывные группы и разные
+ * родители обрабатываются отдельно; существующие списки не затрагиваются.
  */
 function convertBlocksToList(
   root: HTMLElement,
@@ -327,14 +365,8 @@ function convertBlocksToList(
     for (const current of runs) {
       const first = current[0];
       if (first === undefined) continue;
-      let list: Element;
-      const previousList = first.previousElementSibling;
-      if (previousList !== null && previousList.localName === type) {
-        list = previousList;
-      } else {
-        list = documentRef.createElement(type);
-        parent.insertBefore(list, first);
-      }
+      const list = documentRef.createElement(type);
+      parent.insertBefore(list, first);
       for (const block of current) {
         const li = documentRef.createElement("li");
         copyAlign(block, li);
@@ -357,20 +389,6 @@ function replaceListType(list: Element, type: ListFormat): boolean {
   return true;
 }
 
-/** Склеивает соседние списки одного типа, чтобы не оставлять искусственные разрывы. */
-function mergeAdjacentLists(parent: Element, type: ListFormat): void {
-  let child = parent.firstElementChild;
-  while (child !== null) {
-    const next = child.nextElementSibling;
-    if (child.localName === type && next !== null && next.localName === type) {
-      while (next.firstChild !== null) child.appendChild(next.firstChild);
-      next.remove();
-      continue;
-    }
-    child = next;
-  }
-}
-
 function wrapRootIntoList(root: HTMLElement, type: ListFormat): void {
   const documentRef = root.ownerDocument;
   const list = documentRef.createElement(type);
@@ -386,57 +404,66 @@ function toggleList(root: HTMLElement, type: ListFormat): boolean {
   if (range === null) return false;
   const offsets = captureOffsets(root);
   const items = collectListItems(root, range);
-  const content = contentBlocks(root, range);
-  const nonListBlocks = content.filter(
-    (block) =>
-      block.localName !== "li" && closestWithin(root, block, ["li"]) === null,
-  );
 
-  const lists = new Set<Element>();
-  for (const item of items) {
+  // Списки меняем только если выделение целиком внутри конкретного списка.
+  const eligibleItems = items.filter((item) => {
     const list = item.parentElement;
-    if (list !== null && LIST_TAGS.has(list.localName)) lists.add(list);
+    return list !== null && LIST_TAGS.has(list.localName) && rangeFullyInside(range, list);
+  });
+  const eligibleLists = new Set<Element>();
+  for (const item of eligibleItems) {
+    const list = item.parentElement;
+    if (list !== null) eligibleLists.add(list);
   }
-  const affectedParents = new Set<Element>();
-  for (const list of lists) {
-    if (list.parentElement !== null) affectedParents.add(list.parentElement);
-  }
-  for (const block of nonListBlocks) {
-    if (block.parentElement !== null) affectedParents.add(block.parentElement);
-  }
+
+  const nonListBlocks = editableBlocks(root, range).filter(
+    (block) => closestWithin(root, block, ["li"]) === null,
+  );
 
   let changed = false;
 
-  if (items.length > 0) {
+  if (eligibleItems.length > 0) {
     if (nonListBlocks.length === 0) {
-      const allSameType = [...lists].every((list) => list.localName === type);
+      const allSameType = [...eligibleLists].every(
+        (list) => list.localName === type,
+      );
       if (allSameType) {
-        for (const item of items) {
+        for (const item of eligibleItems) {
           if (!item.isConnected) continue;
           liftListItem(root, item, "p", true);
           changed = true;
         }
       } else {
-        for (const list of lists) {
+        for (const list of eligibleLists) {
           if (list.isConnected && replaceListType(list, type)) changed = true;
         }
       }
     } else {
-      for (const list of lists) {
+      for (const list of eligibleLists) {
         if (list.isConnected && replaceListType(list, type)) changed = true;
       }
       if (convertBlocksToList(root, nonListBlocks, type)) changed = true;
     }
   } else if (nonListBlocks.length > 0) {
     changed = convertBlocksToList(root, nonListBlocks, type);
-  } else {
+  } else if (items.length === 0) {
+    const block = findBlock(root, range.startContainer);
+    if (block !== root) {
+      // Прямой текст списка/цитаты не перестраиваем при частичном выделении.
+      return false;
+    }
+    const top = topLevelBlockTagAt(root, range);
+    if (
+      top !== null &&
+      (top.localName === "ul" ||
+        top.localName === "ol" ||
+        top.localName === "li" ||
+        top.localName === "blockquote")
+    ) {
+      return false;
+    }
     wrapRootIntoList(root, type);
-    affectedParents.add(root);
     changed = true;
-  }
-
-  for (const parent of affectedParents) {
-    if (parent.isConnected) mergeAdjacentLists(parent, type);
   }
 
   if (offsets !== null) setOffsets(root, offsets.start, offsets.end);
@@ -447,9 +474,39 @@ function setAlign(root: HTMLElement, align: AlignFormat): boolean {
   const range = getEditorRange(root);
   if (range === null) return false;
   const offsets = captureOffsets(root);
-  let blocks = range.collapsed ? contentBlocks(root, range) : blocksInRange(root, range);
+
+  const blocks: HTMLElement[] = [...editableBlocks(root, range)];
+  for (const quote of root.querySelectorAll("blockquote")) {
+    if (range.intersectsNode(quote) && rangeFullyInside(range, quote)) {
+      blocks.push(quote as HTMLElement);
+    }
+  }
+  const lists = Array.from(root.querySelectorAll("ul,ol")).filter(
+    (list) => range.intersectsNode(list) && rangeFullyInside(range, list),
+  );
+  for (const list of lists) {
+    if (lists.some((other) => other !== list && list.contains(other))) continue;
+    for (const item of list.children) {
+      if (item.localName === "li" && range.intersectsNode(item)) {
+        blocks.push(item as HTMLElement);
+      }
+    }
+  }
+
   if (blocks.length === 0) {
-    blocks = [materializeRootBlock(root, "p")];
+    const block = findBlock(root, range.startContainer);
+    if (block !== root) return false;
+    const top = topLevelBlockTagAt(root, range);
+    if (
+      top !== null &&
+      (top.localName === "ul" ||
+        top.localName === "ol" ||
+        top.localName === "li" ||
+        top.localName === "blockquote")
+    ) {
+      return false;
+    }
+    blocks.push(materializeRootBlock(root, "p"));
   }
 
   let changed = false;
@@ -489,10 +546,28 @@ function indentListItem(root: HTMLElement, li: HTMLElement): boolean {
 function outdentListItem(root: HTMLElement, li: HTMLElement): boolean {
   const list = li.parentElement;
   if (list === null || !LIST_TAGS.has(list.localName)) return false;
+
   const parentLi = list.parentElement;
-  if (parentLi === null || parentLi.localName !== "li") return false;
-  const outerList = parentLi.parentElement;
-  if (outerList === null || !LIST_TAGS.has(outerList.localName)) return false;
+  const outerList = parentLi?.parentElement ?? null;
+  const nestedInLi =
+    parentLi !== null &&
+    parentLi.localName === "li" &&
+    outerList !== null &&
+    LIST_TAGS.has(outerList.localName);
+
+  // Top-level первый ребёнок: прежний буквальный split.
+  if (li.previousElementSibling === null && !nestedInLi) {
+    const newList = root.ownerDocument.createElement(list.localName);
+    const parent = list.parentNode;
+    if (parent === null) return false;
+    parent.insertBefore(newList, list);
+    newList.appendChild(li);
+    if (list.querySelector("li") === null) list.remove();
+    return true;
+  }
+
+  // Вложенный список: и первый, и middle/last поднимаются во внешний список.
+  if (!nestedInLi || parentLi === null || outerList === null) return false;
 
   const following: Element[] = [];
   let cursor = li.nextElementSibling;
@@ -570,24 +645,16 @@ function clearFormatting(root: HTMLElement): boolean {
     unwrapElements(inlineElementsInRange(root, range));
   }
 
-  // Снимаем список: выбранные пункты становятся обычными абзацами.
-  for (const item of collectListItems(root, range)) {
-    if (item.isConnected) liftListItem(root, item, "p", true);
-  }
-
-  // Остальные блочные обёртки (h1–h3, blockquote, pre, div) — в `<p>`.
-  // Снаружи внутрь: вложенный p разворачивается вместе с родителем.
-  const blocks = blocksInRange(root, range).sort(
-    (left, right) => depthOfBlock(left) - depthOfBlock(right),
-  );
-  for (const block of blocks) {
-    if (!block.isConnected || block.localName === "p") continue;
+  // Заголовок → p только если выделение целиком внутри него.
+  for (const heading of root.querySelectorAll("h1,h2,h3")) {
+    if (!rangeFullyInside(range, heading)) continue;
     const paragraph = root.ownerDocument.createElement("p");
-    moveChildrenFlatteningParagraphs(block, paragraph);
+    moveChildrenFlatteningParagraphs(heading, paragraph);
     ensureNonEmptyBlock(root, paragraph);
-    block.replaceWith(paragraph);
+    heading.replaceWith(paragraph);
   }
 
+  // Списки и цитаты не трогаем: снимаем только inline-формат и выравнивание.
   for (const block of blocksInRange(root, range)) {
     block.removeAttribute("data-align");
   }
