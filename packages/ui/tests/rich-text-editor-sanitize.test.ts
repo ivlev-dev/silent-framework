@@ -74,6 +74,15 @@ describe("RichTextEditor: санитайзер", () => {
     expect(sanitizeHtml("<button>Click</button>")).toBe("Click");
   });
 
+  it("рекурсивно сохраняет вложенные списки", () => {
+    const nested =
+      "<ul><li>A<ul><li>B<ol><li>C</li></ol></li></ul></li></ul>";
+    expect(sanitizeHtml(nested)).toBe(nested);
+    expect(sanitizeHtml("<ul><li>A<section>B</section></li></ul>")).toBe(
+      "<ul><li>AB</li></ul>",
+    );
+  });
+
   it("сохраняет разрешённую разметку", () => {
     const html =
       "<h1>H</h1><h2>H2</h2><h3>H3</h3><p><strong>s</strong><em>e</em><u>u</u><s>x</s><code>c</code></p><blockquote>q</blockquote><pre>p</pre><ul><li>i</li></ul><ol><li>j</li></ol><hr><br>";

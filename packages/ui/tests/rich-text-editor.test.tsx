@@ -97,6 +97,24 @@ function selectAll(root: HTMLElement): void {
   flushSync();
 }
 
+function selectRange(
+  root: HTMLElement,
+  startText: string,
+  startOffset: number,
+  endText: string,
+  endOffset: number,
+): void {
+  const startNode = firstText(root, startText);
+  const endNode = firstText(root, endText);
+  const range = root.ownerDocument.createRange();
+  range.setStart(startNode, startNode.data.indexOf(startText) + startOffset);
+  range.setEnd(endNode, endNode.data.indexOf(endText) + endOffset);
+  const selection = root.ownerDocument.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+  flushSync();
+}
+
 function caret(root: HTMLElement, value: string, offset = 0): void {
   const node = firstText(root, value);
   const start = node.data.indexOf(value) + offset;
@@ -126,7 +144,9 @@ describe("RichTextEditor: разметка и доступность", () => {
       hint: "Коротко о себе",
       required: true,
     });
-    const { root, content, hidden, toolbar } = parts(mount({ field: field.field }));
+    const { root, content, hidden, toolbar } = parts(
+      mount({ id: "bio", field: field.field }),
+    );
 
     expect(root.className).toBe("sui-rte");
     expect(root.getAttribute("data-size")).toBe("md");
@@ -329,6 +349,57 @@ describe("RichTextEditor: значение и форма", () => {
     expect(content.innerHTML).toBe("<p>start</p>");
     expect(hidden.value).toBe("<p>start</p>");
   });
+
+  it("санитайз всегда включён и не отключается пропсом", () => {
+    const changes: string[] = [];
+    const { content, hidden } = parts(
+      mount({
+        sanitize: false,
+        defaultValue:
+          '<p>ok</p><script>alert(1)</script><img src="x" onerror="alert(1)">',
+        onValueChange: (html: string) => changes.push(html),
+      }),
+    );
+    expect(content.innerHTML).toBe("<p>ok</p>");
+    expect(hidden.value).toBe("<p>ok</p>");
+
+    content.innerHTML = '<p onclick="alert(1)">ok2</p><script>alert(1)</script>';
+    fireInput(content);
+    expect(changes.at(-1)).toBe("<p>ok2</p>");
+    expect(hidden.value).toBe("<p>ok2</p>");
+  });
+
+  it("без id два экземпляра получают разные id и корректные ARIA-связи", () => {
+    const first = parts(
+      mount({ label: "Первый", hint: "Подсказка 1", defaultValue: "<p>A</p>" }),
+    );
+    const second = parts(
+      mount({ label: "Второй", hint: "Подсказка 2", defaultValue: "<p>B</p>" }),
+    );
+
+    const firstId = first.content.id;
+    const secondId = second.content.id;
+    expect(firstId).not.toBe(secondId);
+    expect(firstId).toMatch(/^sui-rte-\d+$/u);
+    expect(secondId).toMatch(/^sui-rte-\d+$/u);
+
+    expect(first.content.getAttribute("aria-labelledby")).toBe(`${firstId}-label`);
+    expect(first.content.getAttribute("aria-describedby")).toBe(`${firstId}-hint`);
+    expect(document.getElementById(`${firstId}-label`)?.getAttribute("for")).toBe(
+      firstId,
+    );
+    expect(document.getElementById(`${firstId}-hint`)?.textContent).toBe("Подсказка 1");
+    expect(first.hidden.name).toBe(firstId);
+
+    selectText(first.content, "A");
+    click(toolbarButton(first.root, "link"));
+    expect(
+      first.root.querySelector(".sui-rte__link-panel")?.getAttribute("id"),
+    ).toBe(`${firstId}-link`);
+    expect(toolbarButton(first.root, "link").getAttribute("aria-controls")).toBe(
+      `${firstId}-link`,
+    );
+  });
 });
 
 describe("RichTextEditor: команды через Range", () => {
@@ -447,6 +518,220 @@ describe("RichTextEditor: команды через Range", () => {
     selectText(content, "Hello");
     fireKey(content, { key: "b", ctrlKey: true });
     expect(content.innerHTML).toBe("<p><strong>Hello</strong></p>");
+  });
+
+  it("indent вкладывает li в предыдущий sibling, первый li не меняется", () => {
+    const { root, content } = parts(
+      mount({ value: "<ul><li>A</li><li>B</li><li>C</li></ul>" }),
+    );
+    caret(content, "B", 0);
+    click(toolbarButton(root, "indent"));
+    expect(content.innerHTML).toBe(
+      "<ul><li>A<ul><li>B</li></ul></li><li>C</li></ul>",
+    );
+
+    const first = parts(mount({ value: "<ul><li>A</li><li>B</li></ul>" }));
+    caret(first.content, "A", 0);
+    click(toolbarButton(first.root, "indent"));
+    expect(first.content.innerHTML).toBe("<ul><li>A</li><li>B</li></ul>");
+  });
+
+  it("outdent первого ребёнка сохраняет порядок и тип списка", () => {
+    const { root, content } = parts(
+      mount({
+        value: "<ul><li>A<ul><li>B</li><li>C</li></ul></li><li>D</li></ul>",
+      }),
+    );
+    caret(content, "B", 0);
+    click(toolbarButton(root, "outdent"));
+    expect(content.innerHTML).toBe(
+      "<ul><li>A</li><li>B<ul><li>C</li></ul></li><li>D</li></ul>",
+    );
+  });
+
+  it("Tab/Shift+Tab в списке делают indent/outdent", () => {
+    const { content } = parts(
+      mount({ value: "<ul><li>A</li><li>B</li></ul>" }),
+    );
+    caret(content, "B", 0);
+    fireKey(content, { key: "Tab" });
+    expect(content.innerHTML).toBe("<ul><li>A<ul><li>B</li></ul></li></ul>");
+
+    const shiftTab = new KeyboardEvent("keydown", {
+      key: "Tab",
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    content.dispatchEvent(shiftTab);
+    flushSync();
+    expect(shiftTab.defaultPrevented).toBe(true);
+    expect(content.innerHTML).toBe("<ul><li>A</li><li>B</li></ul>");
+  });
+
+  it("h2 применяется ко всем абзацам выделения", () => {
+    const { root, content } = parts(
+      mount({ value: "<p>One</p><p>Two</p><p>Three</p>" }),
+    );
+    selectRange(content, "One", 0, "Three", 5);
+    click(toolbarButton(root, "h2"));
+    expect(content.innerHTML).toBe(
+      "<h2>One</h2><h2>Two</h2><h2>Three</h2>",
+    );
+  });
+
+  it("h2 по выделению li поднимает все пункты без потери порядка", () => {
+    const { root, content } = parts(
+      mount({
+        value: "<ul><li>One</li><li>Two</li><li>Three</li></ul>",
+      }),
+    );
+    selectRange(content, "One", 0, "Three", 5);
+    click(toolbarButton(root, "h2"));
+    expect(content.innerHTML).toBe("<h2>One</h2><h2>Two</h2><h2>Three</h2>");
+    expect(content.querySelector("ul")).toBeNull();
+  });
+
+  it("align применяется ко всем блокам выделения", () => {
+    const { root, content } = parts(
+      mount({ value: "<p>One</p><p>Two</p><p>Three</p>" }),
+    );
+    selectRange(content, "One", 0, "Three", 5);
+    click(toolbarButton(root, "align-center"));
+    for (const block of content.querySelectorAll("p")) {
+      expect(block.getAttribute("data-align")).toBe("center");
+    }
+  });
+
+  it("ul объединяет несколько абзацев в один список без дублей", () => {
+    const { root, content } = parts(
+      mount({ value: "<p>One</p><p>Two</p><p>Three</p>" }),
+    );
+    selectRange(content, "One", 0, "Three", 5);
+    click(toolbarButton(root, "ul"));
+    expect(content.innerHTML).toBe(
+      "<ul><li>One</li><li>Two</li><li>Three</li></ul>",
+    );
+    expect(content.querySelectorAll("ul")).toHaveLength(1);
+    expect(content.querySelectorAll("li")).toHaveLength(3);
+  });
+
+  it("ul склеивает абзацы вокруг существующего списка в один список", () => {
+    const { root, content } = parts(
+      mount({
+        value:
+          "<p>Before</p><ul><li>One</li><li>Two</li></ul><p>After</p>",
+      }),
+    );
+    selectRange(content, "Before", 0, "After", 5);
+    click(toolbarButton(root, "ul"));
+    expect(content.innerHTML).toBe(
+      "<ul><li>Before</li><li>One</li><li>Two</li><li>After</li></ul>",
+    );
+    expect(content.querySelectorAll("ul")).toHaveLength(1);
+    expect(content.querySelectorAll("li")).toHaveLength(4);
+  });
+
+  it("повторный ul по выделению поднимает все li без дублей", () => {
+    const { root, content } = parts(
+      mount({
+        value: "<ul><li>One</li><li>Two</li><li>Three</li></ul>",
+      }),
+    );
+    selectRange(content, "One", 0, "Three", 5);
+    click(toolbarButton(root, "ul"));
+    expect(content.innerHTML).toBe("<p>One</p><p>Two</p><p>Three</p>");
+  });
+
+  it("ol по выделению ul меняет тип одного списка", () => {
+    const { root, content } = parts(
+      mount({
+        value: "<ul><li>One</li><li>Two</li><li>Three</li></ul>",
+      }),
+    );
+    selectRange(content, "One", 0, "Three", 5);
+    click(toolbarButton(root, "ol"));
+    expect(content.innerHTML).toBe(
+      "<ol><li>One</li><li>Two</li><li>Three</li></ol>",
+    );
+  });
+
+  it("clear снимает inline-форматирование со всех выбранных блоков", () => {
+    const { root, content } = parts(
+      mount({
+        value:
+          "<p><strong>One</strong></p><p><em>Two</em></p><p><u>Three</u></p>",
+      }),
+    );
+    selectRange(content, "One", 0, "Three", 5);
+    click(toolbarButton(root, "clear"));
+    expect(content.innerHTML).toBe("<p>One</p><p>Two</p><p>Three</p>");
+  });
+
+  it("clear превращает заголовки, списки и цитаты в абзацы", () => {
+    const { root, content } = parts(
+      mount({
+        value:
+          "<h2>One</h2><ul><li>Two</li></ul><blockquote>Three</blockquote>",
+      }),
+    );
+    selectRange(content, "One", 0, "Three", 5);
+    click(toolbarButton(root, "clear"));
+    expect(content.innerHTML).toBe("<p>One</p><p>Two</p><p>Three</p>");
+  });
+});
+
+describe("RichTextEditor: IME-композиция", () => {
+  it("input внутри композиции не эмитит и не пересоздаёт DOM", () => {
+    const changes: string[] = [];
+    const { content, hidden } = parts(
+      mount({
+        value: "<p>start</p>",
+        onValueChange: (html: string) => changes.push(html),
+      }),
+    );
+    const paragraph = content.querySelector("p");
+    const text = paragraph?.firstChild as Text;
+
+    content.dispatchEvent(
+      new CompositionEvent("compositionstart", { bubbles: true, data: "" }),
+    );
+    text.data = "你好";
+    const composingInput = new InputEvent("input", { bubbles: true });
+    Object.defineProperty(composingInput, "isComposing", { value: true });
+    content.dispatchEvent(composingInput);
+    flushSync();
+
+    expect(changes).toEqual([]);
+    expect(content.querySelector("p")).toBe(paragraph);
+    expect(content.querySelector("p")?.firstChild).toBe(text);
+
+    content.dispatchEvent(
+      new CompositionEvent("compositionend", { bubbles: true, data: "你好" }),
+    );
+    flushSync();
+
+    expect(changes).toEqual(["<p>你好</p>"]);
+    expect(hidden.value).toBe("<p>你好</p>");
+    expect(content.querySelector("p")).toBe(paragraph);
+    expect(content.querySelector("p")?.firstChild).toBe(text);
+
+    fireKey(content, { key: "z", ctrlKey: true });
+    expect(content.innerHTML).toBe("<p>start</p>");
+  });
+
+  it("keydown-команды не выполняются во время композиции", () => {
+    const { content } = parts(mount({ value: "<p>Hello</p>" }));
+    selectText(content, "Hello");
+    content.dispatchEvent(
+      new CompositionEvent("compositionstart", { bubbles: true, data: "" }),
+    );
+    fireKey(content, { key: "b", ctrlKey: true });
+    expect(content.querySelector("strong")).toBeNull();
+    content.dispatchEvent(
+      new CompositionEvent("compositionend", { bubbles: true, data: "" }),
+    );
+    expect(content.querySelector("strong")).toBeNull();
   });
 });
 

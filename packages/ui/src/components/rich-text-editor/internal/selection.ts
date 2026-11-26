@@ -128,8 +128,17 @@ function clamp(value: number, max: number): number {
   return value;
 }
 
-/** Ставит выделение по текстовым смещениям (0..длина текста). */
-export function setOffsets(root: HTMLElement, start: number, end: number): void {
+/**
+ * Ставит выделение по текстовым смещениям (0..длина текста).
+ * `preferNextBoundary` нужен после перемещения блока: на стыке текстовых
+ * узлов каретка должна остаться в перемещённом блоке, а не в предыдущем.
+ */
+export function setOffsets(
+  root: HTMLElement,
+  start: number,
+  end: number,
+  preferNextBoundary = false,
+): void {
   const total = textLength(root);
   let from = clamp(Math.min(start, end), total);
   let to = clamp(Math.max(start, end), total);
@@ -160,11 +169,17 @@ export function setOffsets(root: HTMLElement, start: number, end: number): void 
     const length = text.data.length;
     lastNode = text;
     const next = consumed + length;
-    if (startNode === null && from <= next) {
+    const startHere = preferNextBoundary
+      ? from < next || (from === next && next >= total)
+      : from <= next;
+    const endHere = preferNextBoundary
+      ? to < next || (to === next && next >= total)
+      : to <= next;
+    if (startNode === null && startHere) {
       startNode = text;
       startOffset = Math.max(0, Math.min(length, from - consumed));
     }
-    if (endNode === null && to <= next) {
+    if (endNode === null && endHere) {
       endNode = text;
       endOffset = Math.max(0, Math.min(length, to - consumed));
     }

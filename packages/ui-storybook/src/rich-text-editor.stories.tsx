@@ -18,7 +18,6 @@ interface RichTextEditorArgs {
   readonly toolbar: boolean;
   readonly minHeight: number;
   readonly maxHeight: number;
-  readonly sanitize: boolean;
   readonly onValueChange: (html: string) => void;
   readonly onChange: (event: Event) => void;
   readonly onBlur: (event: FocusEvent) => void;
@@ -93,11 +92,6 @@ const meta = {
       control: "number",
       description: "Максимальная высота контентной области, px; `0` — без ограничения",
     },
-    sanitize: {
-      control: "boolean",
-      description: "Санитайз входного значения и результата",
-      table: { defaultValue: { summary: "true" } },
-    },
     onValueChange: {
       action: "valueChange",
       description: "Санитизированный HTML после ввода или команды",
@@ -120,7 +114,6 @@ const meta = {
     toolbar: true,
     minHeight: 180,
     maxHeight: 0,
-    sanitize: true,
     onValueChange: fn(),
     onChange: fn(),
     onBlur: fn(),
@@ -148,7 +141,6 @@ export const Playground: Story = {
       toolbar={args.toolbar}
       minHeight={args.minHeight}
       maxHeight={args.maxHeight > 0 ? args.maxHeight : undefined}
-      sanitize={args.sanitize}
       onValueChange={args.onValueChange}
       onChange={args.onChange}
       onBlur={args.onBlur}

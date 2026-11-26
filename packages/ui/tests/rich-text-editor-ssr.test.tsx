@@ -24,6 +24,15 @@ function Editor(): Node {
   );
 }
 
+function TwoEditors(): Node {
+  return (
+    <div>
+      <RichTextEditor label="Первый" hint="Подсказка 1" defaultValue="<p>A</p>" />
+      <RichTextEditor label="Второй" hint="Подсказка 2" defaultValue="<p>B</p>" />
+    </div>
+  );
+}
+
 describe("RichTextEditor: SSR", () => {
   it("не вставляет HTML в contenteditable, но кладёт значение в hidden input", async () => {
     const { html } = await renderToString(Editor);
@@ -76,5 +85,53 @@ describe("RichTextEditor: SSR", () => {
 
     const hidden = container.querySelector<HTMLInputElement>('input[type="hidden"]');
     expect(hidden?.value).toBe("<p>Hello <strong>world</strong></p>");
+  });
+
+  it("два редактора без id получают разные auto-id, ARIA и hydrate без mismatch", async () => {
+    const { html } = await renderToString(TwoEditors);
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    document.body.appendChild(container);
+
+    const contents = Array.from(
+      container.querySelectorAll<HTMLDivElement>(".sui-rte__content"),
+    );
+    expect(contents).toHaveLength(2);
+    const ids = contents.map((content) => content.id);
+    expect(ids[0]).toMatch(/^sui-rte-\d+$/u);
+    expect(ids[1]).toMatch(/^sui-rte-\d+$/u);
+    expect(ids[0]).not.toBe(ids[1]);
+
+    for (const content of contents) {
+      expect(content.getAttribute("aria-labelledby")).toBe(`${content.id}-label`);
+      expect(content.getAttribute("aria-describedby")).toBe(`${content.id}-hint`);
+      expect(document.getElementById(`${content.id}-label`)?.getAttribute("for")).toBe(
+        content.id,
+      );
+      const hidden = content.parentElement?.querySelector<HTMLInputElement>(
+        'input[type="hidden"]',
+      );
+      expect(hidden?.name).toBe(content.id);
+    }
+
+    const mismatches: string[] = [];
+    const handle = await hydrate(container, TwoEditors, {
+      onMismatch: (error) => {
+        mismatches.push(error.message);
+      },
+    });
+    cleanups.push(() => handle.dispose());
+
+    expect(mismatches).toEqual([]);
+    const hydrated = Array.from(
+      container.querySelectorAll<HTMLDivElement>(".sui-rte__content"),
+    );
+    expect(hydrated.map((content) => content.id)).toEqual(ids);
+    expect(container.querySelectorAll(".sui-rte__content")[0]?.innerHTML).toBe(
+      "<p>A</p>",
+    );
+    expect(container.querySelectorAll(".sui-rte__content")[1]?.innerHTML).toBe(
+      "<p>B</p>",
+    );
   });
 });

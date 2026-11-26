@@ -3462,7 +3462,7 @@
       },
       "RichTextCommand": {
         "kind": "type",
-        "signature": "export type RichTextCommand = \"bold\" | \"italic\" | \"underline\" | \"strike\" | \"h1\" | \"h2\" | \"h3\" | \"paragraph\" | \"ul\" | \"ol\" | \"blockquote\" | \"code\" | \"link\" | \"unlink\" | \"align-left\" | \"align-center\" | \"align-right\" | \"undo\" | \"redo\" | \"clear\";"
+        "signature": "export type RichTextCommand = \"bold\" | \"italic\" | \"underline\" | \"strike\" | \"h1\" | \"h2\" | \"h3\" | \"paragraph\" | \"ul\" | \"ol\" | \"indent\" | \"outdent\" | \"blockquote\" | \"code\" | \"link\" | \"unlink\" | \"align-left\" | \"align-center\" | \"align-right\" | \"undo\" | \"redo\" | \"clear\";"
       },
       "RichTextEditor": {
         "kind": "function",
@@ -3471,7 +3471,7 @@
       },
       "RichTextEditorProps": {
         "kind": "interface",
-        "signature": "export interface RichTextEditorProps { /** HTML-значение (controlled). */ readonly value?: string | undefined; /** Начальное HTML-значение (uncontrolled). */ readonly defaultValue?: string | undefined; readonly field?: BoundField<string> | undefined; readonly onChange?: ((event: Event) => void) | undefined; readonly onValueChange?: ((html: string) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly label?: Children; readonly hint?: Children; readonly error?: Children; readonly placeholder?: string | undefined; readonly name?: string | undefined; readonly id?: string | undefined; readonly required?: boolean | undefined; readonly readOnly?: boolean | undefined; readonly disabled?: boolean | undefined; readonly invalid?: boolean | undefined; readonly toolbar?: boolean | readonly ToolbarItem[] | undefined; readonly minHeight?: number | undefined; readonly maxHeight?: number | undefined; /** Санитайз значения и результата. По умолчанию `true`. */ readonly sanitize?: boolean | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+        "signature": "export interface RichTextEditorProps { /** HTML-значение (controlled). */ readonly value?: string | undefined; /** Начальное HTML-значение (uncontrolled). */ readonly defaultValue?: string | undefined; readonly field?: BoundField<string> | undefined; readonly onChange?: ((event: Event) => void) | undefined; readonly onValueChange?: ((html: string) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly label?: Children; readonly hint?: Children; readonly error?: Children; readonly placeholder?: string | undefined; readonly name?: string | undefined; readonly id?: string | undefined; readonly required?: boolean | undefined; readonly readOnly?: boolean | undefined; readonly disabled?: boolean | undefined; readonly invalid?: boolean | undefined; readonly toolbar?: boolean | readonly ToolbarItem[] | undefined; readonly minHeight?: number | undefined; readonly maxHeight?: number | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
       },
       "SearchField": {
         "kind": "function",

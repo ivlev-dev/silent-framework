@@ -5,6 +5,7 @@ import {
   createSignal,
   onCleanup,
   untrack,
+  useId,
 } from "@ivlev-dev/silent-core";
 import type { Attrs } from "../../internal/props.js";
 import { clientEffect } from "../../internal/overlay.js";
@@ -17,7 +18,6 @@ import {
   errorIdFor,
   hasContent,
   hintIdFor,
-  resolveControlId,
 } from "../../form/internal/control.js";
 import { RichTextHistory, type HistorySnapshot } from "./internal/history.js";
 import {
@@ -29,6 +29,7 @@ import {
   applyAlignFormat,
   applyBlockFormat,
   applyClearFormatting,
+  applyIndentFormat,
   applyInlineFormat,
   applyLinkFormat,
   applyListFormat,
@@ -45,6 +46,7 @@ import {
 import {
   captureOffsets,
   cloneEditorRange,
+  closestWithin,
   focusEditor,
   getEditorRange,
   insertHtml,
@@ -67,6 +69,8 @@ export type RichTextCommand =
   | "paragraph"
   | "ul"
   | "ol"
+  | "indent"
+  | "outdent"
   | "blockquote"
   | "code"
   | "link"
@@ -102,8 +106,6 @@ export interface RichTextEditorProps {
   readonly toolbar?: boolean | readonly ToolbarItem[] | undefined;
   readonly minHeight?: number | undefined;
   readonly maxHeight?: number | undefined;
-  /** Санитайз значения и результата. По умолчанию `true`. */
-  readonly sanitize?: boolean | undefined;
   readonly class?: ClassNameValue;
   readonly style?: StyleInput;
   readonly attrs?: Attrs;
@@ -122,6 +124,8 @@ const DEFAULT_TOOLBAR: readonly ToolbarItem[] = [
   "|",
   "ul",
   "ol",
+  "indent",
+  "outdent",
   "blockquote",
   "code",
   "|",
@@ -149,6 +153,8 @@ const COMMAND_LABELS: Readonly<Record<RichTextCommand, string>> = {
   paragraph: "Обычный текст",
   ul: "Маркированный список",
   ol: "Нумерованный список",
+  indent: "Увеличить отступ",
+  outdent: "Уменьшить отступ",
   blockquote: "Цитата",
   code: "Блок кода",
   link: "Добавить ссылку",
@@ -172,6 +178,8 @@ const COMMAND_GLYPHS: Readonly<Record<RichTextCommand, string>> = {
   paragraph: "¶",
   ul: "•",
   ol: "1.",
+  indent: "⇥",
+  outdent: "⇤",
   blockquote: "❝",
   code: "</>",
   link: "↗",
@@ -296,12 +304,11 @@ function ToolbarList(props: ToolbarListProps): Node {
  * восстановление каретки. Значение для формы живёт в скрытом input.
  */
 export function RichTextEditor(props: RichTextEditorProps): Node {
+  // useId вызывается всегда и до ветвлений: порядок вызовов не зависит от
+  // появления `id`/`name` на лету. Явные id имеют приоритет.
+  const autoId = useId("sui-rte");
+  const id = props.id ?? props.name ?? autoId;
   const config = useUiConfig();
-  const id = resolveControlId(
-    props.id ?? props.field?.id,
-    props.name ?? props.field?.name,
-    "rich-text-editor",
-  );
   const labelId = `${id}-label`;
   const toolbarId = `${id}-toolbar`;
   const linkPanelId = `${id}-link`;
@@ -322,7 +329,6 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
   const disabled = (): boolean => props.disabled === true;
   const readOnly = (): boolean => props.readOnly === true;
   const editable = (): boolean => !disabled() && !readOnly();
-  const sanitizeEnabled = (): boolean => props.sanitize !== false;
 
   const externalValue = (): string | undefined => {
     if (props.value !== undefined) return props.value;
@@ -353,13 +359,14 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
   let baselineHtml = "";
   /** Внешнее значение, пришедшее во время фокуса: применим после blur. */
   let pendingExternal: string | null = null;
+  let composing = false;
+  let compositionDirty = false;
 
   function readSnapshot(): HistorySnapshot {
     const content = contentNode();
     if (content === null) return { html: "", start: 0, end: 0 };
     const offsets = captureOffsets(content);
-    const raw = content.innerHTML;
-    const output = sanitizeEnabled() ? sanitizeHtml(raw) : raw;
+    const output = sanitizeHtml(content.innerHTML);
     return {
       html: output,
       start: offsets?.start ?? 0,
@@ -404,8 +411,7 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
   function emitValue(): void {
     const content = contentNode();
     if (content === null) return;
-    const raw = content.innerHTML;
-    const output = sanitizeEnabled() ? sanitizeHtml(raw) : raw;
+    const output = sanitizeHtml(content.innerHTML);
     setHtml(output);
     props.onValueChange?.(output);
     const event = createSyntheticChange(output, nameOf());
@@ -416,7 +422,7 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
   function setEditorHtml(value: string): boolean {
     const content = contentNode();
     if (content === null) return false;
-    const safe = sanitizeEnabled() ? sanitizeHtml(value) : value;
+    const safe = sanitizeHtml(value);
     if (content.innerHTML === safe) {
       setHtml(safe);
       return false;
@@ -466,7 +472,7 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
     if (root === null || content === null) return false;
     const active = root.ownerDocument.activeElement;
     if (active !== null && root.contains(active)) return false;
-    const safe = sanitizeEnabled() ? sanitizeHtml(value) : value;
+    const safe = sanitizeHtml(value);
     if (content.innerHTML === safe) return false;
     content.innerHTML = safe;
     setHtml(safe);
@@ -500,7 +506,7 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
 
   function undo(): void {
     const content = contentNode();
-    if (content === null || !editable()) return;
+    if (content === null || !editable() || composing) return;
     flushHistory();
     const snapshot = history.undo();
     if (snapshot !== null) applySnapshot(snapshot);
@@ -508,7 +514,7 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
 
   function redo(): void {
     const content = contentNode();
-    if (content === null || !editable()) return;
+    if (content === null || !editable() || composing) return;
     flushHistory();
     const snapshot = history.redo();
     if (snapshot !== null) applySnapshot(snapshot);
@@ -583,7 +589,7 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
 
   function runCommand(command: RichTextCommand): void {
     const content = contentNode();
-    if (content === null || !editable()) return;
+    if (content === null || !editable() || composing) return;
     if (command === "link") {
       openLinkPanel();
       return;
@@ -613,6 +619,8 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
           const align = ALIGN_COMMANDS[command];
           if (align !== undefined) {
             changed = applyAlignFormat(content, align);
+          } else if (command === "indent" || command === "outdent") {
+            changed = applyIndentFormat(content, command);
           } else if (command === "unlink") {
             changed = applyUnlink(content);
           } else if (command === "clear") {
@@ -650,8 +658,42 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
     return true;
   }
 
-  function handleInput(content: HTMLDivElement): void {
+  function handleBeforeInput(event: InputEvent): void {
+    if (composing || event.isComposing) compositionDirty = true;
+  }
+
+  function handleCompositionStart(): void {
+    composing = true;
+    compositionDirty = false;
+    // Завершаем предыдущую порцию ввода отдельным шагом истории.
+    if (historyTimer !== null) pushHistoryNow();
+  }
+
+  function finalizeComposition(content: HTMLDivElement): void {
+    const dirty = compositionDirty;
+    compositionDirty = false;
+    if (!dirty || !editable()) return;
+    // Финальная фиксация: DOM не пересобираем, только вычищаем ZWSP и
+    // отправляем санитизированное значение в форму/историю.
+    stripZeroWidthSpaces(content);
+    clearEmptyEditor(content);
+    emitValue();
+    pushHistoryNow();
+    syncSelection();
+  }
+
+  function handleCompositionEnd(content: HTMLDivElement): void {
+    composing = false;
+    finalizeComposition(content);
+  }
+
+  function handleInput(content: HTMLDivElement, event?: InputEvent): void {
     if (!editable()) return;
+    if (composing || event?.isComposing === true) {
+      compositionDirty = true;
+      return;
+    }
+    compositionDirty = false;
     stripZeroWidthSpaces(content);
     clearEmptyEditor(content);
     emitValue();
@@ -663,7 +705,7 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
     const content = contentNode();
     if (content === null) return;
     event.preventDefault();
-    if (!editable()) return;
+    if (!editable() || composing) return;
     const data = event.clipboardData as DataTransfer | null | undefined;
     if (data === null || data === undefined) return;
     const htmlData = data.getData("text/html");
@@ -683,7 +725,7 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
     const content = contentNode();
     if (content === null) return;
     event.preventDefault();
-    if (!editable()) return;
+    if (!editable() || composing) return;
     const data = event.dataTransfer as DataTransfer | null | undefined;
     if (data === null || data === undefined) return;
     const htmlData = data.getData("text/html");
@@ -700,7 +742,7 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
   }
 
   function handleKeyDown(content: HTMLDivElement, event: KeyboardEvent): void {
-    if (event.isComposing) return;
+    if (composing || event.isComposing) return;
     if (!editable()) return;
     const meta = event.ctrlKey || event.metaKey;
     const key = event.key.toLowerCase();
@@ -737,11 +779,22 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
       return;
     }
 
-    if (event.key === "Tab" && !event.shiftKey && !event.altKey && !meta) {
-      event.preventDefault();
+    if (event.key === "Tab" && !event.altKey && !meta) {
       ensureSelection(content);
-      const changed = insertText(content, "\t");
-      finishCommand(changed);
+      const range = getEditorRange(content);
+      const inList =
+        range !== null && closestWithin(content, range.startContainer, ["li"]) !== null;
+      if (inList) {
+        event.preventDefault();
+        runCommand(event.shiftKey ? "outdent" : "indent");
+        return;
+      }
+      if (!event.shiftKey) {
+        event.preventDefault();
+        const changed = insertText(content, "\t");
+        finishCommand(changed);
+      }
+      // Shift+Tab вне списка оставляем браузеру: выход к toolbar/наружу.
       return;
     }
 
@@ -758,8 +811,12 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
   function handleFocusOut(root: HTMLDivElement, event: FocusEvent): void {
     const next = event.relatedTarget;
     if (next instanceof Node && root.contains(next)) return;
-    if (linkOpen()) setLinkOpen(false);
     const content = contentNode();
+    if (composing) {
+      composing = false;
+      if (content !== null) finalizeComposition(content);
+    }
+    if (linkOpen()) setLinkOpen(false);
     if (content !== null && editable()) {
       const stripped = stripZeroWidthSpaces(content);
       const emptied = clearEmptyEditor(content);
@@ -790,7 +847,7 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
     }
 
     const source = untrack(() => initialValue());
-    const safe = untrack(() => (sanitizeEnabled() ? sanitizeHtml(source) : source));
+    const safe = untrack(() => sanitizeHtml(source));
     content.innerHTML = safe;
     setHtml(safe);
     baselineHtml = safe;
@@ -800,7 +857,10 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
     setMounted(true);
     untrack(() => resetHistory());
 
-    const onInput = (): void => handleInput(content);
+    const onInput = (event: Event): void => handleInput(content, event as InputEvent);
+    const onBeforeInput = (event: Event): void => handleBeforeInput(event as InputEvent);
+    const onCompositionStart = (): void => handleCompositionStart();
+    const onCompositionEnd = (): void => handleCompositionEnd(content);
     const onKeyDown = (event: KeyboardEvent): void => handleKeyDown(content, event);
     const onPaste = (event: Event): void => handlePaste(event as ClipboardEvent);
     const onDrop = (event: Event): void => handleDrop(event as DragEvent);
@@ -818,6 +878,9 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
     };
 
     content.addEventListener("input", onInput);
+    content.addEventListener("beforeinput", onBeforeInput);
+    content.addEventListener("compositionstart", onCompositionStart);
+    content.addEventListener("compositionend", onCompositionEnd);
     content.addEventListener("keydown", onKeyDown);
     content.addEventListener("paste", onPaste);
     content.addEventListener("drop", onDrop);
@@ -831,6 +894,9 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
 
     onCleanup(() => {
       content.removeEventListener("input", onInput);
+      content.removeEventListener("beforeinput", onBeforeInput);
+      content.removeEventListener("compositionstart", onCompositionStart);
+      content.removeEventListener("compositionend", onCompositionEnd);
       content.removeEventListener("keydown", onKeyDown);
       content.removeEventListener("paste", onPaste);
       content.removeEventListener("drop", onDrop);
@@ -847,6 +913,8 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
         historyTimer = null;
       }
       initialized = false;
+      composing = false;
+      compositionDirty = false;
       setMounted(false);
     });
   });
@@ -860,7 +928,7 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
     if (content === null || value === undefined || !mounted()) return;
     const active = root?.ownerDocument.activeElement ?? null;
     if (root !== null && active !== null && root.contains(active)) {
-      const safe = sanitizeEnabled() ? sanitizeHtml(value) : value;
+      const safe = sanitizeHtml(value);
       pendingExternal = content.innerHTML === safe ? null : value;
       return;
     }
@@ -1040,6 +1108,7 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
             style={contentStyle()}
           />
           <input
+            id={`${id}-value`}
             type="hidden"
             name={nameOf()}
             disabled={disabled()}

@@ -234,6 +234,42 @@
     margin-block: 0;
   }
 
+  /* Глобальный reset убирает list-style: возвращаем маркеры в контенте. */
+  .sui-rte__content ul {
+    list-style-type: disc;
+  }
+
+  .sui-rte__content ol {
+    list-style-type: decimal;
+  }
+
+  /* Вложенные списки: компактнее, с читаемыми маркерами на каждом уровне. */
+  .sui-rte__content li > ul,
+  .sui-rte__content li > ol {
+    margin-block: var(--sui-space-1) 0;
+    padding-inline-start: var(--sui-space-4);
+  }
+
+  .sui-rte__content ul ul {
+    list-style-type: circle;
+  }
+
+  .sui-rte__content ul ul ul {
+    list-style-type: square;
+  }
+
+  .sui-rte__content ol ol {
+    list-style-type: lower-alpha;
+  }
+
+  .sui-rte__content ol ol ol {
+    list-style-type: lower-roman;
+  }
+
+  .sui-rte__content li::marker {
+    color: var(--sui-color-on-surface-variant);
+  }
+
   .sui-rte__content blockquote {
     padding-inline-start: var(--sui-space-3);
     border-inline-start: 3px solid var(--sui-color-primary);
