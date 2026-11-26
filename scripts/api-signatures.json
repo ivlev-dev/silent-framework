@@ -3219,6 +3219,16 @@
         "type": "(props: GlyphProps) => Node",
         "signature": "export declare function FormatUnderlineIcon(props: GlyphProps): Node;"
       },
+      "FullscreenExitIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function FullscreenExitIcon(props: GlyphProps): Node;"
+      },
+      "FullscreenIcon": {
+        "kind": "function",
+        "type": "(props: GlyphProps) => Node",
+        "signature": "export declare function FullscreenIcon(props: GlyphProps): Node;"
+      },
       "GlyphProps": {
         "kind": "interface",
         "signature": "export interface GlyphProps extends Omit<IconProps, \"children\"> { readonly title?: string | undefined; }"
@@ -3576,7 +3586,7 @@
       },
       "RichTextEditorProps": {
         "kind": "interface",
-        "signature": "export interface RichTextEditorProps { /** HTML-значение (controlled). */ readonly value?: string | undefined; /** Начальное HTML-значение (uncontrolled). */ readonly defaultValue?: string | undefined; readonly field?: BoundField<string> | undefined; readonly onChange?: ((event: Event) => void) | undefined; readonly onValueChange?: ((html: string) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly label?: Children; readonly hint?: Children; readonly error?: Children; readonly placeholder?: string | undefined; readonly name?: string | undefined; readonly id?: string | undefined; readonly required?: boolean | undefined; readonly readOnly?: boolean | undefined; readonly disabled?: boolean | undefined; readonly invalid?: boolean | undefined; readonly toolbar?: boolean | readonly ToolbarItem[] | undefined; readonly minHeight?: number | undefined; readonly maxHeight?: number | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+        "signature": "export interface RichTextEditorProps { /** HTML-значение (controlled). */ readonly value?: string | undefined; /** Начальное HTML-значение (uncontrolled). */ readonly defaultValue?: string | undefined; readonly field?: BoundField<string> | undefined; readonly onChange?: ((event: Event) => void) | undefined; readonly onValueChange?: ((html: string) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly label?: Children; readonly hint?: Children; readonly error?: Children; readonly placeholder?: string | undefined; readonly name?: string | undefined; readonly id?: string | undefined; readonly required?: boolean | undefined; readonly readOnly?: boolean | undefined; readonly disabled?: boolean | undefined; readonly invalid?: boolean | undefined; readonly toolbar?: boolean | readonly ToolbarItem[] | undefined; readonly minHeight?: number | undefined; readonly maxHeight?: number | undefined; /** Показывать footer со счётчиками и активным форматом. По умолчанию `true`. */ readonly statusBar?: boolean | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
       },
       "SearchField": {
         "kind": "function",

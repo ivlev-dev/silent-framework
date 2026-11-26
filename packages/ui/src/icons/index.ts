@@ -57,3 +57,7 @@ export { FormatAlignRightIcon } from "./format-align-right.js";
 export { UndoIcon } from "./undo.js";
 export { RedoIcon } from "./redo.js";
 export { FormatClearIcon } from "./format-clear.js";
+
+/* Интерфейс */
+export { FullscreenIcon } from "./fullscreen.js";
+export { FullscreenExitIcon } from "./fullscreen-exit.js";

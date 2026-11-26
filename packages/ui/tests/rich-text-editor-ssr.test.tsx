@@ -119,9 +119,9 @@ describe("RichTextEditor: SSR", () => {
       expect(document.getElementById(`${content.id}-label`)?.getAttribute("for")).toBe(
         content.id,
       );
-      const hidden = content.parentElement?.querySelector<HTMLInputElement>(
-        'input[type="hidden"]',
-      );
+      const hidden = content
+        .closest(".sui-rte")
+        ?.querySelector<HTMLInputElement>('input[type="hidden"]');
       expect(hidden?.name).toBe(content.id);
     }
 

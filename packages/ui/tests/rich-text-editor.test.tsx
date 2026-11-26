@@ -190,9 +190,15 @@ describe("RichTextEditor: разметка и доступность", () => {
       mount({ toolbar: ["bold", "|", "undo"], defaultValue: "" }),
     );
     expect(toolbar).not.toBeNull();
-    expect(toolbar?.querySelectorAll("button")).toHaveLength(2);
-    expect(toolbar?.querySelectorAll('[role="separator"]')).toHaveLength(1);
+    expect(
+      toolbar?.querySelectorAll(
+        'button[data-command]:not([data-command="fullscreen"])',
+      ),
+    ).toHaveLength(2);
+    // Явный разделитель между bold/undo + разделитель перед fullscreen.
+    expect(toolbar?.querySelectorAll('[role="separator"]')).toHaveLength(2);
     expect(toolbarButton(toolbar as Element, "bold")).toBeTruthy();
+    expect(toolbarButton(toolbar as Element, "fullscreen")).toBeTruthy();
   });
 
   it("кнопки тулбара содержат иконки, а не текстовые глифы", () => {
@@ -215,10 +221,12 @@ describe("RichTextEditor: разметка и доступность", () => {
     const { root, content, toolbar } = parts(mount({ value: "<p>Hello</p>" }));
     selectText(content, "Hello");
     expect(toolbar).not.toBeNull();
-    mockToolbarWidth(toolbar as HTMLElement, 80);
+    mockToolbarWidth(toolbar as HTMLElement, 120);
 
     expect(
-      toolbar?.querySelectorAll(".sui-rte__toolbar .sui-rte__button[data-command]"),
+      toolbar?.querySelectorAll(
+        '.sui-rte__toolbar .sui-rte__button[data-command]:not([data-command="fullscreen"])',
+      ),
     ).toHaveLength(1);
     const more = toolbar?.querySelector<HTMLButtonElement>(
       'button[aria-haspopup="menu"]',
@@ -261,7 +269,7 @@ describe("RichTextEditor: разметка и доступность", () => {
 
   it("меню «Ещё» закрывается Escape и кликом вне", () => {
     const { toolbar } = parts(mount({ value: "<p>x</p>" }));
-    mockToolbarWidth(toolbar as HTMLElement, 80);
+    mockToolbarWidth(toolbar as HTMLElement, 120);
     const more = toolbar?.querySelector<HTMLButtonElement>(
       'button[aria-haspopup="menu"]',
     );
@@ -315,6 +323,67 @@ describe("RichTextEditor: разметка и доступность", () => {
     expect(content.getAttribute("tabindex")).toBe("-1");
     expect(hidden.disabled).toBe(true);
     expect(toolbarButton(root, "bold").disabled).toBe(true);
+  });
+});
+
+describe("RichTextEditor: статус и fullscreen", () => {
+  it("footer считает слова/символы и обновляется на input", () => {
+    const { field, content } = parts(mount({ value: "<p>Hello</p>" }));
+    const footer = field.querySelector<HTMLElement>(".sui-rte__footer");
+    expect(footer).not.toBeNull();
+    expect(footer?.textContent).toContain("1 слов · 5 символов");
+    expect(footer?.getAttribute("role")).toBeNull();
+    expect(footer?.hasAttribute("aria-live")).toBe(false);
+
+    content.innerHTML = "<p>Hello world</p>";
+    fireInput(content);
+    expect(footer?.textContent).toContain("2 слов · 11 символов");
+  });
+
+  it("statusBar={false} скрывает footer", () => {
+    const { field } = parts(
+      mount({ value: "<p>x</p>", statusBar: false }),
+    );
+    expect(field.querySelector(".sui-rte__footer")).toBeNull();
+  });
+
+  it("footer показывает активный формат для h2", () => {
+    const { field, content } = parts(mount({ value: "<h2>Title</h2>" }));
+    selectText(content, "Title");
+    document.dispatchEvent(new Event("selectionchange"));
+    flushSync();
+    expect(field.querySelector(".sui-rte__format")?.textContent).toBe(
+      "Заголовок 2",
+    );
+  });
+
+  it("кнопки содержат tooltip и aria-keyshortcuts", () => {
+    const { root } = parts(mount({ value: "<p>x</p>" }));
+    const bold = toolbarButton(root, "bold");
+    expect(bold.getAttribute("data-tooltip")).toBe("Полужирный · Ctrl+B");
+    expect(bold.getAttribute("aria-keyshortcuts")).toContain("Control+B");
+    const undo = toolbarButton(root, "undo");
+    expect(undo.getAttribute("data-tooltip")).toBe("Отменить · Ctrl+Z");
+    expect(undo.getAttribute("aria-keyshortcuts")).toContain("Control+Z");
+  });
+
+  it("fullscreen переключает data-expanded и выходит по Escape", () => {
+    const { root } = parts(mount({ value: "<p>x</p>" }));
+    const fullscreen = toolbarButton(root, "fullscreen");
+    expect(fullscreen.getAttribute("aria-pressed")).toBe("false");
+    expect(fullscreen.getAttribute("data-tooltip")).toBe("Развернуть");
+
+    click(fullscreen);
+    expect(root.hasAttribute("data-expanded")).toBe(true);
+    expect(fullscreen.getAttribute("aria-pressed")).toBe("true");
+    expect(fullscreen.getAttribute("data-tooltip")).toBe("Свернуть");
+
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    );
+    flushSync();
+    expect(root.hasAttribute("data-expanded")).toBe(false);
+    expect(fullscreen.getAttribute("aria-pressed")).toBe("false");
   });
 });
 

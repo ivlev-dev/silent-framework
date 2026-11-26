@@ -18,6 +18,7 @@ interface RichTextEditorArgs {
   readonly toolbar: boolean;
   readonly minHeight: number;
   readonly maxHeight: number;
+  readonly statusBar: boolean;
   readonly onValueChange: (html: string) => void;
   readonly onChange: (event: Event) => void;
   readonly onBlur: (event: FocusEvent) => void;
@@ -44,6 +45,8 @@ const meta = {
           "input уже санитизирован серверным DOM-независимым парсером; поэтому",
           "гидрация проходит без mismatch. Тулбар на иконках автоматически",
           "ужимается: не поместившиеся команды уходят в меню «Ещё».",
+          "Внизу — счётчики слов и символов и активный формат, в конце",
+          "тулбара — полноэкранный режим (Escape выходит).",
           "Вход, результат, paste и drop проходят allowlist-санитайзер и",
           "нормализацию блоков, а блочные команды консервативно сохраняют",
           "списки и цитаты.",
@@ -96,6 +99,11 @@ const meta = {
       control: "number",
       description: "Максимальная высота контентной области, px; `0` — без ограничения",
     },
+    statusBar: {
+      control: "boolean",
+      description: "Footer со счётчиками слов/символов и активным форматом",
+      table: { defaultValue: { summary: "true" } },
+    },
     onValueChange: {
       action: "valueChange",
       description: "Санитизированный HTML после ввода или команды",
@@ -118,6 +126,7 @@ const meta = {
     toolbar: true,
     minHeight: 180,
     maxHeight: 0,
+    statusBar: true,
     onValueChange: fn(),
     onChange: fn(),
     onBlur: fn(),
@@ -145,6 +154,7 @@ export const Playground: Story = {
       toolbar={args.toolbar}
       minHeight={args.minHeight}
       maxHeight={args.maxHeight > 0 ? args.maxHeight : undefined}
+      statusBar={args.statusBar}
       onValueChange={args.onValueChange}
       onChange={args.onChange}
       onBlur={args.onBlur}
@@ -283,5 +293,33 @@ export const OverflowMenu: Story = {
         onValueChange={args.onValueChange}
       />
     </div>
+  )),
+};
+
+export const Fullscreen: Story = {
+  parameters: {
+    controls: { disable: true },
+    docs: {
+      description: {
+        story:
+          "Нажмите кнопку fullscreen в конце тулбара: карточка развернётся на весь viewport, Escape вернёт исходный режим.",
+      },
+    },
+  },
+  args: {
+    label: "Полноэкранный редактор",
+    hint: "Escape выходит из полноэкранного режима",
+    defaultValue: INITIAL_HTML,
+  },
+  render: silentStory<RichTextEditorArgs>((args) => (
+    <RichTextEditor
+      defaultValue={args.defaultValue}
+      label={args.label}
+      hint={args.hint}
+      minHeight={args.minHeight}
+      statusBar={args.statusBar}
+      onChange={args.onChange}
+      onValueChange={args.onValueChange}
+    />
   )),
 };

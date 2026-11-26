@@ -34,8 +34,14 @@ const FORMATTING_GLYPHS = {
   UndoIcon: icons.UndoIcon,
 } as const;
 
+const INTERFACE_GLYPHS = {
+  FullscreenExitIcon: icons.FullscreenExitIcon,
+  FullscreenIcon: icons.FullscreenIcon,
+} as const;
+
 const GLYPHS = {
   ...FORMATTING_GLYPHS,
+  ...INTERFACE_GLYPHS,
   AddIcon: icons.AddIcon,
   ArrowBackIcon: icons.ArrowBackIcon,
   ArrowForwardIcon: icons.ArrowForwardIcon,
@@ -147,6 +153,21 @@ describe("иконки Material Symbols", () => {
       expect(labelled.getAttribute("aria-label")).toBe("Форматирование");
       expect(labelled.hasAttribute("aria-hidden")).toBe(false);
       expect(labelled.querySelector("title")?.textContent).toBe("Форматирование");
+    });
+  }
+
+  for (const [name, Glyph] of Object.entries(INTERFACE_GLYPHS)) {
+    it(`${name}: декоративна без label и именована с label`, () => {
+      const decorative = mount(Glyph);
+      expect(decorative.getAttribute("fill")).toBe("currentColor");
+      expect(decorative.getAttribute("aria-hidden")).toBe("true");
+      expect(decorative.getAttribute("role")).toBeNull();
+
+      const labelled = mount(Glyph, { title: "Полный экран" });
+      expect(labelled.getAttribute("role")).toBe("img");
+      expect(labelled.getAttribute("aria-label")).toBe("Полный экран");
+      expect(labelled.hasAttribute("aria-hidden")).toBe(false);
+      expect(labelled.querySelector("title")?.textContent).toBe("Полный экран");
     });
   }
 

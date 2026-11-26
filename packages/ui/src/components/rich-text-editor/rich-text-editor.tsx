@@ -34,6 +34,8 @@ import {
   FormatQuoteIcon,
   FormatStrikethroughIcon,
   FormatUnderlineIcon,
+  FullscreenExitIcon,
+  FullscreenIcon,
   LinkIcon,
   LinkOffIcon,
   MoreHorizIcon,
@@ -142,6 +144,8 @@ export interface RichTextEditorProps {
   readonly toolbar?: boolean | readonly ToolbarItem[] | undefined;
   readonly minHeight?: number | undefined;
   readonly maxHeight?: number | undefined;
+  /** Показывать footer со счётчиками и активным форматом. По умолчанию `true`. */
+  readonly statusBar?: boolean | undefined;
   readonly class?: ClassNameValue;
   readonly style?: StyleInput;
   readonly attrs?: Attrs;
@@ -238,6 +242,38 @@ interface ToolbarMetrics {
   readonly buttonWidth: number;
   readonly separatorWidth: number;
   readonly moreWidth: number;
+  readonly fullscreenWidth: number;
+}
+
+const STATS_BLOCK_TAGS = new Set([
+  "p",
+  "h1",
+  "h2",
+  "h3",
+  "li",
+  "ul",
+  "ol",
+  "blockquote",
+  "pre",
+  "br",
+  "hr",
+]);
+
+function statsText(root: HTMLElement): string {
+  const parts: string[] = [];
+  const visit = (node: Node): void => {
+    if (node.nodeType === 3) {
+      parts.push((node as Text).data);
+      return;
+    }
+    if (node.nodeType !== 1) return;
+    const block = STATS_BLOCK_TAGS.has((node as Element).localName);
+    if (block) parts.push(" ");
+    for (const child of Array.from(node.childNodes)) visit(child);
+    if (block) parts.push(" ");
+  };
+  for (const child of Array.from(root.childNodes)) visit(child);
+  return parts.join("");
 }
 
 function enabledMenuItems(panel: HTMLElement): HTMLElement[] {
@@ -246,6 +282,36 @@ function enabledMenuItems(panel: HTMLElement): HTMLElement[] {
       '[role="menuitem"]:not([disabled]), [role="menuitemcheckbox"]:not([disabled])',
     ),
   );
+}
+
+const COMMAND_SHORTCUTS: Readonly<Partial<Record<RichTextCommand, string>>> = {
+  bold: "Ctrl+B",
+  italic: "Ctrl+I",
+  underline: "Ctrl+U",
+  undo: "Ctrl+Z",
+  redo: "Ctrl+Shift+Z",
+};
+
+const COMMAND_KEYSHORTCUTS: Readonly<Partial<Record<RichTextCommand, string>>> = {
+  bold: "Control+B Meta+B",
+  italic: "Control+I Meta+I",
+  underline: "Control+U Meta+U",
+  undo: "Control+Z Meta+Z",
+  redo: "Control+Shift+Z Meta+Shift+Z Control+Y",
+};
+
+const PLACEHOLDER_TEXT = "Начните писать…";
+const PLACEHOLDER_HINT =
+  "Поддерживаются заголовки, списки, цитаты и ссылки";
+const FOOTER_SHORTCUT = "Ctrl+B — полужирный";
+const EXPAND_LABEL = "Развернуть";
+const COLLAPSE_LABEL = "Свернуть";
+
+function commandTooltip(command: RichTextCommand): string {
+  const shortcut = COMMAND_SHORTCUTS[command];
+  return shortcut === undefined
+    ? COMMAND_LABELS[command]
+    : `${COMMAND_LABELS[command]} · ${shortcut}`;
 }
 
 const LINK_ERROR_TEXT =
@@ -326,8 +392,10 @@ function ToolbarList(props: ToolbarListProps): Node {
             type="button"
             class="sui-rte__button"
             data-command={item}
+            data-tooltip={commandTooltip(item)}
             title={COMMAND_LABELS[item]}
             aria-label={COMMAND_LABELS[item]}
+            aria-keyshortcuts={COMMAND_KEYSHORTCUTS[item]}
             aria-pressed={
               isToggleCommand(item) ? (props.isActive(item) ? "true" : "false") : undefined
             }
@@ -377,6 +445,7 @@ function ToolbarMenuItems(props: ToolbarMenuItemsProps): Node {
             role={toggle ? "menuitemcheckbox" : "menuitem"}
             aria-checked={toggle ? (props.isActive(command) ? "true" : "false") : undefined}
             aria-label={COMMAND_LABELS[command]}
+            aria-keyshortcuts={COMMAND_KEYSHORTCUTS[command]}
             title={COMMAND_LABELS[command]}
             aria-disabled={disabled ? "true" : undefined}
             disabled={disabled}
@@ -434,6 +503,8 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
   const disabled = (): boolean => props.disabled === true;
   const readOnly = (): boolean => props.readOnly === true;
   const editable = (): boolean => !disabled() && !readOnly();
+  const showStatus = (): boolean => props.statusBar !== false;
+  const placeholderText = (): string => props.placeholder ?? PLACEHOLDER_TEXT;
 
   const externalValue = (): string | undefined => {
     if (props.value !== undefined) return props.value;
@@ -462,6 +533,11 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
   const [moreRoot, setMoreRoot] = createSignal<HTMLSpanElement | null>(null);
   const [moreButton, setMoreButton] = createSignal<HTMLButtonElement | null>(null);
   const [menuPanel, setMenuPanel] = createSignal<HTMLDivElement | null>(null);
+  const [fullscreenButton, setFullscreenButton] =
+    createSignal<HTMLButtonElement | null>(null);
+  const [expanded, setExpanded] = createSignal(false);
+  const [wordCount, setWordCount] = createSignal(0);
+  const [charCount, setCharCount] = createSignal(0);
   const moreMenuState = bindOpenState({
     open: () => undefined,
     defaultOpen: () => false,
@@ -530,11 +606,19 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
     if (historyTimer !== null) pushHistoryNow();
   }
 
+  function updateStats(content: HTMLDivElement): void {
+    const text = (content.textContent ?? "").replace(/\u200b/gu, "");
+    const words = statsText(content).replace(/\u200b/gu, "").trim();
+    setWordCount(words === "" ? 0 : words.split(/\s+/u).length);
+    setCharCount(text.length);
+  }
+
   function emitValue(): void {
     const content = contentNode();
     if (content === null) return;
     const output = sanitizeHtml(content.innerHTML);
     setHtml(output);
+    updateStats(content);
     props.onValueChange?.(output);
     const event = createSyntheticChange(output, nameOf());
     props.onChange?.(event);
@@ -547,10 +631,12 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
     const safe = sanitizeHtml(value);
     if (content.innerHTML === safe) {
       setHtml(safe);
+      updateStats(content);
       return false;
     }
     content.innerHTML = safe;
     setHtml(safe);
+    updateStats(content);
     return true;
   }
 
@@ -598,6 +684,7 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
     if (content.innerHTML === safe) return false;
     content.innerHTML = safe;
     setHtml(safe);
+    updateStats(content);
     savedRange = null;
     resetHistory();
     setSelectionTick((valueTick) => valueTick + 1);
@@ -754,6 +841,11 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
     finishCommand(changed);
   }
 
+  function toggleFullscreen(): void {
+    setExpanded(!expanded());
+    moreMenuState.requestOpen(false);
+  }
+
   function active(command: RichTextCommand): boolean {
     selectionTick();
     const content = contentNode();
@@ -766,6 +858,26 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
     if (command === "undo") return !canUndo();
     if (command === "redo") return !canRedo();
     return false;
+  }
+
+  function activeFormatLabel(): string {
+    selectionTick();
+    const content = contentNode();
+    if (content === null) return "Текст";
+    const range = getEditorRange(content);
+    if (range === null) return "Текст";
+    if (closestWithin(content, range.startContainer, ["li"]) !== null) {
+      return "Список";
+    }
+    const block = findBlock(content, range.startContainer);
+    if (block.localName === "h1") return "Заголовок 1";
+    if (block.localName === "h2") return "Заголовок 2";
+    if (block.localName === "h3") return "Заголовок 3";
+    if (block.localName === "pre") return "Код";
+    if (closestWithin(content, range.startContainer, ["blockquote"]) !== null) {
+      return "Цитата";
+    }
+    return "Текст";
   }
 
   function clearEmptyEditor(content: HTMLDivElement): boolean {
@@ -1006,6 +1118,14 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
         closeLinkPanel(true);
         return;
       }
+      if (menuVisible()) {
+        moreMenuState.requestOpen(false);
+        return;
+      }
+      if (expanded()) {
+        setExpanded(false);
+        return;
+      }
       content.blur();
     }
   }
@@ -1052,6 +1172,7 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
     const safe = untrack(() => sanitizeHtml(source));
     content.innerHTML = safe;
     setHtml(safe);
+    updateStats(content);
     baselineHtml = safe;
     content.setAttribute("data-ready", "");
     root.setAttribute("data-mounted", "");
@@ -1078,6 +1199,15 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
         resetHistory();
       });
     };
+    const onDocumentFullscreenKeyDown = (event: KeyboardEvent): void => {
+      if (event.defaultPrevented || event.key !== "Escape" || !expanded()) {
+        return;
+      }
+      if (linkOpen() || menuVisible()) return;
+      event.preventDefault();
+      setExpanded(false);
+      focusEditor(content);
+    };
 
     content.addEventListener("input", onInput);
     content.addEventListener("beforeinput", onBeforeInput);
@@ -1093,6 +1223,7 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
     const documentRef = root.ownerDocument;
     documentRef.addEventListener("selectionchange", onSelectionChange);
     documentRef.addEventListener("reset", onDocumentReset, true);
+    documentRef.addEventListener("keydown", onDocumentFullscreenKeyDown);
 
     onCleanup(() => {
       content.removeEventListener("input", onInput);
@@ -1108,6 +1239,7 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
       root.removeEventListener("focusout", onFocusOut);
       documentRef.removeEventListener("selectionchange", onSelectionChange);
       documentRef.removeEventListener("reset", onDocumentReset, true);
+      documentRef.removeEventListener("keydown", onDocumentFullscreenKeyDown);
       root.removeAttribute("data-mounted");
       content.removeAttribute("data-ready");
       if (historyTimer !== null) {
@@ -1159,9 +1291,11 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
     if (!mounted() || metrics === null) {
       return computeToolbarLayout({ items, availableWidth: Infinity, widths: {} });
     }
+    const fullscreenReserve =
+      metrics.fullscreenWidth + metrics.separatorWidth + metrics.gap * 2;
     return computeToolbarLayout({
       items,
-      availableWidth: metrics.availableWidth,
+      availableWidth: Math.max(0, metrics.availableWidth - fullscreenReserve),
       widths: metrics.widths,
       gap: metrics.gap,
       buttonWidth: metrics.buttonWidth,
@@ -1198,8 +1332,9 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
         ...measuredWidths,
       };
       for (const button of toolbar.querySelectorAll<HTMLElement>("[data-command]")) {
-        const command = button.dataset.command as RichTextCommand | undefined;
-        if (command === undefined) continue;
+        const rawCommand = button.dataset.command;
+        if (rawCommand === undefined || rawCommand === "fullscreen") continue;
+        const command = rawCommand as RichTextCommand;
         const buttonRect = button.getBoundingClientRect();
         const width = buttonRect.width > 0 ? buttonRect.width : button.offsetWidth;
         if (width > 0) widths[command] = width;
@@ -1213,6 +1348,12 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
         dividerRect !== undefined && dividerRect.width > 0
           ? dividerRect.width
           : 1;
+      const fullscreen = untrack(() => fullscreenButton());
+      const fullscreenRect = fullscreen?.getBoundingClientRect();
+      const fullscreenWidth =
+        fullscreenRect !== undefined && fullscreenRect.width > 0
+          ? fullscreenRect.width
+          : fallbackButton;
 
       setToolbarMetrics({
         availableWidth: Math.max(0, rawWidth - padding),
@@ -1221,6 +1362,7 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
         buttonWidth: fallbackButton,
         separatorWidth,
         moreWidth: fallbackButton,
+        fullscreenWidth,
       });
     };
 
@@ -1378,11 +1520,9 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
     const style: Record<string, string> = {};
     if (props.minHeight !== undefined) {
       style["--sui-rte-min-block-size"] = `${props.minHeight}px`;
-      style["minHeight"] = `${props.minHeight}px`;
     }
     if (props.maxHeight !== undefined) {
       style["--sui-rte-max-block-size"] = `${props.maxHeight}px`;
-      style["maxHeight"] = `${props.maxHeight}px`;
     }
     return style;
   };
@@ -1399,19 +1539,6 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
       data-has-hint={hasContent(hints()) ? "" : undefined}
       data-has-error={hasContent(errors()) ? "" : undefined}
     >
-      <Show when={hasContent(labels())}>
-        <Label
-          attrs={{ id: labelId }}
-          class="sui-field__label"
-          for={id}
-          required={requiredOf()}
-          tone={invalidOf() ? "error" : "default"}
-          disabled={disabled()}
-        >
-          <>{labels()}</>
-          <span class="sui-field__required-text">{config.strings.required}</span>
-        </Label>
-      </Show>
       <div class="sui-field__control">
         <div
           ref={(node: Element | null) => {
@@ -1419,11 +1546,29 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
           }}
           class="sui-rte"
           data-size="md"
+          data-expanded={expanded() ? "" : undefined}
           data-disabled={disabled() ? "" : undefined}
           data-readonly={readOnly() ? "" : undefined}
           data-invalid={invalidOf() ? "" : undefined}
           data-validating={props.field?.isValidating === true ? "" : undefined}
         >
+          <Show when={hasContent(labels())}>
+            <div class="sui-rte__header">
+              <Label
+                attrs={{ id: labelId }}
+                class={["sui-field__label", "sui-rte__title"]}
+                for={id}
+                required={requiredOf()}
+                tone={invalidOf() ? "error" : "default"}
+                disabled={disabled()}
+              >
+                <>{labels()}</>
+                <span class="sui-field__required-text">
+                  {config.strings.required}
+                </span>
+              </Label>
+            </div>
+          </Show>
           <Show when={toolbarItems().length > 0}>
             <div
               ref={(node: Element | null) => {
@@ -1458,6 +1603,7 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
                     }}
                     type="button"
                     class="sui-rte__button sui-rte__more-button"
+                    data-tooltip={MORE_LABEL}
                     aria-label={MORE_LABEL}
                     title={MORE_LABEL}
                     aria-haspopup="menu"
@@ -1501,6 +1647,37 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
                   </div>
                 </span>
               </Show>
+              <span
+                class="sui-rte__divider"
+                role="separator"
+                aria-orientation="vertical"
+              />
+              <button
+                ref={(node: Element | null) => {
+                  setFullscreenButton(
+                    node instanceof HTMLButtonElement ? node : null,
+                  );
+                }}
+                type="button"
+                class="sui-rte__button sui-rte__fullscreen"
+                data-command="fullscreen"
+                data-tooltip={expanded() ? COLLAPSE_LABEL : EXPAND_LABEL}
+                title={expanded() ? COLLAPSE_LABEL : EXPAND_LABEL}
+                aria-label={expanded() ? COLLAPSE_LABEL : EXPAND_LABEL}
+                aria-pressed={expanded() ? "true" : "false"}
+                onMouseDown={(event: MouseEvent) => {
+                  event.preventDefault();
+                }}
+                onClick={toggleFullscreen}
+              >
+                <span class="sui-rte__icon" aria-hidden="true">
+                  {expanded() ? (
+                    <FullscreenExitIcon size="md" />
+                  ) : (
+                    <FullscreenIcon size="md" />
+                  )}
+                </span>
+              </button>
             </div>
           </Show>
           <Show when={linkOpen()}>
@@ -1510,31 +1687,36 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
               role="group"
               aria-label="Ссылка"
             >
-              <input
-                ref={(node: Element | null) => {
-                  setLinkInput(node instanceof HTMLInputElement ? node : null);
-                }}
-                class="sui-rte__link-input"
-                type="text"
-                inputMode="url"
-                aria-label="Адрес ссылки"
-                aria-invalid={linkError() === "" ? undefined : "true"}
-                aria-describedby={linkError() === "" ? undefined : linkErrorId}
-                placeholder="https://example.com"
-                bindValue={[linkValue, setLinkValue]}
-                onInput={() => {
-                  if (linkError() !== "") setLinkError("");
-                }}
-                onKeyDown={(event: KeyboardEvent) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    applyLink();
-                  } else if (event.key === "Escape") {
-                    event.preventDefault();
-                    closeLinkPanel(true);
-                  }
-                }}
-              />
+              <label class="sui-rte__link-field">
+                <span class="sui-rte__link-icon" aria-hidden="true">
+                  <LinkIcon size="sm" />
+                </span>
+                <input
+                  ref={(node: Element | null) => {
+                    setLinkInput(node instanceof HTMLInputElement ? node : null);
+                  }}
+                  class="sui-rte__link-input"
+                  type="text"
+                  inputMode="url"
+                  aria-label="Адрес ссылки"
+                  aria-invalid={linkError() === "" ? undefined : "true"}
+                  aria-describedby={linkError() === "" ? undefined : linkErrorId}
+                  placeholder="https://example.com"
+                  bindValue={[linkValue, setLinkValue]}
+                  onInput={() => {
+                    if (linkError() !== "") setLinkError("");
+                  }}
+                  onKeyDown={(event: KeyboardEvent) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      applyLink();
+                    } else if (event.key === "Escape") {
+                      event.preventDefault();
+                      closeLinkPanel(true);
+                    }
+                  }}
+                />
+              </label>
               <button
                 type="button"
                 class="sui-rte__link-action"
@@ -1557,34 +1739,49 @@ export function RichTextEditor(props: RichTextEditorProps): Node {
               </Show>
             </div>
           </Show>
-          <div
-            ref={(node: Element | null) => {
-              setContentNode(node instanceof HTMLDivElement ? node : null);
-            }}
-            id={id}
-            class="sui-rte__content"
-            contenteditable={editable() ? "true" : "false"}
-            role="textbox"
-            aria-multiline="true"
-            aria-labelledby={hasContent(labels()) ? labelId : undefined}
-            aria-label={
-              hasContent(labels())
-                ? undefined
-                : props.placeholder !== undefined && props.placeholder !== ""
-                  ? props.placeholder
-                  : "Текст"
-            }
-            aria-describedby={described()}
-            aria-invalid={invalidOf() ? "true" : undefined}
-            aria-required={requiredOf() ? "true" : undefined}
-            aria-readonly={readOnly() ? "true" : undefined}
-            aria-disabled={disabled() ? "true" : undefined}
-            aria-busy={props.field?.isValidating === true ? "true" : undefined}
-            tabindex={disabled() ? -1 : 0}
-            spellcheck="true"
-            data-placeholder={props.placeholder ?? ""}
-            style={contentStyle()}
-          />
+          <div class="sui-rte__body" style={contentStyle()}>
+            <div
+              ref={(node: Element | null) => {
+                setContentNode(node instanceof HTMLDivElement ? node : null);
+              }}
+              id={id}
+              class="sui-rte__content"
+              contenteditable={editable() ? "true" : "false"}
+              role="textbox"
+              aria-multiline="true"
+              aria-labelledby={hasContent(labels()) ? labelId : undefined}
+              aria-label={
+                hasContent(labels())
+                  ? undefined
+                  : placeholderText() !== ""
+                    ? placeholderText()
+                    : "Текст"
+              }
+              aria-describedby={described()}
+              aria-invalid={invalidOf() ? "true" : undefined}
+              aria-required={requiredOf() ? "true" : undefined}
+              aria-readonly={readOnly() ? "true" : undefined}
+              aria-disabled={disabled() ? "true" : undefined}
+              aria-busy={props.field?.isValidating === true ? "true" : undefined}
+              tabindex={disabled() ? -1 : 0}
+              spellcheck="true"
+              data-placeholder={placeholderText()}
+              data-placeholder-hint={
+                placeholderText() === "" ? undefined : PLACEHOLDER_HINT
+              }
+            />
+          </div>
+          <Show when={showStatus()}>
+            <div class="sui-rte__footer">
+              <span class="sui-rte__counts">
+                {wordCount()} слов · {charCount()} символов
+              </span>
+              <span class="sui-rte__meta">
+                <span class="sui-rte__format">{activeFormatLabel()}</span>
+                <span class="sui-rte__footer-shortcut">{FOOTER_SHORTCUT}</span>
+              </span>
+            </div>
+          </Show>
           <input
             id={`${id}-value`}
             type="hidden"
