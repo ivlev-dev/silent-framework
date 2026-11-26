@@ -43,7 +43,7 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `palette`
 
-`const palette` — исходная брендовая палитра: `ivory #F9F8F7`, `almond #EDEAE4`, `mist #ADB8BB`, `navy #153147`, `noir #232A2F`, `gold #CEA434`, `navy-deep #193153`, `navy-mid #122948`, `navy-dark #0E1F33`, `white #FFFFFF`; прежние ключи (`primary`, `secondary`, `tertiary`, `neutralDarkest`, `neutralDark`, `neutralLightest`) сохранены как алиасы.
+`const palette` — исходная брендовая палитра: `ink-900 #081A2E`, `ink-800 #0E2A47`, `teal-700 #1F4E6B`, `mist-300 #9FB8C9`, `ivory-50 #F2F5F7`; публичные алиасы прежней палитры (`ivory #F2F5F7`, `almond #E6EDF2`, `mist #9FB8C9`, `navy #0E2A47`, `noir #081A2E`, `gold #1F4E6B`, `navy-deep #081A2E`, `navy-mid #0E2A47`, `navy-dark #061424`, `white #FFFFFF`) и прежние ключи ролей (`primary`, `secondary`, `tertiary`, `neutralDarkest`, `neutralDark`, `neutralLightest`) сохранены для обратной совместимости.
 
 ### `PaletteColor`
 
@@ -51,7 +51,7 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `lightColors`
 
-`const lightColors: SemanticColors` — семантические роли светлой темы: `primary`, `on-primary`, `primary-container`, `on-primary-container`, `primary-fixed*`, `secondary`, `tertiary`, `accent`/`on-accent`, `error`, `success`, `warning` и их `*-container`/`on-*`, `surface`, `surface-dim`, `surface-bright`, `surface-container-*`, `on-surface`, `on-surface-variant`, `on-surface-muted`, `outline`, `outline-variant`, `scrim`, `shadow`, `inverse-*`. `accent` — золотая пара для CTA/хайлайтов.
+`const lightColors: SemanticColors` — семантические роли светлой темы: `primary`, `on-primary`, `primary-container`, `on-primary-container`, `primary-fixed*`, `secondary`, `tertiary`, `accent`/`on-accent`, `error`, `success`, `warning` и их `*-container`/`on-*`, `surface`, `surface-dim`, `surface-bright`, `surface-container-*`, `on-surface`, `on-surface-variant`, `on-surface-muted`, `outline`, `outline-variant`, `scrim`, `shadow`, `inverse-*`. `accent` — mist-пара для CTA/хайлайтов.
 
 ### `darkColors`
 
@@ -1102,6 +1102,26 @@ import "@ivlev-dev/silent-ui/styles.css";
 ### `TextareaResize`
 
 `type TextareaResize = "none" | "vertical" | "horizontal" | "both"` — CSS `resize`.
+
+### `RichTextEditor`
+
+`function RichTextEditor(props: RichTextEditorProps): Node` — WYSIWYG-редактор без сторонних библиотек и без `document.execCommand`: форматирование и история работают на `Range`/DOM. `value` — controlled-HTML, `defaultValue` — uncontrolled; `field` из `@ivlev-dev/silent-form` даёт значение, подпись, подсказку, ошибку и `onChange`, а явные пропсы его перекрывают. `onValueChange` получает уже санитизированный HTML при вводе, командах и вставке; `onChange` — синтетическое событие с `target.value` (HTML) и `target.type = "text"`. `toolbar` по умолчанию показывает полный набор команд, `false` убирает панель, массив оставляет только перечисленные пункты (`"|"` — разделитель). `readOnly` запрещает правки, но сохраняет значение и отправку формы; `disabled` убирает редактор из tab-порядка и отключает скрытый input. `minHeight`/`maxHeight` задают пиксели контентной области (по умолчанию минимум — примерно три строки контрола `lg`, максимум не ограничен). `placeholder` рисуется CSS-псевдоэлементом, пока контент пуст.
+
+SSR отдаёт пустую контентную область: HTML не попадает в `contenteditable` ни в серверную разметку, ни в гидрацию, иначе браузер нормализовал бы DOM и дал mismatch. Начальное значение живёт в скрытом `input[type=hidden]` (`name` = `name` → `field.name` → `id`) и подставляется в редактор после монтирования: санитизация → `innerHTML` → восстановление каретки; готовность отмечают `data-mounted` на рамке и `data-ready` на области. Внешний `value` применяется только когда фокус вне редактора (иначе — после `blur`), поэтому набор текста не затирается. `reset` формы возвращает `defaultValue`, если редактор не в фокусе.
+
+Безопасность: `sanitize` (по умолчанию `true`) прогоняет и входное значение, и результат. Разрешён узкий allowlist: `p`, `br`, `strong`/`b`, `em`/`i`, `u`, `s`/`del`, `code`, `pre`, `blockquote`, `h1`–`h3`, `ul`/`ol`/`li`, `a`, `hr`; `data-align` допустим только на блоках. Неизвестные контейнеры разворачиваются, опасные элементы (`script`, `style`, `iframe`, `img`, `svg`, `video`, поля формы) удаляются вместе с содержимым. У ссылок разрешены схемы `http`/`https`/`mailto`/`tel`, относительные адреса, якоря и query; `target` — только `_self`/`_blank`, для `_blank` принудительно ставится `rel="noopener noreferrer"`. Paste и drop санитизируются по тому же allowlist, а plain text экранируется и разбивается на абзацы. `sanitize={false}` — только для доверенного HTML.
+
+### `RichTextEditorProps`
+
+`interface RichTextEditorProps` — пропсы: `value`, `defaultValue`, `field`, `onChange`, `onValueChange`, `onBlur`, `label`, `hint`, `error`, `placeholder`, `name`, `id`, `required`, `readOnly`, `disabled`, `invalid`, `toolbar`, `minHeight`, `maxHeight`, `sanitize`, `class`, `style`, `attrs`. `invalid` можно не задавать: непустой `error` сам переводит поле в `aria-invalid`. Подпись, hint и error связываются с областью `role="textbox"` через `aria-labelledby`/`aria-describedby`; без подписи доступное имя берётся из `placeholder`, иначе — «Текст».
+
+### `RichTextCommand`
+
+`type RichTextCommand` — команда тулбара и клавиатуры: `"bold"`, `"italic"`, `"underline"`, `"strike"`, `"h1"`, `"h2"`, `"h3"`, `"paragraph"`, `"ul"`, `"ol"`, `"blockquote"`, `"code"`, `"link"`, `"unlink"`, `"align-left"`, `"align-center"`, `"align-right"`, `"undo"`, `"redo"`, `"clear"`. `link` открывает inline-панель адреса (для `http(s)` ссылка получает `target="_blank"` и `rel="noopener noreferrer"`), `undo`/`redo` ходят по снапшотам HTML и каретки, `clear` снимает inline-форматирование. Горячие клавиши: `Ctrl/Cmd+B`/`I`/`U`, `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z` и `Ctrl/Cmd+Y`, `Enter` — новый абзац, `Shift+Enter` — `<br>`, `Tab` — табуляция, `Escape` — закрыть панель ссылки или выйти из редактора.
+
+### `ToolbarItem`
+
+`type ToolbarItem = RichTextCommand | "|"` — пункт панели: команда или разделитель `"|"`, который рендерится как `role="separator"` с вертикальной ориентацией. Массив `toolbar` задаёт состав и порядок кнопок; команда `link` дополнительно отражает состояние панели через `aria-expanded`/`aria-controls`.
 
 ### `Select`
 

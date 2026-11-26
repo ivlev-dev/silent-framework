@@ -16,33 +16,40 @@ export {
 } from "./breakpoints.js";
 
 /**
- * Исходная палитра бренда: тёплая бумажная база и глубокий navy с золотом.
+ * Палитра бренда: холодный ink, глубокий teal, туманный mist и ivory-бумага.
  * Одна на светлую и тёмную темы; старые ключи сохранены как алиасы.
  */
 export const palette = {
-  ivory: "#F9F8F7",
-  almond: "#EDEAE4",
-  mist: "#ADB8BB",
-  navy: "#153147",
-  noir: "#232A2F",
-  gold: "#CEA434",
-  "navy-deep": "#193153",
-  "navy-mid": "#122948",
-  "navy-dark": "#0E1F33",
+  "ink-900": "#081A2E",
+  "ink-800": "#0E2A47",
+  "teal-700": "#1F4E6B",
+  "mist-300": "#9FB8C9",
+  "ivory-50": "#F2F5F7",
+
+  /* Публичные алиасы: не ломают код, который читает `palette.ivory`/`palette.navy`. */
+  ivory: "#F2F5F7",
+  almond: "#E6EDF2",
+  mist: "#9FB8C9",
+  navy: "#0E2A47",
+  noir: "#081A2E",
+  gold: "#1F4E6B",
+  "navy-deep": "#081A2E",
+  "navy-mid": "#0E2A47",
+  "navy-dark": "#061424",
   white: "#FFFFFF",
 
-  /* Алиасы прежней палитры: не ломают код, который читает `palette.primary`. */
-  primary: "#153147",
-  secondary: "#ADB8BB",
-  tertiary: "#CEA434",
-  neutralDarkest: "#0E1F33",
-  neutralDark: "#153147",
-  neutralLightest: "#F9F8F7",
+  /* Алиасы прежней палитры ролей. */
+  primary: "#0E2A47",
+  secondary: "#9FB8C9",
+  tertiary: "#1F4E6B",
+  neutralDarkest: "#061424",
+  neutralDark: "#0E2A47",
+  neutralLightest: "#F2F5F7",
 } as const;
 
 export type PaletteColor = keyof typeof palette;
 
-/** Семантические роли Material 3 + акцентная пара для золотых CTA/хайлайтов. */
+/** Семантические роли Material 3 + акцентная пара для mist-CTA/хайлайтов. */
 export interface SemanticColors {
   readonly primary: string;
   readonly "on-primary": string;
@@ -63,7 +70,7 @@ export interface SemanticColors {
   readonly "tertiary-container": string;
   readonly "on-tertiary-container": string;
 
-  /** Акцент (золото) — для CTA, хайлайтов и декоративных акцентов. */
+  /** Акцент (mist-300) — для CTA, хайлайтов и декоративных акцентов. */
   readonly accent: string;
   readonly "on-accent": string;
 
@@ -109,31 +116,31 @@ export interface SemanticColors {
 export type SemanticColorRole = keyof SemanticColors;
 
 /**
- * Светлая тема: ivory-бумага, almond-контейнеры, noir-текст и navy-основа.
- * `tertiary`/`accent` — золотая заливка (не текст); текст на золоте — noir.
+ * Светлая тема: ivory-поверхности, ink-текст, teal-основа и mist-акцент.
+ * `tertiary`/`accent` — mist-заливка (не текст); текст на mist — ink-900.
  */
 export const lightColors: SemanticColors = {
-  primary: "#153147",
-  "on-primary": "#F9F8F7",
-  "primary-container": "#DCE3E3",
-  "on-primary-container": "#153147",
-  "primary-fixed": "#B9C7CC",
-  "primary-fixed-dim": "#94A6AC",
-  "on-primary-fixed": "#153147",
-  "on-primary-fixed-variant": "#2C4550",
+  primary: "#0E2A47",
+  "on-primary": "#F2F5F7",
+  "primary-container": "#D9E4EC",
+  "on-primary-container": "#081A2E",
+  "primary-fixed": "#9FB8C9",
+  "primary-fixed-dim": "#7E99AC",
+  "on-primary-fixed": "#081A2E",
+  "on-primary-fixed-variant": "#1F4E6B",
 
-  secondary: "#4C5D68",
-  "on-secondary": "#FFFFFF",
-  "secondary-container": "#DCE3E4",
-  "on-secondary-container": "#1C3038",
+  secondary: "#1F4E6B",
+  "on-secondary": "#F2F5F7",
+  "secondary-container": "#D9E4EC",
+  "on-secondary-container": "#081A2E",
 
-  tertiary: "#CEA434",
-  "on-tertiary": "#232A2F",
-  "tertiary-container": "#F2E3B8",
-  "on-tertiary-container": "#33270A",
+  tertiary: "#9FB8C9",
+  "on-tertiary": "#081A2E",
+  "tertiary-container": "#D9E4EC",
+  "on-tertiary-container": "#081A2E",
 
-  accent: "#CEA434",
-  "on-accent": "#232A2F",
+  accent: "#9FB8C9",
+  "on-accent": "#081A2E",
 
   error: "#A8322A",
   "on-error": "#FFFFFF",
@@ -150,56 +157,58 @@ export const lightColors: SemanticColors = {
   "warning-container": "#F6E0B0",
   "on-warning-container": "#2E2000",
 
-  surface: "#F9F8F7",
-  "surface-dim": "#EDEAE4",
+  surface: "#F2F5F7",
+  "surface-dim": "#E3EBF1",
   "surface-bright": "#FFFFFF",
   "surface-container-lowest": "#FFFFFF",
-  "surface-container-low": "#FBF9F6",
-  "surface-container": "#F3F0EA",
-  "surface-container-high": "#EDEAE4",
-  "surface-container-highest": "#E4E0D7",
+  "surface-container-low": "#F7F9FA",
+  "surface-container": "#EDF2F5",
+  "surface-container-high": "#E6EDF2",
+  "surface-container-highest": "#D2DFE8",
 
-  "on-surface": "#232A2F",
-  "on-surface-variant": "#42505A",
-  "on-surface-muted": "#4D5A63",
+  "on-surface": "#081A2E",
+  "on-surface-variant": "#3A566B",
+  // AA-правка: #4C6477 вместо #5A7285 — 4.5:1 на elevated surface.
+  "on-surface-muted": "#4C6477",
 
-  outline: "#6F7D80",
-  "outline-variant": "#D5D2C9",
+  // AA-правка: #638198 вместо #6E8CA3 — 3:1 на surface-container-highest.
+  outline: "#638198",
+  "outline-variant": "#C9D8E2",
 
-  scrim: "#0E1F33",
-  shadow: "#153147",
+  scrim: "#081A2E",
+  shadow: "#0E2A47",
 
-  "inverse-surface": "#153147",
-  "inverse-on-surface": "#F9F8F7",
-  "inverse-primary": "#CEA434",
+  "inverse-surface": "#0E2A47",
+  "inverse-on-surface": "#F2F5F7",
+  "inverse-primary": "#9FB8C9",
 };
 
 /**
- * Тёмная тема: глубокий navy (`#0E1F33` → `#193153`), ivory-текст и
- * золотой primary/accent с noir-текстом на заливке.
+ * Тёмная тема: ink-900 surface (`#081A2E` → elevated `#1C4B68`), ivory-текст
+ * и mist primary/accent с ink-900-текстом на заливке.
  */
 export const darkColors: SemanticColors = {
-  primary: "#E6C766",
-  "on-primary": "#1A1405",
-  "primary-container": "#153147",
-  "on-primary-container": "#F3E3B4",
-  "primary-fixed": "#E6C766",
-  "primary-fixed-dim": "#CEA434",
-  "on-primary-fixed": "#1A1405",
-  "on-primary-fixed-variant": "#4A3A0C",
+  primary: "#9FB8C9",
+  "on-primary": "#081A2E",
+  "primary-container": "#1F4E6B",
+  "on-primary-container": "#F2F5F7",
+  "primary-fixed": "#9FB8C9",
+  "primary-fixed-dim": "#7E99AC",
+  "on-primary-fixed": "#081A2E",
+  "on-primary-fixed-variant": "#D9E4EC",
 
-  secondary: "#ADB8BB",
-  "on-secondary": "#12252E",
-  "secondary-container": "#2A414B",
-  "on-secondary-container": "#DCE3E4",
+  secondary: "#C9D8E2",
+  "on-secondary": "#081A2E",
+  "secondary-container": "#0E2A47",
+  "on-secondary-container": "#F2F5F7",
 
-  tertiary: "#E6C766",
-  "on-tertiary": "#1A1405",
-  "tertiary-container": "#514015",
-  "on-tertiary-container": "#F2E3B8",
+  tertiary: "#9FB8C9",
+  "on-tertiary": "#081A2E",
+  "tertiary-container": "#2A4A66",
+  "on-tertiary-container": "#F2F5F7",
 
-  accent: "#E6C766",
-  "on-accent": "#1A1405",
+  accent: "#1F4E6B",
+  "on-accent": "#F2F5F7",
 
   error: "#F2B8B5",
   "on-error": "#3B0A0A",
@@ -216,28 +225,30 @@ export const darkColors: SemanticColors = {
   "warning-container": "#4E3A0A",
   "on-warning-container": "#F6E0B0",
 
-  surface: "#0E1F33",
-  "surface-dim": "#081522",
-  "surface-bright": "#23405E",
-  "surface-container-lowest": "#0A1828",
-  "surface-container-low": "#122948",
-  "surface-container": "#153147",
-  "surface-container-high": "#193153",
-  "surface-container-highest": "#1E3A5C",
+  surface: "#081A2E",
+  "surface-dim": "#050F1C",
+  // AA-правка: #1C4B68 вместо #1F4E6B — 4.5:1 для mist-текста.
+  "surface-bright": "#1C4B68",
+  "surface-container-lowest": "#061424",
+  "surface-container-low": "#0E2A47",
+  "surface-container": "#12324F",
+  "surface-container-high": "#173B5A",
+  "surface-container-highest": "#1C4B68",
 
-  "on-surface": "#F9F8F7",
-  "on-surface-variant": "#C3CED2",
-  "on-surface-muted": "#ADB8BB",
+  "on-surface": "#F2F5F7",
+  "on-surface-variant": "#C9D8E2",
+  "on-surface-muted": "#9FB8C9",
 
-  outline: "#7E8C8F",
-  "outline-variant": "#33495A",
+  // AA-правка: #7E9AB0 — 3:1 на elevated teal-поверхности.
+  outline: "#7E9AB0",
+  "outline-variant": "#2A4A66",
 
-  scrim: "#050D16",
-  shadow: "#050D16",
+  scrim: "#030A14",
+  shadow: "#030A14",
 
-  "inverse-surface": "#F9F8F7",
-  "inverse-on-surface": "#153147",
-  "inverse-primary": "#153147",
+  "inverse-surface": "#F2F5F7",
+  "inverse-on-surface": "#0E2A47",
+  "inverse-primary": "#0E2A47",
 };
 
 /** Список ролей в стабильном порядке — для тестов и генераторов. */
@@ -338,7 +349,7 @@ export const radii = {
 export type Radius = keyof typeof radii;
 
 /**
- * Elevation: мягкие navy-tinted тени из `--sui-color-shadow-rgb` — без
+ * Elevation: мягкие ink-tinted тени из `--sui-color-shadow-rgb` — без
  * обязательного `color-mix`; работают в старых WebView (TV).
  */
 export const elevation = {

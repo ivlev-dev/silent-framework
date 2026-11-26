@@ -54,6 +54,7 @@ export * from "./components/pagination/index.js";
 
 /* Формы */
 export * from "./components/search-field/index.js";
+export * from "./components/rich-text-editor/index.js";
 export * from "./form/index.js";
 
 export * from "./icons/index.js";

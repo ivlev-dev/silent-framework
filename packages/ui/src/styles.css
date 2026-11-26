@@ -33,6 +33,7 @@
 @import "./components/pagination/pagination.css";
 @import "./components/popover/popover.css";
 @import "./components/progress/progress.css";
+@import "./components/rich-text-editor/rich-text-editor.css";
 @import "./components/search-field/search-field.css";
 @import "./components/segmented-button/segmented-button.css";
 @import "./components/shared/overlays.css";

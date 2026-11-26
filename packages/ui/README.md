@@ -20,13 +20,13 @@ import "@ivlev-dev/silent-ui/styles.css";
 </Stack>;
 ```
 
-`accent` есть у `Button`, `IconButton` и `Badge` — это золотая пара `accent`/`on-accent` для одного ключевого действия. `Table` на узких экранах скроллится по горизонтали внутри `.sui-table-scroll`, поэтому широкая таблица не ломает страницу.
+`accent` есть у `Button`, `IconButton` и `Badge` — это mist-пара `accent`/`on-accent` для одного ключевого действия. `Table` на узких экранах скроллится по горизонтали внутри `.sui-table-scroll`, поэтому широкая таблица не ломает страницу.
 
 CSS **никогда** не импортируется из JS пакета: подключение идёт отдельными входами (`styles.css`, `base.css`, `tokens.css`, `themes.css`, `layout.css`, `form.css`, `<component>.css`). Отдельного CSS-входа у контролов форм нет — используйте `form.css`. Полное руководство — [docs/guides/ui.md](../../docs/guides/ui.md), справочник API — [docs/api/ui.md](../../docs/api/ui.md).
 
 ## Возможности
 
-- **Токены**: палитра `ivory/almond/mist/navy/noir/gold` (`#F9F8F7/#EDEAE4/#ADB8BB/#153147/#232A2F/#CEA434`), семантические роли Material 3 с парой `accent`/`on-accent`, state layers, elevation/shape/type/motion/spacing/density. Display/headline и UI/body — единый современный sans; fluid-шкала с верхней границей на 4K, компактные контролы 32/40/48px и мягкие радиусы 4/6/10/14/20.
+- **Токены**: палитра `ink-900/ink-800/teal-700/mist-300/ivory-50` (`#081A2E/#0E2A47/#1F4E6B/#9FB8C9/#F2F5F7`), семантические роли Material 3 с парой `accent`/`on-accent`, state layers, elevation/shape/type/motion/spacing/density. Display/headline и UI/body — единый современный sans; fluid-шкала с верхней границей на 4K, компактные контролы 32/40/48px и мягкие радиусы 4/6/10/14/20.
 - **Доступность**: все пары текст/фон проходят WCAG AA (проверяется тестом), `focus-visible` ring, `prefers-reduced-motion`, `aria-busy`/`aria-label`, touch targets 44/48px; `check:ui` держит axe-core critical на нуле.
 - **Темы**: `data-theme="light|dark|auto"`, `prefers-color-scheme` fallback, `applyTheme`, SSR-скрипт `ThemeScript` без вспышки.
 - **Слои**: `@layer sui.reset, sui.tokens, sui.base, sui.layout, sui.components, sui.overrides`.

@@ -30,8 +30,8 @@ const meta = {
     docs: {
       description: {
         component: [
-          "Токены бренда и семантические роли темы. Палитра ivory/almond/mist/",
-          "navy/noir/gold компилируется в CSS-переменные `--sui-color-*`;",
+          "Токены бренда и семантические роли темы. Палитра ink-900, ink-800,",
+          "teal-700, mist-300 и ivory-50 компилируется в CSS-переменные `--sui-color-*`;",
           "`data-theme` переключает light/dark без перерисовки, `applyTheme()` ставит",
           "тему на документ, `themeScriptSource()` отдаёт inline-скрипт для SSR.",
           "Display/headline и UI используют один современный sans, контролы 32/40/48px,",
@@ -53,7 +53,7 @@ const meta = {
       description: "Заголовок витрины палитры",
     },
   },
-  args: { theme: "light", headline: "Ivory, navy и золото" },
+  args: { theme: "light", headline: "Ink, teal и туман" },
 } satisfies Meta<ThemeArgs>;
 
 export default meta;
@@ -61,16 +61,11 @@ export default meta;
 type Story = StoryObj<ThemeArgs>;
 
 const brandKeys = [
-  "ivory",
-  "almond",
-  "mist",
-  "navy",
-  "noir",
-  "gold",
-  "navy-mid",
-  "navy-deep",
-  "navy-dark",
-  "white",
+  "ink-900",
+  "ink-800",
+  "teal-700",
+  "mist-300",
+  "ivory-50",
 ] as const;
 
 const semanticKeys = [
@@ -158,7 +153,7 @@ function sample(): Node {
           </Text>
           <Text variant="label-medium" tone="muted">LABEL · 12–13PX</Text>
         </Stack>
-        <Text tone="muted">Вспомогательный текст — приглушённый navy.</Text>
+        <Text tone="muted">Вспомогательный текст — приглушённый teal.</Text>
         <Box padding={3} background="primary-container" radius="md">
           <Text tone="primary">primary-container</Text>
         </Box>
@@ -170,7 +165,7 @@ function sample(): Node {
             color: "var(--sui-color-on-accent)",
           }}
         >
-          <Text tone="inherit" variant="label-large">accent / on-accent — золотой CTA</Text>
+          <Text tone="inherit" variant="label-large">accent / on-accent — mist CTA</Text>
         </Box>
         <Grid columns={2} gap={2}>
           <Surface tone="secondary-container" padding={3} radius="sm">
@@ -198,8 +193,8 @@ export const Palette: Story = {
       <Stack gap={4}>
         <Heading level={2}>{args.headline}</Heading>
         <Text tone="muted">
-          Палитра ivory / almond / mist / navy / noir / gold. Ниже — семантические
-          роли текущей темы.
+          Палитра ink-900 / ink-800 / teal-700 / mist-300 / ivory-50. Ниже —
+          семантические роли текущей темы.
         </Text>
         <Heading level={4}>Brand palette</Heading>
         {paletteSwatches()}
@@ -235,7 +230,7 @@ export const SideBySide: Story = {
 };
 
 export const Accent: Story = {
-  name: "Accent / gold",
+  name: "Accent / mist",
   parameters: { controls: { disable: true } },
   render: silentStory(() => (
     <Grid columns="auto" gap={4} min="lg">

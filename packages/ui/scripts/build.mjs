@@ -118,7 +118,7 @@ async function compileSources(files) {
 }
 
 const JSX_CALL = /\b(?:jsxs?|jsxDEV)\s*\(/u;
-const CREATE_ELEMENT = /\bcreateElement\s*\(/u;
+const CREATE_ELEMENT = /\bReact\.createElement\s*\(|(?<![.\w$])createElement\s*\(/u;
 const RUNTIME_MARKERS = ["template(", "templateHoles(", "component("];
 
 /** Компоненты должны быть скомпилированы в шаблонный runtime, а не в `jsx()`. */

@@ -1,0 +1,80 @@
+import { afterEach, describe, expect, it } from "vitest";
+import { hydrate } from "@ivlev-dev/silent-core";
+import { renderToString } from "@ivlev-dev/silent-server";
+import { RichTextEditor } from "../src/components/rich-text-editor/index.js";
+
+const cleanups: Array<() => void> = [];
+
+afterEach(() => {
+  for (const cleanup of cleanups.splice(0)) cleanup();
+  document.body.replaceChildren();
+});
+
+const INITIAL_HTML = '<p>Hello <strong>world</strong></p><img src="x" onerror="alert(1)">';
+
+function Editor(): Node {
+  return (
+    <RichTextEditor
+      id="bio"
+      name="bio"
+      label="Биография"
+      hint="Коротко о себе"
+      defaultValue={INITIAL_HTML}
+    />
+  );
+}
+
+describe("RichTextEditor: SSR", () => {
+  it("не вставляет HTML в contenteditable, но кладёт значение в hidden input", async () => {
+    const { html } = await renderToString(Editor);
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    document.body.appendChild(container);
+
+    const content = container.querySelector<HTMLDivElement>(".sui-rte__content");
+    expect(content).not.toBeNull();
+    expect(content?.innerHTML).toBe("");
+    expect(content?.childNodes).toHaveLength(0);
+    expect(content?.textContent).toBe("");
+    expect(content?.getAttribute("role")).toBe("textbox");
+    expect(content?.getAttribute("aria-multiline")).toBe("true");
+
+    const hidden = container.querySelector<HTMLInputElement>('input[type="hidden"]');
+    expect(hidden?.getAttribute("name")).toBe("bio");
+    expect(hidden?.value).toBe(INITIAL_HTML);
+
+    const root = container.querySelector<HTMLElement>(".sui-rte");
+    expect(root?.hasAttribute("data-mounted")).toBe(false);
+    expect(html).not.toContain('data-mounted=""');
+    expect(container.querySelector(".sui-rte__content strong")).toBeNull();
+    expect(
+      container.querySelectorAll(".sui-rte__toolbar .sui-rte__button").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("hydrate проходит без mismatch и заполняет редактор после монтирования", async () => {
+    const { html } = await renderToString(Editor);
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    document.body.appendChild(container);
+
+    const mismatches: string[] = [];
+    const handle = await hydrate(container, Editor, {
+      onMismatch: (error) => {
+        mismatches.push(error.message);
+      },
+    });
+    cleanups.push(() => handle.dispose());
+
+    expect(mismatches).toEqual([]);
+    const content = container.querySelector<HTMLDivElement>(".sui-rte__content");
+    expect(content?.innerHTML).toBe("<p>Hello <strong>world</strong></p>");
+    expect(content?.textContent).toBe("Hello world");
+    expect(container.querySelector<HTMLElement>(".sui-rte")?.hasAttribute("data-mounted")).toBe(
+      true,
+    );
+
+    const hidden = container.querySelector<HTMLInputElement>('input[type="hidden"]');
+    expect(hidden?.value).toBe("<p>Hello <strong>world</strong></p>");
+  });
+});

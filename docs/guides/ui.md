@@ -72,7 +72,7 @@ applyTheme({ theme: "dark", root: panelElement });                   // тема
 - `applyTheme` пишет `data-theme`, inline-переменные `--sui-color-<role>` для `palette` и при `persist` сохраняет выбор в `localStorage` (ключ `sui-theme`).
 - `readStoredTheme()` возвращает сохранённое значение или `null`; `resetThemePalette()` снимает inline-переопределения.
 - Без DOM все три функции — no-op, поэтому безопасны в SSR.
-- `data-palette` зарезервирован под будущие палитры. Сейчас палитра одна (ivory/almond/mist/navy/noir/gold), перекраска — только через `palette`/`--sui-color-*`.
+- `data-palette` зарезервирован под будущие палитры. Сейчас палитра одна (ink/teal/mist/ivory), перекраска — только через `palette`/`--sui-color-*`.
 
 ### SSR без вспышки светлой темы
 
@@ -112,42 +112,39 @@ import { UiConfigProvider } from "@ivlev-dev/silent-ui";
 
 ## Палитра и кастомизация
 
-Базовая палитра — тёплая бумага, приглушённый mist и глубокий navy с золотом:
+Базовая палитра — холодный ink, глубокий teal, mist и ivory-бумага:
 
 | Имя | HEX | Назначение |
 | --- | --- | --- |
-| ivory | `#F9F8F7` | светлая surface, текст на navy |
-| almond | `#EDEAE4` | контейнеры и dim-поверхности |
-| mist | `#ADB8BB` | secondary в тёмной теме, outline-семейство |
-| navy | `#153147` | primary light, inverse-surface |
-| noir | `#232A2F` | основной текст light |
-| gold | `#CEA434` | accent/tertiary, золотые CTA и хайлайты |
-| navy-mid | `#122948` | тёмный container-low |
-| navy-deep | `#193153` | тёмный container-high |
-| navy-dark | `#0E1F33` | surface тёмной темы |
-| white | `#FFFFFF` | светлые контейнеры и on-secondary |
+| ink-900 | `#081A2E` | основной текст light, surface dark, scrim |
+| ink-800 | `#0E2A47` | primary light, inverse-surface, container-low dark |
+| teal-700 | `#1F4E6B` | secondary light, accent dark, elevated dark |
+| mist-300 | `#9FB8C9` | primary/accent dark, tertiary light |
+| ivory-50 | `#F2F5F7` | surface light, текст на ink |
+
+Публичные алиасы прежней палитры (значения обновлены, имена сохранены): `ivory #F2F5F7`, `almond #E6EDF2`, `mist #9FB8C9`, `navy #0E2A47`, `noir #081A2E`, `gold #1F4E6B`, `navy-deep #081A2E`, `navy-mid #0E2A47`, `navy-dark #061424`, `white #FFFFFF`.
 
 Ключевые семантические роли:
 
 | Роль | light | dark |
 | --- | --- | --- |
-| `surface` | `#F9F8F7` | `#0E1F33` |
-| `surface-container` | `#F3F0EA` | `#153147` |
-| `on-surface` | `#232A2F` | `#F9F8F7` |
-| `on-surface-variant` | `#42505A` | `#C3CED2` |
-| `primary` | `#153147` | `#E6C766` |
-| `on-primary` | `#F9F8F7` | `#1A1405` |
-| `primary-container` | `#DCE3E3` | `#153147` |
-| `secondary` | `#4C5D68` | `#ADB8BB` |
-| `accent` / `on-accent` | `#CEA434` / `#232A2F` | `#E6C766` / `#1A1405` |
-| `outline` | `#6F7D80` | `#7E8C8F` |
+| `surface` | `#F2F5F7` | `#081A2E` |
+| `surface-container` | `#EDF2F5` | `#12324F` |
+| `on-surface` | `#081A2E` | `#F2F5F7` |
+| `on-surface-variant` | `#3A566B` | `#C9D8E2` |
+| `primary` | `#0E2A47` | `#9FB8C9` |
+| `on-primary` | `#F2F5F7` | `#081A2E` |
+| `primary-container` | `#D9E4EC` | `#1F4E6B` |
+| `secondary` | `#1F4E6B` | `#C9D8E2` |
+| `accent` / `on-accent` | `#9FB8C9` / `#081A2E` | `#1F4E6B` / `#F2F5F7` |
+| `outline` | `#638198` | `#7E9AB0` |
 | `error` | `#A8322A` | `#F2B8B5` |
 | `success` | `#1F6B45` | `#8FD3A8` |
 | `warning` | `#7A5200` | `#E8C56A` |
 
-`accent`/`on-accent` — отдельная пара для золотых кнопок и хайлайтов; имена прежних ролей сохранены. Полный набор (`primary-fixed*`, `surface-container-*`, `inverse-*`, `scrim`, `shadow` и контейнеры состояний) раскладывается в `lightColors`/`darkColors` и `themes.css`. Все пары текст/фон проходят WCAG AA (4.5:1; `outline` на поверхностях и focus ring — 3:1), контраст проверяется unit-тестом.
+`accent`/`on-accent` — отдельная пара для mist-кнопок и хайлайтов; имена прежних ролей сохранены. Полный набор (`primary-fixed*`, `surface-container-*`, `inverse-*`, `scrim`, `shadow` и контейнеры состояний) раскладывается в `lightColors`/`darkColors` и `themes.css`. Все пары текст/фон проходят WCAG AA (4.5:1; `outline` на поверхностях и focus ring — 3:1), контраст проверяется unit-тестом. `outline` и `on-surface-muted` пришлось минимально усилить относительно исходной палитры (`#6E8CA3` → `#638198`, `#5A7285` → `#4C6477`), а в тёмной теме elevated-поверхности — приглушить (`#1F4E6B` → `#1C4B68`), иначе AA на них не выполнялся.
 
-Состояния используют прозрачные слои поверх `currentColor` (hover `0.08`, focus/pressed `0.12`, dragged `0.16`); focus ring — 2px с offset 2px, navy в светлой теме и gold в тёмной. Selection — золото с noir-текстом, scrim — глубокий navy/noir.
+Состояния используют прозрачные слои поверх `currentColor` (hover `0.08`, focus/pressed `0.12`, dragged `0.16`); focus ring — 2px с offset 2px, ink в светлой теме и mist в тёмной. Selection — mist с ink-текстом, scrim — ink-900.
 
 Три уровня кастомизации:
 

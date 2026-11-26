@@ -127,22 +127,31 @@ const onPairs = [
 ] as const satisfies readonly (readonly [keyof SemanticColors, keyof SemanticColors])[];
 
 describe("токены", () => {
-  it("использует новую палитру ivory/almond/mist/navy/noir/gold", () => {
+  it("использует палитру ink/teal/mist/ivory", () => {
     expect(palette).toMatchObject({
-      ivory: "#F9F8F7",
-      almond: "#EDEAE4",
-      mist: "#ADB8BB",
-      navy: "#153147",
-      noir: "#232A2F",
-      gold: "#CEA434",
-      "navy-deep": "#193153",
-      "navy-mid": "#122948",
-      "navy-dark": "#0E1F33",
-      white: "#FFFFFF",
+      "ink-900": "#081A2E",
+      "ink-800": "#0E2A47",
+      "teal-700": "#1F4E6B",
+      "mist-300": "#9FB8C9",
+      "ivory-50": "#F2F5F7",
     });
     // Старые ключи остаются алиасами — обратная совместимость.
-    expect(palette.primary).toBe("#153147");
-    expect(palette.tertiary).toBe("#CEA434");
+    expect(palette.ivory).toBe("#F2F5F7");
+    expect(palette.almond).toBe("#E6EDF2");
+    expect(palette.mist).toBe("#9FB8C9");
+    expect(palette.navy).toBe("#0E2A47");
+    expect(palette.noir).toBe("#081A2E");
+    expect(palette.gold).toBe("#1F4E6B");
+    expect(palette["navy-deep"]).toBe("#081A2E");
+    expect(palette["navy-mid"]).toBe("#0E2A47");
+    expect(palette["navy-dark"]).toBe("#061424");
+    expect(palette.white).toBe("#FFFFFF");
+    expect(palette.primary).toBe("#0E2A47");
+    expect(palette.secondary).toBe("#9FB8C9");
+    expect(palette.tertiary).toBe("#1F4E6B");
+    expect(palette.neutralDarkest).toBe("#061424");
+    expect(palette.neutralDark).toBe("#0E2A47");
+    expect(palette.neutralLightest).toBe("#F2F5F7");
   });
 
   it.each([
@@ -194,19 +203,19 @@ describe("токены", () => {
     expect(failures).toEqual([]);
   });
 
-  it("акцент — золото, текст на заливке — noir/black-ish", () => {
-    expect(lightColors.accent).toBe("#CEA434");
-    expect(lightColors["on-accent"]).toBe("#232A2F");
-    expect(darkColors.accent).toBe("#E6C766");
-    expect(darkColors["on-accent"]).toBe("#1A1405");
+  it("акцент — mist в light, teal в dark, текст на заливке — ink/ivory", () => {
+    expect(lightColors.accent).toBe("#9FB8C9");
+    expect(lightColors["on-accent"]).toBe("#081A2E");
+    expect(darkColors.accent).toBe("#1F4E6B");
+    expect(darkColors["on-accent"]).toBe("#F2F5F7");
   });
 
-  it("focus ring использует primary: navy в light, gold в dark", () => {
+  it("focus ring использует primary: ink в light, mist в dark", () => {
     // Ring — UI-элемент, 3:1 достаточно; проверяем на поверхности и на себе.
     expect(contrast(lightColors.primary, lightColors.surface)).toBeGreaterThanOrEqual(3);
     expect(contrast(darkColors.primary, darkColors.surface)).toBeGreaterThanOrEqual(3);
-    expect(lightColors.primary).toBe("#153147");
-    expect(darkColors.primary).toBe("#E6C766");
+    expect(lightColors.primary).toBe("#0E2A47");
+    expect(darkColors.primary).toBe("#9FB8C9");
   });
 
   it("themes.css повторяет TS-значения ролей", () => {
@@ -218,8 +227,8 @@ describe("токены", () => {
       expect(dark[role], `dark ${role}`).toBe(darkColors[role]);
     }
     // rgba-подложка тени должна соответствовать цвету shadow.
-    expect(light["shadow-rgb"]).toBe("21, 49, 71");
-    expect(dark["shadow-rgb"]).toBe("5, 13, 22");
+    expect(light["shadow-rgb"]).toBe("14, 42, 71");
+    expect(dark["shadow-rgb"]).toBe("3, 10, 20");
   });
 
   it("themes.css поддерживает light/dark/auto и системный fallback", () => {

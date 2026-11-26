@@ -3381,8 +3381,8 @@
       },
       "palette": {
         "kind": "variable",
-        "type": "{ readonly ivory: \"#F9F8F7\"; readonly almond: \"#EDEAE4\"; readonly mist: \"#ADB8BB\"; readonly navy: \"#153147\"; readonly noir: \"#232A2F\"; readonly gold: \"#CEA434\"; readonly \"navy-deep\": \"#193153\"; readonly \"navy-mid\": \"#122948\"; readonly \"navy-dark\": \"#0E1F33\"; readonly white: \"#FFFFFF\"; readonly primary: \"#153147\"; readonly secondary: \"#ADB8BB\"; readonly tertiary: \"#CEA434\"; readonly neutralDarkest: \"#0E1F33\"; readonly neutralDark: \"#153147\"; readonly neutralLightest: \"#F9F8F7\"; }",
-        "signature": "export declare const palette: { readonly ivory: \"#F9F8F7\"; readonly almond: \"#EDEAE4\"; readonly mist: \"#ADB8BB\"; readonly navy: \"#153147\"; readonly noir: \"#232A2F\"; readonly gold: \"#CEA434\"; readonly \"navy-deep\": \"#193153\"; readonly \"navy-mid\": \"#122948\"; readonly \"navy-dark\": \"#0E1F33\"; readonly white: \"#FFFFFF\"; readonly primary: \"#153147\"; readonly secondary: \"#ADB8BB\"; readonly tertiary: \"#CEA434\"; readonly neutralDarkest: \"#0E1F33\"; readonly neutralDark: \"#153147\"; readonly neutralLightest: \"#F9F8F7\"; };"
+        "type": "{ readonly \"ink-900\": \"#081A2E\"; readonly \"ink-800\": \"#0E2A47\"; readonly \"teal-700\": \"#1F4E6B\"; readonly \"mist-300\": \"#9FB8C9\"; readonly \"ivory-50\": \"#F2F5F7\"; readonly ivory: \"#F2F5F7\"; readonly almond: \"#E6EDF2\"; readonly mist: \"#9FB8C9\"; readonly navy: \"#0E2A47\"; readonly noir: \"#081A2E\"; readonly gold: \"#1F4E6B\"; readonly \"navy-deep\": \"#081A2E\"; readonly \"navy-mid\": \"#0E2A47\"; readonly \"navy-dark\": \"#061424\"; readonly white: \"#FFFFFF\"; readonly primary: \"#0E2A47\"; readonly secondary: \"#9FB8C9\"; readonly tertiary: \"#1F4E6B\"; readonly neutralDarkest: \"#061424\"; readonly neutralDark: \"#0E2A47\"; readonly neutralLightest: \"#F2F5F7\"; }",
+        "signature": "export declare const palette: { readonly \"ink-900\": \"#081A2E\"; readonly \"ink-800\": \"#0E2A47\"; readonly \"teal-700\": \"#1F4E6B\"; readonly \"mist-300\": \"#9FB8C9\"; readonly \"ivory-50\": \"#F2F5F7\"; readonly ivory: \"#F2F5F7\"; readonly almond: \"#E6EDF2\"; readonly mist: \"#9FB8C9\"; readonly navy: \"#0E2A47\"; readonly noir: \"#081A2E\"; readonly gold: \"#1F4E6B\"; readonly \"navy-deep\": \"#081A2E\"; readonly \"navy-mid\": \"#0E2A47\"; readonly \"navy-dark\": \"#061424\"; readonly white: \"#FFFFFF\"; readonly primary: \"#0E2A47\"; readonly secondary: \"#9FB8C9\"; readonly tertiary: \"#1F4E6B\"; readonly neutralDarkest: \"#061424\"; readonly neutralDark: \"#0E2A47\"; readonly neutralLightest: \"#F2F5F7\"; };"
       },
       "PaletteColor": {
         "kind": "type",
@@ -3460,6 +3460,19 @@
         "type": "(root?: HTMLElement | null) => void",
         "signature": "export declare function resetThemePalette(root?: HTMLElement | null): void;"
       },
+      "RichTextCommand": {
+        "kind": "type",
+        "signature": "export type RichTextCommand = \"bold\" | \"italic\" | \"underline\" | \"strike\" | \"h1\" | \"h2\" | \"h3\" | \"paragraph\" | \"ul\" | \"ol\" | \"blockquote\" | \"code\" | \"link\" | \"unlink\" | \"align-left\" | \"align-center\" | \"align-right\" | \"undo\" | \"redo\" | \"clear\";"
+      },
+      "RichTextEditor": {
+        "kind": "function",
+        "type": "(props: RichTextEditorProps) => Node",
+        "signature": "export declare function RichTextEditor(props: RichTextEditorProps): Node;"
+      },
+      "RichTextEditorProps": {
+        "kind": "interface",
+        "signature": "export interface RichTextEditorProps { /** HTML-значение (controlled). */ readonly value?: string | undefined; /** Начальное HTML-значение (uncontrolled). */ readonly defaultValue?: string | undefined; readonly field?: BoundField<string> | undefined; readonly onChange?: ((event: Event) => void) | undefined; readonly onValueChange?: ((html: string) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly label?: Children; readonly hint?: Children; readonly error?: Children; readonly placeholder?: string | undefined; readonly name?: string | undefined; readonly id?: string | undefined; readonly required?: boolean | undefined; readonly readOnly?: boolean | undefined; readonly disabled?: boolean | undefined; readonly invalid?: boolean | undefined; readonly toolbar?: boolean | readonly ToolbarItem[] | undefined; readonly minHeight?: number | undefined; readonly maxHeight?: number | undefined; /** Санитайз значения и результата. По умолчанию `true`. */ readonly sanitize?: boolean | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+      },
       "SearchField": {
         "kind": "function",
         "type": "(props: SearchFieldProps) => Node",
@@ -3519,7 +3532,7 @@
       },
       "SemanticColors": {
         "kind": "interface",
-        "signature": "export interface SemanticColors { readonly primary: string; readonly \"on-primary\": string; readonly \"primary-container\": string; readonly \"on-primary-container\": string; readonly \"primary-fixed\": string; readonly \"primary-fixed-dim\": string; readonly \"on-primary-fixed\": string; readonly \"on-primary-fixed-variant\": string; readonly secondary: string; readonly \"on-secondary\": string; readonly \"secondary-container\": string; readonly \"on-secondary-container\": string; readonly tertiary: string; readonly \"on-tertiary\": string; readonly \"tertiary-container\": string; readonly \"on-tertiary-container\": string; /** Акцент (золото) — для CTA, хайлайтов и декоративных акцентов. */ readonly accent: string; readonly \"on-accent\": string; readonly error: string; readonly \"on-error\": string; readonly \"error-container\": string; readonly \"on-error-container\": string; readonly success: string; readonly \"on-success\": string; readonly \"success-container\": string; readonly \"on-success-container\": string; readonly warning: string; readonly \"on-warning\": string; readonly \"warning-container\": string; readonly \"on-warning-container\": string; readonly surface: string; readonly \"surface-dim\": string; readonly \"surface-bright\": string; readonly \"surface-container-lowest\": string; readonly \"surface-container-low\": string; readonly \"surface-container\": string; readonly \"surface-container-high\": string; readonly \"surface-container-highest\": string; readonly \"on-surface\": string; readonly \"on-surface-variant\": string; readonly \"on-surface-muted\": string; readonly outline: string; readonly \"outline-variant\": string; readonly scrim: string; readonly shadow: string; readonly \"inverse-surface\": string; readonly \"inverse-on-surface\": string; readonly \"inverse-primary\": string; }"
+        "signature": "export interface SemanticColors { readonly primary: string; readonly \"on-primary\": string; readonly \"primary-container\": string; readonly \"on-primary-container\": string; readonly \"primary-fixed\": string; readonly \"primary-fixed-dim\": string; readonly \"on-primary-fixed\": string; readonly \"on-primary-fixed-variant\": string; readonly secondary: string; readonly \"on-secondary\": string; readonly \"secondary-container\": string; readonly \"on-secondary-container\": string; readonly tertiary: string; readonly \"on-tertiary\": string; readonly \"tertiary-container\": string; readonly \"on-tertiary-container\": string; /** Акцент (mist-300) — для CTA, хайлайтов и декоративных акцентов. */ readonly accent: string; readonly \"on-accent\": string; readonly error: string; readonly \"on-error\": string; readonly \"error-container\": string; readonly \"on-error-container\": string; readonly success: string; readonly \"on-success\": string; readonly \"success-container\": string; readonly \"on-success-container\": string; readonly warning: string; readonly \"on-warning\": string; readonly \"warning-container\": string; readonly \"on-warning-container\": string; readonly surface: string; readonly \"surface-dim\": string; readonly \"surface-bright\": string; readonly \"surface-container-lowest\": string; readonly \"surface-container-low\": string; readonly \"surface-container\": string; readonly \"surface-container-high\": string; readonly \"surface-container-highest\": string; readonly \"on-surface\": string; readonly \"on-surface-variant\": string; readonly \"on-surface-muted\": string; readonly outline: string; readonly \"outline-variant\": string; readonly scrim: string; readonly shadow: string; readonly \"inverse-surface\": string; readonly \"inverse-on-surface\": string; readonly \"inverse-primary\": string; }"
       },
       "semanticRoles": {
         "kind": "variable",
@@ -3814,6 +3827,10 @@
         "kind": "function",
         "type": "(defaultTheme?: ThemeMode, storageKey?: string) => string",
         "signature": "export declare function themeScriptSource(defaultTheme?: ThemeMode, storageKey?: string): string;"
+      },
+      "ToolbarItem": {
+        "kind": "type",
+        "signature": "export type ToolbarItem = RichTextCommand | \"|\";"
       },
       "Tooltip": {
         "kind": "function",

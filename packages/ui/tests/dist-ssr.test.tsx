@@ -59,7 +59,7 @@ describe("precompiled dist", () => {
     for (const file of distFiles) {
       if (!file.endsWith(".js")) continue;
       const code = readFileSync(join(distRoot, file), "utf8");
-      if (/\b(?:jsxs?|jsxDEV)\s*\(/u.test(code) || /\bcreateElement\s*\(/u.test(code)) {
+      if (/\b(?:jsxs?|jsxDEV)\s*\(/u.test(code) || /\bReact\.createElement\s*\(|(?<![.\w$])createElement\s*\(/u.test(code)) {
         offenders.push(file);
       }
     }

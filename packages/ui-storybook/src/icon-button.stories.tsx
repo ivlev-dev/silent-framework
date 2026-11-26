@@ -148,7 +148,7 @@ export const Variants: Story = {
         ))}
       </Inline>
       <Text tone="muted" variant="body-small">
-        `standard` — прозрачный фон, `filled` — primary, `accent` — золотой CTA.
+        `standard` — прозрачный фон, `filled` — primary, `accent` — mist CTA.
       </Text>
     </Stack>
   ),
