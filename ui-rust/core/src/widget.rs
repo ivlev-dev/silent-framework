@@ -39,6 +39,7 @@ pub enum TextTone {
     Accent,
     OnPrimary,
     OnErrorContainer,
+    InverseOnSurface,
     Error,
 }
 
@@ -60,6 +61,7 @@ pub enum SurfaceTone {
     SuccessContainer,
     WarningContainer,
     InverseSurface,
+    Scrim,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -193,6 +195,70 @@ pub struct TextFieldWidget {
     pub enabled: bool,
     pub help: Option<String>,
     pub on_submit: Option<Rc<dyn Fn()>>,
+    pub multiline: bool,
+    pub leading_icon: Option<IconName>,
+    pub invalid: bool,
+}
+
+#[derive(Clone)]
+pub struct LinkWidget {
+    pub label: String,
+    pub on_click: Option<Rc<dyn Fn()>>,
+}
+
+#[derive(Clone)]
+pub struct IconButtonWidget {
+    pub icon: IconName,
+    pub label: String,
+    pub variant: ButtonVariant,
+    pub size: ControlSize,
+    pub enabled: bool,
+    pub on_click: Option<Rc<dyn Fn()>>,
+}
+
+#[derive(Clone)]
+pub struct FabWidget {
+    pub icon: IconName,
+    pub label: String,
+    pub on_click: Option<Rc<dyn Fn()>>,
+}
+
+#[derive(Clone)]
+pub struct AvatarWidget {
+    pub initials: String,
+    pub size: f32,
+    pub tone: SurfaceTone,
+}
+
+#[derive(Clone)]
+pub struct SpinnerWidget {
+    pub size: f32,
+}
+
+#[derive(Clone)]
+pub struct SkeletonWidget {
+    pub height: f32,
+    pub radius: f32,
+}
+
+#[derive(Clone)]
+pub struct RadioWidget {
+    pub label: String,
+    pub group: Signal<usize>,
+    pub value: usize,
+    pub enabled: bool,
+}
+
+#[derive(Clone)]
+pub struct SliderWidget {
+    pub value: Signal<f32>,
+    pub label: Option<String>,
+}
+
+#[derive(Clone)]
+pub struct OtpWidget {
+    pub value: Signal<String>,
+    pub length: usize,
 }
 
 #[derive(Clone)]
@@ -264,6 +330,45 @@ pub struct TableWidget {
     pub striped: bool,
     pub tag_column: Option<usize>,
     pub tag_variant: TagVariant,
+    pub compact: bool,
+    pub selected_row: Option<usize>,
+    pub sort_column: Option<usize>,
+    pub sort_ascending: bool,
+    pub page: Option<Signal<usize>>,
+    pub pages: usize,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DataColumn {
+    pub title: String,
+    pub width: f32,
+    pub align: Align,
+    pub tag: Option<TagVariant>,
+}
+
+#[derive(Clone)]
+pub struct DataTableState {
+    pub order: Signal<Vec<usize>>,
+    pub widths: Signal<Vec<f32>>,
+    pub compact: Signal<bool>,
+    pub selected: Signal<Vec<usize>>,
+    pub sort: Signal<Option<usize>>,
+    pub sort_ascending: Signal<bool>,
+    pub page: Signal<usize>,
+    pub pages: usize,
+    pub scroll: Signal<f32>,
+}
+
+#[derive(Clone)]
+pub struct DataTableWidget {
+    pub columns: Vec<DataColumn>,
+    pub rows: Rc<Vec<Vec<String>>>,
+    pub state: DataTableState,
+    pub viewport_height: Option<f32>,
+    pub row_height: f32,
+    pub compact_row_height: f32,
+    pub display_total: Option<usize>,
+    pub display_range: Option<(usize, usize, usize)>,
 }
 
 #[derive(Clone)]
@@ -289,6 +394,16 @@ pub enum WidgetKind {
     Table(TableWidget),
     Tag(TagWidget),
     Icon(IconWidget),
+    Link(LinkWidget),
+    IconButton(IconButtonWidget),
+    Fab(FabWidget),
+    Avatar(AvatarWidget),
+    Spinner(SpinnerWidget),
+    Skeleton(SkeletonWidget),
+    Radio(RadioWidget),
+    Slider(SliderWidget),
+    Otp(OtpWidget),
+    DataTable(DataTableWidget),
     Divider(DividerWidget),
     Spacer(f32),
 }
@@ -311,6 +426,9 @@ pub struct Widget {
     pub visible: Option<Responsive<bool>>,
     pub pin_bottom: bool,
     pub fill_viewport_height: bool,
+    pub click: Option<Rc<dyn Fn()>>,
+    pub key: Option<&'static str>,
+    pub scrollable: Option<Signal<f32>>,
 }
 
 impl Widget {
@@ -332,6 +450,9 @@ impl Widget {
             visible: None,
             pin_bottom: false,
             fill_viewport_height: false,
+            click: None,
+            key: None,
+            scrollable: None,
         }
     }
 
@@ -471,6 +592,9 @@ impl Widget {
             enabled: true,
             help: None,
             on_submit: None,
+            multiline: false,
+            leading_icon: None,
+            invalid: false,
         }))
     }
 
@@ -485,6 +609,9 @@ impl Widget {
             enabled: true,
             help: None,
             on_submit: None,
+            multiline: false,
+            leading_icon: None,
+            invalid: false,
         }))
     }
 
@@ -577,6 +704,38 @@ impl Widget {
         self
     }
 
+    pub fn data_table(
+        columns: Vec<DataColumn>,
+        rows: impl Into<Rc<Vec<Vec<String>>>>,
+        state: DataTableState,
+        viewport_height: Option<f32>,
+    ) -> Self {
+        Self::new(WidgetKind::DataTable(DataTableWidget {
+            columns,
+            rows: rows.into(),
+            state,
+            viewport_height,
+            row_height: 56.0,
+            compact_row_height: 48.0,
+            display_total: None,
+            display_range: None,
+        }))
+    }
+
+    pub fn total_rows(mut self, total: usize) -> Self {
+        if let WidgetKind::DataTable(table) = &mut self.kind {
+            table.display_total = Some(total);
+        }
+        self
+    }
+
+    pub fn display_range(mut self, first: usize, last: usize, total: usize) -> Self {
+        if let WidgetKind::DataTable(table) = &mut self.kind {
+            table.display_range = Some((first, last, total));
+        }
+        self
+    }
+
     pub fn table(headers: Vec<String>, rows: Vec<Vec<String>>) -> Self {
         Self::new(WidgetKind::Table(TableWidget {
             headers,
@@ -585,6 +744,12 @@ impl Widget {
             striped: false,
             tag_column: None,
             tag_variant: TagVariant::Primary,
+            compact: false,
+            selected_row: None,
+            sort_column: None,
+            sort_ascending: true,
+            page: None,
+            pages: 1,
         }))
     }
 
@@ -707,6 +872,21 @@ impl Widget {
 
     pub fn fill_viewport_height(mut self) -> Self {
         self.fill_viewport_height = true;
+        self
+    }
+
+    pub fn clickable(mut self, handler: impl Fn() + 'static) -> Self {
+        self.click = Some(Rc::new(handler));
+        self
+    }
+
+    pub fn key(mut self, key: &'static str) -> Self {
+        self.key = Some(key);
+        self
+    }
+
+    pub fn scrollable(mut self, scroll: Signal<f32>) -> Self {
+        self.scrollable = Some(scroll);
         self
     }
 
@@ -886,6 +1066,143 @@ impl Widget {
         self
     }
 
+    pub fn multiline(mut self) -> Self {
+        if let WidgetKind::TextField(widget) = &mut self.kind {
+            widget.multiline = true;
+        }
+        self
+    }
+
+    pub fn leading_icon(mut self, icon: IconName) -> Self {
+        if let WidgetKind::TextField(widget) = &mut self.kind {
+            widget.leading_icon = Some(icon);
+        }
+        self
+    }
+
+    pub fn invalid(mut self, invalid: bool) -> Self {
+        if let WidgetKind::TextField(widget) = &mut self.kind {
+            widget.invalid = invalid;
+        }
+        self
+    }
+
+    pub fn link(label: impl Into<String>) -> Self {
+        Self::new(WidgetKind::Link(LinkWidget {
+            label: label.into(),
+            on_click: None,
+        }))
+    }
+
+    pub fn link_click(mut self, handler: impl Fn() + 'static) -> Self {
+        if let WidgetKind::Link(widget) = &mut self.kind {
+            widget.on_click = Some(Rc::new(handler));
+        }
+        self
+    }
+
+    pub fn icon_button(icon: IconName, label: impl Into<String>) -> Self {
+        Self::new(WidgetKind::IconButton(IconButtonWidget {
+            icon,
+            label: label.into(),
+            variant: ButtonVariant::Text,
+            size: ControlSize::Medium,
+            enabled: true,
+            on_click: None,
+        }))
+    }
+
+    pub fn icon_button_click(mut self, handler: impl Fn() + 'static) -> Self {
+        if let WidgetKind::IconButton(widget) = &mut self.kind {
+            widget.on_click = Some(Rc::new(handler));
+        }
+        self
+    }
+
+    pub fn fab(icon: IconName, label: impl Into<String>) -> Self {
+        Self::new(WidgetKind::Fab(FabWidget {
+            icon,
+            label: label.into(),
+            on_click: None,
+        }))
+    }
+
+    pub fn fab_click(mut self, handler: impl Fn() + 'static) -> Self {
+        if let WidgetKind::Fab(widget) = &mut self.kind {
+            widget.on_click = Some(Rc::new(handler));
+        }
+        self
+    }
+
+    pub fn avatar(initials: impl Into<String>) -> Self {
+        Self::new(WidgetKind::Avatar(AvatarWidget {
+            initials: initials.into(),
+            size: 36.0,
+            tone: SurfaceTone::SecondaryContainer,
+        }))
+    }
+
+    pub fn spinner() -> Self {
+        Self::new(WidgetKind::Spinner(SpinnerWidget { size: 24.0 }))
+    }
+
+    pub fn skeleton(height: f32) -> Self {
+        Self::new(WidgetKind::Skeleton(SkeletonWidget {
+            height,
+            radius: 8.0,
+        }))
+    }
+
+    pub fn radio(label: impl Into<String>, group: Signal<usize>, value: usize) -> Self {
+        Self::new(WidgetKind::Radio(RadioWidget {
+            label: label.into(),
+            group,
+            value,
+            enabled: true,
+        }))
+    }
+
+    pub fn slider(value: Signal<f32>, label: Option<String>) -> Self {
+        Self::new(WidgetKind::Slider(SliderWidget { value, label }))
+    }
+
+    pub fn otp(value: Signal<String>, length: usize) -> Self {
+        Self::new(WidgetKind::Otp(OtpWidget {
+            value,
+            length: length.max(1),
+        }))
+    }
+
+    pub fn table_compact(mut self, compact: bool) -> Self {
+        if let WidgetKind::Table(widget) = &mut self.kind {
+            widget.compact = compact;
+        }
+        self
+    }
+
+    pub fn selected_row(mut self, row: usize) -> Self {
+        if let WidgetKind::Table(widget) = &mut self.kind {
+            widget.selected_row = Some(row);
+        }
+        self
+    }
+
+    pub fn sort(mut self, column: usize, ascending: bool) -> Self {
+        if let WidgetKind::Table(widget) = &mut self.kind {
+            widget.sort_column = Some(column);
+            widget.sort_ascending = ascending;
+        }
+        self
+    }
+
+    pub fn pagination(mut self, page: Signal<usize>, pages: usize) -> Self {
+        if let WidgetKind::Table(widget) = &mut self.kind {
+            widget.page = Some(page);
+            widget.pages = pages.max(1);
+        }
+        self
+    }
+
     pub fn striped(mut self, striped: bool) -> Self {
         if let WidgetKind::Table(widget) = &mut self.kind {
             widget.striped = striped;
@@ -941,6 +1258,25 @@ impl Widget {
             }
             WidgetKind::Navigation(widget) => {
                 let _ = widget.selected.get();
+            }
+            WidgetKind::Radio(widget) => {
+                let _ = widget.group.get();
+            }
+            WidgetKind::Slider(widget) => {
+                let _ = widget.value.get();
+            }
+            WidgetKind::Otp(widget) => {
+                let _ = widget.value.get();
+            }
+            WidgetKind::DataTable(widget) => {
+                let _ = widget.state.order.get();
+                let _ = widget.state.widths.get();
+                let _ = widget.state.compact.get();
+                let _ = widget.state.selected.get();
+                let _ = widget.state.sort.get();
+                let _ = widget.state.sort_ascending.get();
+                let _ = widget.state.page.get();
+                let _ = widget.state.scroll.get();
             }
             _ => {}
         }

@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::mpsc;
 
+use ui_core::damage::Damage;
 use ui_core::layout::LayoutTree;
 use ui_core::theme::Theme;
 
@@ -59,8 +60,40 @@ impl HeadlessRenderer {
         (self.width, self.height)
     }
 
+    pub fn resize(&mut self, width: u32, height: u32) {
+        let width = width.max(1);
+        let height = height.max(1);
+        if (width, height) == (self.width, self.height) {
+            return;
+        }
+        let texture = self.gpu.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("ui-render headless"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: HEADLESS_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        self.view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        self.texture = texture;
+        self.width = width;
+        self.height = height;
+    }
+
     pub fn backend(&self) -> wgpu::Backend {
         self.gpu.backend
+    }
+
+    pub fn set_fast_text(&mut self, fast: bool) {
+        self.painter.set_fast_text(fast);
     }
 
     pub fn render_offscreen(
@@ -69,8 +102,25 @@ impl HeadlessRenderer {
         theme: &Theme,
         scale: f32,
     ) -> Result<(), RenderError> {
-        self.painter
-            .render(&self.view, (self.width, self.height), tree, theme, scale)?;
+        self.render_offscreen_damage(tree, theme, scale, Damage::full())?;
+        Ok(())
+    }
+
+    pub fn render_offscreen_damage(
+        &mut self,
+        tree: &LayoutTree,
+        theme: &Theme,
+        scale: f32,
+        damage: Damage,
+    ) -> Result<crate::painter::RenderStats, RenderError> {
+        let stats = self.painter.render(
+            &self.view,
+            (self.width, self.height),
+            tree,
+            theme,
+            scale,
+            damage,
+        )?;
         self.gpu
             .device
             .poll(wgpu::PollType::Wait {
@@ -78,7 +128,7 @@ impl HeadlessRenderer {
                 timeout: None,
             })
             .map_err(|error| RenderError::Device(error.to_string()))?;
-        Ok(())
+        Ok(stats)
     }
 
     pub fn render(
@@ -87,8 +137,22 @@ impl HeadlessRenderer {
         theme: &Theme,
         scale: f32,
     ) -> Result<Vec<u8>, RenderError> {
-        self.render_offscreen(tree, theme, scale)?;
+        self.render_damage(tree, theme, scale, Damage::full())
+    }
+
+    pub fn render_damage(
+        &mut self,
+        tree: &LayoutTree,
+        theme: &Theme,
+        scale: f32,
+        damage: Damage,
+    ) -> Result<Vec<u8>, RenderError> {
+        self.render_offscreen_damage(tree, theme, scale, damage)?;
         self.read_pixels()
+    }
+
+    pub fn stats(&self) -> crate::painter::RenderStats {
+        self.painter.stats()
     }
 
     fn read_pixels(&self) -> Result<Vec<u8>, RenderError> {

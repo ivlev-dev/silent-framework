@@ -1,8 +1,8 @@
 # ui-rust — GPU UI на Rust (MVP)
 
 Отдельный Rust-workspace с тем же дизайном Silent UI: реактивные сигналы, формы,
-адаптивность по брейкпоинтам, View/ViewModel, DI и GPU-рендерер на `wgpu`
-(Vulkan с fallback на GL). Это MVP из `docs/rfc/ui-rust.md`.
+View/ViewModel, DI, damage-aware GPU-рендерер на `wgpu` и порт компонентов
+Silent UI. Desktop — **только Wayland**, Vulkan с fallback на GL.
 
 ## Состав
 
@@ -13,7 +13,8 @@ ui-rust/
   render/        wgpu-рендерер, батчинг, lyon-геометрия, glyphon-текст, headless PNG
   platform/      winit-окно, ввод, IME, clipboard, desktop-раннер
   accessibility/ accesskit-дерево из layout-дерева
-  demo/          login + dashboard, desktop и headless
+  demo/          login, dashboard, gallery, desktop и headless
+  PARITY.md      карта компонентов: статус, виртуализация, DnD, анимации
 ```
 
 Это вложенный workspace: он не входит в корневой `Cargo.toml` и не меняет
@@ -41,61 +42,90 @@ ui-rust/
 
 ```bash
 cd ui-rust
-cargo run -p ui-demo                    # desktop-окно (Vulkan → GL fallback)
-cargo run -p ui-demo --release          # 60+ fps
+env -u DISPLAY WAYLAND_DISPLAY=wayland-1 cargo run -p ui-demo
+env -u DISPLAY WAYLAND_DISPLAY=wayland-1 cargo run -p ui-demo --release
 ```
+
+Desktop поддерживает **только Wayland**: `winit` собран без feature `x11`,
+X11/XWayland не используется. Без `WAYLAND_DISPLAY` приложение завершится с
+понятной ошибкой. `DISPLAY` можно не выставлять.
 
 Переменные окружения:
 
 ```bash
-WGPU_BACKEND=vulkan cargo run -p ui-demo
-WGPU_BACKEND=gl     cargo run -p ui-demo
-WGPU_BACKEND=auto   cargo run -p ui-demo   # по умолчанию: Vulkan, затем GL
-RUST_LOG=info       cargo run -p ui-demo
+WGPU_BACKEND=vulkan RUST_LOG=info \
+  env -u DISPLAY WAYLAND_DISPLAY=wayland-1 cargo run -p ui-demo
+WGPU_BACKEND=gl RUST_LOG=info \
+  env -u DISPLAY WAYLAND_DISPLAY=wayland-1 cargo run -p ui-demo
 ```
 
 `WGPU_BACKEND` принимает `vulkan`, `gl`/`gles`, `metal`, `dx12`, `all`,
 `primary`, `auto` и списки через `,`/`|`/`+`.
 
+Масштаб: для 4K-мониторов UI работает в 2× (`effective_ui_scale`), стартовое
+окно — 68% рабочей области (60–75%), но не меньше 960×640; 2560+ — 1.5×.
+`winit::scale_factor` учитывается, рендер идёт в физических пикселях без
+интерполяции текста.
+
 Демо: экран логина (предзаполнен `demo@silent.dev` / `secret123`, кнопка
-«Войти» запускает фейковый `AuthApi` с задержкой 420 мс), затем dashboard с
-адаптивной сеткой, навигацией, таблицей и переключателем темы.
-`Ctrl+D` — светлая/тёмная тема. Кнопка «Выйти» возвращает на логин.
+«Войти» запускает фейковый `AuthApi` с задержкой 420 мс), dashboard и
+галерея компонентов (`--screen gallery`). `Ctrl+D` — тема; «Выйти» возвращает
+на логин. В галерее секции переключаются rail/bottom navigation, поповеры
+открываются кнопками и закрываются кликом по backdrop или Escape.
 
 ### Headless-скриншот
 
 Готовые кадры лежат в `ui-rust/screenshots/` (генерируются snapshot-тестом):
-
-```
-screenshots/login-1440-light.png     screenshots/login-1440-dark.png
-screenshots/login-390-light.png      screenshots/login-390-dark.png
-screenshots/dashboard-1440-light.png screenshots/dashboard-1440-dark.png
-screenshots/dashboard-1920-light.png screenshots/dashboard-1920-dark.png
-screenshots/dashboard-390-light.png  screenshots/dashboard-390-dark.png
-```
+`login|dashboard|gallery-{390x844|840x900|1440x900|1920x1080|3840x2160}-{light|dark}.png`,
+секции галереи `gallery-section-{1..5}-1440-dark.png`, hover —
+`hover-{button|nav|row}-1440-dark.png`.
 
 ```bash
 cargo run -p ui-demo -- --headless --width 1440 --height 900 --out /tmp/login.png
-cargo run -p ui-demo -- --headless --dark --width 1920 --height 1080 --out /tmp/login-dark.png
-cargo run -p ui-demo -- --headless --screen dashboard --width 1440 --height 900 --out /tmp/dash.png
-cargo run -p ui-demo -- --headless --screen dashboard --dark --width 390 --height 844 --out /tmp/mobile-dark.png
+cargo run -p ui-demo -- --headless --dark --width 3840 --height 2160 --out /tmp/login-4k-dark.png
+cargo run -p ui-demo -- --headless --screen dashboard --width 1920 --height 1080 --out /tmp/dash.png
+cargo run -p ui-demo -- --headless --screen gallery --section 3 --width 1440 --height 900 --out /tmp/gallery-data.png
+cargo run -p ui-demo -- --headless --screen gallery --popover 2 --width 1440 --height 900 --out /tmp/popover.png
 cargo test -p ui-demo --test snapshots
 ```
 
 `--headless` рендерит кадр в offscreen-текстуру и читает пиксели через
 `copy_texture_to_buffer` + `map_async`, затем пишет PNG. Окно не нужно.
 
-### Бенчмарк кадра
+### Производительность и бенчмарк
 
 ```bash
-cargo run -p ui-demo --release -- --headless --screen dashboard --bench 300
-# bench: 300 frames, avg 2.65 ms (376.8 fps), worst 40.97 ms, backend Vulkan
+cargo run -p ui-demo --release -- --perf 120
 ```
 
-Замер включает пересборку layout, геометрию, glyphon prepare, render pass и
-ожидание GPU (offscreen, 1280×800, Vulkan, без vsync). Первый кадр дороже из-за
-компиляции пайплайнов и построения атласа глифов. Бюджет 16.6 ms/кадр
-выполняется с большим запасом; desktop-цикл использует `AutoVsync`.
+Замеры (Vulkan, offscreen, Wayland-профиль, 120 кадров; release):
+
+```
+1440x900  idle: 0/120 кадров, 0 px
+1440x900  input: avg 0.56 ms, p99 1.13 ms, 28 880 px/frame
+1440x900  hover: avg 0.47 ms, p99 0.95 ms, 22 624 px/frame
+1440x900  table-10k-scroll: avg 1.81 ms, p99 3.24 ms, 7 visible rows
+1440x900  full: avg 0.74 ms, p99 0.98 ms
+3840x2160 idle: 0/120 кадров, 0 px
+3840x2160 input: avg 0.89 ms, p99 2.55 ms, 28 880 px/frame
+3840x2160 hover: avg 0.69 ms, p99 0.73 ms
+3840x2160 table-10k-scroll: avg 2.35 ms, p99 3.43 ms, 7 visible rows
+3840x2160 full: avg 1.04 ms, p99 1.36 ms
+resize 1440x900<->3840x2160 (scale 1/2): avg 1.87 ms, p99 15.61 ms
+```
+
+- Damage: изменения сигналов дают union прямоугольников; idle не рендерит
+  кадры, `ControlFlow::Wait`.
+- Input/hover перерисовывают только поле/кнопку; полный кадр — screen change,
+  scroll, resize.
+- Кэш shaping: ключ `(текст, стиль, ширина, высота, scale)`, LRU 2048 записей,
+  ключи текущего кадра не эвиктятся. Layout кэшируется по revision; hover/focus
+  патчат paint без пересчёта layout.
+- DataTable виртуализирован: при 10 000 строк в paint попадают только видимые
+  (+overscan) строки, sticky header/footer.
+- Surface present mode: `Mailbox`, fallback `Immediate`, затем `AutoVsync`.
+- Pipeline/atlas создаются один раз; resize меняет только surface/сцену,
+  resize-события коалесцируются в один redraw.
 
 ## API
 
@@ -267,10 +297,15 @@ let service = container.resolve::<LoginService>()?;
 Тема перенесена из `packages/ui/src/tokens/tokens.css` и
 `packages/ui/src/styles/themes.css` (light/dark):
 
-- палитра ink/teal/mist/ivory: `primary #0E2A47`, `secondary #1F4E6B`,
+- светлая палитра ink/teal/mist/ivory: `primary #0E2A47`, `secondary #1F4E6B`,
   `accent #9FB8C9`, `surface #F2F5F7`, `surface-container-lowest #FFFFFF`,
-  `on-surface #081A2E`, `outline-variant #C9D8E2`, error/success/warning
-  контейнеры; страница приложения — почти белый `#FAFBFC`;
+  `on-surface #081A2E`, `outline-variant #C9D8E2`; страница — `#FAFBFC`;
+- тёмная — soft charcoal: `surface #17181B`, `surface-container-lowest #131417`,
+  `low #1D1E22`, `container #232428`, `high #2A2B30`, `highest #333439`,
+  `on-surface #ECECEF`, `variant #C9C9D0`, `muted #9C9CA5`,
+  `outline #85858F`, `outline-variant #3C3D44`, `primary #D9D5CB`,
+  `on-primary #141416`, `primary-container #34343A`;
+- error/success/warning контейнеры на токенах;
 - типографика: display/headline/title/body/label по токенам, brand 14/18,
   subtitle 15/22.5, label 13/18.2, hint и footer 12/16;
 - spacing 4/8/12/16/20/24/32/48, radius xs 4, control 10, card 16, dialog 20;
@@ -285,34 +320,45 @@ let service = container.resolve::<LoginService>()?;
   32/40/48, radius 10, label 12–13.
 - `TextField`: label → 6 px → input 44 px → hint 6 px; ошибка 12/16;
   focus ring 2 px; пароль и placeholder на токенах.
-- `Checkbox` 18 px с gap 8, `Switch` 48×28, `Select` 44 px.
+- `Checkbox` 18 px с gap 8, `Switch` 44×24 (knob 18, inset 3), `Select` 44 px.
 - `Tag/Badge`: варианты neutral/primary/secondary/success/warning/error/info,
   высота 24, label 12, одна строка.
-- `Table`: header 44, row 48 (compact 44), padding 12/16, tag-колонка
-  рисуется однострочным чипом.
+- `Table`/`DataTable`: header 44, row 48 (compact 44), padding 12/16,
+  tag-колонка — однострочный чип; углы таблицы квадратные, внешняя карточка
+  скруглена; bulk-панель выбранных строк — над пагинацией; virtualization +
+  drag/resize колонок (см. `PARITY.md`).
 - `Progress`/`FormProgress`: label 12, track 6 px, primary bar.
 - `NavigationRail` 260 px (expanded, hairline right), `NavigationBar` 64 px.
 - Page shell: rail 260 → на `<840px` скрывается в pinned bottom navigation;
   TopAppBar 56 px; content max 1440; gutters 16/24/32; section gap 24.
+- Hover: Button/IconButton (state layer 8%), nav items, таблицы (строки/шапка),
+  поля (outline), checkbox/switch/radio, ссылки, интерактивные Card/Tag;
+  курсор pointer/text/grab/grabbing/col-resize; disabled не реагирует.
+- Поповеры (ColorPicker, DatePicker, Select, TreeSelect, Menu) — top-layer
+  Stack: backdrop, клик вне и Escape закрывают, панель не обрезается карточкой.
 
 Брейкпоинты синхронизированы с `packages/ui/src/tokens/breakpoints.json`:
 `xs 0, sm 360, md 480, lg 600, xl 840, 2xl 1200, 3xl 1600, 4xl 1920, 5xl 2560,
 6xl 3840`. Mobile-first: `Responsive<T>` выбирает значение по последнему
 достигнутому брейкпоинту, `responsive!(Xs => 1, Md => 2, Xl => 3)`.
 
-Виджеты MVP: `Box` (`Widget::boxed`/`Widget::container`), `Column`, `Row`,
-`Stack`, `Grid`, `Text`, `Heading`, `Button`, `TextField`, `Checkbox`, `Switch`,
-`Select`, `Card`, `Divider`, `Progress`, `FormProgress`, `NavigationRail/Bar`,
-`Table`, `Tag/Badge`, `Icon`, `Spacer`. Поддерживаются `padding`, `gap`,
-`align`, `justify`, `wrap`, `grow`, `max_width`, `min_height`,
-адаптивные padding/видимость/направление, `pin_bottom` и
-`fill_viewport_height`.
+Виджеты: `Box`/`Column`/`Row`/`Stack`/`Grid`, `Text`, `Heading`, `Label`,
+`Link`, `Button`, `IconButton`, `Fab`, `TextField`, `Textarea`, `Checkbox`,
+`Switch`, `Radio`, `Select`, `Slider`, `OTP`, `Card`, `Divider`, `Tag/Badge`,
+`Chip`, `Avatar`, `Spinner`, `Skeleton`, `Progress`, `FormProgress`,
+`NavigationRail/Bar`, `TopAppBar`, `Table`, `DataTable`, `Accordion`, `List`,
+`Tabs`/`Breadcrumbs`/`Pagination` (композиции). Полная карта — `PARITY.md`.
+Поддерживаются `padding`, `gap`, `align`, `justify`, `wrap`, `grow`,
+`max_width`, `min_height`, `key`, `clickable`, адаптивные
+padding/видимость/направление, `pin_bottom`, `fill_viewport_height`.
 
-Layout пересчитывается, когда меняется ревизия сигналов, тема или viewport.
-`Card` учитывает `gap` и в измерении, и в раскладке (есть тест); flex-контейнеры
-используют явные gap без margin collapse. Текст измеряется приближённо,
-финальный shaping делает `cosmic-text`; из-за этого возможны небольшие
-расхождения переносов. Виртуализации/damage-регионов/скролла в MVP нет.
+Layout пересчитывается только при смене revision/размера/темы; hover, focus,
+pressed и каретка патчат paint-состояние без нового layout. `Card` учитывает
+`gap` и в измерении, и в раскладке (есть тест); flex-контейнеры используют
+явные gap без margin collapse. Текст в layout измеряется приближённо,
+финальный shaping делает `cosmic-text`; возможны небольшие расхождения
+переносов. DataTable/List-виртуализация есть для DataTable; generic scroll
+контейнеров пока нет (см. ограничения).
 
 ## Рендерер
 
@@ -325,8 +371,12 @@ Layout пересчитывается, когда меняется ревизи�
 - Текст — `cosmic-text` shaping + `glyphon` атлас, clip через `TextBounds`.
 - Карточки с тенью, чекбоксы, switch, поля, таблица, прогресс, nav-элементы
   рисуются процедурно.
-- Surface: `AutoVsync`, sRGB-формат при наличии; resize/scale factor
-  обрабатываются.
+- Surface: `Mailbox`/`Immediate` (без блокировки на resize), sRGB-формат;
+  resize/scale factor обрабатываются, pipeline/atlas не пересоздаются.
+- MSAA 4× для сцены, затем blit в surface/PNG; единый `rounded_rect` рисует
+  fill+stroke по одной геометрии, stroke внутрь на половину толщины.
+- Resize: события коалесцируются, surface configure + scene resize один раз
+  перед redraw.
 
 ## Ввод
 
@@ -335,8 +385,10 @@ Layout пересчитывается, когда меняется ревизи�
 Backspace/Delete с выделением), Enter для
 submit/активации, Escape для blur, `Ctrl+C/V/X` и clipboard через `arboard`
 (с fallback на memory), `WindowEvent::Ime::Commit` как базовая поддержка IME.
-Hover меняет курсор (`Default/Pointer/Text`). Колесо сохраняется в состоянии,
-но скроллируемых контейнеров в MVP нет.
+Hover меняет состояние и курсор (`Pointer/Text/Grab/Grabbing/ResizeHorizontal`),
+damage — только старый/новый прямоугольник. Колесо: DataTable скроллит
+виртуализированные строки (full-viewport damage), остальные — full viewport.
+`PointerLeave` сбрасывает hover.
 
 ## Accessibility
 
@@ -367,12 +419,17 @@ cargo test --workspace
 - accessibility: роли, bounds, focus;
 - headless-рендер: размер, фон (light/dark), наличие accent-цвета, PNG,
   стабильность кадров;
-- snapshot-тесты: токены (radius 16, rail 260, top bar 56, table 44/48,
-  page `#FAFBFC`), цвета страницы/карточек/rail, card gap/padding, login card
-  460 px и gap полей 20, отсутствие горизонтального overflow на 390/1440/1920,
-  bottom navigation на mobile, 10 PNG в `screenshots/`;
+- snapshot-тесты: токены, dark soft-charcoal, радиусы/углы (пиксели вне
+  радиуса), switch knob внутри трека, scale 4K→2×, окно 60–75%, login card
+  460/gap 20, отсутствие overflow, bottom navigation, все размеры/темы;
+- damage: partial vs full pixel equality, union, idle-skip, hover damage
+  old/new only, hover pixels vs normal;
+- text cache: reuse, invalidation по стилю/ширине/scale, resize 1440↔3840 и
+  scale 1/2, 1200+ команд, лимит 2048 без eviction текущего кадра;
+- DataTable: 10k строк виртуализированы, scroll, row selection, density,
+  column reorder/resize, hover без layout rebuild;
 - demo: DI-резолв `AuthApi`, успешный/неуспешный логин, клик по кнопке через
-  `Ui`, наличие полей/прогресса.
+  `Ui`, наличие полей/прогресса, hover screenshots.
 
 Headless-тесты пропускаются с сообщением, если GPU-адаптер недоступен.
 
@@ -404,8 +461,19 @@ Headless-тесты пропускаются с сообщением, если G
 
 ## Ограничения MVP
 
-- Нет скроллинга, виртуализации, damage-регионов, анимаций, градиентов,
-  оверлеев/popover и виртуальной клавиатуры.
+- X11/XWayland не поддерживается; только Wayland. X11-сборка winit отключена.
+- Нет generic-скролла и виртуализации List/дерева; виртуализирован только
+  DataTable. Скролл DataTable — full-viewport damage (по требованию), не
+  частичный.
+- Column DnD/resize работают, но reorder без плавной анимации; row/tree DnD,
+  auto-expand и клавиатурный DnD не реализованы. `prefers-reduced-motion`
+  пока не влияет (анимаций почти нет).
+- Оверлеи поповеров — top-layer с backdrop/Escape/click-outside, но без
+  focus-trap и полноценного a11y-фокуса.
+- RichTextEditor — визуальный тулбар + textarea, без реального rich-модели;
+  FileUpload/DateRange — базовые панели без загрузки/календарной логики;
+  Combobox/TreeSelect — select-подобные превью.
+- Нет градиентов, виртуальной клавиатуры и codegen из TS-токенов.
 - Текст в layout измеряется приближённо; переносы могут отличаться от
   `cosmic-text` на сложных шрифтах.
 - Таблица не эллипсирует и не виртуализирует ячейки; на узких экранах

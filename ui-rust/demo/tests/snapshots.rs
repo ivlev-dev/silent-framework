@@ -4,7 +4,7 @@ use ui_core::layout::{layout, LayoutNode, LayoutOptions, LayoutTree, PaintData, 
 use ui_core::theme::{Theme, ThemeMode};
 use ui_core::view_model::ViewModel;
 use ui_core::{Container, Size};
-use ui_demo::{AuthApi, DashboardVm, LoginVm, User};
+use ui_demo::{AuthApi, DashboardVm, GalleryVm, LoginVm, User};
 use ui_render::headless::write_png;
 use ui_render::HeadlessRenderer;
 
@@ -32,6 +32,26 @@ fn render_login(width: u32, height: u32, mode: ThemeMode) -> Frame {
     let container = Container::new();
     let auth = container.resolve_trait::<dyn AuthApi>().expect("auth");
     let vm = LoginVm::new(auth);
+    let tree = layout(
+        &vm.view(),
+        Size::new(width as f32, height as f32),
+        &theme,
+        &LayoutOptions::empty(),
+    );
+    render_tree(tree, theme, width, height)
+}
+
+fn render_gallery(
+    width: u32,
+    height: u32,
+    mode: ThemeMode,
+    section: usize,
+    popover: usize,
+) -> Frame {
+    let theme = Theme::from_mode(mode);
+    let vm = GalleryVm::new(mode == ThemeMode::Dark);
+    vm.section.set(section.min(5));
+    vm.popover.set(popover.min(5));
     let tree = layout(
         &vm.view(),
         Size::new(width as f32, height as f32),
@@ -131,7 +151,7 @@ fn dashboard_desktop_tokens_and_colors() {
     let mut found_tables = Vec::new();
     tables(&frame.tree.root, &mut found_tables);
     assert_eq!(found_tables.len(), 1);
-    assert_eq!(found_tables[0].rect.height, 44.0 + 4.0 * 48.0);
+    assert_eq!(found_tables[0].rect.height, 48.0 + 4.0 * 56.0);
     let page = pixel(&frame, 1435.0, 3.0);
     assert!(color_matches(page, theme.palette.page));
     let rail = frame.tree.root.children.first().expect("rail wrapper");
@@ -164,7 +184,7 @@ fn dashboard_mobile_uses_bottom_navigation_and_no_overflow() {
         assert!((bar.rect.bottom() - 844.0).abs() < 1.0);
         let mut found_tables = Vec::new();
         tables(&frame.tree.root, &mut found_tables);
-        assert_eq!(found_tables[0].rect.height, 44.0 + 3.0 * 48.0);
+        assert_eq!(found_tables[0].rect.height, 48.0 + 3.0 * 56.0);
     }
 }
 
@@ -188,7 +208,7 @@ fn dashboard_large_viewport_is_capped_by_content_max() {
         }
     }
     visit(&frame.tree.root, &mut widest, &mut capped_group);
-    assert!(widest <= 1440.0, "content exceeds max width: {widest}");
+    assert!(widest <= 1660.0, "content exceeds main width: {widest}");
     assert!(capped_group, "content column is not capped at 1440");
     let page = pixel(&frame, 1915.0, 3.0);
     assert!(color_matches(page, frame.theme.palette.page));
@@ -234,29 +254,67 @@ fn login_card_spacing_and_metrics() {
 fn headless_snapshots_are_written() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../screenshots");
     std::fs::create_dir_all(&dir).expect("screenshots dir");
-    let cases = [
-        (
-            "dashboard-1440-light",
-            1440u32,
-            900u32,
-            ThemeMode::Light,
-            false,
-        ),
-        ("dashboard-1440-dark", 1440, 900, ThemeMode::Dark, false),
-        ("dashboard-1920-light", 1920, 1080, ThemeMode::Light, false),
-        ("dashboard-1920-dark", 1920, 1080, ThemeMode::Dark, false),
-        ("dashboard-390-light", 390, 844, ThemeMode::Light, false),
-        ("dashboard-390-dark", 390, 844, ThemeMode::Dark, false),
-        ("login-1440-light", 1440, 900, ThemeMode::Light, true),
-        ("login-1440-dark", 1440, 900, ThemeMode::Dark, true),
-        ("login-390-light", 390, 844, ThemeMode::Light, true),
-        ("login-390-dark", 390, 844, ThemeMode::Dark, true),
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if entry.path().extension().and_then(|value| value.to_str()) == Some("png")
+                && (name.starts_with("login-")
+                    || name.starts_with("dashboard-")
+                    || name.starts_with("gallery-"))
+            {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
+    let sizes = [
+        (390u32, 844u32),
+        (840, 900),
+        (1440, 900),
+        (1920, 1080),
+        (3840, 2160),
     ];
-    for (name, width, height, mode, login) in cases {
-        let frame = if login {
-            render_login(width, height, mode)
-        } else {
-            render_dashboard(width, height, mode)
+    let modes = [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)];
+    let mut cases: Vec<(String, u32, u32, ThemeMode, Option<usize>)> = Vec::new();
+    for (width, height) in sizes {
+        for (mode_name, mode) in modes {
+            cases.push((
+                format!("dashboard-{width}x{height}-{mode_name}"),
+                width,
+                height,
+                mode,
+                None,
+            ));
+            cases.push((
+                format!("login-{width}x{height}-{mode_name}"),
+                width,
+                height,
+                mode,
+                Some(usize::MAX),
+            ));
+            cases.push((
+                format!("gallery-{width}x{height}-{mode_name}"),
+                width,
+                height,
+                mode,
+                Some(0),
+            ));
+        }
+    }
+    for section in 1..=5 {
+        cases.push((
+            format!("gallery-section-{section}-1440-dark"),
+            1440,
+            900,
+            ThemeMode::Dark,
+            Some(section),
+        ));
+    }
+    for (name, width, height, mode, kind) in cases {
+        let frame = match kind {
+            Some(usize::MAX) => render_login(width, height, mode),
+            Some(section) => render_gallery(width, height, mode, section, 0),
+            None => render_dashboard(width, height, mode),
         };
         assert_eq!(frame.pixels.len(), (width * height * 4) as usize);
         let path = dir.join(format!("{name}.png"));

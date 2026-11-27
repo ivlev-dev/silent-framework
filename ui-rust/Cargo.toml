@@ -15,7 +15,7 @@ ui-platform = { path = "platform" }
 ui-accessibility = { path = "accessibility" }
 
 wgpu = "30.0.2"
-winit = "0.30.13"
+winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "wayland", "wayland-dlopen", "wayland-csd-adwaita"] }
 cosmic-text = "0.19"
 glyphon = "0.12"
 lyon = "1.0.19"

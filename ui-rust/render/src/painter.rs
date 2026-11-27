@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use bytemuck::{Pod, Zeroable};
 use cosmic_text::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping, SwashCache, Weight};
 use glyphon::{Cache, Resolution, TextArea, TextAtlas, TextBounds, TextRenderer, Viewport};
@@ -8,12 +10,15 @@ use lyon::tessellation::{
     StrokeVertex, VertexBuffers,
 };
 use ui_core::color::Color;
+use ui_core::damage::Damage;
 use ui_core::geometry::{Align, Point, Rect, Size};
-use ui_core::layout::{measure_text, LayoutNode, LayoutTree, PaintData};
+use ui_core::layout::{measure_text, DataTableDragMode, LayoutNode, LayoutTree, PaintData};
 use ui_core::theme::{TextStyle, Theme};
 use ui_core::widget::{ButtonVariant, IconName, TagVariant};
 
 use crate::RenderError;
+
+const SAMPLE_COUNT: u32 = 4;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -40,6 +45,128 @@ struct TextCmd {
     clip: Rect,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct TextKey {
+    text: String,
+    size: u32,
+    line_height: u32,
+    weight: u16,
+    tracking: u32,
+    width: u32,
+    height: u32,
+}
+
+impl TextKey {
+    fn new(command: &TextCmd, scale: f32, snap: u32) -> Self {
+        let width = command.width.max(1.0) * scale;
+        let width = if snap > 1 {
+            ((width / snap as f32).round() * snap as f32).max(snap as f32)
+        } else {
+            width
+        };
+        Self {
+            text: command.text.clone(),
+            size: (command.style.size * scale).to_bits(),
+            line_height: (command.style.line_height * scale).to_bits(),
+            weight: command.style.weight.weight(),
+            tracking: command.style.tracking.to_bits(),
+            width: width.to_bits(),
+            height: (command.height.max(1.0) * scale).to_bits(),
+        }
+    }
+}
+
+struct TextEntry {
+    buffer: Buffer,
+    last_used: u64,
+}
+
+const TEXT_CACHE_LIMIT: usize = 2048;
+
+#[derive(Default)]
+struct TextCache {
+    entries: HashMap<TextKey, TextEntry>,
+    frame: u64,
+    shaped: u64,
+    hits: u64,
+}
+
+impl TextCache {
+    fn begin_frame(&mut self) {
+        self.frame = self.frame.wrapping_add(1);
+    }
+
+    fn ensure(&mut self, key: TextKey, font_system: &mut FontSystem) {
+        if let Some(entry) = self.entries.get_mut(&key) {
+            entry.last_used = self.frame;
+            self.hits += 1;
+            return;
+        }
+        let metrics = Metrics::new(
+            f32::from_bits(key.size),
+            f32::from_bits(key.line_height).max(1.0),
+        );
+        let mut buffer = Buffer::new(font_system, metrics);
+        buffer.set_size(
+            Some(f32::from_bits(key.width)),
+            Some(f32::from_bits(key.height)),
+        );
+        let attrs = Attrs::new()
+            .family(Family::SansSerif)
+            .weight(Weight(key.weight));
+        buffer.set_text(&key.text, &attrs, Shaping::Advanced, None);
+        buffer.shape_until_scroll(font_system, false);
+        self.entries.insert(
+            key,
+            TextEntry {
+                buffer,
+                last_used: self.frame,
+            },
+        );
+        self.shaped += 1;
+    }
+
+    fn end_frame(&mut self) {
+        if self.entries.len() <= TEXT_CACHE_LIMIT {
+            return;
+        }
+        let current = self.frame;
+        while self.entries.len() > TEXT_CACHE_LIMIT {
+            let victim = self
+                .entries
+                .iter()
+                .filter(|(_, entry)| entry.last_used < current)
+                .min_by_key(|(_, entry)| entry.last_used)
+                .map(|(key, _)| key.clone());
+            match victim {
+                Some(key) => {
+                    self.entries.remove(&key);
+                }
+                None => break,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct RenderStats {
+    pub rendered: bool,
+    pub full: bool,
+    pub damage_pixels: u64,
+    pub text_cache_entries: usize,
+    pub text_shaped: u64,
+    pub text_cache_hits: u64,
+}
+
+struct Scene {
+    _msaa_texture: wgpu::Texture,
+    msaa_view: wgpu::TextureView,
+    _resolve_texture: wgpu::Texture,
+    resolve_view: wgpu::TextureView,
+    bind_group: wgpu::BindGroup,
+    size: (u32, u32),
+}
+
 pub struct Painter {
     format: wgpu::TextureFormat,
     device: wgpu::Device,
@@ -55,6 +182,15 @@ pub struct Painter {
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
     texts: Vec<TextCmd>,
+    text_cache: TextCache,
+    scene: Option<Scene>,
+    blit_pipeline: wgpu::RenderPipeline,
+    blit_bind_group_layout: wgpu::BindGroupLayout,
+    sampler: wgpu::Sampler,
+    force_full_next: bool,
+    text_width_snap: u32,
+    debug_text: Option<String>,
+    last_stats: RenderStats,
 }
 
 impl Painter {
@@ -121,15 +257,83 @@ impl Painter {
             }),
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
+            multisample: wgpu::MultisampleState {
+                count: SAMPLE_COUNT,
+                ..wgpu::MultisampleState::default()
+            },
             multiview_mask: None,
             cache: None,
         });
         let cache = Cache::new(device);
         let mut atlas = TextAtlas::new(device, queue, &cache, format);
-        let text_renderer =
-            TextRenderer::new(&mut atlas, device, wgpu::MultisampleState::default(), None);
+        let text_renderer = TextRenderer::new(
+            &mut atlas,
+            device,
+            wgpu::MultisampleState {
+                count: SAMPLE_COUNT,
+                ..wgpu::MultisampleState::default()
+            },
+            None,
+        );
         let viewport = Viewport::new(device, &cache);
+        let blit_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("ui-render blit layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+        let blit_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("ui-render blit pipeline layout"),
+            bind_group_layouts: &[Some(&blit_bind_group_layout)],
+            immediate_size: 0,
+        });
+        let blit_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("ui-render blit pipeline"),
+            layout: Some(&blit_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("blit_vs"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("blit_fs"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("ui-render blit sampler"),
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
         Self {
             format,
             device: device.clone(),
@@ -145,11 +349,28 @@ impl Painter {
             vertices: Vec::new(),
             indices: Vec::new(),
             texts: Vec::new(),
+            text_cache: TextCache::default(),
+            scene: None,
+            blit_pipeline,
+            blit_bind_group_layout,
+            sampler,
+            force_full_next: true,
+            text_width_snap: 0,
+            debug_text: None,
+            last_stats: RenderStats::default(),
         }
     }
 
     pub fn format(&self) -> wgpu::TextureFormat {
         self.format
+    }
+
+    pub fn set_fast_text(&mut self, fast: bool) {
+        self.text_width_snap = if fast { 32 } else { 0 };
+    }
+
+    pub fn set_debug_text(&mut self, text: Option<String>) {
+        self.debug_text = text;
     }
 
     pub fn render(
@@ -159,11 +380,31 @@ impl Painter {
         tree: &LayoutTree,
         theme: &Theme,
         scale: f32,
-    ) -> Result<(), RenderError> {
-        self.vertices.clear();
-        self.indices.clear();
-        self.texts.clear();
-        self.paint_node(&tree.root, theme, scale);
+        damage: Damage,
+    ) -> Result<RenderStats, RenderError> {
+        self.ensure_scene(size);
+        let viewport = Size::new(size.0 as f32, size.1 as f32);
+        if self.force_full_next {
+            self.force_full_next = false;
+            self.last_stats = RenderStats::default();
+            self.last_stats.full = true;
+            self.render_full(target, size, tree, theme, scale)?;
+            return Ok(self.last_stats);
+        }
+        let damage = damage.clamp(Size::new(size.0 as f32 / scale, size.1 as f32 / scale));
+        if damage.is_empty() {
+            self.last_stats = RenderStats {
+                rendered: false,
+                ..RenderStats::default()
+            };
+            return Ok(self.last_stats);
+        }
+        if damage.full {
+            self.render_full(target, size, tree, theme, scale)?;
+            return Ok(self.last_stats);
+        }
+        let region = damage.rect.expect("damage rect");
+        self.build_scene(tree, theme, scale, Some(region), viewport);
         self.upload_globals(size);
         self.viewport.update(
             &self.queue,
@@ -172,7 +413,243 @@ impl Painter {
                 height: size.1,
             },
         );
-        self.render_frame(target, theme, scale)
+        self.prepare_text(scale)?;
+        let physical = Rect::new(
+            region.x * scale,
+            region.y * scale,
+            region.width * scale,
+            region.height * scale,
+        );
+        self.render_frame(target, size, physical, false, theme)?;
+        self.last_stats = RenderStats {
+            rendered: true,
+            full: false,
+            damage_pixels: (physical.width * physical.height) as u64,
+            text_cache_entries: self.text_cache.entries.len(),
+            text_shaped: self.text_cache.shaped,
+            text_cache_hits: self.text_cache.hits,
+        };
+        Ok(self.last_stats)
+    }
+
+    pub fn stats(&self) -> RenderStats {
+        self.last_stats
+    }
+
+    fn render_full(
+        &mut self,
+        target: &wgpu::TextureView,
+        size: (u32, u32),
+        tree: &LayoutTree,
+        theme: &Theme,
+        scale: f32,
+    ) -> Result<(), RenderError> {
+        let viewport = Size::new(size.0 as f32 / scale, size.1 as f32 / scale);
+        self.build_scene(tree, theme, scale, None, viewport);
+        self.upload_globals(size);
+        self.viewport.update(
+            &self.queue,
+            Resolution {
+                width: size.0,
+                height: size.1,
+            },
+        );
+        self.prepare_text(scale)?;
+        self.render_frame(
+            target,
+            size,
+            Rect::new(0.0, 0.0, size.0 as f32, size.1 as f32),
+            true,
+            theme,
+        )?;
+        self.last_stats = RenderStats {
+            rendered: true,
+            full: true,
+            damage_pixels: size.0 as u64 * size.1 as u64,
+            text_cache_entries: self.text_cache.entries.len(),
+            text_shaped: self.text_cache.shaped,
+            text_cache_hits: self.text_cache.hits,
+        };
+        Ok(())
+    }
+
+    fn build_scene(
+        &mut self,
+        tree: &LayoutTree,
+        theme: &Theme,
+        scale: f32,
+        damage: Option<Rect>,
+        viewport: Size,
+    ) {
+        self.vertices.clear();
+        self.indices.clear();
+        self.texts.clear();
+        self.fill_rounded_rect(
+            Rect::new(0.0, 0.0, viewport.width, viewport.height),
+            0.0,
+            theme.palette.page,
+            scale,
+        );
+        self.paint_node(&tree.root, theme, scale, damage);
+        if let Some(text) = self.debug_text.clone() {
+            let style = TextStyle::new(12.0, 17.0, ui_core::theme::FontWeight::Medium);
+            let lines = text.lines().count().max(1) as f32;
+            let panel = Rect::new(12.0, 12.0, 340.0, lines * style.line_height + 20.0);
+            self.fill_rounded_rect(
+                panel,
+                8.0,
+                Color::from_hex(0x000000).with_alpha(0.78),
+                scale,
+            );
+            self.push_text(
+                &text,
+                Rect::new(
+                    panel.x + 12.0,
+                    panel.y + 10.0,
+                    panel.width - 24.0,
+                    panel.height - 20.0,
+                ),
+                style,
+                Color::from_hex(0xECECEF),
+                Align::Start,
+                Rect::new(0.0, 0.0, viewport.width, viewport.height),
+                scale,
+            );
+        }
+    }
+
+    fn prepare_text(&mut self, scale: f32) -> Result<(), RenderError> {
+        self.text_cache.begin_frame();
+        {
+            let keys: Vec<TextKey> = self
+                .texts
+                .iter()
+                .map(|command| TextKey::new(command, scale, self.text_width_snap))
+                .collect();
+            let Painter {
+                text_cache,
+                font_system,
+                ..
+            } = self;
+            for key in keys {
+                text_cache.ensure(key, font_system);
+            }
+        }
+        let texts = &self.texts;
+        let cache = &self.text_cache;
+        let Painter {
+            device,
+            queue,
+            font_system,
+            swash_cache,
+            atlas,
+            text_renderer,
+            viewport,
+            ..
+        } = self;
+        let mut areas = Vec::with_capacity(texts.len());
+        for command in texts {
+            let key = TextKey::new(command, scale, self.text_width_snap);
+            let Some(entry) = cache.entries.get(&key) else {
+                return Err(RenderError::Text(format!(
+                    "text buffer disappeared from cache for {:?}",
+                    command.text
+                )));
+            };
+            let bounds = TextBounds {
+                left: (command.clip.x * scale).floor().max(0.0) as i32,
+                top: (command.clip.y * scale).floor().max(0.0) as i32,
+                right: (command.clip.right() * scale).ceil() as i32,
+                bottom: (command.clip.bottom() * scale).ceil() as i32,
+            };
+            areas.push(TextArea {
+                buffer: &entry.buffer,
+                left: command.x * scale,
+                top: command.y * scale,
+                scale: 1.0,
+                bounds,
+                default_color: cosmic_text::Color::rgba(
+                    command.color[0],
+                    command.color[1],
+                    command.color[2],
+                    command.color[3],
+                ),
+                custom_glyphs: &[],
+            });
+        }
+        text_renderer
+            .prepare(
+                device,
+                queue,
+                font_system,
+                atlas,
+                viewport,
+                areas,
+                swash_cache,
+            )
+            .map_err(|error| RenderError::Text(error.to_string()))?;
+        self.text_cache.end_frame();
+        Ok(())
+    }
+
+    fn ensure_scene(&mut self, size: (u32, u32)) {
+        if let Some(scene) = &self.scene {
+            if scene.size == size {
+                return;
+            }
+        }
+        let size3d = wgpu::Extent3d {
+            width: size.0.max(1),
+            height: size.1.max(1),
+            depth_or_array_layers: 1,
+        };
+        let msaa_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("ui-render scene msaa"),
+            size: size3d,
+            mip_level_count: 1,
+            sample_count: SAMPLE_COUNT,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let msaa_view = msaa_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let resolve_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("ui-render scene"),
+            size: size3d,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let resolve_view = resolve_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("ui-render scene bind group"),
+            layout: &self.blit_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&resolve_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        });
+        self.scene = Some(Scene {
+            _msaa_texture: msaa_texture,
+            msaa_view,
+            _resolve_texture: resolve_texture,
+            resolve_view,
+            bind_group,
+            size,
+        });
+        self.force_full_next = true;
     }
 
     fn upload_globals(&self, size: (u32, u32)) {
@@ -187,8 +664,10 @@ impl Painter {
     fn render_frame(
         &mut self,
         target: &wgpu::TextureView,
+        size: (u32, u32),
+        region: Rect,
+        full: bool,
         theme: &Theme,
-        scale: f32,
     ) -> Result<(), RenderError> {
         let vertex_buffer = self.create_buffer(
             "ui-render vertices",
@@ -200,91 +679,37 @@ impl Painter {
             bytemuck::cast_slice(&self.indices),
             wgpu::BufferUsages::INDEX,
         );
-        let mut buffers: Vec<Buffer> = Vec::with_capacity(self.texts.len());
-        for command in &self.texts {
-            let metrics = Metrics::new(
-                command.style.size * scale,
-                command.style.line_height * scale,
-            );
-            let mut buffer = Buffer::new(&mut self.font_system, metrics);
-            buffer.set_size(
-                Some(command.width.max(1.0) * scale),
-                Some(command.height.max(1.0) * scale),
-            );
-            let attrs = Attrs::new()
-                .family(Family::SansSerif)
-                .weight(Weight(command.style.weight.weight()));
-            buffer.set_text(&command.text, &attrs, Shaping::Advanced, None);
-            buffer.shape_until_scroll(&mut self.font_system, false);
-            buffers.push(buffer);
-        }
-        {
-            let texts = &self.texts;
-            let Painter {
-                device,
-                queue,
-                font_system,
-                swash_cache,
-                atlas,
-                text_renderer,
-                viewport,
-                ..
-            } = self;
-            let areas = buffers.iter().enumerate().map(|(index, buffer)| {
-                let command = &texts[index];
-                let bounds = TextBounds {
-                    left: (command.clip.x * scale).floor().max(0.0) as i32,
-                    top: (command.clip.y * scale).floor().max(0.0) as i32,
-                    right: (command.clip.right() * scale).ceil() as i32,
-                    bottom: (command.clip.bottom() * scale).ceil() as i32,
-                };
-                TextArea {
-                    buffer,
-                    left: command.x * scale,
-                    top: command.y * scale,
-                    scale: 1.0,
-                    bounds,
-                    default_color: cosmic_text::Color::rgba(
-                        command.color[0],
-                        command.color[1],
-                        command.color[2],
-                        command.color[3],
-                    ),
-                    custom_glyphs: &[],
-                }
-            });
-            text_renderer
-                .prepare(
-                    device,
-                    queue,
-                    font_system,
-                    atlas,
-                    viewport,
-                    areas,
-                    swash_cache,
-                )
-                .map_err(|error| RenderError::Text(error.to_string()))?;
-        }
+        let Some(scene) = self.scene.as_ref() else {
+            return Ok(());
+        };
+        let msaa_view = scene.msaa_view.clone();
+        let resolve_view = scene.resolve_view.clone();
+        let scene_bind_group = scene.bind_group.clone();
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("ui-render encoder"),
             });
         {
-            let background = theme.palette.background.to_linear_rgba();
+            let background = theme.palette.page.to_linear_rgba();
+            let load = if full {
+                wgpu::LoadOp::Clear(wgpu::Color {
+                    r: background[0] as f64,
+                    g: background[1] as f64,
+                    b: background[2] as f64,
+                    a: background[3] as f64,
+                })
+            } else {
+                wgpu::LoadOp::Load
+            };
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("ui-render pass"),
+                label: Some("ui-render scene pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: target,
-                    resolve_target: None,
+                    view: &msaa_view,
+                    resolve_target: Some(&resolve_view),
                     depth_slice: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: background[0] as f64,
-                            g: background[1] as f64,
-                            b: background[2] as f64,
-                            a: background[3] as f64,
-                        }),
+                        load,
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -293,6 +718,17 @@ impl Painter {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+            let scissor = Rect::new(
+                region.x.max(0.0).floor(),
+                region.y.max(0.0).floor(),
+                region.width.max(0.0).ceil(),
+                region.height.max(0.0).ceil(),
+            );
+            let x = scissor.x.min(size.0 as f32) as u32;
+            let y = scissor.y.min(size.1 as f32) as u32;
+            let width = scissor.width.min(size.0 as f32 - x as f32).max(0.0) as u32;
+            let height = scissor.height.min(size.1 as f32 - y as f32).max(0.0) as u32;
+            pass.set_scissor_rect(x, y, width.max(1), height.max(1));
             if !self.indices.is_empty() {
                 pass.set_pipeline(&self.pipeline);
                 pass.set_bind_group(0, &self.bind_group, &[]);
@@ -304,8 +740,28 @@ impl Painter {
                 .render(&self.atlas, &self.viewport, &mut pass)
                 .map_err(|error| RenderError::Text(error.to_string()))?;
         }
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("ui-render blit pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: target,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.blit_pipeline);
+            pass.set_bind_group(0, &scene_bind_group, &[]);
+            pass.draw(0..3, 0..1);
+        }
         self.queue.submit(Some(encoder.finish()));
-        let _ = scale;
         Ok(())
     }
 
@@ -326,7 +782,18 @@ impl Painter {
         buffer
     }
 
-    fn paint_node(&mut self, node: &LayoutNode, theme: &Theme, scale: f32) {
+    fn paint_node(&mut self, node: &LayoutNode, theme: &Theme, scale: f32, damage: Option<Rect>) {
+        if let Some(region) = damage {
+            let bounds = Rect::new(
+                node.rect.x - 12.0,
+                node.rect.y - 12.0,
+                node.rect.width + 24.0,
+                node.rect.height + 24.0,
+            );
+            if bounds.intersect(&region).is_empty() {
+                return;
+            }
+        }
         if node.shadow > 0.0 {
             let level = theme.elevation_level(node.shadow);
             if level.alpha > 0.0 {
@@ -350,67 +817,26 @@ impl Painter {
                 }
             }
         }
-        match (node.background, node.border) {
-            (Some(background), Some(border)) => {
-                self.fill_rounded_rect(node.rect, node.radius, background, scale);
-                let width = border.width.max(1.0);
-                let radius = node
-                    .radius
-                    .min(node.rect.width / 2.0)
-                    .min(node.rect.height / 2.0);
-                let rect = node.rect;
-                self.fill_rounded_rect(
-                    Rect::new(
-                        rect.x + radius,
-                        rect.y,
-                        (rect.width - radius * 2.0).max(0.0),
-                        width,
-                    ),
-                    0.0,
-                    border.color,
-                    scale,
-                );
-                self.fill_rounded_rect(
-                    Rect::new(
-                        rect.x + radius,
-                        rect.bottom() - width,
-                        (rect.width - radius * 2.0).max(0.0),
-                        width,
-                    ),
-                    0.0,
-                    border.color,
-                    scale,
-                );
-                self.fill_rounded_rect(
-                    Rect::new(
-                        rect.x,
-                        rect.y + radius,
-                        width,
-                        (rect.height - radius * 2.0).max(0.0),
-                    ),
-                    0.0,
-                    border.color,
-                    scale,
-                );
-                self.fill_rounded_rect(
-                    Rect::new(
-                        rect.right() - width,
-                        rect.y + radius,
-                        width,
-                        (rect.height - radius * 2.0).max(0.0),
-                    ),
-                    0.0,
-                    border.color,
-                    scale,
-                );
-            }
-            (Some(background), None) => {
-                self.fill_rounded_rect(node.rect, node.radius, background, scale);
-            }
-            (None, Some(border)) => {
-                self.stroke_rounded_rect(node.rect, node.radius, border.width, border.color, scale);
-            }
-            (None, None) => {}
+        if node.background.is_some() || node.border.is_some() {
+            self.draw_rounded_rect(
+                node.rect,
+                node.radius,
+                node.background,
+                node.border.map(|border| (border.width, border.color)),
+                scale,
+            );
+        }
+        if node.hovered
+            && (node.role == ui_core::Role::Card
+                || (matches!(&node.paint, PaintData::Tag { .. })
+                    && node.interaction.click.is_some()))
+        {
+            self.fill_rounded_rect(
+                node.rect,
+                node.radius,
+                theme.palette.on_surface.with_alpha(0.06),
+                scale,
+            );
         }
         match &node.paint {
             PaintData::None => {}
@@ -430,6 +856,7 @@ impl Painter {
                 loading,
                 enabled,
                 hovered,
+                pressed,
             } => {
                 let foreground = match variant {
                     ButtonVariant::Primary | ButtonVariant::Filled => theme.palette.on_primary,
@@ -443,11 +870,11 @@ impl Painter {
                 } else {
                     theme.palette.text_disabled
                 };
-                if *hovered && *enabled {
+                if *enabled && (*hovered || *pressed) {
                     self.fill_rounded_rect(
                         node.rect,
                         node.radius,
-                        foreground.with_alpha(0.08),
+                        foreground.with_alpha(if *pressed { 0.12 } else { 0.08 }),
                         scale,
                     );
                 }
@@ -500,12 +927,17 @@ impl Painter {
                 password,
                 invalid,
                 focused,
+                hovered,
+                enabled,
+                leading_icon,
                 caret,
                 selection,
                 help,
             } => {
                 let label_style = theme.typography.label_large;
-                let label_color = if *invalid {
+                let label_color = if !*enabled {
+                    theme.palette.text_disabled
+                } else if *invalid {
                     theme.palette.error
                 } else {
                     theme.palette.on_surface_variant
@@ -530,24 +962,20 @@ impl Painter {
                     node.rect.width,
                     theme.scaled(theme.sizes.input_height),
                 );
-                self.fill_rounded_rect(
-                    field_rect,
-                    theme.radius.control,
-                    theme.palette.surface_container_lowest,
-                    scale,
-                );
                 let border_color = if *invalid {
                     theme.palette.error
                 } else if *focused {
                     theme.palette.focus_ring
+                } else if *hovered {
+                    theme.palette.outline
                 } else {
                     theme.palette.outline_variant
                 };
-                self.stroke_rounded_rect(
+                self.draw_rounded_rect(
                     field_rect,
                     theme.radius.control,
-                    if *focused || *invalid { 2.0 } else { 1.0 },
-                    border_color,
+                    Some(theme.palette.surface_container_lowest),
+                    Some((theme.sizes.border_width, border_color)),
                     scale,
                 );
                 if *focused {
@@ -571,7 +999,9 @@ impl Painter {
                     value.clone()
                 };
                 let text_style = theme.typography.body_medium;
-                let text_color = if display.is_empty() {
+                let text_color = if !*enabled {
+                    theme.palette.text_disabled
+                } else if display.is_empty() {
                     theme.palette.on_surface_muted
                 } else {
                     theme.palette.on_surface
@@ -581,7 +1011,20 @@ impl Painter {
                 } else {
                     display
                 };
-                let text_x = field_rect.x + 12.0;
+                let mut text_x = field_rect.x + 12.0;
+                if let Some(icon) = leading_icon {
+                    self.paint_icon(
+                        *icon,
+                        Rect::new(field_rect.x + 12.0, field_rect.center().y - 9.0, 18.0, 18.0),
+                        if *enabled {
+                            theme.palette.on_surface_variant
+                        } else {
+                            theme.palette.text_disabled
+                        },
+                        scale,
+                    );
+                    text_x += 26.0;
+                }
                 let text_y = field_rect.center().y - text_style.line_height / 2.0;
                 if let Some((start, end)) = selection {
                     let prefix = |count: usize| -> String {
@@ -613,7 +1056,7 @@ impl Painter {
                     Rect::new(
                         text_x,
                         text_y,
-                        field_rect.width - 24.0,
+                        field_rect.width - (text_x - field_rect.x) - 12.0,
                         text_style.line_height,
                     ),
                     text_style,
@@ -666,6 +1109,7 @@ impl Painter {
                 label,
                 checked,
                 focused,
+                hovered,
             } => {
                 let box_size = theme.sizes.icon;
                 let box_rect = Rect::new(
@@ -679,16 +1123,18 @@ impl Painter {
                 } else {
                     theme.palette.surface_container_lowest
                 };
-                self.fill_rounded_rect(box_rect, theme.radius.xs, fill, scale);
-                self.stroke_rounded_rect(
+                self.draw_rounded_rect(
                     box_rect,
                     theme.radius.xs,
-                    if *checked { 2.0 } else { 1.5 },
-                    if *checked {
-                        theme.palette.primary
-                    } else {
-                        theme.palette.outline
-                    },
+                    Some(fill),
+                    Some((
+                        theme.sizes.border_width,
+                        if *checked || *hovered {
+                            theme.palette.primary
+                        } else {
+                            theme.palette.outline
+                        },
+                    )),
                     scale,
                 );
                 if *focused {
@@ -728,23 +1174,24 @@ impl Painter {
                 label,
                 checked,
                 focused,
+                hovered,
             } => {
-                let track = Rect::new(node.rect.x, node.rect.center().y - 14.0, 48.0, 28.0);
+                let track = Rect::new(node.rect.x, node.rect.center().y - 12.0, 44.0, 24.0);
                 let track_color = if *checked {
                     theme.palette.primary
                 } else {
                     theme.palette.surface_container_highest
                 };
-                self.fill_rounded_rect(track, 14.0, track_color, scale);
-                self.stroke_rounded_rect(
+                let border_color = if *checked || *hovered {
+                    theme.palette.primary
+                } else {
+                    theme.palette.outline
+                };
+                self.draw_rounded_rect(
                     track,
-                    14.0,
-                    2.0,
-                    if *checked {
-                        theme.palette.primary
-                    } else {
-                        theme.palette.outline
-                    },
+                    12.0,
+                    Some(track_color),
+                    Some((theme.sizes.border_width, border_color)),
                     scale,
                 );
                 if *focused {
@@ -756,20 +1203,20 @@ impl Painter {
                     );
                     self.stroke_rounded_rect(
                         ring,
-                        14.0 + theme.sizes.focus_ring_offset,
+                        12.0 + theme.sizes.focus_ring_offset,
                         theme.sizes.focus_ring_width,
                         theme.palette.focus_ring,
                         scale,
                     );
                 }
                 let knob_x = if *checked {
-                    track.right() - 22.0
+                    track.right() - 3.0 - 18.0
                 } else {
-                    track.x + 2.0
+                    track.x + 3.0
                 };
                 self.fill_rounded_rect(
-                    Rect::new(knob_x, track.y + 2.0, 20.0, 20.0),
-                    10.0,
+                    Rect::new(knob_x, track.center().y - 9.0, 18.0, 18.0),
+                    9.0,
                     if *checked {
                         theme.palette.on_primary
                     } else {
@@ -818,21 +1265,18 @@ impl Painter {
                     node.rect.width,
                     theme.scaled(theme.sizes.input_height),
                 );
-                self.fill_rounded_rect(
+                self.draw_rounded_rect(
                     field_rect,
                     theme.radius.control,
-                    theme.palette.surface_container_lowest,
-                    scale,
-                );
-                self.stroke_rounded_rect(
-                    field_rect,
-                    theme.radius.control,
-                    if *focused { 2.0 } else { 1.0 },
-                    if *focused {
-                        theme.palette.focus_ring
-                    } else {
-                        theme.palette.outline_variant
-                    },
+                    Some(theme.palette.surface_container_lowest),
+                    Some((
+                        theme.sizes.border_width,
+                        if *focused {
+                            theme.palette.focus_ring
+                        } else {
+                            theme.palette.outline_variant
+                        },
+                    )),
                     scale,
                 );
                 if *focused {
@@ -969,12 +1413,23 @@ impl Painter {
                 selected,
                 vertical,
                 expanded,
+                hovered,
             } => {
                 let color = if *selected {
                     theme.nav_selected_text()
+                } else if *hovered {
+                    theme.palette.on_surface
                 } else {
                     theme.palette.on_surface_variant
                 };
+                if *hovered && !*selected {
+                    self.fill_rounded_rect(
+                        node.rect,
+                        node.radius,
+                        theme.palette.on_surface.with_alpha(0.06),
+                        scale,
+                    );
+                }
                 if *vertical && *expanded {
                     let icon_rect = Rect::new(
                         node.rect.x + 14.0,
@@ -1045,6 +1500,418 @@ impl Painter {
                     );
                 }
             }
+            PaintData::DataTable {
+                columns,
+                rows,
+                widths,
+                compact,
+                selected,
+                sort,
+                sort_ascending,
+                page,
+                pages,
+                scroll,
+                total_rows,
+                display_total,
+                display_range,
+                hover_column,
+                hover_row,
+                drag,
+            } => {
+                let header_height = theme.sizes.table_header_height;
+                let row_height = if *compact {
+                    theme.sizes.table_row_compact
+                } else {
+                    theme.scaled(theme.sizes.table_row_height)
+                };
+                let bulk_height = if selected.is_empty() { 0.0 } else { 40.0 };
+                let footer_height = 48.0;
+                let body_top = node.rect.y + header_height;
+                let body_bottom = node.rect.bottom() - footer_height - bulk_height;
+                let line_color = theme.palette.outline_variant;
+                let body_clip = Rect::new(
+                    node.rect.x,
+                    body_top,
+                    node.rect.width,
+                    (body_bottom - body_top).max(0.0),
+                )
+                .intersect(&node.clip);
+                let total_width: f32 = widths.iter().sum::<f32>().max(1.0);
+                let scale_width = node.rect.width / total_width;
+                let mut column_rects = Vec::with_capacity(widths.len());
+                let mut x = node.rect.x;
+                for width in widths {
+                    let scaled = width * scale_width;
+                    column_rects.push(Rect::new(x, node.rect.y, scaled, header_height));
+                    x += scaled;
+                }
+                let remainder = *scroll % row_height;
+                let mut y = body_top - remainder;
+                for (row_index, row) in rows {
+                    if y + row_height <= body_top {
+                        y += row_height;
+                        continue;
+                    }
+                    if y >= body_bottom {
+                        break;
+                    }
+                    let visible_top = y.max(body_top);
+                    let visible_bottom = (y + row_height).min(body_bottom);
+                    let visible = Rect::new(
+                        node.rect.x,
+                        visible_top,
+                        node.rect.width,
+                        (visible_bottom - visible_top).max(0.0),
+                    );
+                    if selected.contains(row_index) {
+                        self.fill_rounded_rect(
+                            visible,
+                            0.0,
+                            theme.palette.secondary_container,
+                            scale,
+                        );
+                    } else if *hover_row == Some(*row_index) {
+                        self.fill_rounded_rect(
+                            visible,
+                            0.0,
+                            theme.palette.surface_container_high,
+                            scale,
+                        );
+                    } else if row_index % 2 == 1 {
+                        self.fill_rounded_rect(
+                            visible,
+                            0.0,
+                            theme.palette.surface_container_low.with_alpha(0.6),
+                            scale,
+                        );
+                    }
+                    if visible_bottom - 1.0 >= body_top {
+                        self.fill_rounded_rect(
+                            Rect::new(node.rect.x, visible_bottom - 1.0, node.rect.width, 1.0),
+                            0.0,
+                            line_color,
+                            scale,
+                        );
+                    }
+                    for (column_index, cell) in row.iter().enumerate() {
+                        let Some(column) = columns.get(column_index) else {
+                            break;
+                        };
+                        let rect = column_rects[column_index];
+                        if let Some(variant) = column.tag {
+                            let (bg, fg) = tag_colors(theme, variant);
+                            let style = theme.typography.label_medium;
+                            let text_width = measure_text(cell, style, rect.width - 32.0).width;
+                            let chip = Rect::new(
+                                rect.x + 16.0,
+                                y + row_height / 2.0 - 12.0,
+                                (text_width + 16.0).min(rect.width - 32.0).max(1.0),
+                                24.0,
+                            );
+                            self.fill_rounded_rect(chip, theme.radius.xs, bg, scale);
+                            self.push_text(
+                                cell,
+                                Rect::new(
+                                    chip.x + 8.0,
+                                    chip.y + chip.height / 2.0 - style.line_height / 2.0,
+                                    chip.width - 16.0,
+                                    style.line_height,
+                                ),
+                                style,
+                                fg,
+                                Align::Start,
+                                body_clip,
+                                scale,
+                            );
+                        } else {
+                            let style = theme.typography.body_medium;
+                            self.push_text(
+                                cell,
+                                Rect::new(
+                                    rect.x + 16.0,
+                                    y + row_height / 2.0 - style.line_height / 2.0,
+                                    rect.width - 32.0,
+                                    style.line_height,
+                                ),
+                                style,
+                                theme.palette.on_surface,
+                                match column.align {
+                                    Align::End => Align::End,
+                                    Align::Center => Align::Center,
+                                    _ => Align::Start,
+                                },
+                                body_clip,
+                                scale,
+                            );
+                        }
+                    }
+                    y += row_height;
+                }
+                self.fill_rounded_rect(
+                    Rect::new(node.rect.x, node.rect.y, node.rect.width, header_height),
+                    0.0,
+                    theme.table_header_surface(),
+                    scale,
+                );
+                self.fill_rounded_rect(
+                    Rect::new(
+                        node.rect.x,
+                        node.rect.y + header_height - 1.0,
+                        node.rect.width,
+                        1.0,
+                    ),
+                    0.0,
+                    line_color,
+                    scale,
+                );
+                for (index, column) in columns.iter().enumerate() {
+                    let rect = column_rects[index];
+                    if *hover_column == Some(index) {
+                        self.fill_rounded_rect(
+                            Rect::new(rect.x, rect.y, rect.width, header_height),
+                            0.0,
+                            theme.palette.primary_container.with_alpha(0.35),
+                            scale,
+                        );
+                    }
+                    let label = if *sort == Some(index) {
+                        format!(
+                            "{} {}",
+                            column.title,
+                            if *sort_ascending { "↑" } else { "↓" }
+                        )
+                    } else {
+                        column.title.clone()
+                    };
+                    let style = theme.typography.label_large;
+                    self.push_text(
+                        &label,
+                        Rect::new(
+                            rect.x + 16.0,
+                            rect.y + header_height / 2.0 - style.line_height / 2.0,
+                            rect.width - 32.0,
+                            style.line_height,
+                        ),
+                        style,
+                        theme.palette.on_surface_variant,
+                        Align::Start,
+                        node.clip,
+                        scale,
+                    );
+                }
+                if let Some(drag) = drag {
+                    match drag.mode {
+                        DataTableDragMode::Reorder => {
+                            if let Some(source) = column_rects.get(drag.source) {
+                                self.fill_rounded_rect(
+                                    Rect::new(source.x, node.rect.y, source.width, header_height),
+                                    0.0,
+                                    theme.palette.surface_container_lowest.with_alpha(0.5),
+                                    scale,
+                                );
+                            }
+                            if let Some(target) = column_rects.get(drag.target) {
+                                self.fill_rounded_rect(
+                                    Rect::new(target.x, node.rect.y, target.width, header_height),
+                                    0.0,
+                                    theme.palette.primary_container.with_alpha(0.45),
+                                    scale,
+                                );
+                            }
+                            if let Some(source) = column_rects.get(drag.source) {
+                                let ghost = Rect::new(
+                                    drag.ghost_x - source.width / 2.0,
+                                    node.rect.y - 4.0,
+                                    source.width,
+                                    header_height,
+                                );
+                                self.fill_rounded_rect(
+                                    Rect::new(
+                                        ghost.x + 2.0,
+                                        ghost.y + 4.0,
+                                        ghost.width,
+                                        ghost.height,
+                                    ),
+                                    8.0,
+                                    theme.palette.shadow.with_alpha(0.18),
+                                    scale,
+                                );
+                                self.fill_rounded_rect(
+                                    ghost,
+                                    8.0,
+                                    theme.palette.surface_container_lowest,
+                                    scale,
+                                );
+                                self.draw_rounded_rect(
+                                    ghost,
+                                    8.0,
+                                    None,
+                                    Some((theme.sizes.border_width, theme.palette.outline_variant)),
+                                    scale,
+                                );
+                                let style = theme.typography.label_large;
+                                self.push_text(
+                                    &columns[drag.source].title,
+                                    Rect::new(
+                                        ghost.x + 12.0,
+                                        ghost.y + header_height / 2.0 - style.line_height / 2.0,
+                                        ghost.width - 24.0,
+                                        style.line_height,
+                                    ),
+                                    style,
+                                    theme.palette.on_surface,
+                                    Align::Start,
+                                    node.clip,
+                                    scale,
+                                );
+                            }
+                        }
+                        DataTableDragMode::Resize => {
+                            if let Some(width) = drag.width_badge {
+                                let label = format!("{width:.0}px");
+                                let style = theme.typography.label_small;
+                                let text_width = measure_text(&label, style, f32::INFINITY).width;
+                                let badge = Rect::new(
+                                    drag.ghost_x - text_width / 2.0 - 6.0,
+                                    node.rect.y + header_height + 4.0,
+                                    text_width + 12.0,
+                                    20.0,
+                                );
+                                self.fill_rounded_rect(
+                                    badge,
+                                    theme.radius.xs,
+                                    theme.palette.primary,
+                                    scale,
+                                );
+                                self.push_text(
+                                    &label,
+                                    Rect::new(
+                                        badge.x + 6.0,
+                                        badge.y + 10.0 - style.line_height / 2.0,
+                                        badge.width - 12.0,
+                                        style.line_height,
+                                    ),
+                                    style,
+                                    theme.palette.on_primary,
+                                    Align::Center,
+                                    node.clip,
+                                    scale,
+                                );
+                            }
+                        }
+                    }
+                }
+                let footer_top = node.rect.bottom() - footer_height - bulk_height;
+                if !selected.is_empty() {
+                    let bulk = Rect::new(node.rect.x, footer_top, node.rect.width, bulk_height);
+                    self.fill_rounded_rect(bulk, 0.0, theme.palette.primary_container, scale);
+                    let style = theme.typography.label_medium;
+                    self.push_text(
+                        &format!("Выбрано: {}", selected.len()),
+                        Rect::new(
+                            bulk.x + 16.0,
+                            bulk.y + bulk.height / 2.0 - style.line_height / 2.0,
+                            bulk.width - 32.0,
+                            style.line_height,
+                        ),
+                        style,
+                        theme.palette.on_primary_container,
+                        Align::Start,
+                        node.clip,
+                        scale,
+                    );
+                }
+                let pagination = Rect::new(
+                    node.rect.x,
+                    footer_top + bulk_height,
+                    node.rect.width,
+                    footer_height,
+                );
+                self.fill_rounded_rect(
+                    Rect::new(pagination.x, pagination.y, pagination.width, 1.0),
+                    0.0,
+                    line_color,
+                    scale,
+                );
+                let style = theme.typography.label_medium;
+                let range = display_range
+                    .map(|(first, last, total)| format!("{first}–{last} из {total}"))
+                    .or_else(|| {
+                        display_total.map(|total| {
+                            let size = rows.len().max(1);
+                            let first = page * size + 1;
+                            let last = (first + rows.len().saturating_sub(1)).min(total);
+                            format!("{first}–{last} из {total}")
+                        })
+                    });
+                let label = match range {
+                    Some(range) => range,
+                    None => format!(
+                        "Стр. {} из {} · {} строк",
+                        page + 1,
+                        pages.max(&1),
+                        total_rows
+                    ),
+                };
+                self.push_text(
+                    &label,
+                    Rect::new(
+                        pagination.x + 16.0,
+                        pagination.y + pagination.height / 2.0 - style.line_height / 2.0,
+                        (pagination.width - 32.0).max(0.0),
+                        style.line_height,
+                    ),
+                    style,
+                    theme.palette.on_surface_variant,
+                    Align::Start,
+                    node.clip,
+                    scale,
+                );
+                let slots = ui_core::layout::pagination_slots(*page, *pages);
+                let button = 28.0;
+                let gap = 4.0;
+                let total_width =
+                    slots.len() as f32 * button + slots.len().saturating_sub(1) as f32 * gap;
+                let mut x = (pagination.right() - 16.0 - total_width).max(pagination.x + 16.0);
+                let y = pagination.y + (pagination.height - button) / 2.0;
+                for slot in slots {
+                    if slot == usize::MAX {
+                        self.push_text(
+                            "…",
+                            Rect::new(x, y, button, button),
+                            style,
+                            theme.palette.on_surface_muted,
+                            Align::Center,
+                            node.clip,
+                            scale,
+                        );
+                    } else {
+                        let active = slot == *page;
+                        if active {
+                            self.fill_rounded_rect(
+                                Rect::new(x, y, button, button),
+                                6.0,
+                                theme.palette.primary,
+                                scale,
+                            );
+                        }
+                        self.push_text(
+                            &(slot + 1).to_string(),
+                            Rect::new(x, y, button, button),
+                            style,
+                            if active {
+                                theme.palette.on_primary
+                            } else {
+                                theme.palette.on_surface_variant
+                            },
+                            Align::Center,
+                            node.clip,
+                            scale,
+                        );
+                    }
+                    x += button + gap;
+                }
+            }
             PaintData::Table {
                 headers,
                 rows,
@@ -1052,8 +1919,18 @@ impl Painter {
                 striped,
                 tag_column,
                 tag_variant,
+                compact,
+                selected_row,
+                sort_column,
+                sort_ascending,
+                page,
+                pages,
             } => {
-                let row_height = theme.scaled(theme.sizes.table_row_height);
+                let row_height = if *compact {
+                    theme.sizes.table_row_compact
+                } else {
+                    theme.scaled(theme.sizes.table_row_height)
+                };
                 let header_height = theme.sizes.table_header_height;
                 let total_weight: f32 = weights.iter().sum::<f32>().max(1.0);
                 let mut column_x = node.rect.x;
@@ -1081,8 +1958,13 @@ impl Painter {
                 );
                 for (index, header) in headers.iter().enumerate() {
                     let width = widths.get(index).copied().unwrap_or(0.0);
+                    let label = if *sort_column == Some(index) {
+                        format!("{} {}", header, if *sort_ascending { "↑" } else { "↓" })
+                    } else {
+                        header.clone()
+                    };
                     self.push_text(
-                        header,
+                        &label,
                         Rect::new(
                             column_x + 16.0,
                             node.rect.y + header_height / 2.0
@@ -1100,7 +1982,14 @@ impl Painter {
                 }
                 let mut y = node.rect.y + header_height;
                 for (row_index, row) in rows.iter().enumerate() {
-                    if *striped && row_index % 2 == 1 {
+                    if *selected_row == Some(row_index) {
+                        self.fill_rounded_rect(
+                            Rect::new(node.rect.x, y, node.rect.width, row_height),
+                            0.0,
+                            theme.palette.secondary_container.with_alpha(0.7),
+                            scale,
+                        );
+                    } else if *striped && row_index % 2 == 1 {
                         self.fill_rounded_rect(
                             Rect::new(node.rect.x, y, node.rect.width, row_height),
                             0.0,
@@ -1163,6 +2052,31 @@ impl Painter {
                     }
                     y += row_height;
                 }
+                if let Some(page) = page {
+                    let footer = Rect::new(node.rect.x, y, node.rect.width, 48.0);
+                    self.fill_rounded_rect(
+                        Rect::new(footer.x, footer.y, footer.width, 1.0),
+                        0.0,
+                        line_color,
+                        scale,
+                    );
+                    let style = theme.typography.label_medium;
+                    let label = format!("Стр. {} из {}", page + 1, pages.max(&1));
+                    self.push_text(
+                        &label,
+                        Rect::new(
+                            footer.x,
+                            footer.center().y - style.line_height / 2.0,
+                            footer.width,
+                            style.line_height,
+                        ),
+                        style,
+                        theme.palette.on_surface_variant,
+                        Align::End,
+                        node.clip,
+                        scale,
+                    );
+                }
             }
             PaintData::Tag { label, variant } => {
                 let (bg, fg) = tag_colors(theme, *variant);
@@ -1186,6 +2100,306 @@ impl Painter {
             PaintData::Icon { icon, color } => {
                 self.paint_icon(*icon, node.rect, *color, scale);
             }
+            PaintData::Link {
+                label,
+                color,
+                hovered,
+            } => {
+                let color = if *hovered {
+                    &theme.palette.primary_hover
+                } else {
+                    color
+                };
+                let style = theme.typography.body_medium;
+                self.push_text(
+                    label,
+                    node.rect,
+                    style,
+                    *color,
+                    Align::Start,
+                    node.clip,
+                    scale,
+                );
+                let width = measure_text(label, style, f32::INFINITY)
+                    .width
+                    .min(node.rect.width);
+                self.fill_rounded_rect(
+                    Rect::new(node.rect.x, node.rect.bottom() - 1.0, width, 1.0),
+                    0.0,
+                    *color,
+                    scale,
+                );
+            }
+            PaintData::IconButton {
+                icon,
+                variant,
+                size,
+                enabled,
+                hovered,
+                pressed,
+                ..
+            } => {
+                let foreground = match variant {
+                    ButtonVariant::Primary | ButtonVariant::Filled => theme.palette.on_primary,
+                    ButtonVariant::Tonal => theme.palette.on_secondary_container,
+                    ButtonVariant::Danger => theme.palette.on_error,
+                    _ => theme.palette.primary,
+                };
+                let foreground = if *enabled {
+                    foreground
+                } else {
+                    theme.palette.text_disabled
+                };
+                if *enabled && (*hovered || *pressed) {
+                    self.fill_rounded_rect(
+                        node.rect,
+                        node.radius,
+                        foreground.with_alpha(if *pressed { 0.12 } else { 0.08 }),
+                        scale,
+                    );
+                }
+                let icon_size = theme.sizes.icon;
+                self.paint_icon(
+                    *icon,
+                    Rect::new(
+                        node.rect.center().x - icon_size / 2.0,
+                        node.rect.center().y - icon_size / 2.0,
+                        icon_size,
+                        icon_size,
+                    ),
+                    foreground,
+                    scale,
+                );
+                let _ = size;
+            }
+            PaintData::Fab { icon } => {
+                let icon_size = theme.sizes.icon_lg;
+                self.paint_icon(
+                    *icon,
+                    Rect::new(
+                        node.rect.center().x - icon_size / 2.0,
+                        node.rect.center().y - icon_size / 2.0,
+                        icon_size,
+                        icon_size,
+                    ),
+                    theme.palette.on_primary,
+                    scale,
+                );
+            }
+            PaintData::Avatar {
+                initials,
+                background,
+                foreground,
+            } => {
+                self.fill_rounded_rect(node.rect, node.rect.width / 2.0, *background, scale);
+                let style = theme.typography.label_large;
+                let width = measure_text(initials, style, f32::INFINITY).width;
+                self.push_text(
+                    initials,
+                    Rect::new(
+                        node.rect.center().x - width / 2.0,
+                        node.rect.center().y - style.line_height / 2.0,
+                        width + 1.0,
+                        style.line_height,
+                    ),
+                    style,
+                    *foreground,
+                    Align::Start,
+                    node.clip,
+                    scale,
+                );
+            }
+            PaintData::Spinner => {
+                let radius = (node.rect.width.min(node.rect.height) / 2.0 - 2.0).max(1.0);
+                let path = arc_path(
+                    node.rect.center(),
+                    radius,
+                    -std::f32::consts::FRAC_PI_2,
+                    std::f32::consts::PI * 1.25,
+                );
+                self.stroke_path(&path, 2.5, theme.palette.primary, scale);
+            }
+            PaintData::Skeleton { radius } => {
+                self.fill_rounded_rect(
+                    node.rect,
+                    *radius,
+                    theme.palette.surface_container_high,
+                    scale,
+                );
+            }
+            PaintData::Radio {
+                label,
+                checked,
+                focused,
+                hovered,
+            } => {
+                let size = theme.sizes.icon;
+                let circle = Rect::new(node.rect.x, node.rect.center().y - size / 2.0, size, size);
+                self.fill_rounded_rect(
+                    circle,
+                    size / 2.0,
+                    theme.palette.surface_container_lowest,
+                    scale,
+                );
+                self.draw_rounded_rect(
+                    circle,
+                    size / 2.0,
+                    None,
+                    Some((
+                        theme.sizes.border_width,
+                        if *checked || *hovered {
+                            theme.palette.primary
+                        } else {
+                            theme.palette.outline
+                        },
+                    )),
+                    scale,
+                );
+                if *checked {
+                    self.fill_rounded_rect(
+                        Rect::new(
+                            circle.x + size * 0.28,
+                            circle.y + size * 0.28,
+                            size * 0.44,
+                            size * 0.44,
+                        ),
+                        size * 0.22,
+                        theme.palette.primary,
+                        scale,
+                    );
+                }
+                if *focused {
+                    self.stroke_rounded_rect(
+                        Rect::new(
+                            circle.x - theme.sizes.focus_ring_offset,
+                            circle.y - theme.sizes.focus_ring_offset,
+                            circle.width + theme.sizes.focus_ring_offset * 2.0,
+                            circle.height + theme.sizes.focus_ring_offset * 2.0,
+                        ),
+                        size / 2.0 + theme.sizes.focus_ring_offset,
+                        theme.sizes.focus_ring_width,
+                        theme.palette.focus_ring,
+                        scale,
+                    );
+                }
+                self.push_text(
+                    label,
+                    Rect::new(
+                        circle.right() + 8.0,
+                        node.rect.center().y - theme.typography.body_medium.line_height / 2.0,
+                        node.rect.width - size - 8.0,
+                        theme.typography.body_medium.line_height,
+                    ),
+                    theme.typography.body_medium,
+                    theme.palette.on_surface,
+                    Align::Start,
+                    node.clip,
+                    scale,
+                );
+            }
+            PaintData::Slider { value, label } => {
+                let style = theme.typography.label_medium;
+                let track_y = if let Some(label) = label {
+                    self.push_text(
+                        label,
+                        Rect::new(
+                            node.rect.x,
+                            node.rect.y,
+                            node.rect.width - 48.0,
+                            style.line_height,
+                        ),
+                        style,
+                        theme.palette.on_surface_variant,
+                        Align::Start,
+                        node.clip,
+                        scale,
+                    );
+                    let percent = format!("{:.0}%", value * 100.0);
+                    self.push_text(
+                        &percent,
+                        Rect::new(node.rect.x, node.rect.y, node.rect.width, style.line_height),
+                        style,
+                        theme.palette.on_surface_variant,
+                        Align::End,
+                        node.clip,
+                        scale,
+                    );
+                    node.rect.y + style.line_height + 10.0
+                } else {
+                    node.rect.center().y
+                };
+                let track = Rect::new(
+                    node.rect.x + 9.0,
+                    track_y - 3.0,
+                    (node.rect.width - 18.0).max(1.0),
+                    6.0,
+                );
+                self.fill_rounded_rect(track, 3.0, theme.palette.surface_container_highest, scale);
+                let filled = track.width * value.clamp(0.0, 1.0);
+                self.fill_rounded_rect(
+                    Rect::new(track.x, track.y, filled, 6.0),
+                    3.0,
+                    theme.palette.primary,
+                    scale,
+                );
+                self.fill_rounded_rect(
+                    Rect::new(track.x + filled - 9.0, track.y - 6.0, 18.0, 18.0),
+                    9.0,
+                    theme.palette.primary,
+                    scale,
+                );
+            }
+            PaintData::Otp {
+                value,
+                length,
+                focused,
+            } => {
+                let gap = 8.0;
+                let box_width =
+                    ((node.rect.width - gap * (*length as f32 - 1.0)) / *length as f32).max(20.0);
+                let chars: Vec<char> = value.chars().collect();
+                for index in 0..*length {
+                    let box_rect = Rect::new(
+                        node.rect.x + index as f32 * (box_width + gap),
+                        node.rect.y,
+                        box_width,
+                        node.rect.height,
+                    );
+                    self.draw_rounded_rect(
+                        box_rect,
+                        theme.radius.control,
+                        Some(theme.palette.surface_container_lowest),
+                        Some((
+                            theme.sizes.border_width,
+                            if *focused {
+                                theme.palette.focus_ring
+                            } else {
+                                theme.palette.outline_variant
+                            },
+                        )),
+                        scale,
+                    );
+                    if let Some(character) = chars.get(index) {
+                        let style = theme.typography.title_large;
+                        let text = character.to_string();
+                        let width = measure_text(&text, style, f32::INFINITY).width;
+                        self.push_text(
+                            &text,
+                            Rect::new(
+                                box_rect.center().x - width / 2.0,
+                                box_rect.center().y - style.line_height / 2.0,
+                                width + 1.0,
+                                style.line_height,
+                            ),
+                            style,
+                            theme.palette.on_surface,
+                            Align::Start,
+                            node.clip,
+                            scale,
+                        );
+                    }
+                }
+            }
             PaintData::Divider { vertical } => {
                 let rect = if *vertical {
                     Rect::new(node.rect.center().x, node.rect.y, 1.0, node.rect.height)
@@ -1196,7 +2410,22 @@ impl Painter {
             }
         }
         for child in &node.children {
-            self.paint_node(child, theme, scale);
+            self.paint_node(child, theme, scale, damage);
+        }
+        if node.scrollable && node.content_height > node.rect.height + 1.0 {
+            let track_height = node.rect.height - 8.0;
+            let ratio = (node.rect.height / node.content_height).clamp(0.08, 1.0);
+            let thumb_height = (track_height * ratio).max(24.0);
+            let max_offset = (node.content_height - node.rect.height).max(1.0);
+            let thumb_y = node.rect.y
+                + 4.0
+                + (track_height - thumb_height) * (node.scroll_offset / max_offset);
+            self.fill_rounded_rect(
+                Rect::new(node.rect.right() - 5.0, thumb_y, 3.0, thumb_height),
+                1.5,
+                theme.palette.outline.with_alpha(0.55),
+                scale,
+            );
         }
     }
 
@@ -1212,6 +2441,13 @@ impl Painter {
         scale: f32,
     ) {
         if text.is_empty() || rect.width <= 1.0 || rect.height <= 1.0 {
+            return;
+        }
+        if rect.bottom() <= clip.y
+            || rect.y >= clip.bottom()
+            || rect.right() <= clip.x
+            || rect.x >= clip.right()
+        {
             return;
         }
         let measured = measure_text(text, style, rect.width).width;
@@ -1232,6 +2468,31 @@ impl Painter {
             clip,
         });
         let _ = scale;
+    }
+
+    fn draw_rounded_rect(
+        &mut self,
+        rect: Rect,
+        radius: f32,
+        fill: Option<Color>,
+        stroke: Option<(f32, Color)>,
+        scale: f32,
+    ) {
+        if let Some(fill) = fill {
+            self.fill_rounded_rect(rect, radius, fill, scale);
+        }
+        if let Some((width, color)) = stroke {
+            if width > 0.0 {
+                let inset = width * 0.5;
+                let inner = Rect::new(
+                    rect.x + inset,
+                    rect.y + inset,
+                    (rect.width - width).max(0.0),
+                    (rect.height - width).max(0.0),
+                );
+                self.stroke_rounded_rect(inner, (radius - inset).max(0.0), width, color, scale);
+            }
+        }
     }
 
     fn fill_rounded_rect(&mut self, rect: Rect, radius: f32, color: Color, scale: f32) {
@@ -1629,4 +2890,71 @@ pub fn window_size(node: &LayoutNode) -> Size {
 
 pub fn layout_bounds(tree: &LayoutTree) -> Rect {
     tree.root.rect
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key(index: usize) -> TextKey {
+        TextKey {
+            text: format!("text {index}"),
+            size: 16.0f32.to_bits(),
+            line_height: 20.0f32.to_bits(),
+            weight: 400,
+            tracking: 0.0f32.to_bits(),
+            width: 200.0f32.to_bits(),
+            height: 20.0f32.to_bits(),
+        }
+    }
+
+    fn command(width: f32) -> TextCmd {
+        TextCmd {
+            text: "resize".to_string(),
+            x: 0.0,
+            y: 0.0,
+            width,
+            height: 20.0,
+            style: TextStyle::new(16.0, 20.0, ui_core::theme::FontWeight::Regular),
+            color: [255, 255, 255, 255],
+            clip: Rect::new(0.0, 0.0, 400.0, 40.0),
+        }
+    }
+
+    #[test]
+    fn fast_text_reuses_bucket_for_small_width_changes() {
+        let first = TextKey::new(&command(100.0), 2.0, 32);
+        let second = TextKey::new(&command(101.0), 2.0, 32);
+        assert_eq!(first.width, second.width);
+        let exact = TextKey::new(&command(101.0), 2.0, 0);
+        assert_ne!(first.width, exact.width);
+    }
+
+    #[test]
+    fn current_frame_keys_are_never_evicted() {
+        let mut cache = TextCache::default();
+        cache.begin_frame();
+        for index in 0..(TEXT_CACHE_LIMIT + 64) {
+            cache.entries.insert(
+                key(index),
+                TextEntry {
+                    buffer: Buffer::new_empty(Metrics::new(16.0, 20.0)),
+                    last_used: cache.frame,
+                },
+            );
+        }
+        cache.end_frame();
+        assert_eq!(cache.entries.len(), TEXT_CACHE_LIMIT + 64);
+        cache.begin_frame();
+        cache.entries.insert(
+            key(0),
+            TextEntry {
+                buffer: Buffer::new_empty(Metrics::new(16.0, 20.0)),
+                last_used: cache.frame,
+            },
+        );
+        cache.end_frame();
+        assert_eq!(cache.entries.len(), TEXT_CACHE_LIMIT);
+        assert!(cache.entries.contains_key(&key(0)));
+    }
 }

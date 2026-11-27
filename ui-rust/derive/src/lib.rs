@@ -171,6 +171,7 @@ fn expand_view_model_impl(input: &mut ItemImpl) -> syn::Result<TokenStream2> {
     let mut has_on_mount = false;
     let mut has_on_dispose = false;
     let mut has_on_frame = false;
+    let mut has_needs_frame = false;
     let mut has_scope = false;
     for item in &mut input.items {
         let ImplItem::Fn(function) = item else {
@@ -182,6 +183,7 @@ fn expand_view_model_impl(input: &mut ItemImpl) -> syn::Result<TokenStream2> {
             "on_mount" => has_on_mount = true,
             "on_dispose" => has_on_dispose = true,
             "on_frame" => has_on_frame = true,
+            "needs_frame" => has_needs_frame = true,
             "scope" => has_scope = true,
             _ => {}
         }
@@ -253,6 +255,13 @@ fn expand_view_model_impl(input: &mut ItemImpl) -> syn::Result<TokenStream2> {
         forwards.push(quote! {
             fn on_frame(&self) {
                 Self::on_frame(self);
+            }
+        });
+    }
+    if has_needs_frame {
+        forwards.push(quote! {
+            fn needs_frame(&self) -> bool {
+                Self::needs_frame(self)
             }
         });
     }

@@ -103,6 +103,10 @@ pub trait ViewModel: Sized + 'static {
 
     fn on_frame(&self) {}
 
+    fn needs_frame(&self) -> bool {
+        false
+    }
+
     fn scope(&self) -> Option<&Scope> {
         None
     }

@@ -9,6 +9,7 @@ use ui_core::DiError;
 
 use crate::auth::{AuthApi, User};
 use crate::dashboard::DashboardVm;
+use crate::gallery::GalleryVm;
 use crate::login::LoginVm;
 
 enum Screen {
@@ -28,6 +29,100 @@ impl ViewModel for ErrorVm {
         ])
         .padding_all(32.0)
         .gap(12.0)
+    }
+}
+
+pub struct GalleryApp {
+    dark: Option<Signal<bool>>,
+    dialog: Option<Signal<bool>>,
+    popover: Option<Signal<usize>>,
+    focus_request: Option<Signal<Option<&'static str>>>,
+}
+
+impl GalleryApp {
+    pub fn new() -> Self {
+        Self {
+            dark: None,
+            dialog: None,
+            popover: None,
+            focus_request: None,
+        }
+    }
+}
+
+impl Default for GalleryApp {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ui_platform::App for GalleryApp {
+    fn start(&mut self) -> Box<dyn ViewSource> {
+        let vm = GalleryVm::new(false);
+        log::info!("gallery start: section {}", vm.section.peek());
+        self.dark = Some(vm.dark);
+        self.dialog = Some(vm.dialog);
+        self.popover = Some(vm.popover);
+        self.focus_request = Some(vm.focus_request);
+        Box::new(View::new(vm))
+    }
+
+    fn on_frame(&mut self, ui: &mut Ui) {
+        if let Some(dark) = self.dark {
+            let is_dark = dark.peek();
+            if is_dark != ui.theme().is_dark() {
+                ui.set_theme(if is_dark {
+                    Theme::dark()
+                } else {
+                    Theme::light()
+                });
+            }
+        }
+        if let Some(request) = self.focus_request {
+            if let Some(key) = request.peek() {
+                ui.focus_key(key);
+                request.set(None);
+            }
+        }
+    }
+
+    fn on_event(&mut self, ui: &mut Ui, event: &UiEvent) -> bool {
+        if let UiEvent::Key {
+            key: Key::Char(character),
+            modifiers,
+            pressed: true,
+        } = event
+        {
+            if modifiers.control && character.eq_ignore_ascii_case(&'d') {
+                ui.toggle_theme();
+                if let Some(dark) = self.dark {
+                    dark.set(ui.theme().is_dark());
+                }
+                return true;
+            }
+        }
+        if matches!(
+            event,
+            UiEvent::Key {
+                key: Key::Escape,
+                pressed: true,
+                ..
+            }
+        ) {
+            if let Some(popover) = self.popover {
+                if popover.peek() != 0 {
+                    popover.set(0);
+                    return true;
+                }
+            }
+            if let Some(dialog) = self.dialog {
+                if dialog.peek() {
+                    dialog.set(false);
+                    return true;
+                }
+            }
+        }
+        false
     }
 }
 

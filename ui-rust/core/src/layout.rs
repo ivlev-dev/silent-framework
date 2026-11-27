@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::color::Color;
+use crate::damage::Damage;
 use crate::geometry::{
     Align, Constraints, Direction, Edges, Justify, LayoutContext, Length, Point, Rect, Size,
 };
@@ -9,9 +10,9 @@ use crate::signal::Signal;
 use crate::theme::{FontWeight, TextStyle, Theme};
 use crate::widget::{
     Border, ButtonVariant, ButtonWidget, CardProps, CheckboxWidget, ContainerProps, ControlSize,
-    DividerWidget, FormProgressWidget, GridProps, HeadingWidget, IconName, NavWidget,
-    ProgressWidget, SelectWidget, SurfaceTone, SwitchWidget, TableWidget, TagVariant, TagWidget,
-    TextFieldWidget, TextWidget, Widget, WidgetKind,
+    DataColumn, DataTableState, DataTableWidget, DividerWidget, FormProgressWidget, GridProps,
+    HeadingWidget, IconName, NavWidget, ProgressWidget, SelectWidget, SurfaceTone, SwitchWidget,
+    TableWidget, TagVariant, TagWidget, TextFieldWidget, TextWidget, Widget, WidgetKind,
 };
 
 pub type NodeId = u64;
@@ -32,6 +33,10 @@ pub enum Role {
     Table,
     Card,
     Divider,
+    Link,
+    Radio,
+    Slider,
+    Otp,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -40,6 +45,9 @@ pub enum CursorShape {
     Default,
     Pointer,
     Text,
+    Grab,
+    Grabbing,
+    ResizeHorizontal,
 }
 
 #[derive(Clone)]
@@ -47,6 +55,7 @@ pub struct EditBinding {
     pub value: Signal<String>,
     pub on_submit: Option<Rc<dyn Fn()>>,
     pub touched: Option<Signal<bool>>,
+    pub multiline: bool,
 }
 
 #[derive(Clone)]
@@ -55,6 +64,9 @@ pub struct Interaction {
     pub focusable: bool,
     pub click: Option<Rc<dyn Fn()>>,
     pub edit: Option<EditBinding>,
+    pub slider: Option<Signal<f32>>,
+    pub data_table: Option<DataTableState>,
+    pub data_table_defaults: Option<Vec<f32>>,
 }
 
 impl Default for Interaction {
@@ -64,6 +76,9 @@ impl Default for Interaction {
             focusable: false,
             click: None,
             edit: None,
+            slider: None,
+            data_table: None,
+            data_table_defaults: None,
         }
     }
 }
@@ -84,7 +99,7 @@ impl Interaction {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum PaintData {
     None,
     Text {
@@ -101,6 +116,7 @@ pub enum PaintData {
         loading: bool,
         enabled: bool,
         hovered: bool,
+        pressed: bool,
     },
     TextField {
         value: String,
@@ -109,6 +125,9 @@ pub enum PaintData {
         password: bool,
         invalid: bool,
         focused: bool,
+        hovered: bool,
+        enabled: bool,
+        leading_icon: Option<IconName>,
         caret: Option<usize>,
         selection: Option<(usize, usize)>,
         help: Option<String>,
@@ -117,11 +136,13 @@ pub enum PaintData {
         label: String,
         checked: bool,
         focused: bool,
+        hovered: bool,
     },
     Switch {
         label: String,
         checked: bool,
         focused: bool,
+        hovered: bool,
     },
     Select {
         label: String,
@@ -142,6 +163,7 @@ pub enum PaintData {
         selected: bool,
         vertical: bool,
         expanded: bool,
+        hovered: bool,
     },
     Table {
         headers: Vec<String>,
@@ -150,6 +172,12 @@ pub enum PaintData {
         striped: bool,
         tag_column: Option<usize>,
         tag_variant: TagVariant,
+        compact: bool,
+        selected_row: Option<usize>,
+        sort_column: Option<usize>,
+        sort_ascending: bool,
+        page: Option<usize>,
+        pages: usize,
     },
     Tag {
         label: String,
@@ -159,9 +187,84 @@ pub enum PaintData {
         icon: IconName,
         color: Color,
     },
+    Link {
+        label: String,
+        color: Color,
+        hovered: bool,
+    },
+    IconButton {
+        icon: IconName,
+        label: String,
+        variant: ButtonVariant,
+        size: ControlSize,
+        enabled: bool,
+        hovered: bool,
+        pressed: bool,
+    },
+    Fab {
+        icon: IconName,
+    },
+    Avatar {
+        initials: String,
+        background: Color,
+        foreground: Color,
+    },
+    Spinner,
+    Skeleton {
+        radius: f32,
+    },
+    Radio {
+        label: String,
+        checked: bool,
+        focused: bool,
+        hovered: bool,
+    },
+    Slider {
+        value: f32,
+        label: Option<String>,
+    },
+    Otp {
+        value: String,
+        length: usize,
+        focused: bool,
+    },
+    DataTable {
+        columns: Vec<DataColumn>,
+        rows: Vec<(usize, Vec<String>)>,
+        widths: Vec<f32>,
+        compact: bool,
+        selected: Vec<usize>,
+        sort: Option<usize>,
+        sort_ascending: bool,
+        page: usize,
+        pages: usize,
+        scroll: f32,
+        total_rows: usize,
+        display_total: Option<usize>,
+        display_range: Option<(usize, usize, usize)>,
+        hover_column: Option<usize>,
+        hover_row: Option<usize>,
+        drag: Option<DataTableDragView>,
+    },
     Divider {
         vertical: bool,
     },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum DataTableDragMode {
+    Reorder,
+    Resize,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DataTableDragView {
+    pub mode: DataTableDragMode,
+    pub source: usize,
+    pub target: usize,
+    pub ghost_x: f32,
+    pub width_badge: Option<f32>,
+    pub applied: bool,
 }
 
 #[derive(Clone)]
@@ -179,12 +282,42 @@ pub struct LayoutNode {
     pub label: Option<String>,
     pub value: Option<String>,
     pub selected: bool,
+    pub hovered: bool,
+    pub key: Option<&'static str>,
+    pub scrollable: bool,
+    pub scroll_offset: f32,
+    pub content_height: f32,
+    pub scroll_signal: Option<Signal<f32>>,
     pub children: Vec<LayoutNode>,
 }
 
 impl LayoutNode {
     pub fn is_interactive(&self) -> bool {
         self.interaction.is_interactive()
+    }
+
+    pub fn scrollable_at(&self, point: Point) -> Option<&LayoutNode> {
+        if !self.rect.contains(point) {
+            return None;
+        }
+        for child in self.children.iter().rev() {
+            if let Some(node) = child.scrollable_at(point) {
+                return Some(node);
+            }
+        }
+        self.scrollable.then_some(self)
+    }
+
+    pub fn find_key(&self, key: &str) -> Option<&LayoutNode> {
+        if self.key == Some(key) {
+            return Some(self);
+        }
+        for child in &self.children {
+            if let Some(node) = child.find_key(key) {
+                return Some(node);
+            }
+        }
+        None
     }
 
     pub fn find(&self, id: NodeId) -> Option<&LayoutNode> {
@@ -244,6 +377,13 @@ impl LayoutNode {
             .sum::<usize>()
     }
 
+    pub fn set_clip(&mut self, clip: Rect) {
+        self.clip = clip;
+        for child in &mut self.children {
+            child.set_clip(clip);
+        }
+    }
+
     pub fn translate(&mut self, dx: f32, dy: f32) {
         self.rect.x += dx;
         self.rect.y += dy;
@@ -266,6 +406,10 @@ impl LayoutTree {
 
     pub fn hit_test_any(&self, point: Point) -> Option<&LayoutNode> {
         self.root.hit_any(point)
+    }
+
+    pub fn find_key(&self, key: &str) -> Option<&LayoutNode> {
+        self.root.find_key(key)
     }
 
     pub fn find(&self, id: NodeId) -> Option<&LayoutNode> {
@@ -296,10 +440,185 @@ impl LayoutTree {
     }
 }
 
-#[derive(Clone)]
+pub fn patch_interaction(tree: &mut LayoutTree, options: &LayoutOptions<'_>) -> Damage {
+    let mut damage = Damage::NONE;
+    patch_node(&mut tree.root, options, &mut damage);
+    damage.expand(4.0)
+}
+
+fn patch_node(node: &mut LayoutNode, options: &LayoutOptions<'_>, damage: &mut Damage) {
+    let before = node.paint.clone();
+    let mut changed = false;
+    let next_hovered = options.hover == Some(node.id) && node.interaction.enabled;
+    if node.hovered != next_hovered {
+        node.hovered = next_hovered;
+        changed = true;
+    }
+    match &mut node.paint {
+        PaintData::Button {
+            hovered, pressed, ..
+        } => {
+            let next_hover = options.hover == Some(node.id);
+            let next_press = options.pressed == Some(node.id);
+            if *hovered != next_hover || *pressed != next_press {
+                *hovered = next_hover;
+                *pressed = next_press;
+                changed = true;
+            }
+        }
+        PaintData::IconButton {
+            hovered, pressed, ..
+        } => {
+            let next_hover = options.hover == Some(node.id);
+            let next_press = options.pressed == Some(node.id);
+            if *hovered != next_hover || *pressed != next_press {
+                *hovered = next_hover;
+                *pressed = next_press;
+                changed = true;
+            }
+        }
+        PaintData::TextField {
+            focused,
+            hovered,
+            caret,
+            selection,
+            ..
+        } => {
+            let next_focus = options.focus == Some(node.id);
+            let next_caret = if next_focus {
+                options.carets.get(&node.id).copied()
+            } else {
+                None
+            };
+            let next_selection = if next_focus {
+                options.selections.get(&node.id).copied()
+            } else {
+                None
+            };
+            let next_hover = options.hover == Some(node.id) && node.interaction.enabled;
+            if *focused != next_focus
+                || *hovered != next_hover
+                || *caret != next_caret
+                || *selection != next_selection
+            {
+                *focused = next_focus;
+                *hovered = next_hover;
+                *caret = next_caret;
+                *selection = next_selection;
+                changed = true;
+            }
+        }
+        PaintData::Checkbox {
+            focused, hovered, ..
+        }
+        | PaintData::Switch {
+            focused, hovered, ..
+        }
+        | PaintData::Radio {
+            focused, hovered, ..
+        } => {
+            let next = options.focus == Some(node.id);
+            let next_hover = options.hover == Some(node.id) && node.interaction.enabled;
+            if *focused != next || *hovered != next_hover {
+                *focused = next;
+                *hovered = next_hover;
+                changed = true;
+            }
+        }
+        PaintData::Link { hovered, .. } => {
+            let next_hover = options.hover == Some(node.id);
+            if *hovered != next_hover {
+                *hovered = next_hover;
+                changed = true;
+            }
+        }
+        PaintData::NavItem { hovered, .. } => {
+            let next_hover = options.hover == Some(node.id);
+            if *hovered != next_hover {
+                *hovered = next_hover;
+                changed = true;
+            }
+        }
+        PaintData::DataTable {
+            hover_column,
+            hover_row,
+            drag,
+            ..
+        } => {
+            let next_hover = options
+                .table_hover
+                .and_then(|(id, column)| (id == node.id).then_some(column));
+            let next_drag = options
+                .table_drag
+                .clone()
+                .and_then(|(id, drag)| (id == node.id).then_some(drag));
+            let next_row = options
+                .table_hover_row
+                .and_then(|(id, row)| (id == node.id).then_some(row));
+            if *hover_column != next_hover || *hover_row != next_row || *drag != next_drag {
+                *hover_column = next_hover;
+                *hover_row = next_row;
+                *drag = next_drag;
+                changed = true;
+            }
+        }
+        _ => {}
+    }
+    if changed && before != node.paint {
+        *damage = damage.union(Damage::rect(node.rect));
+    }
+    for child in &mut node.children {
+        patch_node(child, options, damage);
+    }
+}
+
+pub fn compute_damage(previous: &LayoutTree, current: &LayoutTree) -> Damage {
+    let mut damage = Damage::NONE;
+    if previous.viewport != current.viewport {
+        return Damage::full();
+    }
+    if !diff_node(&previous.root, &current.root, &mut damage) {
+        return Damage::full();
+    }
+    damage
+}
+
+fn diff_node(previous: &LayoutNode, current: &LayoutNode, damage: &mut Damage) -> bool {
+    if previous.id != current.id || previous.children.len() != current.children.len() {
+        return false;
+    }
+    let visual_changed = previous.rect != current.rect
+        || previous.clip != current.clip
+        || previous.background != current.background
+        || previous.border != current.border
+        || previous.radius != current.radius
+        || previous.shadow != current.shadow
+        || previous.paint != current.paint
+        || previous.role != current.role
+        || previous.label != current.label
+        || previous.value != current.value
+        || previous.selected != current.selected
+        || previous.interaction.enabled != current.interaction.enabled
+        || previous.interaction.focusable != current.interaction.focusable;
+    if visual_changed {
+        *damage = damage.union(Damage::rect(previous.rect));
+        *damage = damage.union(Damage::rect(current.rect));
+    }
+    for (old_child, new_child) in previous.children.iter().zip(current.children.iter()) {
+        if !diff_node(old_child, new_child, damage) {
+            return false;
+        }
+    }
+    true
+}
+
 pub struct LayoutOptions<'a> {
     pub focus: Option<NodeId>,
     pub hover: Option<NodeId>,
+    pub pressed: Option<NodeId>,
+    pub table_hover: Option<(NodeId, usize)>,
+    pub table_hover_row: Option<(NodeId, usize)>,
+    pub table_drag: Option<(NodeId, DataTableDragView)>,
     pub carets: &'a HashMap<NodeId, usize>,
     pub selections: &'a HashMap<NodeId, (usize, usize)>,
 }
@@ -319,6 +638,10 @@ impl<'a> LayoutOptions<'a> {
         Self {
             focus: None,
             hover: None,
+            pressed: None,
+            table_hover: None,
+            table_hover_row: None,
+            table_drag: None,
             carets: &EMPTY_CARETS,
             selections: &EMPTY_SELECTIONS,
         }
@@ -331,6 +654,10 @@ struct Engine<'a> {
     viewport_height: f32,
     focus: Option<NodeId>,
     hover: Option<NodeId>,
+    pressed: Option<NodeId>,
+    table_hover: Option<(NodeId, usize)>,
+    table_hover_row: Option<(NodeId, usize)>,
+    table_drag: Option<(NodeId, DataTableDragView)>,
     carets: &'a HashMap<NodeId, usize>,
     selections: &'a HashMap<NodeId, (usize, usize)>,
     next_id: NodeId,
@@ -348,6 +675,10 @@ pub fn layout(
         viewport_height: viewport.height,
         focus: options.focus,
         hover: options.hover,
+        pressed: options.pressed,
+        table_hover: options.table_hover,
+        table_hover_row: options.table_hover_row,
+        table_drag: options.table_drag.clone(),
         carets: options.carets,
         selections: options.selections,
         next_id: 0,
@@ -383,6 +714,7 @@ impl Engine<'_> {
             crate::widget::TextTone::Accent => self.theme.palette.primary,
             crate::widget::TextTone::OnPrimary => self.theme.palette.on_primary,
             crate::widget::TextTone::OnErrorContainer => self.theme.palette.on_error_container,
+            crate::widget::TextTone::InverseOnSurface => self.theme.palette.inverse_on_surface,
             crate::widget::TextTone::Error => self.theme.palette.error,
         }
     }
@@ -443,6 +775,7 @@ impl Engine<'_> {
             SurfaceTone::SuccessContainer => palette.success_container,
             SurfaceTone::WarningContainer => palette.warning_container,
             SurfaceTone::InverseSurface => palette.inverse_surface,
+            SurfaceTone::Scrim => palette.scrim.with_alpha(0.5),
         }
     }
 
@@ -504,6 +837,49 @@ impl Engine<'_> {
             WidgetKind::Table(table) => self.measure_table(table, available),
             WidgetKind::Tag(tag) => self.measure_tag(tag),
             WidgetKind::Icon(_) => Size::new(self.theme.sizes.icon, self.theme.sizes.icon),
+            WidgetKind::Link(link) => {
+                measure_text(&link.label, self.theme.typography.body_medium, available)
+            }
+            WidgetKind::IconButton(button) => Size::new(button.size.height(), button.size.height()),
+            WidgetKind::Fab(_) => Size::new(56.0, 56.0),
+            WidgetKind::Avatar(avatar) => Size::new(avatar.size, avatar.size),
+            WidgetKind::Spinner(spinner) => Size::new(spinner.size, spinner.size),
+            WidgetKind::Skeleton(skeleton) => Size::new(available, skeleton.height),
+            WidgetKind::Radio(radio) => {
+                let text = measure_text(
+                    &radio.label,
+                    self.theme.typography.body_medium,
+                    (available - 26.0).max(0.0),
+                );
+                Size::new(26.0 + text.width, text.height.max(24.0))
+            }
+            WidgetKind::Slider(slider) => {
+                let label = slider.label.is_some();
+                Size::new(available, if label { 44.0 } else { 24.0 })
+            }
+            WidgetKind::Otp(otp) => Size::new(
+                otp.length as f32 * 40.0 + (otp.length as f32 - 1.0) * 8.0,
+                48.0,
+            ),
+            WidgetKind::DataTable(table) => {
+                let compact = table.state.compact.peek();
+                let row_height = if compact {
+                    table.compact_row_height
+                } else {
+                    table.row_height
+                };
+                let height = table.viewport_height.unwrap_or(
+                    self.theme.sizes.table_header_height
+                        + table.rows.len().min(8) as f32 * row_height
+                        + 48.0
+                        + if table.state.selected.peek().is_empty() {
+                            0.0
+                        } else {
+                            40.0
+                        },
+                );
+                Size::new(available, height)
+            }
             WidgetKind::Divider(divider) => {
                 if divider.vertical {
                     Size::new(1.0, available_height.unwrap_or(1.0))
@@ -514,7 +890,15 @@ impl Engine<'_> {
             WidgetKind::Spacer(size) => Size::new(*size, *size),
         };
         let width = self.resolve_width(widget, size.width, available);
-        let height = self.resolve_height(widget, size.height.max(0.0));
+        let height = if widget.scrollable.is_some() {
+            if widget.fill_viewport_height {
+                self.viewport_height
+            } else {
+                0.0
+            }
+        } else {
+            self.resolve_height(widget, size.height.max(0.0))
+        };
         Size::new(width.max(0.0), height.max(0.0))
     }
 
@@ -688,12 +1072,14 @@ impl Engine<'_> {
                 .errors
                 .map(|errors| !errors.peek().is_empty())
                 .unwrap_or(false);
+        let input_height = if field.multiline {
+            120.0
+        } else {
+            self.theme.scaled(self.theme.sizes.input_height)
+        };
         Size::new(
             available.max(220.0),
-            label_height
-                + 6.0
-                + self.theme.scaled(self.theme.sizes.input_height)
-                + if helper { 24.0 } else { 0.0 },
+            label_height + 6.0 + input_height + if helper { 24.0 } else { 0.0 },
         )
     }
 
@@ -747,10 +1133,15 @@ impl Engine<'_> {
 
     fn measure_table(&self, table: &TableWidget, available: f32) -> Size {
         let rows = table.rows.len() as f32;
+        let row_height = if table.compact {
+            self.theme.sizes.table_row_compact
+        } else {
+            self.theme.scaled(self.theme.sizes.table_row_height)
+        };
+        let footer = if table.page.is_some() { 48.0 } else { 0.0 };
         Size::new(
             available,
-            self.theme.sizes.table_header_height
-                + rows * self.theme.scaled(self.theme.sizes.table_row_height),
+            self.theme.sizes.table_header_height + rows * row_height + footer,
         )
     }
 
@@ -780,6 +1171,12 @@ impl Engine<'_> {
                     label: None,
                     value: None,
                     selected: false,
+                    hovered: false,
+                    key: widget.key,
+                    scrollable: false,
+                    scroll_offset: 0.0,
+                    content_height: 0.0,
+                    scroll_signal: None,
                     children: Vec::new(),
                 };
             }
@@ -804,6 +1201,20 @@ impl Engine<'_> {
             WidgetKind::Table(table) => self.arrange_table(id, table, rect, clip),
             WidgetKind::Tag(tag) => self.arrange_tag(id, widget, tag, rect, clip),
             WidgetKind::Icon(icon) => self.arrange_icon(id, widget, icon, rect, clip),
+            WidgetKind::Link(link) => self.arrange_link(id, widget, link, rect, clip),
+            WidgetKind::IconButton(button) => {
+                self.arrange_icon_button(id, widget, button, rect, clip)
+            }
+            WidgetKind::Fab(fab) => self.arrange_fab(id, widget, fab, rect, clip),
+            WidgetKind::Avatar(avatar) => self.arrange_avatar(id, widget, avatar, rect, clip),
+            WidgetKind::Spinner(spinner) => self.arrange_spinner(id, widget, spinner, rect, clip),
+            WidgetKind::Skeleton(skeleton) => {
+                self.arrange_skeleton(id, widget, skeleton, rect, clip)
+            }
+            WidgetKind::Radio(radio) => self.arrange_radio(id, widget, radio, rect, clip),
+            WidgetKind::Slider(slider) => self.arrange_slider(id, widget, slider, rect, clip),
+            WidgetKind::Otp(otp) => self.arrange_otp(id, widget, otp, rect, clip),
+            WidgetKind::DataTable(table) => self.arrange_data_table(id, widget, table, rect, clip),
             WidgetKind::Divider(divider) => self.arrange_divider(id, divider, rect, clip),
             WidgetKind::Spacer(_) => {
                 self.base_node(id, rect, clip, PaintData::None, Role::Generic, widget)
@@ -811,6 +1222,25 @@ impl Engine<'_> {
         };
         if widget.translate.x != 0.0 || widget.translate.y != 0.0 {
             node.translate(widget.translate.x, widget.translate.y);
+        }
+        if let Some(signal) = widget.scrollable {
+            let offset = signal.get().max(0.0);
+            let content_height = node
+                .children
+                .iter()
+                .map(|child| child.rect.bottom())
+                .fold(node.rect.y, f32::max)
+                - node.rect.y;
+            let max_offset = (content_height - node.rect.height).max(0.0);
+            let offset = offset.min(max_offset);
+            for child in &mut node.children {
+                child.translate(0.0, -offset);
+                child.set_clip(node.rect);
+            }
+            node.scrollable = true;
+            node.scroll_offset = offset;
+            node.content_height = content_height.max(node.rect.height);
+            node.scroll_signal = Some(signal);
         }
         node
     }
@@ -835,11 +1265,20 @@ impl Engine<'_> {
             radius: widget.radius.unwrap_or(0.0),
             shadow: 0.0,
             paint,
-            interaction: Interaction::default(),
+            interaction: Interaction {
+                click: widget.click.clone(),
+                ..Interaction::default()
+            },
             role,
             label: None,
             value: None,
             selected: false,
+            hovered: false,
+            key: widget.key,
+            scrollable: false,
+            scroll_offset: 0.0,
+            content_height: 0.0,
+            scroll_signal: None,
             children: Vec::new(),
         }
     }
@@ -1216,6 +1655,7 @@ impl Engine<'_> {
                 loading: button.loading,
                 enabled: button.enabled,
                 hovered: self.hover == Some(id),
+                pressed: self.pressed == Some(id),
             },
             Role::Button,
             &Widget::text(""),
@@ -1268,6 +1708,9 @@ impl Engine<'_> {
                 password: field.password,
                 invalid,
                 focused,
+                hovered: self.hover == Some(id),
+                enabled: field.enabled,
+                leading_icon: field.leading_icon,
                 caret,
                 selection,
                 help: errors.first().cloned().or_else(|| field.help.clone()),
@@ -1282,6 +1725,7 @@ impl Engine<'_> {
             value: field.value,
             on_submit: field.on_submit.clone(),
             touched: field.touched,
+            multiline: field.multiline,
         });
         node.label = Some(field.label.clone());
         node
@@ -1303,6 +1747,7 @@ impl Engine<'_> {
                 label: checkbox.label.clone(),
                 checked,
                 focused: self.focus == Some(id),
+                hovered: self.hover == Some(id),
             },
             Role::Checkbox,
             &Widget::text(""),
@@ -1332,6 +1777,7 @@ impl Engine<'_> {
                 label: switch.label.clone(),
                 checked,
                 focused: self.focus == Some(id),
+                hovered: self.hover == Some(id),
             },
             Role::Switch,
             &Widget::text(""),
@@ -1478,12 +1924,19 @@ impl Engine<'_> {
                     selected: index == selected,
                     vertical,
                     expanded,
+                    hovered: self.hover == Some(child_id),
                 },
                 interaction: Interaction::default(),
                 role: Role::Generic,
                 label: Some(item.label.clone()),
                 value: None,
                 selected: index == selected,
+                hovered: false,
+                key: None,
+                scrollable: false,
+                scroll_offset: 0.0,
+                content_height: 0.0,
+                scroll_signal: None,
                 children: Vec::new(),
             };
             if let Some(handler) = nav.on_select.clone() {
@@ -1517,6 +1970,12 @@ impl Engine<'_> {
                 striped: table.striped,
                 tag_column: table.tag_column,
                 tag_variant: table.tag_variant,
+                compact: table.compact,
+                selected_row: table.selected_row,
+                sort_column: table.sort_column,
+                sort_ascending: table.sort_ascending,
+                page: table.page.map(|page| page.get()),
+                pages: table.pages,
             },
             Role::Table,
             &Widget::text(""),
@@ -1567,6 +2026,343 @@ impl Engine<'_> {
         node
     }
 
+    fn arrange_link(
+        &mut self,
+        id: NodeId,
+        widget: &Widget,
+        link: &crate::widget::LinkWidget,
+        rect: Rect,
+        clip: Rect,
+    ) -> LayoutNode {
+        let mut node = self.base_node(
+            id,
+            rect,
+            clip,
+            PaintData::Link {
+                label: link.label.clone(),
+                color: self.theme.palette.primary,
+                hovered: self.hover == Some(id),
+            },
+            Role::Link,
+            widget,
+        );
+        node.interaction.focusable = link.on_click.is_some();
+        node.interaction.click = link.on_click.clone();
+        node.label = Some(link.label.clone());
+        node
+    }
+
+    fn arrange_icon_button(
+        &mut self,
+        id: NodeId,
+        widget: &Widget,
+        button: &crate::widget::IconButtonWidget,
+        rect: Rect,
+        clip: Rect,
+    ) -> LayoutNode {
+        let background = match button.variant {
+            ButtonVariant::Primary | ButtonVariant::Filled => self.theme.palette.primary,
+            ButtonVariant::Tonal => self.theme.palette.secondary_container,
+            ButtonVariant::Danger => self.theme.palette.error,
+            _ => Color::TRANSPARENT,
+        };
+        let mut node = self.base_node(
+            id,
+            rect,
+            clip,
+            PaintData::IconButton {
+                icon: button.icon,
+                label: button.label.clone(),
+                variant: button.variant,
+                size: button.size,
+                enabled: button.enabled,
+                hovered: self.hover == Some(id),
+                pressed: self.pressed == Some(id),
+            },
+            Role::Button,
+            widget,
+        );
+        node.background = Some(background);
+        node.radius = self.theme.radius.md;
+        if matches!(
+            button.variant,
+            ButtonVariant::Secondary | ButtonVariant::Outlined
+        ) {
+            node.border = Some(Border::new(1.0, self.theme.palette.outline_variant));
+        }
+        node.interaction.enabled = button.enabled;
+        node.interaction.focusable = button.enabled;
+        node.interaction.click = button.on_click.clone();
+        node.label = Some(button.label.clone());
+        node
+    }
+
+    fn arrange_fab(
+        &mut self,
+        id: NodeId,
+        widget: &Widget,
+        fab: &crate::widget::FabWidget,
+        rect: Rect,
+        clip: Rect,
+    ) -> LayoutNode {
+        let mut node = self.base_node(
+            id,
+            rect,
+            clip,
+            PaintData::Fab { icon: fab.icon },
+            Role::Button,
+            widget,
+        );
+        node.background = Some(self.theme.palette.primary);
+        node.radius = rect.width / 2.0;
+        node.shadow = 2.0;
+        node.interaction.focusable = fab.on_click.is_some();
+        node.interaction.click = fab.on_click.clone();
+        node.label = Some(fab.label.clone());
+        node
+    }
+
+    fn arrange_avatar(
+        &mut self,
+        id: NodeId,
+        widget: &Widget,
+        avatar: &crate::widget::AvatarWidget,
+        rect: Rect,
+        clip: Rect,
+    ) -> LayoutNode {
+        let background = self.surface_color(avatar.tone);
+        let mut node = self.base_node(
+            id,
+            rect,
+            clip,
+            PaintData::Avatar {
+                initials: avatar.initials.clone(),
+                background,
+                foreground: self.theme.palette.on_surface,
+            },
+            Role::Text,
+            widget,
+        );
+        node.background = Some(background);
+        node.radius = rect.width / 2.0;
+        node.label = Some(avatar.initials.clone());
+        node
+    }
+
+    fn arrange_spinner(
+        &mut self,
+        id: NodeId,
+        widget: &Widget,
+        _spinner: &crate::widget::SpinnerWidget,
+        rect: Rect,
+        clip: Rect,
+    ) -> LayoutNode {
+        self.base_node(id, rect, clip, PaintData::Spinner, Role::Progress, widget)
+    }
+
+    fn arrange_skeleton(
+        &mut self,
+        id: NodeId,
+        widget: &Widget,
+        skeleton: &crate::widget::SkeletonWidget,
+        rect: Rect,
+        clip: Rect,
+    ) -> LayoutNode {
+        let mut node = self.base_node(
+            id,
+            rect,
+            clip,
+            PaintData::Skeleton {
+                radius: skeleton.radius,
+            },
+            Role::Generic,
+            widget,
+        );
+        node.background = Some(self.theme.palette.surface_container_high);
+        node.radius = skeleton.radius;
+        node
+    }
+
+    fn arrange_radio(
+        &mut self,
+        id: NodeId,
+        widget: &Widget,
+        radio: &crate::widget::RadioWidget,
+        rect: Rect,
+        clip: Rect,
+    ) -> LayoutNode {
+        let checked = radio.group.get() == radio.value;
+        let mut node = self.base_node(
+            id,
+            rect,
+            clip,
+            PaintData::Radio {
+                label: radio.label.clone(),
+                checked,
+                focused: self.focus == Some(id),
+                hovered: self.hover == Some(id),
+            },
+            Role::Radio,
+            widget,
+        );
+        node.interaction.enabled = radio.enabled;
+        node.interaction.focusable = radio.enabled;
+        let group = radio.group;
+        let value = radio.value;
+        node.interaction.click = Some(Rc::new(move || group.set(value)));
+        node.label = Some(radio.label.clone());
+        node.selected = checked;
+        node
+    }
+
+    fn arrange_slider(
+        &mut self,
+        id: NodeId,
+        widget: &Widget,
+        slider: &crate::widget::SliderWidget,
+        rect: Rect,
+        clip: Rect,
+    ) -> LayoutNode {
+        let mut node = self.base_node(
+            id,
+            rect,
+            clip,
+            PaintData::Slider {
+                value: slider.value.get().clamp(0.0, 1.0),
+                label: slider.label.clone(),
+            },
+            Role::Slider,
+            widget,
+        );
+        node.interaction.focusable = true;
+        node.interaction.slider = Some(slider.value);
+        node.value = Some(format!("{:.0}%", slider.value.peek() * 100.0));
+        node
+    }
+
+    fn arrange_otp(
+        &mut self,
+        id: NodeId,
+        widget: &Widget,
+        otp: &crate::widget::OtpWidget,
+        rect: Rect,
+        clip: Rect,
+    ) -> LayoutNode {
+        let focused = self.focus == Some(id);
+        let mut node = self.base_node(
+            id,
+            rect,
+            clip,
+            PaintData::Otp {
+                value: otp.value.get(),
+                length: otp.length,
+                focused,
+            },
+            Role::Otp,
+            widget,
+        );
+        node.interaction.focusable = true;
+        node.interaction.edit = Some(EditBinding {
+            value: otp.value,
+            on_submit: None,
+            touched: None,
+            multiline: false,
+        });
+        node.value = Some(otp.value.peek());
+        node
+    }
+
+    fn arrange_data_table(
+        &mut self,
+        id: NodeId,
+        widget: &Widget,
+        table: &DataTableWidget,
+        rect: Rect,
+        clip: Rect,
+    ) -> LayoutNode {
+        let compact = table.state.compact.get();
+        let row_height = if compact {
+            table.compact_row_height
+        } else {
+            table.row_height
+        };
+        let width_signal = table.state.widths.get();
+        let order = normalized_order(&table.state.order.get(), table.columns.len());
+        let widths: Vec<f32> = order
+            .iter()
+            .map(|index| {
+                width_signal
+                    .get(*index)
+                    .copied()
+                    .unwrap_or_else(|| table.columns[*index].width)
+            })
+            .collect();
+        let selected = table.state.selected.get();
+        let sort = table.state.sort.get();
+        let sort_ascending = table.state.sort_ascending.get();
+        let page = table.state.page.get();
+        let scroll = table.state.scroll.get();
+        let columns: Vec<DataColumn> = order
+            .iter()
+            .map(|index| table.columns[*index].clone())
+            .collect();
+        let header_height = self.theme.sizes.table_header_height;
+        let footer_height = 48.0 + if selected.is_empty() { 0.0 } else { 40.0 };
+        let body_height = (rect.height - header_height - footer_height).max(0.0);
+        let visible_rows = (body_height / row_height).ceil() as usize + 2;
+        let start_row = (scroll / row_height).floor().max(0.0) as usize;
+        let start_row = start_row.min(table.rows.len());
+        let end_row = (start_row + visible_rows).min(table.rows.len());
+        let rows: Vec<(usize, Vec<String>)> = table.rows[start_row..end_row]
+            .iter()
+            .cloned()
+            .enumerate()
+            .map(|(offset, row)| (start_row + offset, row))
+            .collect();
+        let hover_column = self
+            .table_hover
+            .and_then(|(node, column)| (node == id).then_some(column));
+        let drag = self
+            .table_drag
+            .clone()
+            .and_then(|(node, drag)| (node == id).then_some(drag));
+        let mut node = self.base_node(
+            id,
+            rect,
+            clip,
+            PaintData::DataTable {
+                columns,
+                rows,
+                widths,
+                compact,
+                selected,
+                sort,
+                sort_ascending,
+                page,
+                pages: table.state.pages,
+                scroll,
+                total_rows: table.rows.len(),
+                display_total: table.display_total,
+                display_range: table.display_range,
+                hover_column,
+                hover_row: self
+                    .table_hover_row
+                    .and_then(|(node, row)| (node == id).then_some(row)),
+                drag,
+            },
+            Role::Table,
+            widget,
+        );
+        node.interaction.focusable = true;
+        node.interaction.data_table = Some(table.state.clone());
+        node.interaction.data_table_defaults =
+            Some(table.columns.iter().map(|column| column.width).collect());
+        node.value = Some(format!("{} rows", table.rows.len()));
+        node.background = Some(self.theme.palette.surface_container_lowest);
+        node.radius = 0.0;
+        node
+    }
+
     fn arrange_divider(
         &mut self,
         id: NodeId,
@@ -1585,6 +2381,41 @@ impl Engine<'_> {
             &Widget::text(""),
         )
     }
+}
+
+pub fn pagination_slots(page: usize, pages: usize) -> Vec<usize> {
+    const GAP: usize = usize::MAX;
+    let pages = pages.max(1);
+    let current = page.min(pages - 1);
+    if pages <= 7 {
+        return (0..pages).collect();
+    }
+    let mut slots = vec![0];
+    let start = current.saturating_sub(1).max(1);
+    let end = (current + 1).min(pages - 2);
+    if start > 1 {
+        slots.push(GAP);
+    }
+    for index in start..=end {
+        if index != 0 && index != pages - 1 {
+            slots.push(index);
+        }
+    }
+    if end + 1 < pages - 1 {
+        slots.push(GAP);
+    }
+    slots.push(pages - 1);
+    slots
+}
+
+fn normalized_order(order: &[usize], len: usize) -> Vec<usize> {
+    let mut result: Vec<usize> = order.iter().copied().filter(|index| *index < len).collect();
+    for index in 0..len {
+        if !result.contains(&index) {
+            result.push(index);
+        }
+    }
+    result
 }
 
 pub fn measure_text(text: &str, style: TextStyle, max_width: f32) -> Size {
@@ -1925,5 +2756,22 @@ mod tests {
         let hit = tree.hit_test(second.rect.center()).expect("hit");
         (hit.interaction.click.as_ref().expect("click"))();
         assert_eq!(selected.get(), 1);
+    }
+}
+
+#[cfg(test)]
+mod pagination_tests {
+    use super::pagination_slots;
+
+    #[test]
+    fn pagination_slots_show_edges_and_current_page() {
+        assert_eq!(pagination_slots(0, 5), vec![0, 1, 2, 3, 4]);
+        let slots = pagination_slots(11, 24);
+        assert_eq!(slots.first(), Some(&0));
+        assert_eq!(slots.last(), Some(&23));
+        assert!(slots.contains(&11));
+        assert!(slots.contains(&10));
+        assert!(slots.contains(&12));
+        assert_eq!(slots.len(), 7);
     }
 }

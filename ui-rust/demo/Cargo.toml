@@ -16,3 +16,5 @@ ui-accessibility = { workspace = true }
 winit = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }
+silent-protocol = { path = "../../crates/silent-protocol" }
+ureq = { version = "2.12", default-features = false, features = ["tls"] }

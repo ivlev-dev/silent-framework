@@ -9,6 +9,9 @@ use crate::widget::Widget;
 pub trait ViewSource {
     fn widget(&self) -> Widget;
     fn on_frame(&self);
+    fn needs_frame(&self) -> bool {
+        false
+    }
     fn dispose(&self);
 }
 
@@ -124,6 +127,10 @@ impl<VM: ViewModel> ViewSource for View<VM> {
         if self.alive.get() {
             self.vm.on_frame();
         }
+    }
+
+    fn needs_frame(&self) -> bool {
+        self.alive.get() && self.vm.needs_frame()
     }
 
     fn dispose(&self) {

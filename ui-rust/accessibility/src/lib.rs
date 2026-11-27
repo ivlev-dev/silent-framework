@@ -72,6 +72,10 @@ fn map_role(role: UiRole) -> Role {
         UiRole::Table => Role::Table,
         UiRole::Card => Role::GenericContainer,
         UiRole::Divider => Role::Splitter,
+        UiRole::Link => Role::Link,
+        UiRole::Radio => Role::RadioButton,
+        UiRole::Slider => Role::Slider,
+        UiRole::Otp => Role::TextInput,
     }
 }
 

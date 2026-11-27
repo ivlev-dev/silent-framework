@@ -2,6 +2,7 @@ extern crate self as ui_core;
 
 pub mod clipboard;
 pub mod color;
+pub mod damage;
 pub mod di;
 pub mod form;
 pub mod geometry;
@@ -16,6 +17,7 @@ pub mod widget;
 
 pub use clipboard::{Clipboard, MemoryClipboard};
 pub use color::Color;
+pub use damage::Damage;
 pub use di::{Container, DiError, Injectable, Lifetime, ServiceDescriptor};
 pub use form::{
     email_error, email_rule, Field, FieldAccess, FieldValue, Form, FormModel, FormState,
@@ -26,7 +28,9 @@ pub use geometry::{
     Align, Constraints, Direction, Edges, Justify, LayoutContext, Length, Point, Rect, Size,
     UiError,
 };
-pub use layout::{layout, CursorShape, LayoutNode, LayoutOptions, LayoutTree, PaintData, Role};
+pub use layout::{
+    compute_damage, layout, CursorShape, LayoutNode, LayoutOptions, LayoutTree, PaintData, Role,
+};
 pub use responsive::{Breakpoint, Responsive};
 pub use signal::{batch, revision, untracked, Computed, Effect, NodeId, Scope, Signal};
 pub use theme::{Palette, TextStyle, Theme, ThemeMode, Typography};

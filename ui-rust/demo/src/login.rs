@@ -171,6 +171,10 @@ impl LoginVm {
         self.poll();
     }
 
+    fn needs_frame(&self) -> bool {
+        self.submitting.peek()
+    }
+
     #[computed]
     pub fn can_submit(&self) -> bool {
         !self.submitting.get()

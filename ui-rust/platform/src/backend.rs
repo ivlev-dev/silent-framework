@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use ui_core::damage::Damage;
 use ui_core::geometry::{Point, Size};
 use ui_core::layout::{CursorShape, LayoutTree};
 use ui_core::theme::Theme;
@@ -13,6 +14,26 @@ use winit::keyboard::{Key as WinitKey, NamedKey};
 use winit::window::{CursorIcon, Window, WindowId};
 
 use crate::PlatformError;
+
+pub fn effective_ui_scale(monitor_width_px: u32, system_scale: f64) -> f32 {
+    let base = if monitor_width_px >= 3000 {
+        2.0
+    } else if monitor_width_px >= 2500 {
+        1.5
+    } else {
+        system_scale.max(1.0) as f32
+    };
+    base.max(system_scale as f32)
+}
+
+pub fn initial_window_size(monitor: PhysicalSize<u32>) -> PhysicalSize<u32> {
+    let width = ((monitor.width as f64 * 0.68) as u32).max(960);
+    let height = ((monitor.height as f64 * 0.68) as u32).max(640);
+    PhysicalSize::new(
+        width.min(monitor.width.max(960)),
+        height.min(monitor.height.max(640)),
+    )
+}
 
 pub trait WindowBackend {
     fn physical_size(&self) -> PhysicalSize<u32>;
@@ -48,6 +69,9 @@ impl WindowBackend for Window {
             CursorShape::Default => CursorIcon::Default,
             CursorShape::Pointer => CursorIcon::Pointer,
             CursorShape::Text => CursorIcon::Text,
+            CursorShape::Grab => CursorIcon::Grab,
+            CursorShape::Grabbing => CursorIcon::Grabbing,
+            CursorShape::ResizeHorizontal => CursorIcon::EwResize,
         };
         self.set_cursor(icon);
     }
@@ -64,6 +88,11 @@ impl WindowBackend for Window {
 pub trait RenderBackend {
     fn format(&self) -> wgpu::TextureFormat;
     fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32);
+    fn set_fast_text(&mut self, _fast: bool) {}
+    fn set_debug_text(&mut self, _text: Option<String>) {}
+    fn stats(&self) -> ui_render::painter::RenderStats {
+        ui_render::painter::RenderStats::default()
+    }
     fn render(
         &mut self,
         device: &wgpu::Device,
@@ -71,6 +100,7 @@ pub trait RenderBackend {
         tree: &LayoutTree,
         theme: &Theme,
         scale: f32,
+        damage: Damage,
     ) -> Result<(), RenderError>;
 }
 
@@ -94,7 +124,19 @@ impl SurfaceBackend {
         if let Some(format) = capabilities.formats.iter().copied().find(|f| f.is_srgb()) {
             config.format = format;
         }
-        config.present_mode = wgpu::PresentMode::AutoVsync;
+        config.present_mode = if capabilities
+            .present_modes
+            .contains(&wgpu::PresentMode::Mailbox)
+        {
+            wgpu::PresentMode::Mailbox
+        } else if capabilities
+            .present_modes
+            .contains(&wgpu::PresentMode::Immediate)
+        {
+            wgpu::PresentMode::Immediate
+        } else {
+            wgpu::PresentMode::AutoVsync
+        };
         surface.configure(&gpu.device, &config);
         let painter = Painter::new(&gpu.device, &gpu.queue, config.format);
         Ok(Self {
@@ -118,9 +160,24 @@ impl RenderBackend for SurfaceBackend {
         if width == 0 || height == 0 {
             return;
         }
+        if self.config.width == width && self.config.height == height {
+            return;
+        }
         self.config.width = width;
         self.config.height = height;
         self.surface.configure(device, &self.config);
+    }
+
+    fn set_fast_text(&mut self, fast: bool) {
+        self.painter.set_fast_text(fast);
+    }
+
+    fn set_debug_text(&mut self, text: Option<String>) {
+        self.painter.set_debug_text(text);
+    }
+
+    fn stats(&self) -> ui_render::painter::RenderStats {
+        self.painter.stats()
     }
 
     fn render(
@@ -130,7 +187,11 @@ impl RenderBackend for SurfaceBackend {
         tree: &LayoutTree,
         theme: &Theme,
         scale: f32,
+        damage: Damage,
     ) -> Result<(), RenderError> {
+        if damage.is_empty() {
+            return Ok(());
+        }
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) => frame,
             wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
@@ -154,6 +215,7 @@ impl RenderBackend for SurfaceBackend {
             tree,
             theme,
             scale,
+            damage,
         )?;
         queue.present(frame);
         Ok(())
@@ -214,11 +276,9 @@ impl InputBackend for WinitInput {
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                let scroll = match delta {
-                    winit::event::MouseScrollDelta::LineDelta(_, y) => y * 40.0,
-                    winit::event::MouseScrollDelta::PixelDelta(position) => position.y as f32,
-                };
-                vec![UiEvent::Wheel { delta: scroll }]
+                vec![UiEvent::Wheel {
+                    delta: wheel_logical_delta(delta, scale),
+                }]
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state != ElementState::Pressed {
@@ -262,6 +322,14 @@ impl InputBackend for WinitInput {
     }
 }
 
+pub fn wheel_logical_delta(delta: &winit::event::MouseScrollDelta, scale: f32) -> f32 {
+    let scale = scale.max(0.01);
+    match delta {
+        winit::event::MouseScrollDelta::LineDelta(_, y) => -y * 40.0,
+        winit::event::MouseScrollDelta::PixelDelta(position) => -(position.y as f32) / scale,
+    }
+}
+
 fn map_key(key: &WinitKey) -> Option<Key> {
     match key {
         WinitKey::Named(named) => match named {
@@ -281,5 +349,41 @@ fn map_key(key: &WinitKey) -> Option<Key> {
         },
         WinitKey::Character(text) => text.chars().next().map(Key::Char),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn uhq_displays_use_2x_ui_scale() {
+        assert_eq!(effective_ui_scale(3840, 1.0), 2.0);
+        assert_eq!(effective_ui_scale(3840, 2.0), 2.0);
+        assert_eq!(effective_ui_scale(2560, 1.0), 1.5);
+        assert_eq!(effective_ui_scale(1920, 1.0), 1.0);
+        assert_eq!(effective_ui_scale(1920, 1.25), 1.25);
+    }
+
+    #[test]
+    fn wheel_up_scrolls_content_towards_start() {
+        let line_up = winit::event::MouseScrollDelta::LineDelta(0.0, 1.0);
+        let line_down = winit::event::MouseScrollDelta::LineDelta(0.0, -1.0);
+        assert!(wheel_logical_delta(&line_up, 1.0) < 0.0);
+        assert!(wheel_logical_delta(&line_down, 1.0) > 0.0);
+        let pixels_up = winit::event::MouseScrollDelta::PixelDelta(
+            winit::dpi::PhysicalPosition::new(0.0, 12.0),
+        );
+        assert_eq!(wheel_logical_delta(&pixels_up, 2.0), -6.0);
+    }
+
+    #[test]
+    fn initial_window_is_60_to_75_percent_of_work_area() {
+        let monitor = PhysicalSize::new(3840, 2160);
+        let window = initial_window_size(monitor);
+        let width_ratio = window.width as f32 / monitor.width as f32;
+        let height_ratio = window.height as f32 / monitor.height as f32;
+        assert!((0.6..=0.75).contains(&width_ratio));
+        assert!((0.6..=0.75).contains(&height_ratio));
     }
 }

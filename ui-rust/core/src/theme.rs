@@ -116,6 +116,10 @@ pub struct Palette {
     pub primary: Color,
     pub on_primary: Color,
     pub primary_hover: Color,
+    pub primary_fixed: Color,
+    pub primary_fixed_dim: Color,
+    pub on_primary_fixed: Color,
+    pub on_primary_fixed_variant: Color,
     pub primary_container: Color,
     pub on_primary_container: Color,
     pub secondary: Color,
@@ -189,6 +193,10 @@ impl Palette {
             primary: Color::from_hex(0x0E2A47),
             on_primary: Color::from_hex(0xF2F5F7),
             primary_hover: Color::from_hex(0x1F4E6B),
+            primary_fixed: Color::from_hex(0x9FB8C9),
+            primary_fixed_dim: Color::from_hex(0x7E99AC),
+            on_primary_fixed: Color::from_hex(0x081A2E),
+            on_primary_fixed_variant: Color::from_hex(0x1F4E6B),
             primary_container: Color::from_hex(0xD9E4EC),
             on_primary_container: Color::from_hex(0x081A2E),
             secondary: Color::from_hex(0x1F4E6B),
@@ -234,23 +242,23 @@ impl Palette {
     }
 
     pub fn dark() -> Self {
-        let surface = Color::from_hex(0x081A2E);
-        let surface_container_lowest = Color::from_hex(0x061424);
-        let surface_container_low = Color::from_hex(0x0E2A47);
-        let surface_container = Color::from_hex(0x12324F);
-        let surface_container_high = Color::from_hex(0x173B5A);
-        let surface_container_highest = Color::from_hex(0x1C4B68);
-        let on_surface = Color::from_hex(0xF2F5F7);
-        let on_surface_variant = Color::from_hex(0xC9D8E2);
-        let on_surface_muted = Color::from_hex(0x9FB8C9);
-        let outline = Color::from_hex(0x7E9AB0);
-        let outline_variant = Color::from_hex(0x2A4A66);
+        let surface = Color::from_hex(0x17181B);
+        let surface_container_lowest = Color::from_hex(0x131417);
+        let surface_container_low = Color::from_hex(0x1D1E22);
+        let surface_container = Color::from_hex(0x232428);
+        let surface_container_high = Color::from_hex(0x2A2B30);
+        let surface_container_highest = Color::from_hex(0x333439);
+        let on_surface = Color::from_hex(0xECECEF);
+        let on_surface_variant = Color::from_hex(0xC9C9D0);
+        let on_surface_muted = Color::from_hex(0x9C9CA5);
+        let outline = Color::from_hex(0x85858F);
+        let outline_variant = Color::from_hex(0x3C3D44);
         Self {
             background: surface,
             page: surface,
             surface,
-            surface_dim: Color::from_hex(0x050F1C),
-            surface_bright: Color::from_hex(0x1C4B68),
+            surface_dim: Color::from_hex(0x101114),
+            surface_bright: Color::from_hex(0x3A3B41),
             surface_container_lowest,
             surface_container_low,
             surface_container,
@@ -259,21 +267,25 @@ impl Palette {
             surface_variant: surface_container,
             surface_raised: surface_container_low,
             overlay: surface_container_low,
-            primary: Color::from_hex(0x9FB8C9),
-            on_primary: Color::from_hex(0x081A2E),
-            primary_hover: Color::from_hex(0xB8CDDC),
-            primary_container: Color::from_hex(0x1F4E6B),
-            on_primary_container: Color::from_hex(0xF2F5F7),
-            secondary: Color::from_hex(0xC9D8E2),
-            on_secondary: Color::from_hex(0x081A2E),
-            secondary_container: Color::from_hex(0x0E2A47),
-            on_secondary_container: Color::from_hex(0xF2F5F7),
-            tertiary: Color::from_hex(0x9FB8C9),
-            on_tertiary: Color::from_hex(0x081A2E),
-            tertiary_container: Color::from_hex(0x2A4A66),
-            on_tertiary_container: Color::from_hex(0xF2F5F7),
-            accent: Color::from_hex(0x1F4E6B),
-            on_accent: Color::from_hex(0xF2F5F7),
+            primary: Color::from_hex(0xD9D5CB),
+            on_primary: Color::from_hex(0x141416),
+            primary_hover: Color::from_hex(0xE6E2D9),
+            primary_fixed: Color::from_hex(0xD9D5CB),
+            primary_fixed_dim: Color::from_hex(0xB9B5AB),
+            on_primary_fixed: Color::from_hex(0x141416),
+            on_primary_fixed_variant: Color::from_hex(0xC9C5BB),
+            primary_container: Color::from_hex(0x34343A),
+            on_primary_container: Color::from_hex(0xEDEAE2),
+            secondary: Color::from_hex(0xC4C1B9),
+            on_secondary: Color::from_hex(0x141416),
+            secondary_container: Color::from_hex(0x2C2D32),
+            on_secondary_container: Color::from_hex(0xE7E4DC),
+            tertiary: Color::from_hex(0xA9B3AC),
+            on_tertiary: Color::from_hex(0x141416),
+            tertiary_container: Color::from_hex(0x2C342F),
+            on_tertiary_container: Color::from_hex(0xDCE5DC),
+            accent: Color::from_hex(0xC9C5BB),
+            on_accent: Color::from_hex(0x141416),
             text_primary: on_surface,
             text_secondary: on_surface_variant,
             text_tertiary: on_surface_muted,
@@ -285,24 +297,24 @@ impl Palette {
             border_strong: outline,
             outline,
             outline_variant,
-            focus_ring: Color::from_hex(0x9FB8C9),
-            error: Color::from_hex(0xF2B8B5),
-            on_error: Color::from_hex(0x3B0A0A),
-            error_container: Color::from_hex(0x5E1A16),
+            focus_ring: Color::from_hex(0xD9D5CB),
+            error: Color::from_hex(0xF0B2AC),
+            on_error: Color::from_hex(0x2A0B08),
+            error_container: Color::from_hex(0x3A1B18),
             on_error_container: Color::from_hex(0xF6DAD6),
-            success: Color::from_hex(0x8FD3A8),
-            on_success: Color::from_hex(0x062A18),
-            success_container: Color::from_hex(0x1C4A31),
-            on_success_container: Color::from_hex(0xCFE9D9),
-            warning: Color::from_hex(0xE8C56A),
-            on_warning: Color::from_hex(0x2A1E00),
-            warning_container: Color::from_hex(0x4E3A0A),
+            success: Color::from_hex(0xA6D8B8),
+            on_success: Color::from_hex(0x0A2415),
+            success_container: Color::from_hex(0x173324),
+            on_success_container: Color::from_hex(0xD6EEDF),
+            warning: Color::from_hex(0xE5C87A),
+            on_warning: Color::from_hex(0x2A2000),
+            warning_container: Color::from_hex(0x3A2F10),
             on_warning_container: Color::from_hex(0xF6E0B0),
             disabled: surface_container_high,
-            scrim: Color::from_hex(0x030A14),
-            shadow: Color::from_hex(0x030A14),
-            inverse_surface: Color::from_hex(0xF2F5F7),
-            inverse_on_surface: Color::from_hex(0x0E2A47),
+            scrim: Color::from_hex(0x000000),
+            shadow: Color::from_hex(0x000000),
+            inverse_surface: Color::from_hex(0xECECEF),
+            inverse_on_surface: Color::from_hex(0x1D1E22),
         }
     }
 }
@@ -435,6 +447,7 @@ pub struct Sizes {
     pub card_padding_lg: f32,
     pub focus_ring_width: f32,
     pub focus_ring_offset: f32,
+    pub border_width: f32,
     pub density: f32,
 }
 
@@ -443,7 +456,7 @@ impl Default for Sizes {
         Self {
             control_height_sm: 32.0,
             control_height: 40.0,
-            input_height: 44.0,
+            input_height: 40.0,
             control_height_lg: 48.0,
             icon_sm: 14.0,
             icon: 18.0,
@@ -453,13 +466,14 @@ impl Default for Sizes {
             nav_rail_collapsed: 72.0,
             nav_bar_height: 64.0,
             top_app_bar_height: 56.0,
-            table_header_height: 44.0,
-            table_row_height: 48.0,
-            table_row_compact: 44.0,
+            table_header_height: 48.0,
+            table_row_height: 56.0,
+            table_row_compact: 48.0,
             card_padding: 20.0,
             card_padding_lg: 24.0,
             focus_ring_width: 2.0,
             focus_ring_offset: 2.0,
+            border_width: 1.0,
             density: 1.0,
         }
     }
@@ -640,12 +654,12 @@ mod tests {
         assert_eq!(theme.radius.control, 10.0);
         assert_eq!(theme.sizes.control_height_sm, 32.0);
         assert_eq!(theme.sizes.control_height, 40.0);
-        assert_eq!(theme.sizes.input_height, 44.0);
+        assert_eq!(theme.sizes.input_height, 40.0);
         assert_eq!(theme.sizes.control_height_lg, 48.0);
         assert_eq!(theme.sizes.nav_rail_width, 260.0);
         assert_eq!(theme.sizes.top_app_bar_height, 56.0);
-        assert_eq!(theme.sizes.table_row_height, 48.0);
-        assert_eq!(theme.sizes.table_header_height, 44.0);
+        assert_eq!(theme.sizes.table_row_height, 56.0);
+        assert_eq!(theme.sizes.table_header_height, 48.0);
         assert_eq!(theme.layout.content_max, 1440.0);
         assert_eq!(theme.gutter(400.0), 20.0);
         assert_eq!(theme.gutter(1400.0), 30.0);
@@ -667,8 +681,37 @@ mod tests {
         );
         assert_eq!(light.palette.accent, Color::from_hex(0x9FB8C9));
         let dark = Theme::dark();
-        assert_eq!(dark.palette.primary, Color::from_hex(0x9FB8C9));
-        assert_eq!(dark.palette.surface, Color::from_hex(0x081A2E));
-        assert_eq!(dark.palette.on_surface, Color::from_hex(0xF2F5F7));
+        assert_eq!(dark.palette.primary, Color::from_hex(0xD9D5CB));
+        assert_eq!(dark.palette.surface, Color::from_hex(0x17181B));
+        assert_eq!(dark.palette.on_surface, Color::from_hex(0xECECEF));
+        assert_eq!(dark.palette.surface_dim, Color::from_hex(0x101114));
+        assert_eq!(dark.palette.surface_bright, Color::from_hex(0x3A3B41));
+        assert_eq!(
+            dark.palette.surface_container_lowest,
+            Color::from_hex(0x131417)
+        );
+        assert_eq!(
+            dark.palette.surface_container_low,
+            Color::from_hex(0x1D1E22)
+        );
+        assert_eq!(dark.palette.surface_container, Color::from_hex(0x232428));
+        assert_eq!(
+            dark.palette.surface_container_high,
+            Color::from_hex(0x2A2B30)
+        );
+        assert_eq!(
+            dark.palette.surface_container_highest,
+            Color::from_hex(0x333439)
+        );
+        assert_eq!(dark.palette.on_surface_variant, Color::from_hex(0xC9C9D0));
+        assert_eq!(dark.palette.on_surface_muted, Color::from_hex(0x9C9CA5));
+        assert_eq!(dark.palette.outline, Color::from_hex(0x85858F));
+        assert_eq!(dark.palette.outline_variant, Color::from_hex(0x3C3D44));
+        assert_eq!(dark.palette.primary_container, Color::from_hex(0x34343A));
+        assert_eq!(dark.palette.on_primary_container, Color::from_hex(0xEDEAE2));
+        assert_eq!(dark.palette.on_primary, Color::from_hex(0x141416));
+        assert_eq!(dark.palette.accent, Color::from_hex(0xC9C5BB));
+        assert_eq!(dark.palette.scrim, Color::from_hex(0x000000));
+        assert_eq!(dark.palette.inverse_surface, Color::from_hex(0xECECEF));
     }
 }
