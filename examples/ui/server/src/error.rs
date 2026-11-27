@@ -1,12 +1,11 @@
 use axum::{
-    http::StatusCode,
+    http::{header, StatusCode},
     response::{IntoResponse, Response},
-    Json,
 };
-use serde::Serialize;
 
 use crate::model::ValidationError;
 use crate::store::StoreError;
+use crate::wire::{self, WireError};
 
 #[derive(Debug)]
 pub struct ApiError {
@@ -28,6 +27,10 @@ impl ApiError {
         Self::new(StatusCode::BAD_REQUEST, code, message)
     }
 
+    pub fn unsupported_media_type(code: &'static str, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::UNSUPPORTED_MEDIA_TYPE, code, message)
+    }
+
     pub fn not_found(code: &'static str, message: impl Into<String>) -> Self {
         Self::new(StatusCode::NOT_FOUND, code, message)
     }
@@ -41,32 +44,38 @@ impl ApiError {
     }
 }
 
-#[derive(Debug, Serialize)]
-struct ErrorEnvelope {
-    error: ErrorDetail,
-}
-
-#[derive(Debug, Serialize)]
-struct ErrorDetail {
-    code: &'static str,
-    message: String,
-}
-
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let body = ErrorEnvelope {
-            error: ErrorDetail {
-                code: self.code,
-                message: self.message,
-            },
+        let payload = wire::ApiError {
+            code: self.code.to_owned(),
+            message: self.message,
         };
-        (self.status, Json(body)).into_response()
+        match wire::response(self.status, &payload) {
+            Ok(response) => response,
+            Err(error) => {
+                tracing::error!(error = %error, "failed to encode error response");
+                let mut fallback = Response::new(axum::body::Body::from("Internal server error"));
+                *fallback.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                fallback.headers_mut().insert(
+                    header::CONTENT_TYPE,
+                    header::HeaderValue::from_static("text/plain; charset=utf-8"),
+                );
+                fallback
+            }
+        }
     }
 }
 
 impl From<ValidationError> for ApiError {
     fn from(error: ValidationError) -> Self {
         ApiError::bad_request("invalid_input", error.to_string())
+    }
+}
+
+impl From<WireError> for ApiError {
+    fn from(error: WireError) -> Self {
+        tracing::error!(error = %error, "failed to convert wire payload");
+        ApiError::internal("Internal server error")
     }
 }
 

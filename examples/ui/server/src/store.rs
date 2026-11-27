@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
@@ -8,11 +8,13 @@ use redb::{
     Database, ReadableDatabase, ReadableTable, ReadableTableMetadata, TableDefinition,
     WriteTransaction,
 };
+use silent_protocol::SilentProto;
 
 use crate::model::{
     Project, ProjectInput, ProjectMeta, ProjectPage, ProjectPatch, ProjectStatus, ValidationError,
 };
 use crate::query::ProjectQuery;
+use crate::wire;
 
 const PROJECTS: TableDefinition<u64, &'static [u8]> = TableDefinition::new("projects");
 const IDX_STATUS: TableDefinition<(&'static str, u64), ()> = TableDefinition::new("idx_status");
@@ -20,6 +22,11 @@ const IDX_OWNER: TableDefinition<(&'static str, u64), ()> = TableDefinition::new
 const IDX_NAME: TableDefinition<(&'static str, u64), ()> = TableDefinition::new("idx_name");
 const IDX_CREATED: TableDefinition<(i64, u64), ()> = TableDefinition::new("idx_created");
 const IDX_TAG: TableDefinition<(&'static str, u64), ()> = TableDefinition::new("idx_tag");
+const DB_META: TableDefinition<&'static str, &'static [u8]> = TableDefinition::new("db_meta");
+
+const FORMAT_KEY: &str = "format";
+const FORMAT_VERSION: &str = "silent-protocol/1";
+const LEGACY_SUFFIX: &str = ".legacy";
 
 pub const SEED_PROJECT_COUNT: usize = 240;
 
@@ -29,6 +36,7 @@ pub enum StoreError {
     Io(std::io::Error),
     NotFound,
     Validation(ValidationError),
+    LegacyFormat,
     Corrupted(String),
 }
 
@@ -39,8 +47,27 @@ impl fmt::Display for StoreError {
             Self::Io(error) => write!(formatter, "io error: {error}"),
             Self::NotFound => formatter.write_str("project not found"),
             Self::Validation(error) => error.fmt(formatter),
+            Self::LegacyFormat => {
+                formatter.write_str("database uses an incompatible legacy format")
+            }
             Self::Corrupted(message) => write!(formatter, "corrupted project record: {message}"),
         }
+    }
+}
+
+impl StoreError {
+    fn is_recreatable_format(&self) -> bool {
+        matches!(
+            self,
+            Self::LegacyFormat
+                | Self::Database(
+                    redb::Error::TableTypeMismatch { .. }
+                        | redb::Error::TableIsMultimap(_)
+                        | redb::Error::TableIsNotMultimap(_)
+                        | redb::Error::UpgradeRequired(_)
+                        | redb::Error::Corrupted(_)
+                )
+        )
     }
 }
 
@@ -50,7 +77,7 @@ impl std::error::Error for StoreError {
             Self::Database(error) => Some(error),
             Self::Io(error) => Some(error),
             Self::Validation(error) => Some(error),
-            Self::NotFound | Self::Corrupted(_) => None,
+            Self::NotFound | Self::LegacyFormat | Self::Corrupted(_) => None,
         }
     }
 }
@@ -87,8 +114,8 @@ impl From<ValidationError> for StoreError {
     }
 }
 
-impl From<serde_json::Error> for StoreError {
-    fn from(error: serde_json::Error) -> Self {
+impl From<wire::WireError> for StoreError {
+    fn from(error: wire::WireError) -> Self {
         Self::Corrupted(error.to_string())
     }
 }
@@ -96,6 +123,14 @@ impl From<serde_json::Error> for StoreError {
 #[derive(Clone)]
 pub struct Store {
     db: Arc<Database>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FormatState {
+    Current,
+    Fresh,
+    Unmarked,
+    Legacy,
 }
 
 impl Store {
@@ -106,10 +141,39 @@ impl Store {
                 std::fs::create_dir_all(parent)?;
             }
         }
+
+        for attempt in 0..2 {
+            match Self::open_once(path) {
+                Ok(store) => return Ok(store),
+                Err(error) if attempt == 0 && error.is_recreatable_format() => {
+                    tracing::warn!(
+                        error = %error,
+                        path = %path.display(),
+                        "recreating database in the silent-protocol format"
+                    );
+                    archive_legacy(path)?;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+
+        Err(StoreError::Corrupted(
+            "database format could not be recreated".into(),
+        ))
+    }
+
+    fn open_once(path: &Path) -> Result<Self, StoreError> {
         let db = Database::create(path)?;
         let store = Self { db: Arc::new(db) };
         store.ensure_tables()?;
-        Ok(store)
+        match store.format_state()? {
+            FormatState::Current => Ok(store),
+            FormatState::Fresh | FormatState::Unmarked => {
+                store.mark_current()?;
+                Ok(store)
+            }
+            FormatState::Legacy => Err(StoreError::LegacyFormat),
+        }
     }
 
     fn ensure_tables(&self) -> Result<(), StoreError> {
@@ -121,6 +185,42 @@ impl Store {
             txn.open_table(IDX_NAME)?;
             txn.open_table(IDX_CREATED)?;
             txn.open_table(IDX_TAG)?;
+            txn.open_table(DB_META)?;
+        }
+        txn.commit()?;
+        Ok(())
+    }
+
+    fn format_state(&self) -> Result<FormatState, StoreError> {
+        let txn = self.db.begin_read()?;
+        {
+            let meta = txn.open_table(DB_META)?;
+            if let Some(value) = meta.get(FORMAT_KEY)? {
+                return Ok(if value.value() == FORMAT_VERSION.as_bytes() {
+                    FormatState::Current
+                } else {
+                    FormatState::Legacy
+                });
+            }
+        }
+        let projects = txn.open_table(PROJECTS)?;
+        if projects.is_empty()? {
+            return Ok(FormatState::Fresh);
+        }
+        for entry in projects.iter()?.take(16) {
+            let (_, value) = entry?;
+            if wire::Project::decode_with_limits(value.value(), wire::LIMITS).is_err() {
+                return Ok(FormatState::Legacy);
+            }
+        }
+        Ok(FormatState::Unmarked)
+    }
+
+    fn mark_current(&self) -> Result<(), StoreError> {
+        let txn = self.db.begin_write()?;
+        {
+            let mut meta = txn.open_table(DB_META)?;
+            meta.insert(FORMAT_KEY, FORMAT_VERSION.as_bytes())?;
         }
         txn.commit()?;
         Ok(())
@@ -293,11 +393,24 @@ impl Store {
     }
 }
 
+fn archive_legacy(path: &Path) -> Result<(), StoreError> {
+    let mut name = path.as_os_str().to_owned();
+    name.push(LEGACY_SUFFIX);
+    let backup = PathBuf::from(name);
+    if backup.exists() {
+        std::fs::remove_file(&backup)?;
+    }
+    std::fs::rename(path, &backup)?;
+    Ok(())
+}
+
 fn insert_project(
     table: &mut redb::Table<'_, u64, &'static [u8]>,
     project: &Project,
 ) -> Result<(), StoreError> {
-    let bytes = serde_json::to_vec(project)?;
+    let bytes = wire::Project::from_model(project)?
+        .encode()
+        .map_err(|error| StoreError::Corrupted(error.to_string()))?;
     table.insert(project.id, bytes.as_slice())?;
     Ok(())
 }
@@ -313,7 +426,9 @@ where
 }
 
 fn decode_project(bytes: &[u8]) -> Result<Project, StoreError> {
-    Ok(serde_json::from_slice(bytes)?)
+    let project = wire::Project::decode_with_limits(bytes, wire::LIMITS)
+        .map_err(|error| StoreError::Corrupted(error.to_string()))?;
+    Ok(project.into_model()?)
 }
 
 fn add_indexes(txn: &WriteTransaction, project: &Project) -> Result<(), StoreError> {
@@ -704,6 +819,228 @@ mod tests {
             })
             .unwrap_err();
         assert!(matches!(error, StoreError::Validation(_)));
+    }
+
+    #[test]
+    fn stores_values_in_silent_protocol_format() {
+        let (_dir, store) = open_store();
+        store.seed_if_empty().expect("seed");
+
+        let txn = store.db.begin_read().expect("read");
+        let table = txn.open_table(PROJECTS).expect("projects");
+        let value = table.get(1u64).expect("get").expect("record");
+        let bytes = value.value();
+        assert!(!bytes.starts_with(b"{"), "JSON must not be stored");
+        let decoded = wire::Project::decode_with_limits(bytes, wire::LIMITS).expect("protocol");
+        assert_eq!(decoded.id, 1);
+        assert_eq!(decoded.name, "Северный Атлас");
+    }
+
+    #[test]
+    fn corrupted_record_is_reported() {
+        let (_dir, store) = open_store();
+        let txn = store.db.begin_write().expect("write");
+        {
+            let mut table = txn.open_table(PROJECTS).expect("table");
+            let bytes = [0xFFu8, 0xFF, 0xFF];
+            table.insert(1u64, bytes.as_slice()).expect("insert");
+        }
+        txn.commit().expect("commit");
+        assert!(matches!(store.get(1), Err(StoreError::Corrupted(_))));
+    }
+
+    #[test]
+    fn recreates_legacy_json_database() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("projects.redb");
+        {
+            let db = Database::create(&path).expect("legacy db");
+            let txn = db.begin_write().expect("write");
+            {
+                let mut table = txn.open_table(PROJECTS).expect("projects");
+                table
+                    .insert(1u64, br#"{"id":1,"name":"legacy project"}"#.as_slice())
+                    .expect("insert");
+            }
+            txn.commit().expect("commit");
+        }
+
+        let store = Store::open(&path).expect("recreated store");
+        assert_eq!(store.seed_if_empty().expect("seed"), SEED_PROJECT_COUNT);
+        assert_eq!(
+            store.list(&query(&[])).expect("list").total,
+            SEED_PROJECT_COUNT as u64
+        );
+
+        let backup = dir.path().join("projects.redb.legacy");
+        assert!(backup.is_file());
+        assert!(!std::fs::read(&backup).expect("backup").is_empty());
+    }
+
+    #[test]
+    fn recreates_incompatible_table_types() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("projects.redb");
+        {
+            let db = Database::create(&path).expect("legacy db");
+            let txn = db.begin_write().expect("write");
+            {
+                let legacy = TableDefinition::<u64, &'static str>::new("projects");
+                let mut table = txn.open_table(legacy).expect("projects");
+                table.insert(1u64, "legacy").expect("insert");
+            }
+            txn.commit().expect("commit");
+        }
+
+        let store = Store::open(&path).expect("recreated store");
+        assert_eq!(store.seed_if_empty().expect("seed"), SEED_PROJECT_COUNT);
+        assert!(dir.path().join("projects.redb.legacy").is_file());
+    }
+
+    #[test]
+    fn recreates_database_with_unknown_format_marker() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("projects.redb");
+        {
+            let store = Store::open(&path).expect("store");
+            store.seed_if_empty().expect("seed");
+        }
+        {
+            let db = Database::create(&path).expect("db");
+            let txn = db.begin_write().expect("write");
+            {
+                let mut meta = txn.open_table(DB_META).expect("meta");
+                meta.insert(FORMAT_KEY, b"silent-protocol/0".as_slice())
+                    .expect("marker");
+            }
+            txn.commit().expect("commit");
+        }
+
+        let store = Store::open(&path).expect("recreated store");
+        assert_eq!(store.list(&query(&[])).expect("list").total, 0);
+        assert!(dir.path().join("projects.redb.legacy").is_file());
+    }
+
+    #[test]
+    fn adopts_unmarked_protocol_database_without_reseeding() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("projects.redb");
+        {
+            let store = Store::open(&path).expect("store");
+            store.seed_if_empty().expect("seed");
+        }
+        {
+            let db = Database::create(&path).expect("db");
+            let txn = db.begin_write().expect("write");
+            {
+                let mut meta = txn.open_table(DB_META).expect("meta");
+                meta.remove(FORMAT_KEY).expect("remove marker");
+            }
+            txn.commit().expect("commit");
+        }
+
+        let store = Store::open(&path).expect("reopen");
+        assert_eq!(
+            store.list(&query(&[])).expect("list").total,
+            SEED_PROJECT_COUNT as u64
+        );
+        assert!(!dir.path().join("projects.redb.legacy").exists());
+    }
+
+    #[test]
+    fn reopens_current_database_without_archiving() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("projects.redb");
+        {
+            let store = Store::open(&path).expect("store");
+            store.seed_if_empty().expect("seed");
+            store.delete(1).expect("delete");
+        }
+        let store = Store::open(&path).expect("reopen");
+        assert!(store.get(1).expect("get").is_none());
+        assert!(!dir.path().join("projects.redb.legacy").exists());
+    }
+
+    #[test]
+    fn concurrent_creates_keep_ids_unique_and_indexes_consistent() {
+        const WORKERS: usize = 8;
+        const PER_WORKER: usize = 10;
+
+        let (_dir, store) = open_store();
+        store.seed_if_empty().expect("seed");
+
+        let mut handles = Vec::with_capacity(WORKERS);
+        for worker in 0..WORKERS {
+            let store = store.clone();
+            handles.push(std::thread::spawn(move || {
+                (0..PER_WORKER)
+                    .map(|index| {
+                        store
+                            .create(ProjectInput {
+                                name: format!("Параллельный {worker}-{index}"),
+                                owner: "Параллельный".into(),
+                                status: ProjectStatus::Active,
+                                tags: vec![format!("worker-{worker}")],
+                                budget: index as f64,
+                            })
+                            .expect("create")
+                            .id
+                    })
+                    .collect::<Vec<u64>>()
+            }));
+        }
+
+        let mut ids = BTreeSet::new();
+        for handle in handles {
+            for id in handle.join().expect("worker") {
+                assert!(ids.insert(id), "duplicate id {id}");
+            }
+        }
+        assert_eq!(ids.len(), WORKERS * PER_WORKER);
+        assert_eq!(
+            store.list(&query(&[])).expect("list").total,
+            (SEED_PROJECT_COUNT + WORKERS * PER_WORKER) as u64
+        );
+        assert_eq!(
+            store
+                .list(&query(&[("owner", "Параллельный")]))
+                .expect("owner")
+                .total,
+            (WORKERS * PER_WORKER) as u64
+        );
+        assert_eq!(
+            store
+                .list(&query(&[("tag", "worker-3")]))
+                .expect("tag")
+                .total,
+            PER_WORKER as u64
+        );
+        for id in ids {
+            assert!(store.get(id).expect("get").is_some());
+        }
+    }
+
+    #[test]
+    fn failed_update_rolls_back_without_changing_the_record() {
+        let (_dir, store) = open_store();
+        store.seed_if_empty().expect("seed");
+        let before = store.get(1).expect("get").expect("project");
+
+        let error = store
+            .update(
+                1,
+                ProjectPatch {
+                    budget: Some(-1.0),
+                    ..ProjectPatch::default()
+                },
+            )
+            .unwrap_err();
+        assert!(matches!(error, StoreError::Validation(_)));
+        assert_eq!(store.get(1).expect("get").expect("project"), before);
+        assert_eq!(
+            store.list(&query(&[])).expect("list").total,
+            SEED_PROJECT_COUNT as u64
+        );
     }
 
     #[test]

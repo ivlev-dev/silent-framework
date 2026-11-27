@@ -1,0 +1,10 @@
+{
+  "name": "project-meta-empty",
+  "description": "ProjectMeta с тремя пустыми массивами — три нулевых varint длины",
+  "hex": "000000",
+  "fields": {
+    "owners": [],
+    "statuses": [],
+    "tags": []
+  }
+}

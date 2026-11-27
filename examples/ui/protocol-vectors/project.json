@@ -1,0 +1,14 @@
+{
+  "name": "project",
+  "description": "Общий вектор Project для Rust (silent-example-ui-server) и TS (examples/ui): float64 budget, date createdAt, uint32 id, string name/owner, enum status, array tags",
+  "hex": "000000008092b04080a0abfef962f10112d09fd0bbd0b0d182d184d0bed180d0bcd0b015d090d0b4d0b020d09bd0bed0b2d0bbd0b5d0b9d18101020361706904646f6373",
+  "fields": {
+    "budget": 4242.5,
+    "createdAt": 1700000000000,
+    "id": 241,
+    "name": "Платформа",
+    "owner": "Ада Ловлейс",
+    "status": "review",
+    "tags": ["api", "docs"]
+  }
+}

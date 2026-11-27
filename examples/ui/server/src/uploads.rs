@@ -6,7 +6,6 @@ use axum::{
     },
     http::{header, Response, StatusCode},
     response::IntoResponse,
-    Json,
 };
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
@@ -14,6 +13,7 @@ use uuid::Uuid;
 use crate::error::ApiError;
 use crate::model::UploadResult;
 use crate::routes::AppState;
+use crate::wire;
 
 pub const MAX_UPLOAD_BYTES: usize = 20 * 1024 * 1024;
 pub const MAX_BODY_BYTES: usize = MAX_UPLOAD_BYTES + 1024 * 1024;
@@ -89,16 +89,17 @@ pub async fn upload(
         }
         drop(file);
 
-        return Ok((
+        return wire::response(
             StatusCode::CREATED,
-            Json(UploadResult {
+            &wire::UploadResult::from_model(&UploadResult {
                 id,
                 name: original_name,
                 size: size as u64,
                 mime,
                 url: format!("/uploads/{stored_name}"),
-            }),
-        ));
+            })?,
+        )
+        .map_err(ApiError::from);
     }
 }
 

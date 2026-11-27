@@ -54,14 +54,9 @@ const DATE_FORMAT = new Intl.DateTimeFormat("ru-RU", {
   year: "numeric",
 });
 
-function normalizeIso(value: string): string {
-  return value.replace(/\.(\d{3})\d+/, ".$1");
-}
-
-export function formatDate(value: string): string {
-  const date = new Date(normalizeIso(value));
-  if (Number.isNaN(date.getTime())) return value;
-  return DATE_FORMAT.format(date);
+export function formatDate(value: Date): string {
+  if (Number.isNaN(value.getTime())) return "—";
+  return DATE_FORMAT.format(value);
 }
 
 const DATE_TIME_FORMAT = new Intl.DateTimeFormat("ru-RU", {
@@ -71,10 +66,9 @@ const DATE_TIME_FORMAT = new Intl.DateTimeFormat("ru-RU", {
   minute: "2-digit",
 });
 
-export function formatDateTime(value: string): string {
-  const date = new Date(normalizeIso(value));
-  if (Number.isNaN(date.getTime())) return value;
-  return DATE_TIME_FORMAT.format(date);
+export function formatDateTime(value: Date): string {
+  if (Number.isNaN(value.getTime())) return "—";
+  return DATE_TIME_FORMAT.format(value);
 }
 
 export function initialsOf(name: string): string {

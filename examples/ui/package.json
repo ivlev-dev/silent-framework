@@ -5,19 +5,27 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 6107",
-    "build": "vite build",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "build": "vite build && node scripts/bundle-budget.mjs",
+    "preview": "vite preview --host 0.0.0.0 --port 6107",
+    "budget": "node scripts/bundle-budget.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:e2e": "node scripts/e2e.mjs",
+    "perf": "node scripts/perf.mjs"
   },
   "dependencies": {
     "@ivlev-dev/silent-core": "workspace:*",
     "@ivlev-dev/silent-reactivity": "workspace:*",
     "@ivlev-dev/silent-ui": "workspace:*",
     "@ivlev-dev/silent-form": "workspace:*",
-    "@ivlev-dev/silent-dnd": "workspace:*"
+    "@ivlev-dev/silent-dnd": "workspace:*",
+    "@ivlev-dev/silent-protocol": "workspace:*",
+    "@ivlev-dev/silent-router": "workspace:*"
   },
   "devDependencies": {
     "@ivlev-dev/silent-vite": "workspace:*",
     "typescript": "^7.0.2",
-    "vite": "8.3.6"
+    "vite": "8.3.6",
+    "vitest": "^5.1.0"
   }
 }

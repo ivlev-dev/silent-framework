@@ -15,6 +15,7 @@ license = "MIT"
 
 [workspace.dependencies]
 silent-transform = { path = "crates/silent-transform" }
+silent-protocol = { path = "crates/silent-protocol" }
 swc_core = { version = "84.0.2", features = [
   "base",
   "common",

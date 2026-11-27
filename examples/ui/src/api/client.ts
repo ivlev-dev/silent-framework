@@ -1,11 +1,13 @@
-import type {
+import { decode, encode } from "@ivlev-dev/silent-protocol";
+import {
   ApiErrorBody,
+  CONTENT_TYPE,
   Project,
   ProjectInput,
   ProjectMeta,
   ProjectPage,
-  ProjectQuery,
-  UploadResult,
+  ProjectPatch,
+  type ProjectQuery,
 } from "./types.js";
 
 export const API_BASE = "/api";
@@ -38,60 +40,90 @@ export function errorMessage(value: unknown, fallback = "Не удалось в�
   return fallback;
 }
 
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-  return typeof value === "object" && value !== null;
-}
-
-function parseErrorBody(value: unknown): ApiErrorBody["error"] | undefined {
-  if (!isRecord(value)) return undefined;
-  const body = value["error"];
-  if (!isRecord(body)) return undefined;
-  const code = body["code"];
-  const message = body["message"];
-  if (typeof code !== "string" || typeof message !== "string") return undefined;
-  return { code, message };
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.length);
+  copy.set(bytes);
+  return copy.buffer;
 }
 
 interface RequestOptions {
   readonly method?: string | undefined;
-  readonly body?: unknown;
+  readonly body?: object | undefined;
   readonly signal?: AbortSignal | undefined;
 }
 
-async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const headers: Record<string, string> = { Accept: "application/json" };
-  const hasBody = options.body !== undefined;
-  if (hasBody) headers["Content-Type"] = "application/json";
+interface RawResponse {
+  readonly status: number;
+  readonly bytes: Uint8Array;
+}
+
+function decodeError(bytes: Uint8Array, status: number): ApiError {
+  if (bytes.length > 0) {
+    try {
+      const body = decode(ApiErrorBody, bytes);
+      return new ApiError(body.code, body.message, status);
+    } catch {
+      return new ApiError(
+        `http_${String(status)}`,
+        `Сервер вернул некорректную ошибку (${String(status)})`,
+        status,
+      );
+    }
+  }
+  return new ApiError(
+    `http_${String(status)}`,
+    `Сервер ответил ${String(status)}`,
+    status,
+  );
+}
+
+async function send(path: string, options: RequestOptions = {}): Promise<RawResponse> {
+  const headers: Record<string, string> = {
+    Accept: CONTENT_TYPE,
+  };
+  const body = options.body;
+  if (body !== undefined) headers["Content-Type"] = CONTENT_TYPE;
 
   const response = await fetch(`${API_BASE}${path}`, {
     method: options.method ?? "GET",
     headers,
-    ...(hasBody ? { body: JSON.stringify(options.body) } : {}),
+    ...(body !== undefined ? { body: toArrayBuffer(encode(body)) } : {}),
     ...(options.signal !== undefined ? { signal: options.signal } : {}),
   });
 
-  if (response.status === 204) return undefined as T;
+  if (response.status === 204) return { status: response.status, bytes: new Uint8Array() };
 
-  const text = await response.text();
-  let payload: unknown;
-  if (text.trim() !== "") {
-    try {
-      payload = JSON.parse(text);
-    } catch {
-      payload = text;
-    }
-  }
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (!response.ok) throw decodeError(bytes, response.status);
+  return { status: response.status, bytes };
+}
 
-  if (!response.ok) {
-    const parsed = parseErrorBody(payload);
+async function request<T extends object>(
+  path: string,
+  model: new () => T,
+  options: RequestOptions = {},
+): Promise<T> {
+  const response = await send(path, options);
+  if (response.bytes.length === 0) {
     throw new ApiError(
-      parsed?.code ?? `http_${String(response.status)}`,
-      parsed?.message ?? `Сервер ответил ${String(response.status)}`,
+      "invalid_response",
+      "Сервер вернул пустой ответ",
       response.status,
     );
   }
+  try {
+    return decode(model, response.bytes);
+  } catch {
+    throw new ApiError(
+      "invalid_response",
+      "Сервер вернул некорректный ответ",
+      response.status,
+    );
+  }
+}
 
-  return payload as T;
+async function requestVoid(path: string, options: RequestOptions = {}): Promise<void> {
+  await send(path, options);
 }
 
 function appendParam(
@@ -131,13 +163,13 @@ export function listProjects(
   signal?: AbortSignal,
 ): Promise<ProjectPage> {
   const params = projectQueryParams(query);
-  return request<ProjectPage>(`/projects?${params.toString()}`, {
+  return request(`/projects?${params.toString()}`, ProjectPage, {
     ...(signal !== undefined ? { signal } : {}),
   });
 }
 
 export function getMeta(signal?: AbortSignal): Promise<ProjectMeta> {
-  return request<ProjectMeta>("/meta", {
+  return request("/meta", ProjectMeta, {
     ...(signal !== undefined ? { signal } : {}),
   });
 }
@@ -146,7 +178,7 @@ export function createProject(
   input: ProjectInput,
   signal?: AbortSignal,
 ): Promise<Project> {
-  return request<Project>("/projects", {
+  return request("/projects", Project, {
     method: "POST",
     body: input,
     ...(signal !== undefined ? { signal } : {}),
@@ -158,18 +190,22 @@ export function updateProject(
   input: ProjectInput,
   signal?: AbortSignal,
 ): Promise<Project> {
-  return request<Project>(`/projects/${String(id)}`, {
+  const patch = new ProjectPatch();
+  patch.name = input.name;
+  patch.owner = input.owner;
+  patch.status = input.status;
+  patch.tags = [...input.tags];
+  patch.budget = input.budget;
+  return request(`/projects/${String(id)}`, Project, {
     method: "PATCH",
-    body: input,
+    body: patch,
     ...(signal !== undefined ? { signal } : {}),
   });
 }
 
 export function deleteProject(id: number, signal?: AbortSignal): Promise<void> {
-  return request<void>(`/projects/${String(id)}`, {
+  return requestVoid(`/projects/${String(id)}`, {
     method: "DELETE",
     ...(signal !== undefined ? { signal } : {}),
   });
 }
-
-export type { UploadResult };

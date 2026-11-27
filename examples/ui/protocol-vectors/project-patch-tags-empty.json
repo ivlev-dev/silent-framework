@@ -1,0 +1,8 @@
+{
+  "name": "project-patch-tags-empty",
+  "description": "ProjectPatch: tags присутствует, но пуст — bitmap 0b0001_0000 и нулевая длина массива",
+  "hex": "1000",
+  "fields": {
+    "tags": []
+  }
+}

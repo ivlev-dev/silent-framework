@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use silent_protocol::SilentProto;
 use std::fmt;
 
 pub const MAX_NAME_LEN: usize = 200;
@@ -31,8 +31,7 @@ impl fmt::Display for ValidationError {
 
 impl std::error::Error for ValidationError {}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, SilentProto)]
 pub enum ProjectStatus {
     Active,
     Review,
@@ -59,8 +58,7 @@ impl ProjectStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Project {
     pub id: u64,
     pub name: String,
@@ -71,13 +69,11 @@ pub struct Project {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone)]
 pub struct ProjectInput {
     pub name: String,
     pub owner: String,
     pub status: ProjectStatus,
-    #[serde(default)]
     pub tags: Vec<String>,
     pub budget: f64,
 }
@@ -103,18 +99,12 @@ pub struct ValidatedProject {
     pub budget: f64,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Default)]
 pub struct ProjectPatch {
-    #[serde(default)]
     pub name: Option<String>,
-    #[serde(default)]
     pub owner: Option<String>,
-    #[serde(default)]
     pub status: Option<ProjectStatus>,
-    #[serde(default)]
     pub tags: Option<Vec<String>>,
-    #[serde(default)]
     pub budget: Option<f64>,
 }
 
@@ -149,8 +139,7 @@ impl ProjectPatch {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ProjectPage {
     pub items: Vec<Project>,
     pub total: u64,
@@ -158,16 +147,14 @@ pub struct ProjectPage {
     pub page_size: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectMeta {
     pub statuses: Vec<ProjectStatus>,
     pub owners: Vec<String>,
     pub tags: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UploadResult {
     pub id: String,
     pub name: String,

@@ -1,0 +1,21 @@
+{
+  "name": "project-meta",
+  "description": "ProjectMeta: кириллические владельцы и теги, все четыре статуса в wire-порядке",
+  "hex": "0215d090d0b4d0b020d09bd0bed0b2d0bbd0b5d0b9d18117d098d0b2d0b0d0bd20d09bd0b5d0b1d0b5d0b4d0b5d0b20400010203020361706912d0bad0b8d180d0b8d0bbd0bbd0b8d186d0b0",
+  "fields": {
+    "owners": [
+      "Ада Ловлейс",
+      "Иван Лебедев"
+    ],
+    "statuses": [
+      "active",
+      "review",
+      "done",
+      "paused"
+    ],
+    "tags": [
+      "api",
+      "кириллица"
+    ]
+  }
+}

@@ -4,6 +4,7 @@ pub mod query;
 pub mod routes;
 pub mod store;
 pub mod uploads;
+pub mod wire;
 
 use std::{
     env, fmt,

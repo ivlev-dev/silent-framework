@@ -1,149 +1,82 @@
 import { For, Show, createResource } from "@ivlev-dev/silent-core";
-import type { Resource } from "@ivlev-dev/silent-core";
+import type { RouteViewProps } from "@ivlev-dev/silent-router";
 import {
   Button,
   Card,
-  EmptyState,
   Heading,
-  Inline,
   Progress,
   Skeleton,
   Stack,
-  Table,
   Tag,
   Text,
-  type TableColumn,
 } from "@ivlev-dev/silent-ui";
-import { errorMessage, listProjects } from "../api/client.js";
-import type {
-  Project,
-  ProjectMeta,
-  ProjectPage,
-  ProjectStatus,
-} from "../api/types.js";
+import { errorMessage } from "../../api/client.js";
+import type { Project, ProjectMeta, ProjectStatus } from "../../api/types.js";
 import {
   PROJECT_STATUSES,
-  formatBudget,
-  formatDate,
   formatPercent,
   statusLabel,
   statusVariant,
-} from "../lib/format.js";
-import { SkeletonCards, ErrorState, PageHeader } from "../ui/states.js";
-import { StatCard } from "../ui/stat-card.js";
-import { TagLine } from "../ui/tags.js";
+} from "../../lib/format.js";
+import { dashboardStats, projectMeta } from "../../app/data.js";
+import { density } from "../../app/theme.js";
+import { ROUTE_PATHS } from "../../app/router/routes.js";
+import { SkeletonCards, ErrorState, PageHeader } from "../../ui/states.js";
+import { StatCard } from "./stat-card.js";
+
 import {
   ChartIcon,
   FolderIcon,
   SparkIcon,
   TeamIcon,
   WalletIcon,
-} from "../ui/icons.js";
+} from "../../ui/icons.js";
 
-interface DashboardStats {
-  readonly total: number;
-  readonly counts: Readonly<Record<ProjectStatus, number>>;
-  readonly recent: readonly Project[];
+function RecentProjectsSkeleton(): Node {
+  return (
+    <Card
+      variant="outlined"
+      padding={0}
+      header={
+        <div class="app-panel-head">
+          <div class="app-panel-head__text">
+            <Heading level={3}>Последние проекты</Heading>
+            <span class="app-panel-head__description">
+              Пять последних записей портфеля
+            </span>
+          </div>
+        </div>
+      }
+      class="app-dashboard-panel app-flush-card"
+      attrs={{ "aria-busy": "true" }}
+    >
+      <div class="app-recent-skeleton">
+        <For each={[0, 1, 2, 3, 4]}>
+          {() => (
+            <div class="app-recent-skeleton__row">
+              <Skeleton variant="text" width="38%" />
+              <Skeleton variant="text" width="22%" />
+              <Skeleton variant="text" width="14%" />
+            </div>
+          )}
+        </For>
+      </div>
+    </Card>
+  );
 }
 
-const RECENT_COLUMNS: readonly TableColumn<Project>[] = [
-  {
-    key: "name",
-    header: "Проект",
-    width: 190,
-    truncate: true,
-    renderCell: (project) => (
-      <span class="app-cell-ellipsis" title={project.name}>
-        {project.name}
-      </span>
-    ),
-  },
-  {
-    key: "owner",
-    header: "Владелец",
-    width: 140,
-    truncate: true,
-    renderCell: (project) => (
-      <span class="app-cell-ellipsis" title={project.owner}>
-        {project.owner}
-      </span>
-    ),
-  },
-  {
-    key: "status",
-    header: "Статус",
-    width: 110,
-    renderCell: (project) => (
-      <Tag variant={statusVariant(project.status)} size="sm">
-        {statusLabel(project.status)}
-      </Tag>
-    ),
-  },
-  {
-    key: "tags",
-    header: "Теги",
-    width: 170,
-    renderCell: (project) => <TagLine tags={project.tags} />,
-  },
-  {
-    key: "budget",
-    header: "Бюджет",
-    width: 100,
-    align: "end",
-    renderCell: (project) => (
-      <span class="app-num">{formatBudget(project.budget)}</span>
-    ),
-  },
-  {
-    key: "createdAt",
-    header: "Создан",
-    width: 120,
-    align: "end",
-    renderCell: (project) => (
-      <span class="app-num">{formatDate(project.createdAt)}</span>
-    ),
-  },
-];
+export function DashboardPage(props: RouteViewProps): Node {
+  const meta = projectMeta();
+  const stats = dashboardStats();
 
-function basePage(status?: ProjectStatus): Promise<ProjectPage> {
-  return listProjects({
-    page: 1,
-    pageSize: 10,
-    sort: "createdAt",
-    order: "desc",
-    ...(status !== undefined ? { status } : {}),
-  });
-}
-
-async function loadStats(): Promise<DashboardStats> {
-  const [all, active, review, done, paused, recent] = await Promise.all([
-    basePage(),
-    basePage("active"),
-    basePage("review"),
-    basePage("done"),
-    basePage("paused"),
-    listProjects({ page: 1, pageSize: 10, sort: "createdAt", order: "desc" }),
-  ]);
-  return {
-    total: all.total,
-    counts: {
-      active: active.total,
-      review: review.total,
-      done: done.total,
-      paused: paused.total,
-    },
-    recent: recent.items.slice(0, 5),
+  const openProjects = (): void => {
+    void props.router.push(ROUTE_PATHS.projects).catch(() => undefined);
   };
-}
 
-export interface DashboardPageProps {
-  readonly meta: Resource<ProjectMeta>;
-  readonly compact: boolean;
-  readonly onOpenProjects: () => void;
-}
-
-export function DashboardPage(props: DashboardPageProps): Node {
-  const stats = createResource(loadStats, { cache: false });
+  const recentModule = () => import("./recent-projects.js");
+  const recentProjects = createResource(recentModule, { cache: false });
+  const recentRows = (): readonly Project[] => stats.data()?.recent ?? [];
+  const isCompact = (): boolean => density() === "compact";
 
   const total = (): number => stats.data()?.total ?? 0;
   const counts = (): Readonly<Record<ProjectStatus, number>> =>
@@ -154,10 +87,10 @@ export function DashboardPage(props: DashboardPageProps): Node {
 
   const retry = (): void => {
     void stats.refetch().catch(() => undefined);
-    props.meta.refetch().catch(() => undefined);
+    meta.refetch().catch(() => undefined);
   };
 
-  const metaReady = (): ProjectMeta | undefined => props.meta.data();
+  const metaReady = (): ProjectMeta | undefined => meta.data();
 
   return (
     <Stack gap={6} class="app-page">
@@ -165,7 +98,7 @@ export function DashboardPage(props: DashboardPageProps): Node {
         title="Dashboard"
         description="Сводка портфеля проектов: статусы, владельцы и теги из реального API."
         actions={
-          <Button variant="tonal" onClick={props.onOpenProjects}>
+          <Button variant="tonal" onClick={openProjects}>
             Все проекты
           </Button>
         }
@@ -344,39 +277,24 @@ export function DashboardPage(props: DashboardPageProps): Node {
             </Card>
           </div>
 
-          <Card
-            variant="outlined"
-            padding={0}
-            header={
-              <div class="app-panel-head">
-                <div class="app-panel-head__text">
-                  <Heading level={3}>Последние проекты</Heading>
-                  <span class="app-panel-head__description">
-                    Пять последних записей портфеля
-                  </span>
-                </div>
-                <Button variant="text" size="sm" onClick={props.onOpenProjects}>
-                  Открыть таблицу
-                </Button>
-              </div>
-            }
-            class="app-dashboard-panel app-flush-card"
+          <Show
+            when={recentProjects.data()}
+            fallback={<RecentProjectsSkeleton />}
           >
-            <Table
-              class="app-recent-table"
-              columns={RECENT_COLUMNS}
-              rows={stats.data()?.recent ?? []}
-              rowKey={(project) => project.id}
-              rowHeight={props.compact ? 44 : 48}
-              dense={props.compact}
-              stickyHeader
-              maxHeight={360}
-              label="Последние созданные проекты"
-              empty={<EmptyState compact title="Пока нет проектов" />}
-            />
-          </Card>
+            {() => {
+              const module = recentProjects.data();
+              if (module === undefined) return null;
+              return module.RecentProjects({
+                rows: recentRows,
+                compact: isCompact,
+                onOpen: openProjects,
+              });
+            }}
+          </Show>
         </Show>
       </Show>
     </Stack>
   );
 }
+
+export default DashboardPage;

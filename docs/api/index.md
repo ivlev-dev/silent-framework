@@ -26,6 +26,7 @@
 | `@ivlev-dev/silent-dnd` | [dnd.md](./dnd.md) | headless drag-and-drop: контекст, сенсоры, коллизии, модификаторы, сортировка |
 | `@ivlev-dev/silent-ui` | [ui.md](./ui.md) | дизайн-система: токены, темы, layout, типографика, компоненты, формы, иконки |
 | `@ivlev-dev/silent-protocol` | [protocol.md](./protocol.md) | бинарный протокол: схема из класса, encode/decode, oneof |
+| `@ivlev-dev/silent-protocol` (HTTP) | [protocol-http.md](./protocol-http.md) | контракт HTTP API на протоколе: заголовки, ошибки, схемы, вектор |
 | `@ivlev-dev/silent-protocol-vite` | [protocol-vite.md](./protocol-vite.md) | Vite-плагин схем и статических кодеков |
 | `@ivlev-dev/silent` | [getting-started.md](../getting-started.md) | метапакет: рантайм и плагин одной установкой |
 

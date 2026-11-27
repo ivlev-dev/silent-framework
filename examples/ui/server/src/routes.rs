@@ -3,24 +3,27 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use axum::{
+    body::Bytes,
     extract::{
-        rejection::JsonRejection, DefaultBodyLimit, FromRequest, FromRequestParts, Path, Query,
+        rejection::BytesRejection, DefaultBodyLimit, FromRequest, FromRequestParts, Path, Query,
         State,
     },
     http::{header, request::Parts, HeaderValue, Method, StatusCode},
-    response::IntoResponse,
+    response::Response,
     routing::{get, patch, post},
-    Json, Router,
+    Router,
 };
-use serde::{de::DeserializeOwned, Serialize};
+use serde::de::DeserializeOwned;
+use silent_protocol::SilentProto;
 use tokio::task::spawn_blocking;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 use crate::error::ApiError;
-use crate::model::{Project, ProjectInput, ProjectMeta, ProjectPage, ProjectPatch};
+use crate::model::ProjectMeta;
 use crate::query::ProjectQuery;
 use crate::store::Store;
 use crate::uploads;
+use crate::wire;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -62,19 +65,14 @@ pub fn build_router(state: AppState) -> Router {
         .with_state(state)
 }
 
-#[derive(Debug, Serialize)]
-struct HealthResponse {
-    ok: bool,
-}
-
-async fn health() -> Json<HealthResponse> {
-    Json(HealthResponse { ok: true })
+async fn health() -> Result<Response, ApiError> {
+    Ok(wire::response(StatusCode::OK, &wire::Health { ok: true })?)
 }
 
 async fn list_projects(
     State(state): State<AppState>,
     ApiQuery(params): ApiQuery<HashMap<String, String>>,
-) -> Result<Json<ProjectPage>, ApiError> {
+) -> Result<Response, ApiError> {
     let query = ProjectQuery::parse(&params)?;
     apply_delay(&state).await;
 
@@ -84,35 +82,44 @@ async fn list_projects(
         .map_err(ApiError::from)?
         .map_err(ApiError::from)?;
 
-    Ok(Json(page))
+    Ok(wire::response(
+        StatusCode::OK,
+        &wire::ProjectPage::from_model(&page)?,
+    )?)
 }
 
 async fn create_project(
     State(state): State<AppState>,
-    ApiJson(input): ApiJson<ProjectInput>,
-) -> Result<impl IntoResponse, ApiError> {
+    Proto(input): Proto<wire::ProjectInput>,
+) -> Result<Response, ApiError> {
     let store = state.store.clone();
-    let project = spawn_blocking(move || store.create(input))
+    let project = spawn_blocking(move || store.create(input.into_model()))
         .await
         .map_err(ApiError::from)?
         .map_err(ApiError::from)?;
 
-    Ok((StatusCode::CREATED, Json(project)))
+    Ok(wire::response(
+        StatusCode::CREATED,
+        &wire::Project::from_model(&project)?,
+    )?)
 }
 
 async fn update_project(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    ApiJson(patch): ApiJson<ProjectPatch>,
-) -> Result<Json<Project>, ApiError> {
+    Proto(patch): Proto<wire::ProjectPatch>,
+) -> Result<Response, ApiError> {
     let id = parse_id(&id)?;
     let store = state.store.clone();
-    let project = spawn_blocking(move || store.update(id, patch))
+    let project = spawn_blocking(move || store.update(id, patch.into_model()))
         .await
         .map_err(ApiError::from)?
         .map_err(ApiError::from)?;
 
-    Ok(Json(project))
+    Ok(wire::response(
+        StatusCode::OK,
+        &wire::Project::from_model(&project)?,
+    )?)
 }
 
 async fn delete_project(
@@ -129,16 +136,19 @@ async fn delete_project(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn meta(State(state): State<AppState>) -> Result<Json<ProjectMeta>, ApiError> {
+async fn meta(State(state): State<AppState>) -> Result<Response, ApiError> {
     apply_delay(&state).await;
 
     let store = state.store.clone();
-    let meta = spawn_blocking(move || store.meta())
+    let meta: ProjectMeta = spawn_blocking(move || store.meta())
         .await
         .map_err(ApiError::from)?
         .map_err(ApiError::from)?;
 
-    Ok(Json(meta))
+    Ok(wire::response(
+        StatusCode::OK,
+        &wire::ProjectMeta::from_model(&meta),
+    )?)
 }
 
 async fn not_found() -> ApiError {
@@ -175,11 +185,11 @@ where
     }
 }
 
-pub struct ApiJson<T>(pub T);
+pub struct Proto<T>(pub T);
 
-impl<T, S> FromRequest<S> for ApiJson<T>
+impl<T, S> FromRequest<S> for Proto<T>
 where
-    T: DeserializeOwned,
+    T: SilentProto,
     S: Send + Sync,
 {
     type Rejection = ApiError;
@@ -188,12 +198,59 @@ where
         request: axum::extract::Request,
         state: &S,
     ) -> Result<Self, Self::Rejection> {
-        let Json(value) =
-            Json::<T>::from_request(request, state)
+        if !accepts_protocol(request.headers()) {
+            return Err(ApiError::unsupported_media_type(
+                "invalid_content_type",
+                format!("`Content-Type` must be `{}`", wire::CONTENT_TYPE),
+            ));
+        }
+
+        let bytes =
+            Bytes::from_request(request, state)
                 .await
-                .map_err(|rejection: JsonRejection| {
-                    ApiError::bad_request("invalid_json", rejection.body_text())
+                .map_err(|rejection: BytesRejection| {
+                    if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE {
+                        ApiError::payload_too_large("Request body is too large")
+                    } else {
+                        ApiError::new(rejection.status(), "invalid_body", rejection.body_text())
+                    }
                 })?;
+
+        if bytes.is_empty() {
+            return Err(ApiError::bad_request(
+                "empty_body",
+                "Request body must not be empty",
+            ));
+        }
+
+        if bytes.len() > wire::LIMITS.max_size {
+            return Err(ApiError::payload_too_large(format!(
+                "Request body must be at most {} bytes",
+                wire::LIMITS.max_size
+            )));
+        }
+
+        let value = T::decode_with_limits(&bytes, wire::LIMITS).map_err(|error| {
+            ApiError::bad_request(
+                "invalid_payload",
+                format!("Payload could not be decoded: {error}"),
+            )
+        })?;
+
         Ok(Self(value))
     }
+}
+
+fn accepts_protocol(headers: &axum::http::HeaderMap) -> bool {
+    let Some(value) = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+    else {
+        return false;
+    };
+    value
+        .split(';')
+        .next()
+        .map(str::trim)
+        .is_some_and(|essence| essence.eq_ignore_ascii_case(wire::CONTENT_TYPE))
 }

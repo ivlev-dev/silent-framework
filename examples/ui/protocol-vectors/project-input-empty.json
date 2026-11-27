@@ -1,0 +1,12 @@
+{
+  "name": "project-input-empty",
+  "description": "ProjectInput с пустыми строками и пустым tags; пустая строка допустима на wire, но отклоняется валидацией ApiError(invalid_input)",
+  "hex": "000000000000000000000000",
+  "fields": {
+    "budget": 0,
+    "name": "",
+    "owner": "",
+    "status": "active",
+    "tags": []
+  }
+}

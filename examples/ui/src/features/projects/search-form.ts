@@ -6,8 +6,8 @@ import {
   Optional,
   Placeholder,
 } from "@ivlev-dev/silent-form";
-import type { ProjectQuery, ProjectStatus } from "./api/types.js";
-import { isProjectStatus } from "./lib/format.js";
+import type { ProjectQuery, ProjectStatus } from "../../api/types.js";
+import { isProjectStatus } from "../../lib/format.js";
 
 export interface ProjectFilters {
   readonly q: string;
@@ -70,18 +70,22 @@ export class ProjectsSearchForm extends Form {
   @Field()
   @Label("Поиск")
   @Placeholder("Название или владелец")
+  @Optional()
   public accessor q = "";
 
   @Field()
   @Label("Статус")
+  @Optional()
   public accessor status = "";
 
   @Field()
   @Label("Владелец")
+  @Optional()
   public accessor owner = "";
 
   @Field()
   @Label("Тег")
+  @Optional()
   public accessor tag = "";
 
   @Field()
@@ -98,14 +102,16 @@ export class ProjectsSearchForm extends Form {
 
   @Field()
   @Label("Период создания")
+  @Optional()
   public accessor dateFrom = "";
 
   @Field()
   @Label("Дата окончания")
+  @Optional()
   public accessor dateTo = "";
 
   public constructor() {
-    super({ formId: "projects-search", validateOnInput: true });
+    super({ formId: "projects-search", validateOnInput: true, debounceMs: 200 });
   }
 
   public readFilters(): ProjectFilters {

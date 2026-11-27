@@ -1,12 +1,13 @@
 import {
   For,
   Show,
+  createEffect,
   createMemo,
   createResource,
   createSignal,
   onCleanup,
 } from "@ivlev-dev/silent-core";
-import type { Resource } from "@ivlev-dev/silent-core";
+import type { RouteViewProps } from "@ivlev-dev/silent-router";
 import {
   AlertDialog,
   Button,
@@ -14,12 +15,10 @@ import {
   DataTable,
   DateRangePicker,
   Dialog,
-  EmptyState,
   FieldGroup,
   FormActions,
   Heading,
   IconButton,
-  Inline,
   Select,
   SearchIcon,
   Sheet,
@@ -27,7 +26,6 @@ import {
   Tag,
   Text,
   TextField,
-  AddIcon,
   type DataTableColumn,
   type DataTableSortDirection,
   type SelectOption,
@@ -41,8 +39,8 @@ import {
   isAbortError,
   listProjects,
   updateProject,
-} from "../api/client.js";
-import type { Project, ProjectMeta, ProjectQuery } from "../api/types.js";
+} from "../../api/client.js";
+import type { Project, ProjectQuery } from "../../api/types.js";
 import {
   PROJECT_STATUSES,
   formatBudget,
@@ -52,20 +50,30 @@ import {
   statusLabel,
   statusVariant,
   toIsoDate,
-} from "../lib/format.js";
-import { ProjectForm } from "../project-form.js";
+} from "../../lib/format.js";
+import { ProjectForm } from "./project-form.js";
 import {
   EMPTY_FILTERS,
   ProjectsSearchForm,
   countActiveFilters,
   filtersToQuery,
   type ProjectFilters,
-} from "../search-form.js";
-import { showToast } from "../ui/toast.js";
-import { FilterIcon, TrashIcon } from "../ui/icons.js";
-import { createMediaQuery } from "../ui/media.js";
-import { ErrorState, PageHeader } from "../ui/states.js";
-import { TagLine } from "../ui/tags.js";
+} from "./search-form.js";
+import { invalidateProjectData, projectMeta } from "../../app/data.js";
+import { density } from "../../app/theme.js";
+import { ROUTE_PATHS } from "../../app/router/routes.js";
+import type { ProjectsRouteQuery } from "../../app/router/routes.js";
+import { showToast } from "../../ui/toast.js";
+import { FilterIcon, TrashIcon } from "../../ui/icons.js";
+import { createMediaQuery } from "../../ui/media.js";
+import { ErrorState, PageHeader } from "../../ui/states.js";
+import { TagLine } from "../../ui/tags.js";
+import {
+  BulkDeleteAction,
+  EmptyTable,
+  TableError,
+  TableToolbar,
+} from "./table-parts.js";
 
 function projectColumns(
   onDelete: (project: Project) => void,
@@ -148,6 +156,7 @@ function projectColumns(
     {
       key: "actions",
       header: "",
+      settingsLabel: "Действия",
       width: 64,
       minWidth: 56,
       maxWidth: 72,
@@ -209,12 +218,79 @@ function filterChips(filters: ProjectFilters): readonly FilterChip[] {
   return chips;
 }
 
-export interface ProjectsPageProps {
-  readonly meta: Resource<ProjectMeta>;
-  readonly compact: boolean;
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
+
+function filtersFromRoute(query: ProjectsRouteQuery): ProjectFilters {
+  return {
+    q: query.q ?? "",
+    status: query.status ?? "",
+    owner: query.owner ?? "",
+    tag: query.tag ?? "",
+    budgetMin: query.budgetMin ?? null,
+    budgetMax: query.budgetMax ?? null,
+    createdFrom: query.createdFrom ?? "",
+    createdTo: query.createdTo ?? "",
+  };
 }
 
+function resolvePageSize(value: number | undefined): number {
+  return PAGE_SIZE_OPTIONS.find((size) => size === value) ?? 10;
+}
+
+function resolveSort(value: string | undefined): string {
+  return value !== undefined && SORT_FIELDS.has(value) ? value : "createdAt";
+}
+
+function resolveDirection(value: "asc" | "desc" | undefined): DataTableSortDirection {
+  return value === "asc" ? "ascending" : "descending";
+}
+
+function toRouteQuery(
+  filters: ProjectFilters,
+  page: number,
+  pageSize: number,
+  sortKey: string,
+  direction: DataTableSortDirection,
+): ProjectsRouteQuery {
+  return {
+    page,
+    pageSize,
+    sort: sortKey,
+    order: direction === "ascending" ? "asc" : "desc",
+    ...(filters.q.trim() !== "" ? { q: filters.q.trim() } : {}),
+    ...(filters.status !== "" ? { status: filters.status } : {}),
+    ...(filters.owner !== "" ? { owner: filters.owner } : {}),
+    ...(filters.tag !== "" ? { tag: filters.tag } : {}),
+    ...(filters.budgetMin !== null ? { budgetMin: filters.budgetMin } : {}),
+    ...(filters.budgetMax !== null ? { budgetMax: filters.budgetMax } : {}),
+    ...(filters.createdFrom !== "" ? { createdFrom: filters.createdFrom } : {}),
+    ...(filters.createdTo !== "" ? { createdTo: filters.createdTo } : {}),
+  };
+}
+
+function routeSignature(query: ProjectsRouteQuery): string {
+  return JSON.stringify(query);
+}
+
+function applyFiltersToForm(
+  form: ProjectsSearchForm,
+  filters: ProjectFilters,
+): void {
+  form.getFieldProps("q").setValue(filters.q);
+  form.getFieldProps("status").setValue(filters.status);
+  form.getFieldProps("owner").setValue(filters.owner);
+  form.getFieldProps("tag").setValue(filters.tag);
+  form.getFieldProps("budgetMin").setValue(filters.budgetMin);
+  form.getFieldProps("budgetMax").setValue(filters.budgetMax);
+  form.getFieldProps("dateFrom").setValue(filters.createdFrom);
+  form.getFieldProps("dateTo").setValue(filters.createdTo);
+}
+
+export type ProjectsPageProps = RouteViewProps<"/projects", ProjectsRouteQuery>;
+
 export function ProjectsPage(props: ProjectsPageProps): Node {
+  const meta = projectMeta();
+  const compact = density() === "compact";
   const searchForm = new ProjectsSearchForm();
   const projectForm = new ProjectForm();
   onCleanup(() => {
@@ -222,12 +298,17 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
     projectForm.dispose();
   });
 
-  const [page, setPage] = createSignal(1);
-  const [pageSize, setPageSize] = createSignal(10);
-  const [sortKey, setSortKey] = createSignal("createdAt");
-  const [sortDirection, setSortDirection] =
-    createSignal<DataTableSortDirection>("descending");
-  const [filters, setFilters] = createSignal<ProjectFilters>(EMPTY_FILTERS);
+  const initialFilters = filtersFromRoute(props.query);
+  applyFiltersToForm(searchForm, initialFilters);
+
+  const [page, setPage] = createSignal(props.query.page ?? 1);
+  const [pageSize, setPageSize] = createSignal(resolvePageSize(props.query.pageSize));
+  const [sortKey, setSortKey] = createSignal(resolveSort(props.query.sort));
+  const [sortDirection, setSortDirection] = createSignal<DataTableSortDirection>(
+    resolveDirection(props.query.order),
+  );
+  const [filters, setFilters] = createSignal<ProjectFilters>(initialFilters);
+  let syncedSignature = routeSignature(props.query);
   const [selected, setSelected] = createSignal<ReadonlySet<string | number>>(
     new Set(),
   );
@@ -238,6 +319,41 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
   const [sheetOpen, setSheetOpen] = createSignal(false);
 
   const isMobile = createMediaQuery("(max-width: 959px)");
+
+  const pushQuery = (
+    nextFilters: ProjectFilters,
+    nextPage: number,
+    nextPageSize: number,
+    nextSortKey: string,
+    nextDirection: DataTableSortDirection,
+  ): void => {
+    const next = toRouteQuery(
+      nextFilters,
+      nextPage,
+      nextPageSize,
+      nextSortKey,
+      nextDirection,
+    );
+    syncedSignature = routeSignature(next);
+    void props.router
+      .push({ path: ROUTE_PATHS.projects, query: next })
+      .catch(() => undefined);
+  };
+
+  createEffect(() => {
+    const nextQuery = props.query;
+    const signature = routeSignature(nextQuery);
+    if (signature === syncedSignature) return;
+    syncedSignature = signature;
+    const nextFilters = filtersFromRoute(nextQuery);
+    setFilters(nextFilters);
+    applyFiltersToForm(searchForm, nextFilters);
+    setPage(nextQuery.page ?? 1);
+    setPageSize(resolvePageSize(nextQuery.pageSize));
+    setSortKey(resolveSort(nextQuery.sort));
+    setSortDirection(resolveDirection(nextQuery.order));
+    setSelected(new Set());
+  });
 
 
   const query = createMemo<ProjectQuery>(() => {
@@ -267,35 +383,59 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
       .map((value) => Number(value))
       .filter((value) => Number.isFinite(value));
 
-  const statusOptions: readonly SelectOption[] = [
+  const statusOptions = createMemo<readonly SelectOption[]>(() => [
     { value: "", label: "Все статусы" },
     ...PROJECT_STATUSES.map((status) => ({
       value: status,
       label: statusLabel(status),
     })),
-  ];
-  const ownerOptions = (): readonly SelectOption[] => [
+  ]);
+  const ownerOptions = createMemo<readonly SelectOption[]>(() => [
     { value: "", label: "Все владельцы" },
-    ...(props.meta.data()?.owners ?? []).map((owner) => ({
+    ...(meta.data()?.owners ?? []).map((owner) => ({
       value: owner,
       label: owner,
     })),
-  ];
-  const tagOptions = (): readonly SelectOption[] => [
+  ]);
+  const tagOptions = createMemo<readonly SelectOption[]>(() => [
     { value: "", label: "Все теги" },
-    ...(props.meta.data()?.tags ?? []).map((tag) => ({
+    ...(meta.data()?.tags ?? []).map((tag) => ({
       value: tag,
       label: `#${tag}`,
     })),
-  ];
+  ]);
+
+  const bulkDeleteAction = (
+    <BulkDeleteAction onOpen={() => setBulkDeleteOpen(true)} />
+  );
+  const tableToolbar = (): Node => (
+    <TableToolbar total={total} onCreate={openCreate} />
+  );
+  const tableEmpty = (): Node => (
+    <EmptyTable
+      activeCount={activeCount}
+      onReset={resetFilters}
+      onCreate={openCreate}
+    />
+  );
+  const tableError = (): Node => (
+    <TableError
+      message={() => errorMessage(listing.error())}
+      onRetry={() => {
+        listing.refetch().catch(() => undefined);
+      }}
+    />
+  );
 
   const applyFilters = async (): Promise<void> => {
     const valid = await searchForm.validateFilters();
     if (!valid) return;
-    setFilters(searchForm.readFilters());
+    const nextFilters = searchForm.readFilters();
+    setFilters(nextFilters);
     setPage(1);
     setSelected(new Set());
     setSheetOpen(false);
+    pushQuery(nextFilters, 1, pageSize(), sortKey(), sortDirection());
   };
 
   const resetFilters = (): void => {
@@ -305,6 +445,7 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
     setPage(1);
     setSelected(new Set());
     setSheetOpen(false);
+    pushQuery(EMPTY_FILTERS, 1, pageSize(), sortKey(), sortDirection());
   };
 
   const clearFilter = (key: FilterChip["key"]): void => {
@@ -318,20 +459,24 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
       searchForm.getFieldProps("dateFrom").setValue("");
       searchForm.getFieldProps("dateTo").setValue("");
     }
-    setFilters(searchForm.readFilters());
+    const nextFilters = searchForm.readFilters();
+    setFilters(nextFilters);
     setPage(1);
     setSelected(new Set());
+    pushQuery(nextFilters, 1, pageSize(), sortKey(), sortDirection());
   };
 
   const changePage = (next: number): void => {
     setPage(next);
     setSelected(new Set());
+    pushQuery(filters(), next, pageSize(), sortKey(), sortDirection());
   };
 
   const changePageSize = (size: number): void => {
     setPageSize(size);
     setPage(1);
     setSelected(new Set());
+    pushQuery(filters(), 1, size, sortKey(), sortDirection());
   };
 
   const changeSort = (key: string, direction: DataTableSortDirection): void => {
@@ -339,6 +484,7 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
     setSortDirection(direction);
     setPage(1);
     setSelected(new Set());
+    pushQuery(filters(), 1, pageSize(), key, direction);
   };
 
   const closeEditor = (): void => {
@@ -352,7 +498,7 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
   const openCreate = (): void => {
     projectForm.reset();
     projectForm.clearFieldErrors();
-    projectForm.getFieldProps("owner").setValue(props.meta.data()?.owners[0] ?? "");
+    projectForm.getFieldProps("owner").setValue(meta.data()?.owners[0] ?? "");
     projectForm.getFieldProps("status").setValue("active");
     projectForm.getFieldProps("budget").setValue(5000);
     setEditingId(null);
@@ -376,7 +522,9 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
   const refreshAfterRemoval = async (removed: number): Promise<void> => {
     const remaining = rows().length - removed;
     if (remaining <= 0 && page() > 1) {
-      setPage(page() - 1);
+      const nextPage = page() - 1;
+      setPage(nextPage);
+      pushQuery(filters(), nextPage, pageSize(), sortKey(), sortDirection());
       return;
     }
     await listing.refetch();
@@ -390,6 +538,7 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
         await createProject(input);
         showToast(`Проект «${input.name}» создан`, "success");
         setPage(1);
+        pushQuery(filters(), 1, pageSize(), sortKey(), sortDirection());
       } else {
         await updateProject(id, input);
         showToast(`Проект «${input.name}» обновлён`, "success");
@@ -397,7 +546,8 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
       setDialogOpen(false);
       setEditingId(null);
       form.reset();
-      await Promise.all([listing.refetch(), props.meta.refetch()]);
+      invalidateProjectData();
+      await listing.refetch();
     } catch (error) {
       if (isAbortError(error)) return;
       showToast(errorMessage(error), "error");
@@ -411,8 +561,8 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
     try {
       await deleteProject(target.id);
       showToast(`Проект «${target.name}» удалён`, "success");
+      invalidateProjectData();
       await refreshAfterRemoval(1);
-      await props.meta.refetch();
     } catch (error) {
       if (isAbortError(error)) return;
       showToast(errorMessage(error), "error");
@@ -427,8 +577,8 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
       await Promise.all(ids.map((id) => deleteProject(id)));
       showToast(`Удалено проектов: ${String(ids.length)}`, "success");
       setSelected(new Set());
+      invalidateProjectData();
       await refreshAfterRemoval(ids.length);
-      await props.meta.refetch();
     } catch (error) {
       if (isAbortError(error)) return;
       showToast(errorMessage(error), "error");
@@ -447,21 +597,21 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
       />
       <Select
         field={searchForm.getFieldProps("status")}
-        options={statusOptions}
+        options={statusOptions()}
         searchable={false}
         placeholder="Все статусы"
       />
       <Select
         field={searchForm.getFieldProps("owner")}
         options={ownerOptions()}
-        loading={props.meta.pending()}
+        loading={meta.pending()}
         searchable
         placeholder="Все владельцы"
       />
       <Select
         field={searchForm.getFieldProps("tag")}
         options={tagOptions()}
-        loading={props.meta.pending()}
+        loading={meta.pending()}
         searchable
         placeholder="Все теги"
       />
@@ -560,12 +710,12 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
         description="Серверная таблица: фильтры, сортировка, пагинация, выбор строк и CRUD."
       />
 
-      <Show when={props.meta.error() !== undefined}>
+      <Show when={meta.error() !== undefined}>
         <ErrorState
           title="Справочники недоступны"
-          message={errorMessage(props.meta.error())}
+          message={errorMessage(meta.error())}
           onRetry={() => {
-            props.meta.refetch().catch(() => undefined);
+            meta.refetch().catch(() => undefined);
           }}
         />
       </Show>
@@ -626,81 +776,23 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
           total={total()}
           page={page()}
           pageSize={pageSize()}
-          pageSizeOptions={[10, 20, 50, 100]}
+          pageSizeOptions={PAGE_SIZE_OPTIONS}
           sortKey={sortKey()}
           sortDirection={sortDirection()}
           loading={listing.pending()}
-          density={props.compact ? "compact" : "standard"}
-          error={
-            listing.error() === undefined ? undefined : (
-              <Inline gap={2} wrap align="center">
-                <Text>{errorMessage(listing.error())}</Text>
-                <Button
-                  size="sm"
-                  variant="tonal"
-                  onClick={() => {
-                    listing.refetch().catch(() => undefined);
-                  }}
-                >
-                  Повторить
-                </Button>
-              </Inline>
-            )
-          }
-          empty={
-            <EmptyState
-              compact
-              title={activeCount() > 0 ? "Ничего не найдено" : "Пока нет проектов"}
-              description={
-                activeCount() > 0
-                  ? "Измените фильтры или сбросьте их."
-                  : "Создайте первый проект, чтобы начать работу."
-              }
-              actions={
-                activeCount() > 0 ? (
-                  <Button variant="tonal" size="sm" onClick={resetFilters}>
-                    Сбросить фильтры
-                  </Button>
-                ) : (
-                  <Button size="sm" onClick={openCreate}>
-                    Создать проект
-                  </Button>
-                )
-              }
-            />
-          }
+          density={compact ? "compact" : "standard"}
+          error={listing.error() === undefined ? undefined : tableError()}
+          empty={tableEmpty()}
           selection={{
             selected: selected(),
             onChange: setSelected,
-            actions: (
-              <Button
-                size="sm"
-                variant="filled"
-                leading={<TrashIcon />}
-                onClick={() => setBulkDeleteOpen(true)}
-              >
-                Удалить
-              </Button>
-            ),
+            actions: bulkDeleteAction,
           }}
           onSort={changeSort}
           onPageChange={changePage}
           onPageSizeChange={changePageSize}
           onRowClick={openEdit}
-          toolbar={
-            <div class="app-table-toolbar">
-              <Inline justify="between" align="center" wrap gap={2}>
-                <Inline gap={2} wrap align="center">
-                  <Text variant="label-large" class="app-table-toolbar__count">
-                    {String(total())} {total() === 1 ? "проект" : "проектов"}
-                  </Text>
-                </Inline>
-                <Button size="sm" onClick={openCreate} leading={<AddIcon />}>
-                  Новый проект
-                </Button>
-              </Inline>
-            </div>
-          }
+          toolbar={tableToolbar()}
           attrs={{ "aria-label": "Таблица проектов" }}
         />
       </Card>
@@ -758,11 +850,11 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
           <FieldGroup columns={2}>
             <Select
               field={projectForm.getFieldProps("owner")}
-              options={(props.meta.data()?.owners ?? []).map((owner) => ({
+              options={(meta.data()?.owners ?? []).map((owner) => ({
                 value: owner,
                 label: owner,
               }))}
-              loading={props.meta.pending()}
+              loading={meta.pending()}
               searchable
               placeholder="Выберите владельца"
             />
@@ -777,7 +869,7 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
           </FieldGroup>
           <TagInput
             field={projectForm.getFieldProps("tags")}
-            suggestions={props.meta.data()?.tags ?? []}
+            suggestions={meta.data()?.tags ?? []}
             allowCustom
             hint="Введите тег и нажмите Enter"
           />
@@ -827,3 +919,5 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
     </Stack>
   );
 }
+
+export default ProjectsPage;

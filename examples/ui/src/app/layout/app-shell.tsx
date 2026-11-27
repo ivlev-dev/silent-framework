@@ -1,13 +1,6 @@
-import {
-  Show,
-  createEffect,
-  createResource,
-  createSignal,
-  onCleanup,
-} from "@ivlev-dev/silent-core";
+import { Show, createEffect, onCleanup } from "@ivlev-dev/silent-core";
 import {
   applyTheme,
-  readStoredTheme,
   Avatar,
   IconButton,
   NavigationBar,
@@ -16,13 +9,22 @@ import {
   TopAppBar,
   type NavigationBarItemData,
   type NavigationRailItemData,
-  type ThemeMode,
 } from "@ivlev-dev/silent-ui";
-import { getMeta } from "./api/client.js";
-import { DashboardPage } from "./pages/dashboard.js";
-import { ProjectsPage } from "./pages/projects.js";
-import { SettingsPage, type AppDensity } from "./pages/settings.js";
-import { TeamPage } from "./pages/team.js";
+import { RouterView, type Router } from "@ivlev-dev/silent-router";
+import {
+  ROUTE_PATHS,
+  isSectionKey,
+  prefetchRoutes,
+  sectionFromPath,
+  type SectionKey,
+} from "../router/index.js";
+import {
+  density,
+  persistDensity,
+  setDensity,
+  setTheme,
+  theme,
+} from "../theme.js";
 import {
   DashboardIcon,
   FolderIcon,
@@ -30,16 +32,18 @@ import {
   SettingsIcon,
   SunIcon,
   TeamIcon,
-} from "./ui/icons.js";
+} from "../../ui/icons.js";
 import {
   dismissToast,
   toastMessage,
   toastOpen,
   toastTone,
-} from "./ui/toast.js";
+} from "../../ui/toast.js";
+import { SkeletonCards } from "../../ui/states.js";
 
-const SECTION_KEYS = ["dashboard", "projects", "team", "settings"] as const;
-type SectionKey = (typeof SECTION_KEYS)[number];
+export interface AppProps {
+  readonly router: Router;
+}
 
 const SECTION_TITLES: Readonly<Record<SectionKey, string>> = {
   dashboard: "Dashboard",
@@ -48,29 +52,6 @@ const SECTION_TITLES: Readonly<Record<SectionKey, string>> = {
   settings: "Настройки",
 };
 
-const DENSITY_STORAGE_KEY = "silent-ui-density";
-
-function isSectionKey(value: string): value is SectionKey {
-  return (SECTION_KEYS as readonly string[]).includes(value);
-}
-
-function readSection(): SectionKey {
-  if (typeof window === "undefined") return "dashboard";
-  const raw = window.location.hash.replace(/^#\/?/u, "");
-  return isSectionKey(raw) ? raw : "dashboard";
-}
-
-function readDensity(): AppDensity {
-  if (typeof localStorage === "undefined") return "standard";
-  try {
-    return localStorage.getItem(DENSITY_STORAGE_KEY) === "compact"
-      ? "compact"
-      : "standard";
-  } catch {
-    return "standard";
-  }
-}
-
 const NAV_ITEMS: readonly (NavigationRailItemData & NavigationBarItemData)[] = [
   { key: "dashboard", label: "Dashboard", icon: () => <DashboardIcon /> },
   { key: "projects", label: "Проекты", icon: () => <FolderIcon /> },
@@ -78,51 +59,63 @@ const NAV_ITEMS: readonly (NavigationRailItemData & NavigationBarItemData)[] = [
   { key: "settings", label: "Настройки", icon: () => <SettingsIcon /> },
 ];
 
-export function App(): Node {
-  const [section, setSection] = createSignal<SectionKey>(readSection());
-  const [theme, setTheme] = createSignal<ThemeMode>(readStoredTheme() ?? "auto");
-  const [density, setDensity] = createSignal<AppDensity>(readDensity());
+function RouteFallback(): Node {
+  return (
+    <div class="app-route-fallback" aria-busy="true" aria-label="Загрузка раздела">
+      <SkeletonCards count={4} />
+    </div>
+  );
+}
 
-  const meta = createResource(({ signal }) => getMeta(signal), { cache: false });
+export function App(props: AppProps): Node {
+  const section = (): SectionKey => {
+    const route = props.router.state().route;
+    if (route === null) return "dashboard";
+    return sectionFromPath(route.path);
+  };
 
   const navigate = (key: string): void => {
     if (!isSectionKey(key)) return;
-    setSection(key);
-    if (typeof window !== "undefined") {
-      window.history.replaceState(null, "", `#/${key}`);
-    }
+    if (section() === key) return;
+    void props.router.push(ROUTE_PATHS[key]).catch(() => undefined);
   };
-
-  const onHashChange = (): void => {
-    setSection(readSection());
-  };
-  if (typeof window !== "undefined") {
-    window.addEventListener("hashchange", onHashChange);
-    onCleanup(() => {
-      window.removeEventListener("hashchange", onHashChange);
-    });
-  }
 
   createEffect(() => {
     applyTheme({ theme: theme(), persist: true });
-    if (typeof document !== "undefined") {
-      document.title = `${SECTION_TITLES[section()]} — Silent Projects`;
-    }
+    document.title = `${SECTION_TITLES[section()]} — Silent Projects`;
   });
 
   createEffect(() => {
-    if (typeof document === "undefined") return;
+    const value = density();
     const root = document.documentElement;
-    if (density() === "compact") {
+    if (value === "compact") {
       root.setAttribute("data-density", "compact");
     } else {
       root.removeAttribute("data-density");
     }
-    try {
-      localStorage.setItem(DENSITY_STORAGE_KEY, density());
-    } catch {
-      // Приватный режим: плотность всё равно применена.
+    persistDensity(value);
+  });
+
+  createEffect(() => {
+    void section();
+    let cancelled = false;
+    const schedule = (): void => {
+      if (!cancelled) prefetchRoutes(props.router);
+    };
+    const idle = window.requestIdleCallback;
+    if (typeof idle === "function") {
+      const handle = idle(schedule, { timeout: 2000 });
+      onCleanup(() => {
+        cancelled = true;
+        window.cancelIdleCallback?.(handle);
+      });
+      return;
     }
+    const timer = window.setTimeout(schedule, 1200);
+    onCleanup(() => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    });
   });
 
   const toggleTheme = (): void => {
@@ -179,31 +172,12 @@ export function App(): Node {
           }
         />
 
+        <Show when={props.router.state().pending}>
+          <div class="app-route-progress" role="progressbar" aria-label="Загрузка раздела" />
+        </Show>
+
         <main class="app__content" id="main-content" tabindex="-1">
-          <Show when={section() === "dashboard"}>
-            <DashboardPage
-              meta={meta}
-              compact={density() === "compact"}
-              onOpenProjects={() => {
-                navigate("projects");
-              }}
-            />
-          </Show>
-          <Show when={section() === "projects"}>
-            <ProjectsPage meta={meta} compact={density() === "compact"} />
-          </Show>
-          <Show when={section() === "team"}>
-            <TeamPage meta={meta} />
-          </Show>
-          <Show when={section() === "settings"}>
-            <SettingsPage
-              meta={meta}
-              theme={theme}
-              onThemeChange={(next) => setTheme(next)}
-              density={density}
-              onDensityChange={(next) => setDensity(next)}
-            />
-          </Show>
+          <RouterView router={props.router} fallback={<RouteFallback />} />
         </main>
 
         <NavigationBar

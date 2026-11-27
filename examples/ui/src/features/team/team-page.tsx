@@ -1,5 +1,4 @@
 import { For, Show } from "@ivlev-dev/silent-core";
-import type { Resource } from "@ivlev-dev/silent-core";
 import {
   Avatar,
   Card,
@@ -11,12 +10,12 @@ import {
   Tag,
   Text,
 } from "@ivlev-dev/silent-ui";
-import type { ProjectMeta } from "../api/types.js";
-import { errorMessage } from "../api/client.js";
-import { initialsOf } from "../lib/format.js";
-import { ErrorState, PageHeader } from "../ui/states.js";
-import { StatCard } from "../ui/stat-card.js";
-import { TeamIcon } from "../ui/icons.js";
+import { errorMessage } from "../../api/client.js";
+import { initialsOf } from "../../lib/format.js";
+import { ErrorState, PageHeader } from "../../ui/states.js";
+import { StatCard } from "../dashboard/stat-card.js";
+import { TeamIcon } from "../../ui/icons.js";
+import { projectMeta } from "../../app/data.js";
 
 const ROLES = [
   "Дизайн-система",
@@ -36,15 +35,12 @@ const AVAILABILITY = [
   { label: "Не в сети", variant: "neutral" as const, status: "offline" as const },
 ] as const;
 
-export interface TeamPageProps {
-  readonly meta: Resource<ProjectMeta>;
-}
-
-export function TeamPage(props: TeamPageProps): Node {
-  const owners = (): readonly string[] => props.meta.data()?.owners ?? [];
-  const tags = (): readonly string[] => props.meta.data()?.tags ?? [];
+export function TeamPage(): Node {
+  const meta = projectMeta();
+  const owners = (): readonly string[] => meta.data()?.owners ?? [];
+  const tags = (): readonly string[] => meta.data()?.tags ?? [];
   const loading = (): boolean =>
-    props.meta.pending() && props.meta.data() === undefined;
+    meta.pending() && meta.data() === undefined;
 
   return (
     <Stack gap={6} class="app-page">
@@ -53,16 +49,16 @@ export function TeamPage(props: TeamPageProps): Node {
         description="Владельцы проектов и рабочие теги из GET /api/meta."
       />
 
-      <Show when={props.meta.error() !== undefined}>
+      <Show when={meta.error() !== undefined}>
         <ErrorState
-          message={errorMessage(props.meta.error())}
+          message={errorMessage(meta.error())}
           onRetry={() => {
-            props.meta.refetch().catch(() => undefined);
+            meta.refetch().catch(() => undefined);
           }}
         />
       </Show>
 
-      <Show when={props.meta.error() === undefined}>
+      <Show when={meta.error() === undefined}>
         <div class="app-team-summary">
           <StatCard
             title="Участников"
@@ -177,3 +173,5 @@ export function TeamPage(props: TeamPageProps): Node {
     </Stack>
   );
 }
+
+export default TeamPage;

@@ -1,0 +1,11 @@
+{
+  "name": "project-patch",
+  "description": "ProjectPatch: заданы только status и tags, bitmap 0b0001_1000",
+  "hex": "1802010772656c65617365",
+  "fields": {
+    "status": "done",
+    "tags": [
+      "release"
+    ]
+  }
+}

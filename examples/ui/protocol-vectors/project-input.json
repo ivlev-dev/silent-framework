@@ -1,0 +1,15 @@
+{
+  "name": "project-input",
+  "description": "ProjectInput: обязательные поля без bitmap, кириллица в name/owner",
+  "hex": "000000008092b04012d09fd0bbd0b0d182d184d0bed180d0bcd0b015d090d0b4d0b020d09bd0bed0b2d0bbd0b5d0b9d18101020361706904646f6373",
+  "fields": {
+    "budget": 4242.5,
+    "name": "Платформа",
+    "owner": "Ада Ловлейс",
+    "status": "review",
+    "tags": [
+      "api",
+      "docs"
+    ]
+  }
+}

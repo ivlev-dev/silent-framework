@@ -9,7 +9,8 @@ import {
   Placeholder,
   Required,
 } from "@ivlev-dev/silent-form";
-import type { ProjectInput, ProjectStatus } from "./api/types.js";
+import { ProjectInput } from "../../api/types.js";
+import type { ProjectStatus } from "../../api/types.js";
 
 export class ProjectForm extends Form {
   @Field()
@@ -46,12 +47,12 @@ export class ProjectForm extends Form {
   }
 
   public toInput(): ProjectInput {
-    return {
-      name: this.name.trim(),
-      owner: this.owner.trim(),
-      status: this.status,
-      tags: this.tags.map((tag) => tag.trim()).filter((tag) => tag !== ""),
-      budget: this.budget ?? 0,
-    };
+    const input = new ProjectInput();
+    input.name = this.name.trim();
+    input.owner = this.owner.trim();
+    input.status = this.status;
+    input.tags = this.tags.map((tag) => tag.trim()).filter((tag) => tag !== "");
+    input.budget = this.budget ?? 0;
+    return input;
   }
 }

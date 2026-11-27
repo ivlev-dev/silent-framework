@@ -181,6 +181,138 @@ Wire: `[1][payload CreatedPayload]`, `[2][payload UpdatedPayload]`, `[3]`.
 - `bigint` вне int64 — ошибка.
 - Размер сообщения/строки/массива — настраиваемый лимит (по умолчанию 64 MiB).
 
+## HTTP
+
+Сам протокол не задаёт транспорт, но для HTTP API используется один контракт:
+
+- `Content-Type: application/x-silent-protocol` обязателен для тел `POST` и
+  `PATCH`; сервер проверяет его до декодирования и отвечает `415`
+  `invalid_content_type` на JSON или отсутствующий заголовок.
+- Тело — сырые байты `encode(value)` без base64, JSON-конвертов и вложенного
+  `Content-Length`. Query-параметры (фильтры, сортировка, пагинация) остаются
+  в URL.
+- `204 No Content` не имеет тела. Все остальные ответы, включая ошибки,
+  закодированы протоколом и имеют тот же `Content-Type`. Исключение —
+  `GET /uploads/{file}`: отдаёт файл с его MIME.
+- Размер тела ограничивается до декодирования (`413 payload_too_large`), а
+  декодер получает явные `Limits` (`maxDepth`, `maxSize`). В примере —
+  `Limits::new(32, 2 MiB)`: превышение объявленной длины строки/массива даёт
+  `400 invalid_payload`.
+
+Ошибки кодируются отдельной схемой с исходным HTTP-статусом:
+
+```text
+ApiError { code: string, message: string }
+```
+
+`code` — машиночитаемый (`invalid_query`, `invalid_input`, `invalid_path`,
+`invalid_content_type`, `invalid_payload`, `empty_body`, `payload_too_large`,
+`not_found`, `internal_error`, ...). Клиент сначала проверяет
+`response.ok`, затем декодирует `ApiError`; при неудачном декодировании
+использует запасной код `http_<status>`.
+
+### Эндпоинты примера
+
+| Метод и путь | Тело запроса | Успешный ответ |
+| --- | --- | --- |
+| `GET /api/health` | — | `200 Health { ok: bool }` |
+| `GET /api/projects?...` | — | `200 ProjectPage` |
+| `POST /api/projects` | `ProjectInput` | `201 Project` |
+| `PATCH /api/projects/{id}` | `ProjectPatch` | `200 Project` |
+| `DELETE /api/projects/{id}` | — | `204` без тела |
+| `GET /api/meta` | — | `200 ProjectMeta` |
+| `POST /api/uploads` | `multipart/form-data`, поле `file` | `201 UploadResult` |
+| `GET /uploads/{file}` | — | файл с MIME по расширению |
+
+Схемы примера (поля в порядке кодирования, TS-типы):
+
+```text
+Health        { ok: bool }
+Project       { budget: float64, createdAt: date, id: uint32, name: string,
+                owner: string, status: ProjectStatus, tags: array<string> }
+ProjectInput  { budget: float64, name: string, owner: string,
+                status: ProjectStatus, tags: array<string> }
+ProjectPatch  { budget?: float64, name?: string, owner?: string,
+                status?: ProjectStatus, tags?: array<string> }
+ProjectPage   { items: array<Project>, page: uint32, pageSize: uint32,
+                total: uint32 }
+ProjectMeta   { owners: array<string>, statuses: array<ProjectStatus>,
+                tags: array<string> }
+UploadResult  { id: string, mime: string, name: string, size: uint32,
+                url: string }
+ApiError      { code: string, message: string }
+```
+
+`ProjectStatus` — enum `active = 0`, `review = 1`, `done = 2`, `paused = 3`;
+в Rust поле помечается `#[proto(enum_type)]`, в TS тип — строковый union.
+`date` — epoch milliseconds (`i64` в Rust, `Date` в TS). `ProjectPatch`
+использует bitmap: биты `budget`, `name`, `owner`, `status`, `tags` (LSB
+сначала), отсутствующее поле не кодируется, `tags: []` кодируется битом и
+нулевой длиной.
+
+### Проверка curl
+
+Health — один байт `0x01`:
+
+```bash
+curl -s -D /tmp/health.headers -o /tmp/health.bin \
+  http://127.0.0.1:6108/api/health
+grep -i content-type /tmp/health.headers
+# content-type: application/x-silent-protocol
+od -An -tx1 -v /tmp/health.bin
+#  01
+```
+
+Список проектов: тип и размер ответа, первые байты — количество элементов,
+`budget` первого проекта и длина строки имени:
+
+```bash
+curl -s -D /tmp/projects.headers -o /tmp/projects.bin \
+  'http://127.0.0.1:6108/api/projects?pageSize=10&status=active'
+grep -i -E 'content-type|content-length' /tmp/projects.headers
+# content-type: application/x-silent-protocol
+# content-length: 813
+od -An -tx1 -v -N 32 /tmp/projects.bin
+#  0a 00 00 00 00 00 88 b3 40 d2 c6 97 d4 c3 68 01
+#  1b d0 a1 d0 b5 d0 b2 d0 b5 d1 80 d0 bd d1 8b d0
+```
+
+Создание проекта из готового вектора (тело — бинарный файл, не JSON):
+
+```bash
+xxd -r -p examples/ui/protocol-vectors/project-input.hex /tmp/input.bin
+# вариант без xxd:
+python3 -c 'import pathlib; pathlib.Path("/tmp/input.bin").write_bytes(bytes.fromhex(pathlib.Path("examples/ui/protocol-vectors/project-input.hex").read_text().strip()))'
+curl -s -D - -o /tmp/created.bin -X POST \
+  -H 'Content-Type: application/x-silent-protocol' \
+  --data-binary @/tmp/input.bin \
+  http://127.0.0.1:6108/api/projects
+# HTTP/1.1 201 Created
+# content-type: application/x-silent-protocol
+# content-length: 68
+od -An -tx1 -v -N 16 /tmp/created.bin
+#  00 00 00 00 80 92 b0 40 88 bb 99 d4 c3 68 f1 01
+```
+
+Ошибка тоже бинарная: неверный `Content-Type` даёт `415`, тело —
+`ApiError { code: "invalid_content_type", ... }`:
+
+```bash
+curl -s -o /tmp/error.bin -w '%{http_code}\n' -X POST \
+  -H 'Content-Type: application/json' --data '{}' \
+  http://127.0.0.1:6108/api/projects
+# 415
+od -An -tx1 -v -N 16 /tmp/error.bin
+#  14 69 6e 76 61 6c 69 64 5f 63 6f 6e 74 65 6e 74
+#  5f 74 79 70 65
+```
+
+Пустое тело — `400 empty_body`, битые байты — `400 invalid_payload`,
+превышение 2 MiB — `413 payload_too_large` (до декодирования), неизвестный
+`id` — `404 not_found`. Полный контракт и таблица схем —
+[`docs/api/protocol-http.md`](./api/protocol-http.md), серверная реализация —
+[`examples/ui/server/README.md`](../examples/ui/server/README.md).
+
 ## TS API
 
 ```ts
@@ -326,6 +458,15 @@ decode); валидации (`validate`) нет. Подробнее — [`php/RE
 3. Kotlin декодирует/кодирует аналогично.
 4. PHP декодирует/кодирует `protocol/vectors/user.json` тем же hex.
 5. Отпечаток схемы (sorted names + types) совпадает между языками.
+
+Прикладной набор для HTTP-примера лежит в `examples/ui/protocol-vectors/`:
+`Project`, `ProjectPage`, `ProjectMeta`, `ProjectInput`, `ProjectPatch`,
+`ApiError`, `UploadResult`, плюс кейсы с пустыми массивами, кириллицей,
+границами `uint32` и пустым/частичным bitmap. Каждый вектор — `<name>.json`
+(описание, `hex`, `fields`) и `<name>.hex` (байты). Rust-тест
+`examples/ui/server/tests/vector.rs` кодирует фикстуры и декодирует hex,
+TS-тест `examples/ui/tests/protocol-vector.test.ts` делает обратное и
+проверяет `maxSize`/`maxDepth`, обрезку и лишние байты.
 
 ## Реализации
 

@@ -1,0 +1,6 @@
+{
+  "name": "project-patch-empty",
+  "description": "ProjectPatch без изменений: один нулевой байт bitmap",
+  "hex": "00",
+  "fields": {}
+}

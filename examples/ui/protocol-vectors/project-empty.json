@@ -1,0 +1,14 @@
+{
+  "name": "project-empty",
+  "description": "Project с пустыми значениями: пустые строки и массив tags, нулевые id/date/budget",
+  "hex": "0000000000000000000000000000",
+  "fields": {
+    "budget": 0,
+    "createdAt": 0,
+    "id": 0,
+    "name": "",
+    "owner": "",
+    "status": "active",
+    "tags": []
+  }
+}
