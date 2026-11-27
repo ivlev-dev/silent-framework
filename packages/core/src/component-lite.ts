@@ -5,6 +5,7 @@ import {
   getOwner,
   onCleanup,
   runWithOwner,
+  untrack,
   type Owner,
 } from "@ivlev-dev/silent-reactivity";
 import { NODE_DISPOSER, attachDisposer, collectNodes, disposeNode, isServerMode } from "./dom.js";
@@ -398,19 +399,21 @@ function refreshLightInstance(instance: LightInstance, initial: boolean): void {
   let output: unknown = null;
   let built: LightBuilt;
   try {
-    runWithOwner(null, () => {
-      createRoot((dispose) => {
-        nextRootDispose = dispose;
-        owner = getOwner();
-        adoptContextValues(owner, instance.contextValues);
-        const render = (): unknown =>
-          (instance.fn as unknown as (values: Record<string, unknown>) => unknown)(
-            instance.props.value,
-          );
-        output = hasRuntimeOptions(instance.options)
-          ? withRuntimeOptions(instance.options, render)
-          : render();
-        return null;
+    untrack(() => {
+      runWithOwner(null, () => {
+        createRoot((dispose) => {
+          nextRootDispose = dispose;
+          owner = getOwner();
+          adoptContextValues(owner, instance.contextValues);
+          const render = (): unknown =>
+            (instance.fn as unknown as (values: Record<string, unknown>) => unknown)(
+              instance.props.value,
+            );
+          output = hasRuntimeOptions(instance.options)
+            ? withRuntimeOptions(instance.options, render)
+            : render();
+          return null;
+        });
       });
     });
     built = buildLightOutput(instance, output, initial);

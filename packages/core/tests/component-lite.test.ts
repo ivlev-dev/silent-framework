@@ -169,4 +169,36 @@ describe("light-путь", () => {
       setEffectErrorHandler(previousHandler);
     }
   });
+
+  it("не зацикливает внешний insert-эффект через чтения и записи в теле компонента", async () => {
+    setComponentCreator(null);
+    let renders = 0;
+    const [counter, setCounter] = createSignal(0);
+
+    function Writer(props: { readonly label: string }): HTMLElement {
+      renders += 1;
+      const previous = counter();
+      const element = document.createElement("span");
+      element.textContent = `${props.label}:${String(previous)}`;
+      setCounter(previous + 1);
+      return element;
+    }
+
+    function App(): HTMLElement {
+      const element = document.createElement("div");
+      insert(element, () =>
+        component(Writer as unknown as AnyComponent, {
+          get label() {
+            return `run-${String(counter())}`;
+          },
+        }),
+      );
+      return element;
+    }
+
+    const target = host();
+    await mount(target, asComponent(() => App()));
+    flushSync();
+    expect(renders).toBeLessThanOrEqual(2);
+  });
 });
