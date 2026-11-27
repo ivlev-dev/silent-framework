@@ -799,11 +799,11 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `Card`
 
-`function Card(props: CardProps): Node` — карточка-контейнер: `variant` (`elevated`/`filled`/`outlined`), `media` + `mediaAspect`, `header` + `headerLines`, `actions`, `padding`. При `interactive` — ARIA-семантика кнопки на `div` (Enter/Space), чтобы в слоты можно было класть ссылки.
+`function Card(props: CardProps): Node` — карточка-контейнер: `variant` (`elevated`/`filled`/`outlined`), `media` + `mediaAspect`, `header` + `headerLines`, `actions`, `footer`, `padding`. Заголовок и тело разделены ритмом `--sui-card-gap`, подвал — линией и `--sui-card-footer-gap`. При `interactive` — ARIA-семантика кнопки на `div` (Enter/Space), чтобы в слоты можно было класть ссылки.
 
 ### `CardProps`
 
-`interface CardProps` — пропсы `Card`: `variant`, `interactive`, `disabled`, `padding`, `media`, `mediaAspect`, `header`, `headerLines` (1–3 строки перед обрезкой), `actions`, `onClick`, `class`, `style`, `attrs`, `children`, `ref`.
+`interface CardProps` — пропсы `Card`: `variant`, `interactive`, `disabled`, `padding`, `media`, `mediaAspect`, `header`, `headerLines` (1–3 строки перед обрезкой), `actions`, `footer`, `onClick`, `class`, `style`, `attrs`, `children`, `ref`.
 
 ### `CardVariant`
 
@@ -843,7 +843,7 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `TableColumn`
 
-`interface TableColumn<Row>` — колонка: `key`, `header`, `align`, `width`, `sortable`, `truncate` (одна строка с многоточием), `lines` (1–3 строки), `renderCell`.
+`interface TableColumn<Row>` — колонка: `key`, `header`, `align`, `width`, `sortable`, `truncate` (одна строка с многоточием), `lines` (1–3 строки), `renderCell`. У `truncate`/`lines` полный текст попадает в `title` содержимого, если ячейка — строка или число.
 
 ### `TableAlign`
 
@@ -852,6 +852,298 @@ import "@ivlev-dev/silent-ui/styles.css";
 ### `TableSortDirection`
 
 `type TableSortDirection = "ascending" | "descending"` — направление сортировки.
+
+### `DataTable`
+
+`function DataTable<Row>(props: DataTableProps<Row>): Node` — серверная таблица: липкий заголовок, ресайз и перестановка колонок перетаскиванием за заголовок (клик по сортировке и ресайзер не запускают drag), клавиатура (`Space`, стрелки) на заголовке, сохранение порядка/ширин/видимости/плотности/раскладки в `localStorage` по `tableKey`, массовый выбор с панелью действий, настройки в диалоге, раскладка `table`/`cards` (узкий экран переключается автоматически при отсутствии явного `layout`), дерево строк и `loading`/`error`/`empty`. Ресайз фиксирует измеренные ширины, показывает текущее значение в badge и сохраняет после pointerup; `Home`/двойной клик сбрасывают ширину. Содержимое обрезанных ячеек получает `title`.
+
+### `DataTableProps`
+
+`interface DataTableProps<Row>` — пропсы: `tableKey` (ключ сохранённых настроек), `columns`, `rows`, `rowKey`, `loading`, `error`, `total`, `page`, `pageSize`, `pageSizeOptions` (по умолчанию `[10, 20, 50, 100]`), `sortKey`, `sortDirection`, `onSort`, `onPageChange`, `onPageSizeChange`, `onRowClick`, `toolbar`, `empty`, `selection`, `density` (`compact`/`standard`), `title`, `subtitle`, `actions`, `layout` (`table`/`cards`), `defaultLayout`, `onLayoutChange`, `settings`, `renderCard`, `selectionBarPosition` (`top`/`bottom`), `stickyHeader`, `stickyFooter`, `scrollMode` (`page`/`contained`), `tree`, `layoutLabel`, `class`, `style`, `attrs`.
+
+### `DataTableColumn`
+
+`interface DataTableColumn<Row>` — колонка: `key`, `header`, `width`, `minWidth`, `maxWidth`, `resizable`, `sortable`, `align`, `truncate`, `render`, `locked` (нельзя скрыть), `defaultVisible` и `card` (слот/подпись карточки).
+
+### `DataTableAlign`
+
+`type DataTableAlign = "start" | "center" | "end"` — выравнивание колонки.
+
+### `DataTableDensity`
+
+`type DataTableDensity = "compact" | "standard"` — плотность строк: 48/44px.
+
+### `DataTableLayout`
+
+`type DataTableLayout = "table" | "cards"` — раскладка; без явного пропса экран уже 64em показывает карточки.
+
+### `DataTableScrollMode`
+
+`type DataTableScrollMode = "contained" | "page"` — скролл контейнера с `max-block-size` или страницы.
+
+### `DataTableSelectionBarPosition`
+
+`type DataTableSelectionBarPosition = "top" | "bottom"` — где закреплена панель массовых действий.
+
+### `DataTableCardSlot`
+
+`type DataTableCardSlot = "primary" | "secondary" | "badge" | "meta" | "actions"` — слот колонки в карточке.
+
+### `DataTableCardColumn`
+
+`interface DataTableCardColumn` — `slot`, `label`, `hidden`.
+
+### `DataTableCardContext`
+
+`interface DataTableCardContext` — контекст `renderCard`: `selected`, `index`, `level`, `expanded`, `hasChildren`, `toggleExpand`.
+
+### `DataTableTree`
+
+`interface DataTableTree<Row>` — дерево строк: `getChildren`, `hasChildren`, `expandedKeys`, `defaultExpandedKeys`, `onExpandedChange`, `loadingKeys`, `onLoadChildren`, `cascadeSelection`, `getSearchText`, `searchQuery`.
+
+### `DataTableSortDirection`
+
+`type DataTableSortDirection = "ascending" | "descending"` — направление сортировки.
+
+### `DataTableSelection`
+
+`interface DataTableSelection` — управляемый выбор: `selected` (`ReadonlySet<string | number>`), `onChange`, `actions`, `isRowSelectable`, `selectOnRowClick`.
+
+### `DataTableSettings`
+
+`interface DataTableSettings` — сохранённые настройки таблицы: `order` (ключи колонок) и `widths` (ширины по ключам).
+
+### `DATA_TABLE_STORAGE_PREFIX`
+
+`const DATA_TABLE_STORAGE_PREFIX = "sui-data-table:"` — префикс ключей `localStorage`.
+
+### `DEFAULT_COLUMN_MIN_WIDTH`
+
+`const DEFAULT_COLUMN_MIN_WIDTH = 64` — минимальная ширина колонки в пикселях.
+
+### `DEFAULT_COLUMN_MAX_WIDTH`
+
+`const DEFAULT_COLUMN_MAX_WIDTH = 960` — максимальная ширина колонки в пикселях.
+
+### `FALLBACK_COLUMN_WIDTH`
+
+`const FALLBACK_COLUMN_WIDTH = 160` — ширина колонки без явной настройки.
+
+### `dataTableStorageKey`
+
+`function dataTableStorageKey(tableKey: string): string` — ключ `localStorage` для `tableKey`.
+
+### `readDataTableSettings`
+
+`function readDataTableSettings(tableKey: string): DataTableSettings` — читает порядок и ширины; при недоступном `localStorage` или битом JSON возвращает пустой снимок.
+
+### `writeDataTableSettings`
+
+`function writeDataTableSettings(tableKey: string, settings: DataTableSettings): void` — сохраняет настройки, молча игнорируя недоступное хранилище.
+
+### `clearDataTableSettings`
+
+`function clearDataTableSettings(tableKey: string): void` — удаляет сохранённый снимок.
+
+### `columnWidthBounds`
+
+`function columnWidthBounds<Row>(column: DataTableColumn<Row>): { min: number; max: number }` — границы ширины с учётом `minWidth`/`maxWidth`; `max` не меньше `min`.
+
+### `clampColumnWidth`
+
+`function clampColumnWidth<Row>(column: DataTableColumn<Row>, width: number): number` — округляет и зажимает ширину в границы колонки.
+
+### `resolveColumnWidth`
+
+`function resolveColumnWidth<Row>(column: DataTableColumn<Row>, saved: number | undefined): number | undefined` — выбирает сохранённую или объявленную ширину и зажимает её.
+
+### `resolveColumnWidths`
+
+`function resolveColumnWidths<Row>(columns: readonly DataTableColumn<Row>[], saved: Readonly<Record<string, number>>): Readonly<Record<string, number>>` — карта ширин для набора колонок.
+
+### `mergeColumnOrder`
+
+`function mergeColumnOrder<Row>(columns: readonly DataTableColumn<Row>[], savedOrder: readonly string[]): readonly string[]` — сохранённый порядок без чужих/дублирующихся ключей + новые колонки в конце.
+
+### `orderColumns`
+
+`function orderColumns<Row>(columns: readonly DataTableColumn<Row>[], savedOrder: readonly string[]): readonly DataTableColumn<Row>[]` — колонки в сохранённом порядке.
+
+### `DatePicker`
+
+`function DatePicker(props: DatePickerProps): Node` — поле даты с календарём в `Popover`: ручной ввод, маска формата, выбор дня, `min`/`max`, очистка, `Escape` и возврат фокуса, roving tabindex в сетке дней. Значение — `Date` или строка формата; скрытый `input` отправляет ISO-дату в форму.
+
+### `DatePickerProps`
+
+`interface DatePickerProps` — пропсы: `value`, `defaultValue`, `onValueChange`, `min`, `max`, `disabled`, `readOnly`, `required`, `label`, `hint`, `error`, `size`, `locale` (по умолчанию `ru-RU`), `format`, `parse`, `name`, `id`, `placeholder`, `clearable`, `firstDayOfWeek`, `ariaLabel`, `open`, `defaultOpen`, `onOpenChange`, `class`, `style`, `attrs`.
+
+### `DateRangePicker`
+
+`function DateRangePicker(props: DateRangePickerProps): Node` — диапазон дат: два поля (начало/конец), общий календарь с подсветкой диапазона, пресеты (`7 дней`, `30 дней`, `Этот месяц`), `min`/`max`, очистка и возврат фокуса.
+
+### `DateRangePickerProps`
+
+`interface DateRangePickerProps` — пропсы: `value`, `defaultValue`, `onValueChange`, `min`, `max`, `disabled`, `readOnly`, `required`, `label`, `hint`, `error`, `size`, `locale`, `format`, `name`, `endName`, `id`, `placeholder`, `clearable`, `firstDayOfWeek`, `presets` (`false` отключает), `ariaLabel`, `open`, `defaultOpen`, `onOpenChange`, `class`, `style`, `attrs`.
+
+### `DateRangeValue`
+
+`interface DateRangeValue` — диапазон: `start` и `end` (`Date | null`).
+
+### `DateRangePreset`
+
+`interface DateRangePreset` — пресет: `key`, `label` и `range(today)`.
+
+### `DEFAULT_DATE_RANGE_PRESETS`
+
+`const DEFAULT_DATE_RANGE_PRESETS` — встроенные пресеты «7 дней», «30 дней», «Этот месяц».
+
+### `formatDateValue`
+
+`function formatDateValue(value: Date, format?: string, locale?: string): string` — форматирует дату по маске (`dd.MM.yyyy` по умолчанию).
+
+### `parseDateValue`
+
+`function parseDateValue(raw: string, options?: DateParseOptions): Date | null` — разбирает дату по маске/локали; пустая или некорректная строка → `null`.
+
+### `DateParseOptions`
+
+`interface DateParseOptions` — `format`, `locale` и собственный `parse` для нестандартного ввода.
+
+### `ColorPicker`
+
+`function ColorPicker(props: ColorPickerProps): Node` — выбор цвета: поле с превью и HEX-вводом, панель с saturation/value, hue, alpha, пресетами и кнопками «Готово»/«Очистить»; поддерживает `#RGB`, `#RRGGBB`, `rgb()`/`hsl()`, клавиатуру и возврат фокуса.
+
+### `ColorPickerProps`
+
+`interface ColorPickerProps` — пропсы: `value`, `defaultValue`, `onValueChange`, `format` (`hex`/`rgb`/`hsl`), `showAlpha`, `presets`, `disabled`, `readOnly`, `required`, `label`, `hint`, `error`, `size`, `locale`, `name`, `id`, `placeholder`, `clearable`, `ariaLabel`, `open`, `defaultOpen`, `onOpenChange`, `class`, `style`, `attrs`.
+
+### `DEFAULT_COLOR_PRESETS`
+
+`const DEFAULT_COLOR_PRESETS` — палитра пресетов из цветов дизайн-системы.
+
+### `ColorFormat`
+
+`type ColorFormat = "hex" | "rgb" | "hsl"` — формат значения `ColorPicker`.
+
+### `RgbaColor`
+
+`interface RgbaColor` — `r`, `g`, `b` (0–255) и `a` (0–1).
+
+### `HslColor`
+
+`interface HslColor` — `h` (0–360), `s`/`l` (0–100) и `a`.
+
+### `HsvColor`
+
+`interface HsvColor` — `h`, `s`/`v` (0–100) и `a`.
+
+### `parseColor`
+
+`function parseColor(input: string): RgbaColor | null` — разбирает HEX/RGB/HSL, включая alpha.
+
+### `isValidColor`
+
+`function isValidColor(input: string): boolean` — проверка поддержанного формата.
+
+### `normalizeColor`
+
+`function normalizeColor(input: string): string | null` — канонический `#RRGGBB`/`#RRGGBBAA`.
+
+### `formatColor`
+
+`function formatColor(color: RgbaColor, format?: ColorFormat): string` — строка в выбранном формате.
+
+### `colorsEqual`
+
+`function colorsEqual(left: RgbaColor, right: RgbaColor): boolean` — сравнение с учётом alpha.
+
+### `toHex`
+
+`function toHex(color: RgbaColor): string` — HEX-строка.
+
+### `toRgbString`
+
+`function toRgbString(color: RgbaColor): string` — `rgb()`/`rgba()`.
+
+### `toHslString`
+
+`function toHslString(color: RgbaColor): string` — `hsl()`/`hsla()`.
+
+### `toCssColor`
+
+`function toCssColor(color: RgbaColor): string` — CSS-значение с непрозрачностью.
+
+### `rgbToHsl`
+
+`function rgbToHsl(color: RgbaColor): HslColor` — конвертация RGB → HSL.
+
+### `hslToRgb`
+
+`function hslToRgb(color: HslColor): RgbaColor` — конвертация HSL → RGB.
+
+### `rgbToHsv`
+
+`function rgbToHsv(color: RgbaColor): HsvColor` — конвертация RGB → HSV.
+
+### `hsvToRgb`
+
+`function hsvToRgb(color: HsvColor): RgbaColor` — конвертация HSV → RGB.
+
+### `FileUpload`
+
+`function FileUpload(props: FileUploadProps): Node` — зона/компактный список загрузки: drag&drop, выбор файлов, `accept`/`maxSize`/`maxFiles`, превью изображений, прогресс, отмена, повтор и удаление. `upload` получает `File` и `AbortSignal`; без него файлы остаются локальными (`queued`). Отклонённые файлы не попадают в список, причина отдаётся в `onReject`.
+
+### `FileUploadProps`
+
+`interface FileUploadProps` — пропсы: `files`, `defaultFiles`, `onFilesChange`, `multiple`, `accept`, `maxSize`, `maxFiles`, `upload`, `autoUpload`, `variant` (`zone`/`compact`), `size`, `label`, `hint`, `error`, `name`, `id`, `required`, `disabled`, `readOnly`, `chooseLabel`, `dropLabel`, `listLabel`, `showPreview`, `onReject`, `onUploadError`, `onBlur`, `onFocus`, `class`, `style`, `attrs`.
+
+### `FileUploadItem`
+
+`interface FileUploadItem` — файл в списке: `id`, `name`, `size`, `type`, `status`, `progress`, `file`, `error`, `url`, `previewUrl`, `response`.
+
+### `FileUploadStatus`
+
+`type FileUploadStatus = "queued" | "uploading" | "success" | "error" | "cancelled"` — статус файла.
+
+### `FileUploadVariant`
+
+`type FileUploadVariant = "zone" | "compact"` — вид контрола.
+
+### `FileUploadHandler`
+
+`type FileUploadHandler = (file: File, context: FileUploadContext) => Promise<FileUploadResult>` — загрузчик.
+
+### `FileUploadContext`
+
+`interface FileUploadContext` — `onProgress(percent)` и `signal` для отмены.
+
+### `FileUploadResult`
+
+`interface FileUploadResult` — ответ загрузчика: `id`, `url` и произвольные метаданные.
+
+### `FileUploadRejection`
+
+`interface FileUploadRejection` — отклонённый файл: `file`, `reason`, `message`.
+
+### `FileUploadRejectionReason`
+
+`type FileUploadRejectionReason = "accept" | "max-size" | "max-files" | "duplicate"` — причина отказа.
+
+### `createXhrUpload`
+
+`function createXhrUpload(options?: XhrUploadOptions): FileUploadHandler` — XHR-загрузчик с прогрессом и отменой.
+
+### `XhrUploadOptions`
+
+`interface XhrUploadOptions` — `method`, `fieldName`, `headers`, `withCredentials`, `responseType`, `parse`.
+
+### `formatFileSize`
+
+`function formatFileSize(bytes: number): string` — человекочитаемый размер (`1,4 МБ`).
+
+### `matchesAccept`
+
+`function matchesAccept(file: File, accept: string | undefined): boolean` — проверка MIME/`image/*`/расширения.
 
 ### `EmptyState`
 
@@ -1231,6 +1523,38 @@ SSR отдаёт пустую контентную область: HTML не п�
 
 `interface SelectOption` — опция: `value`, `label`, `disabled`.
 
+### `TreeSelect`
+
+`function TreeSelect(props: TreeSelectProps): Node` — дерево с выбором в панели `Popover`: одиночный/множественный выбор, каскадные чекбоксы, «Выбрать все», поиск с сохранением пути (`keep-ancestors`) или только совпадениями (`filter`), ленивая загрузка детей и результатов, клавиатура (стрелки/Home/End/typeahead) и виртуализация длинных списков. Значение — узел или массив узлов; `emit` определяет, попадают ли в него листья, родители или оба уровня.
+
+### `TreeSelectProps`
+
+`interface TreeSelectProps` — пропсы: `nodes`, `load`, `searchDelay` (по умолчанию 250 мс), `loadError`, `onLoadError`, `value`, `defaultValue`, `onValueChange`, `field`, `multiple`, `cascade` (`independent`/`down`/`up`/`both`), `emit` (`leaves`/`checked`/`all`), `selectableParents`, `expanded`, `defaultExpanded`, `expandedKeys`, `defaultExpandedKeys`, `onExpandedChange`, `expandOnClick` (`icon`/`row`), `searchable`, `searchStrategy`, `flattenOnSearch`, `showCheckboxes`, `checkable`, `showSelectAll`, `selectAllLabel`, `clearable`, `clearLabel`, `renderOption`, `getOptionLabel`, `empty`, `loading`, `loadingText`, `maxVisibleOptions`, `size`, `label`, `hint`, `error`, `placeholder`, `name`, `id`, `required`, `invalid`, `disabled`, `readOnly`, `bare`, `describedBy`, `ariaLabel`, `onChange`, `onBlur`, `onFocus`, `class`, `style`, `attrs`.
+
+### `TreeSelectNode`
+
+`interface TreeSelectNode` — узел дерева: `value`, `label`, `children`, `disabled`, `description`, `icon`, `keywords`, `hasChildren` (алиас `lazy`) для ленивых детей.
+
+### `TreeSelectValue`
+
+`type TreeSelectValue = string | number | readonly (string | number)[]` — значение узла или массив значений.
+
+### `TreeSelectCascade`
+
+`type TreeSelectCascade = "independent" | "down" | "up" | "both"` — направление каскада выбора.
+
+### `TreeSelectEmit`
+
+`type TreeSelectEmit = "leaves" | "checked" | "all"` — какие узлы попадают в значение.
+
+### `TreeSelectSearchStrategy`
+
+`type TreeSelectSearchStrategy = "filter" | "keep-ancestors"` — показывать совпадения с путём предков или одним уровнем.
+
+### `TreeSelectExpandTrigger`
+
+`type TreeSelectExpandTrigger = "icon" | "row"` — что раскрывает узел.
+
 ### `Checkbox`
 
 `function Checkbox(props: CheckboxProps): Node` — чекбокс с необязательным `indeterminate`, описанием и связкой с `field`.
@@ -1286,3 +1610,15 @@ SSR отдаёт пустую контентную область: HTML не п�
 ### `FieldArrayProps`
 
 `interface FieldArrayProps<T extends Form>` — пропсы: `array`, `children`, `keyOf`, `label`, `hint`, `addLabel`, `removeLabel`, `moveUpLabel`, `moveDownLabel`, `min`, `max`, `allowMove`, `onAdd`, `onRemove`, `onMove`.
+
+### Дополнительные контролы (глубокие входы)
+
+`NumberField`, `OtpInput`, `Combobox` и `TagInput` не входят в корневой баррель, чтобы не раздувать основной вход: они поставляются как `@ivlev-dev/silent-ui/form/number-field`, `…/form/otp-input`, `…/form/combobox` и `…/form/tag-input`. Все четыре используют общий `Field`, поддерживают `size` (`sm`/`md`/`lg`), `label`/`hint`/`error`, `disabled`/`readOnly`/`required`, `field` из `@ivlev-dev/silent-form` и события `onChange`/`onBlur`/`onFocus`.
+
+`NumberField` принимает `value`/`defaultValue`, `min`/`max`/`step`/`precision`, `steppers` (`true`/`false`/`auto`), `allowWheel`, `clampOnBlur`, `format`/`parse`, `locale` и `unit`; значение можно вводить как текст с группировкой и запятой.
+
+`OtpInput` — `length`, `value`/`defaultValue`, `mask`, `groups`, `separator`, `autoFocus`, `autoSubmit`, `onComplete` и `onValueChange(value, { reason })`.
+
+`Combobox` — `options`, `value`/`defaultValue`, `onValueChange`, `onQueryChange`, `allowCustomValue`, `creatable`, `createOption`, `loadOptions`, `loading`, `openOnFocus`, `openOnInput`, `minQueryLength`, `debounce`, `selectOnTab`, `clearable`, `renderOption`, `maxVisible`.
+
+`TagInput` — `value`/`defaultValue`, `suggestions`, `loadSuggestions`, `allowCustom`, `max`, `minLength`/`maxLength`, `delimiters`, `splitOnPaste`, `unique`, `normalize`, `validateTag`, `renderTag`, `clearable` и `onValueChange`.

@@ -28,10 +28,7 @@
     gap: var(--sui-space-1);
     box-sizing: border-box;
     min-inline-size: 0;
-    min-block-size: max(
-      var(--sui-tag-input-min-block),
-      var(--sui-touch-target)
-    );
+    min-block-size: var(--sui-tag-input-min-block);
     padding: var(--sui-tag-input-padding);
     border: var(--sui-hairline) solid var(--sui-tag-input-border-color);
     border-radius: var(--sui-tag-input-radius);
@@ -62,8 +59,16 @@
 
   .sui-tag-input[data-disabled] {
     background-color: var(--sui-tag-input-disabled-bg);
-    opacity: var(--sui-state-disabled);
     cursor: not-allowed;
+  }
+
+  .sui-tag-input[data-disabled] .sui-tag-input__chip {
+    background-color: var(--sui-color-surface-container-high);
+    color: var(--sui-color-on-surface-muted);
+  }
+
+  .sui-tag-input[data-disabled] .sui-tag-input__input {
+    color: var(--sui-color-on-surface-muted);
   }
 
   .sui-tag-input[data-readonly] {
@@ -76,6 +81,7 @@
       var(--sui-control-height-sm) * var(--sui-density)
     );
     --sui-tag-input-chip-font-size: var(--sui-type-label-medium-size);
+    --sui-tag-input-clear-size: 1.375rem;
   }
 
   .sui-tag-input[data-size="lg"] {
@@ -83,6 +89,7 @@
       var(--sui-control-height-lg) * var(--sui-density)
     );
     --sui-tag-input-chip-font-size: var(--sui-type-body-small-size);
+    --sui-tag-input-clear-size: 2.25rem;
   }
 
   .sui-tag-input__chips {
@@ -150,7 +157,10 @@
   .sui-tag-input__input {
     flex: 1 1 6rem;
     min-inline-size: 4rem;
-    block-size: calc(var(--sui-control-height-sm) * var(--sui-density));
+    block-size: calc(
+      var(--sui-tag-input-min-block) - 2 * var(--sui-space-1) -
+        var(--sui-hairline) * 2
+    );
     margin: 0;
     padding: 0 var(--sui-space-1);
     border: 0;
@@ -208,6 +218,10 @@
     .sui-tag-input {
       --sui-tag-input-remove-size: var(--sui-touch-target);
       --sui-tag-input-clear-size: var(--sui-touch-target);
+      min-block-size: max(
+        var(--sui-tag-input-min-block),
+        var(--sui-touch-target)
+      );
     }
 
     .sui-tag-input__chip {

@@ -25,6 +25,8 @@ export interface CardProps {
   readonly headerLines?: 1 | 2 | 3 | undefined;
   /** Действия внизу карточки. */
   readonly actions?: Children;
+  /** Подвал отдельным слотом: служебные действия, метаданные, ссылки. */
+  readonly footer?: Children;
   readonly onClick?: ((event: MouseEvent | KeyboardEvent) => void) | undefined;
   readonly class?: ClassNameValue;
   readonly style?: StyleInput;
@@ -49,7 +51,7 @@ export function Card(props: CardProps): Node {
       class={["sui-card", props.class]}
       style={props.style}
       data-variant={props.variant ?? "elevated"}
-      data-padding={props.padding ?? 4}
+      data-padding={props.padding ?? 5}
       data-media-aspect={props.mediaAspect ?? "auto"}
       data-header-lines={props.headerLines}
       data-interactive={interactive ? "" : undefined}
@@ -77,6 +79,9 @@ export function Card(props: CardProps): Node {
       <div class="sui-card__body">{props.children}</div>
       <Show when={props.actions !== undefined && props.actions !== null}>
         <div class="sui-card__actions">{props.actions}</div>
+      </Show>
+      <Show when={props.footer !== undefined && props.footer !== null}>
+        <div class="sui-card__footer">{props.footer}</div>
       </Show>
     </div>
   );

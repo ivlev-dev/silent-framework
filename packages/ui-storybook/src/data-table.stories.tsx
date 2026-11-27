@@ -7,7 +7,10 @@ import {
   dataTableStorageKey,
   type DataTableColumn,
   type DataTableDensity,
+  type DataTableLayout,
+  type DataTableScrollMode,
   type DataTableSortDirection,
+  type DataTableTree,
 } from "../../ui/src/components/data-table/index.js";
 import { silentStory } from "./silent-story.js";
 
@@ -89,6 +92,12 @@ interface DataTableArgs {
   readonly empty: boolean;
   readonly density: DataTableDensity;
   readonly selectionEnabled: boolean;
+  readonly layout?: DataTableLayout | undefined;
+  readonly stickyFooter: boolean;
+  readonly scrollMode: DataTableScrollMode;
+  readonly title: string;
+  readonly subtitle: string;
+  readonly cards: boolean;
   readonly toolbarText: string;
   readonly columns?: readonly DataTableColumn<Person>[];
   readonly rows?: readonly Person[];
@@ -112,8 +121,11 @@ const meta = {
           "Ширины и порядок колонок сохраняются в localStorage по `tableKey`;",
           "новые колонки добавляются в конец, удалённые игнорируются, ширины",
           "валидируются по `minWidth`/`maxWidth`. Колонки переставляются",
-          "перетаскиванием за ручку или с клавиатуры (Space, стрелки, Space).",
-          "На узких экранах таблица прокручивается по горизонтали.",
+          "перетаскиванием за заголовок (клик по сортировке и ресайзер не мешают)",
+          "или с клавиатуры (Space, стрелки, Space). Ресайз фиксирует измеренные",
+          "ширины и показывает текущий размер. Настройки (видимость, порядок,",
+          "плотность, sticky, layout) хранятся в localStorage; узкий экран",
+          "переключает таблицу в карточки, массовые действия закреплены сверху.",
         ].join(" "),
       },
       canvas: { sourceState: "shown" },
@@ -135,6 +147,20 @@ const meta = {
       description: "Плотность строк",
     },
     selectionEnabled: { control: "boolean", description: "Колонка выбора строк" },
+    layout: {
+      control: "inline-radio",
+      options: ["table", "cards"],
+      description: "Раскладка; без пропса узкий экран выбирает карточки",
+    },
+    stickyFooter: { control: "boolean", description: "Закрепить подвал при прокрутке" },
+    scrollMode: {
+      control: "inline-radio",
+      options: ["page", "contained"],
+      description: "Скролл страницы или контейнера",
+    },
+    title: { control: "text", description: "Заголовок таблицы" },
+    subtitle: { control: "text", description: "Подзаголовок" },
+    cards: { control: "boolean", description: "Показать карточки вместо таблицы" },
     toolbarText: { control: "text", description: "Текст в слоте toolbar" },
     columns: {
       control: false,
@@ -171,6 +197,11 @@ const meta = {
     empty: false,
     density: "standard",
     selectionEnabled: false,
+    stickyFooter: false,
+    scrollMode: "page",
+    title: "Команда",
+    subtitle: "Данные обновляются на сервере",
+    cards: false,
     toolbarText: "Серверная таблица",
     onSort: fn(),
     onPageChange: fn(),
@@ -209,6 +240,9 @@ function DataTableDemo(args: DataTableArgs): Node {
     args.sortDirection,
   );
   const [selected, setSelected] = createSignal<ReadonlySet<string | number>>(new Set());
+  const [layoutOverride, setLayoutOverride] = createSignal<DataTableLayout | null>(null);
+  const layout = (): DataTableLayout | undefined =>
+    layoutOverride() ?? args.layout ?? (args.cards ? "cards" : undefined);
 
   const total = (): number => (args.empty || args.error !== "" ? 0 : PEOPLE.length);
   const rows = (): readonly Person[] => {
@@ -217,16 +251,6 @@ function DataTableDemo(args: DataTableArgs): Node {
     const start = (page() - 1) * pageSize();
     return sorted.slice(start, start + pageSize());
   };
-
-  const selection = args.selectionEnabled
-    ? {
-        selected: selected(),
-        onChange: (keys: ReadonlySet<string | number>) => {
-          setSelected(keys);
-          args.onSelectionChange(keys);
-        },
-      }
-    : undefined;
 
   return (
     <Stack gap={3}>
@@ -247,7 +271,29 @@ function DataTableDemo(args: DataTableArgs): Node {
         sortKey={sortKey()}
         sortDirection={sortDirection()}
         density={args.density}
-        selection={selection}
+        selection={
+          args.selectionEnabled
+            ? {
+                selected: selected(),
+                onChange: (keys: ReadonlySet<string | number>) => {
+                  setSelected(keys);
+                  args.onSelectionChange(keys);
+                },
+              }
+            : undefined
+        }
+        layout={layout()}
+        onLayoutChange={setLayoutOverride}
+        stickyFooter={args.stickyFooter}
+        scrollMode={args.scrollMode}
+        title={args.title === "" ? undefined : args.title}
+        subtitle={args.subtitle === "" ? undefined : args.subtitle}
+        renderCard={(row) => (
+          <div>
+            <strong>{row.name}</strong>
+            <p>{row.role} · {row.score}</p>
+          </div>
+        )}
         toolbar={<Text variant="label-large">{args.toolbarText}</Text>}
         onSort={(key, direction) => {
           setSortKey(key);
@@ -344,19 +390,41 @@ export const ResizeAndReorder: Story = {
     const resizer = canvasElement.querySelector<HTMLButtonElement>(
       "button.sui-data-table__resizer[data-column-key='name']",
     );
-    const dragHandle = canvasElement.querySelector<HTMLButtonElement>(
-      "button.sui-data-table__drag-handle[data-dnd-id='name']",
-    );
-    if (resizer === null || dragHandle === null) {
-      throw new Error("не найдены ручки ресайза и перестановки");
+    const header = canvasElement.querySelector<HTMLElement>("th[data-column-key='name']");
+    if (resizer === null || header === null) {
+      throw new Error("не найдены ресайзер и заголовок");
     }
     await expect(resizer.getAttribute("aria-label")).toContain("Изменить ширину");
-    await expect(dragHandle.getAttribute("aria-label")).toContain("Переместить колонку");
+    await expect(header.getAttribute("aria-label")).toContain("Перетащить колонку");
 
-    resizer.focus();
-    await userEvent.keyboard("{ArrowRight}");
+    const rect = resizer.getBoundingClientRect();
+    resizer.dispatchEvent(new PointerEvent("pointerdown", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2,
+    }));
+    window.dispatchEvent(new PointerEvent("pointermove", {
+      bubbles: true,
+      clientX: rect.left + rect.width / 2 + 24,
+      clientY: rect.top + rect.height / 2,
+    }));
+    await expect(canvasElement.querySelector(".sui-data-table__resize-chip")).not.toBeNull();
+    window.dispatchEvent(new PointerEvent("pointerup", {
+      bubbles: true,
+      clientX: rect.left + rect.width / 2 + 24,
+      clientY: rect.top + rect.height / 2,
+    }));
     await expect(window.localStorage.getItem(dataTableStorageKey("storybook-data-table-resize"))).toContain(
       "\"name\"",
+    );
+
+    header.focus();
+    await userEvent.keyboard(" ");
+    await userEvent.keyboard("{ArrowRight}");
+    await expect(window.localStorage.getItem(dataTableStorageKey("storybook-data-table-resize"))).toContain(
+      "\"order\"",
     );
 
     const reset = canvasElement.querySelector<HTMLButtonElement>("[data-testid='data-table-reset']");
@@ -378,4 +446,189 @@ export const NarrowScreen: Story = {
       <DataTableDemo {...args} />
     </div>
   )),
+};
+
+export const Settings: Story = {
+  name: "Настройки таблицы",
+  args: {
+    tableKey: "storybook-data-table-settings",
+    selectionEnabled: true,
+    pageSize: 10,
+  },
+  render: silentStory<DataTableArgs>((args) => DataTableDemo(args)),
+  play: async ({ canvasElement }) => {
+    const open = canvasElement.querySelector<HTMLButtonElement>(
+      "button[aria-label='Настройки таблицы']",
+    );
+    if (open === null) throw new Error("не найдена кнопка настроек");
+    await userEvent.click(open);
+    const dialog = canvasElement.querySelector<HTMLElement>("dialog.sui-dialog");
+    await expect(dialog?.hasAttribute("open")).toBe(true);
+
+    const first = dialog?.querySelector<HTMLInputElement>("input[type='checkbox']");
+    if (first === null || first === undefined) throw new Error("нет переключателя колонки");
+    await userEvent.click(first);
+    await expect(
+      window.localStorage.getItem(dataTableStorageKey("storybook-data-table-settings")),
+    ).toContain("visible");
+
+    const reset = dialog?.querySelector<HTMLButtonElement>(".sui-dialog__actions .sui-button");
+    if (reset !== null && reset !== undefined) await userEvent.click(reset);
+  },
+};
+
+export const Cards: Story = {
+  name: "Карточки",
+  args: {
+    tableKey: "storybook-data-table-cards",
+    selectionEnabled: true,
+    pageSize: 5,
+  },
+  render: silentStory<DataTableArgs>((args) => DataTableDemo(args)),
+  play: async ({ canvasElement }) => {
+    const toggle = canvasElement.querySelector<HTMLButtonElement>(".sui-data-table__layout-toggle");
+    if (toggle === null) throw new Error("нет переключателя раскладки");
+    await userEvent.click(toggle);
+    await expect(canvasElement.querySelectorAll(".sui-data-table__card").length).toBe(5);
+    await expect(canvasElement.querySelector(".sui-data-table__card strong")?.textContent).toContain("Ада");
+  },
+};
+
+interface Department extends Person {
+  readonly parentId: number | null;
+}
+
+const DEPARTMENTS: readonly Department[] = [
+  { id: 1, name: "Инженерия", role: "Отдел", score: 0, parentId: null },
+  { id: 2, name: "Ада Ловлейс", role: "Инженер", score: 98, parentId: 1 },
+  { id: 3, name: "Грейс Хоппер", role: "Архитектор", score: 95, parentId: 1 },
+  { id: 4, name: "Исследования", role: "Отдел", score: 0, parentId: null },
+  { id: 5, name: "Алан Тьюринг", role: "Исследователь", score: 91, parentId: 4 },
+  { id: 6, name: "Кэтрин Джонсон", role: "Математик", score: 89, parentId: 4 },
+];
+
+const DEPARTMENT_ROOTS = DEPARTMENTS.filter((row) => row.parentId === null);
+
+function TreeDemo(args: DataTableArgs): Node {
+  const [selected, setSelected] = createSignal<ReadonlySet<string | number>>(new Set());
+  const tree: DataTableTree<Department> = {
+    getChildren: (row) => DEPARTMENTS.filter((entry) => entry.parentId === row.id),
+    defaultExpandedKeys: ["1", "4"],
+    cascadeSelection: true,
+  };
+  return (
+    <DataTable
+      tableKey={args.tableKey}
+      columns={COLUMNS as readonly DataTableColumn<Department>[]}
+      rows={DEPARTMENT_ROOTS}
+      rowKey={(row) => row.id}
+      total={DEPARTMENTS.length}
+      page={1}
+      pageSize={10}
+      tree={tree}
+      title={args.title}
+      subtitle={args.subtitle}
+      selection={{
+        selected: selected(),
+        onChange: (keys) => {
+          setSelected(keys);
+          args.onSelectionChange(keys);
+        },
+        actions: <button type="button">Удалить</button>,
+      }}
+      onRowClick={args.onRowClick}
+    />
+  );
+}
+
+export const TreeRows: Story = {
+  name: "Дерево строк",
+  args: {
+    tableKey: "storybook-data-table-tree",
+    pageSize: 10,
+  },
+  render: silentStory<DataTableArgs>((args) => TreeDemo(args)),
+  play: async ({ canvasElement, args }) => {
+    const toggle = canvasElement.querySelector<HTMLButtonElement>(
+      "tbody tr[data-key='1'] button.sui-data-table__tree-toggle",
+    );
+    if (toggle === null) throw new Error("нет раскрытия ветки");
+    await expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    await userEvent.click(toggle);
+    await expect(toggle.getAttribute("aria-expanded")).toBe("false");
+
+    const parent = canvasElement.querySelector<HTMLInputElement>(
+      "input[aria-label='Выбрать строку 1']",
+    );
+    if (parent === null) throw new Error("нет выбора строки");
+    await userEvent.click(parent);
+    await expect(canvasElement.querySelector(".sui-data-table__selection-count")).not.toBeNull();
+    await expect(args.onSelectionChange).toHaveBeenCalled();
+  },
+};
+
+export const BulkActions: Story = {
+  name: "Массовые действия",
+  args: {
+    tableKey: "storybook-data-table-bulk",
+    selectionEnabled: true,
+  },
+  render: silentStory<DataTableArgs>((args) => DataTableDemo(args)),
+  play: async ({ canvasElement }) => {
+    const all = canvasElement.querySelector<HTMLInputElement>("input[aria-label='Выбрать все строки']");
+    if (all === null) throw new Error("нет выбора всех строк");
+    await userEvent.click(all);
+    await expect(canvasElement.querySelector(".sui-data-table__selection-bar")).not.toBeNull();
+    await expect(canvasElement.querySelector(".sui-data-table__selection-count")?.textContent).toContain("10");
+    const clear = canvasElement.querySelector<HTMLButtonElement>("[data-action='clear-selection']");
+    if (clear === null) throw new Error("нет очистки выбора");
+    await userEvent.click(clear);
+    await expect(canvasElement.querySelector(".sui-data-table__selection-bar")).toBeNull();
+  },
+};
+
+export const StickyFooter: Story = {
+  name: "Sticky header и footer",
+  args: {
+    tableKey: "storybook-data-table-sticky",
+    stickyFooter: true,
+    scrollMode: "contained",
+    pageSize: 10,
+  },
+  render: silentStory<DataTableArgs>((args) => (
+    <div style={{ blockSize: "420px" }}>
+      <DataTableDemo {...args} />
+    </div>
+  )),
+  play: async ({ canvasElement }) => {
+    await expect(
+      canvasElement.querySelector(".sui-data-table__footer")?.hasAttribute("data-sticky"),
+    ).toBe(true);
+    await expect(canvasElement.querySelector("thead th[data-column-key]")).not.toBeNull();
+  },
+};
+
+export const Dark: Story = {
+  name: "Тёмная тема",
+  args: {
+    tableKey: "storybook-data-table-dark",
+    selectionEnabled: true,
+    pageSize: 5,
+  },
+  render: silentStory<DataTableArgs>((args) => (
+    <div
+      data-theme="dark"
+      style={{
+        padding: "var(--sui-space-4)",
+        background: "var(--sui-color-surface)",
+        color: "var(--sui-color-on-surface)",
+      }}
+    >
+      <DataTableDemo {...args} />
+    </div>
+  )),
+  play: async ({ canvasElement }) => {
+    await expect(canvasElement.querySelector('[data-theme="dark"] .sui-data-table')).not.toBeNull();
+    await expect(canvasElement.querySelectorAll("tbody tr.sui-data-table__tr").length).toBe(5);
+  },
 };

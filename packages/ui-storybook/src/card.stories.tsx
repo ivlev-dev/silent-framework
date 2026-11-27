@@ -26,6 +26,7 @@ interface CardArgs {
   readonly interactive: boolean;
   readonly disabled: boolean;
   readonly header: string;
+  readonly footer: string;
   readonly body: string;
   readonly mediaAspect: CardMediaAspect;
   readonly headerLines: 0 | 1 | 2 | 3;
@@ -58,7 +59,7 @@ const meta = {
     padding: {
       control: { type: "range", min: 0, max: 8, step: 1 },
       description: "Внутренние отступы (медиа выходит к краям)",
-      table: { defaultValue: { summary: "4" } },
+      table: { defaultValue: { summary: "5" } },
     },
     interactive: {
       control: "boolean",
@@ -71,6 +72,7 @@ const meta = {
       table: { defaultValue: { summary: "false" } },
     },
     header: { control: "text", description: "Заголовок над телом" },
+    footer: { control: "text", description: "Подвал карточки (метаданные, ссылки)" },
     body: { control: "text", description: "Тело карточки (children)" },
     mediaAspect: {
       control: "select",
@@ -97,6 +99,7 @@ const meta = {
     interactive: true,
     disabled: false,
     header: "Карточка",
+    footer: "",
     body: "Кликабельная карточка использует ARIA-семантику кнопки, а не ссылку.",
     mediaAspect: "auto",
     headerLines: 0,
@@ -121,6 +124,7 @@ export const Playground: Story = {
       mediaAspect={args.mediaAspect}
       media={args.showMedia ? <img src={PORTRAIT} alt="Абстрактный портрет" /> : undefined}
       actions={<Text variant="label-small" tone="muted">Enter / Space</Text>}
+      footer={args.footer === "" ? undefined : <Text variant="label-medium" tone="muted">{args.footer}</Text>}
       onClick={args.onClick}
     >
       {args.body}
@@ -241,4 +245,25 @@ export const Composition: Story = {
       </Card>
     </Grid>
   ),
+};
+
+export const WithFooter: Story = {
+  name: "С подвалом",
+  args: {
+    header: "Отчёт за ноябрь",
+    body: "Сводка по команде: 24 задачи закрыты, 3 в работе.",
+    footer: "Обновлено сегодня в 12:40",
+    interactive: false,
+  },
+  render: silentStory<CardArgs>((args) => (
+    <Card
+      variant={args.variant}
+      padding={args.padding}
+      header={args.header}
+      footer={<Text variant="label-medium" tone="muted">{args.footer}</Text>}
+      actions={<Button size="sm">Открыть</Button>}
+    >
+      {args.body}
+    </Card>
+  )),
 };

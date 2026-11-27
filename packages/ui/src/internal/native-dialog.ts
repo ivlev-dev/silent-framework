@@ -97,7 +97,11 @@ export function bindNativeDialog(options: NativeDialogOptions): NativeDialogBind
     }
     if (typeof element.close === "function") {
       try {
-        if (element.open) element.close();
+        // Рендер снимает атрибут `open` раньше эффекта, а close() на диалоге
+        // без `open` выходит сразу и оставляет его в top layer (`:modal`).
+        // Возвращаем атрибут, чтобы close() реально вывел диалог из top layer.
+        if (!element.open) element.setAttribute("open", "");
+        element.close();
       } catch {
         element.removeAttribute("open");
       }

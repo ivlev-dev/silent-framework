@@ -18,6 +18,7 @@ import { resolveFloatingPlacement, registerModal } from "../src/internal/overlay
 
 interface Handle {
   readonly node: Node;
+  update(props: Record<string, unknown>): void;
   dispose(): void;
 }
 
@@ -126,6 +127,43 @@ describe("Dialog", () => {
     const backdrop = rootOf(mount(Dialog, { defaultOpen: true, title: "Backdrop" }));
     click(backdrop);
     expect(backdrop.hasAttribute("open")).toBe(false);
+  });
+
+  it("закрывает :modal при controlled-закрытии, даже если атрибут open уже снят", () => {
+    const proto = HTMLDialogElement.prototype as unknown as {
+      showModal?: (this: HTMLDialogElement) => void;
+      close?: (this: HTMLDialogElement) => void;
+    };
+    const originalShow = proto.showModal;
+    const originalClose = proto.close;
+    const closed: HTMLDialogElement[] = [];
+    const closeWithOpen: boolean[] = [];
+    proto.showModal = function showModal(this: HTMLDialogElement): void {
+      this.setAttribute("open", "");
+    };
+    proto.close = function closeDialog(this: HTMLDialogElement): void {
+      closeWithOpen.push(this.hasAttribute("open"));
+      closed.push(this);
+      this.removeAttribute("open");
+    };
+    try {
+      const handle = mount(Dialog, { open: true, title: "Controlled" });
+      const dialog = rootOf(handle) as HTMLDialogElement;
+      expect(closed).toHaveLength(0);
+
+      handle.update({ open: false, title: "Controlled" });
+      flush();
+
+      expect(closed).toContain(dialog);
+      expect(closeWithOpen).toEqual([true]);
+      expect(dialog.hasAttribute("open")).toBe(false);
+      expect(dialog.hasAttribute("data-fallback")).toBe(false);
+    } finally {
+      if (originalShow === undefined) delete proto.showModal;
+      else proto.showModal = originalShow;
+      if (originalClose === undefined) delete proto.close;
+      else proto.close = originalClose;
+    }
   });
 
   it("замыкает Tab внутри диалога", () => {

@@ -1,6 +1,13 @@
 @layer sui.components {
   .sui-date-range-picker__popover {
+    display: block;
+    inline-size: 100%;
     --sui-popover-max-inline: 46rem;
+  }
+
+  .sui-date-range-picker__popover > .sui-popover__anchor {
+    display: block;
+    inline-size: 100%;
   }
 
   .sui-date-range-picker__panel {

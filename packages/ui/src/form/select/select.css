@@ -169,10 +169,25 @@
 @layer sui.components {
   .sui-select[data-variant="custom"] {
     --sui-select-block-size: auto;
+    --sui-select-min-block-size: calc(
+      var(--sui-control-height-md) * var(--sui-density)
+    );
 
     position: relative;
     display: block;
-    min-block-size: calc(var(--sui-control-height-md) * var(--sui-density));
+    min-block-size: var(--sui-select-min-block-size, calc(var(--sui-control-height-md) * var(--sui-density)));
+  }
+
+  .sui-select[data-variant="custom"][data-size="sm"] {
+    --sui-select-min-block-size: calc(
+      var(--sui-control-height-sm) * var(--sui-density)
+    );
+  }
+
+  .sui-select[data-variant="custom"][data-size="lg"] {
+    --sui-select-min-block-size: calc(
+      var(--sui-control-height-lg) * var(--sui-density)
+    );
   }
 
   /* У кастомной ветки своя стрелка-иконка, нативный псевдоэлемент не нужен. */
@@ -191,10 +206,12 @@
     gap: var(--sui-space-1);
     box-sizing: border-box;
     inline-size: 100%;
-    min-block-size: inherit;
+    min-block-size: calc(
+      var(--sui-select-min-block-size, var(--sui-control-height-md)) -
+        var(--sui-hairline) * 2
+    );
     padding: var(--sui-space-1) var(--sui-space-8) var(--sui-space-1)
-      var(--sui-select-padding-inline-start);
-    border-radius: inherit;
+      var(--sui-select-padding-inline-start);    border-radius: inherit;
     color: inherit;
     font-family: var(--sui-font-sans);
     font-size: var(--sui-select-font-size);

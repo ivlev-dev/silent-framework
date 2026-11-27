@@ -484,7 +484,6 @@ export function TagInput(props: TagInputProps): Node {
             aria-describedby={described()}
             aria-autocomplete="list"
             aria-activedescendant={activeOptionId()}
-            aria-expanded={visible() ? "true" : "false"}
             aria-controls={visible() ? listId : undefined}
             bindValue={[query, NO_WRITE]}
             onInput={handleInput}

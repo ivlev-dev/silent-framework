@@ -60,7 +60,7 @@
     flex: none;
     inline-size: var(--sui-alert-icon-size, var(--sui-icon-size-md));
     block-size: var(--sui-alert-icon-size, var(--sui-icon-size-md));
-    margin-block-start: 0.125rem;
+    margin-block-start: calc(var(--sui-space-1) / 2);
     color: currentColor;
   }
 

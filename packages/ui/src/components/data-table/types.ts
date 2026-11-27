@@ -4,6 +4,16 @@ import type { Attrs } from "../../internal/props.js";
 export type DataTableAlign = "start" | "center" | "end";
 export type DataTableSortDirection = "ascending" | "descending";
 export type DataTableDensity = "compact" | "standard";
+export type DataTableLayout = "table" | "cards";
+export type DataTableScrollMode = "contained" | "page";
+export type DataTableSelectionBarPosition = "top" | "bottom";
+export type DataTableCardSlot = "primary" | "secondary" | "badge" | "meta" | "actions";
+
+export interface DataTableCardColumn {
+  readonly slot?: DataTableCardSlot | undefined;
+  readonly label?: string | undefined;
+  readonly hidden?: boolean | undefined;
+}
 
 export interface DataTableColumn<Row> {
   readonly key: string;
@@ -16,11 +26,43 @@ export interface DataTableColumn<Row> {
   readonly align?: DataTableAlign | undefined;
   readonly truncate?: boolean | undefined;
   readonly render?: ((row: Row, index: number) => Children) | undefined;
+  /** Колонку нельзя скрыть и переместить в настройках. */
+  readonly locked?: boolean | undefined;
+  /** Видимость по умолчанию; по умолчанию `true`. */
+  readonly defaultVisible?: boolean | undefined;
+  /** Как колонка попадает в карточку: слот, подпись и скрытие. */
+  readonly card?: DataTableCardColumn | undefined;
 }
 
 export interface DataTableSelection {
   readonly selected: ReadonlySet<string | number>;
   readonly onChange: (keys: ReadonlySet<string | number>) => void;
+  /** Действия массового выбора: удалить, изменить и т. п. */
+  readonly actions?: Children;
+  readonly isRowSelectable?: ((row: unknown, index: number) => boolean) | undefined;
+  readonly selectOnRowClick?: boolean | undefined;
+}
+
+export interface DataTableTree<Row> {
+  readonly getChildren: (row: Row) => readonly Row[];
+  readonly hasChildren?: ((row: Row) => boolean) | undefined;
+  readonly expandedKeys?: ReadonlySet<string> | undefined;
+  readonly defaultExpandedKeys?: readonly string[] | undefined;
+  readonly onExpandedChange?: ((keys: ReadonlySet<string>) => void) | undefined;
+  readonly loadingKeys?: ReadonlySet<string> | undefined;
+  readonly onLoadChildren?: ((row: Row) => void) | undefined;
+  readonly cascadeSelection?: boolean | undefined;
+  readonly getSearchText?: ((row: Row) => string) | undefined;
+  readonly searchQuery?: string | undefined;
+}
+
+export interface DataTableCardContext {
+  readonly selected: boolean;
+  readonly index: number;
+  readonly level: number;
+  readonly expanded: boolean;
+  readonly hasChildren: boolean;
+  readonly toggleExpand: () => void;
 }
 
 export interface DataTableProps<Row> {
@@ -49,4 +91,26 @@ export interface DataTableProps<Row> {
   readonly class?: ClassNameValue;
   readonly style?: StyleInput;
   readonly attrs?: Attrs;
+  /** Заголовок и подзаголовок над таблицей. */
+  readonly title?: Children;
+  readonly subtitle?: Children;
+  /** Дополнительные действия в тулбаре. */
+  readonly actions?: Children;
+  /** Явный layout. Без пропса узкий экран переключает таблицу в карточки. */
+  readonly layout?: DataTableLayout | undefined;
+  readonly defaultLayout?: DataTableLayout | undefined;
+  readonly onLayoutChange?: ((layout: DataTableLayout) => void) | undefined;
+  /** Показывать кнопку настроек таблицы. По умолчанию `true`. */
+  readonly settings?: boolean | undefined;
+  /** Карточка строки; без рендерера строится из колонок. */
+  readonly renderCard?:
+    | ((row: Row, context: DataTableCardContext) => Children)
+    | undefined;
+  readonly selectionBarPosition?: DataTableSelectionBarPosition | undefined;
+  readonly stickyHeader?: boolean | undefined;
+  readonly stickyFooter?: boolean | undefined;
+  readonly scrollMode?: DataTableScrollMode | undefined;
+  readonly tree?: DataTableTree<Row> | undefined;
+  /** Доступное имя переключателя layout. */
+  readonly layoutLabel?: string | undefined;
 }

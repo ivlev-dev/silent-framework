@@ -10,7 +10,13 @@
     --sui-rte-max-block-size: none;
     --sui-rte-padding-block: var(--sui-space-7);
     --sui-rte-padding-inline: var(--sui-space-7);
-    --sui-rte-radius: 1.125rem;
+    --sui-rte-radius: var(--sui-radius-lg);
+    --sui-rte-toolbar-gap: calc(var(--sui-hairline) * 2);
+    --sui-rte-toolbar-padding: var(--sui-space-1);
+    --sui-rte-toolbar-offset: var(--sui-space-2);
+    --sui-rte-button-size: calc(var(--sui-control-height-sm) + var(--sui-space-1));
+    --sui-rte-menu-inline: 13rem;
+    --sui-rte-menu-block: 22rem;
     --sui-rte-measure: none;
     --sui-rte-bg: var(--sui-color-surface-container-lowest);
     --sui-rte-toolbar-bg: var(--sui-color-surface-container-low);
@@ -54,7 +60,7 @@
 
   .sui-rte[data-expanded] {
     position: fixed;
-    inset: 16px;
+    inset: var(--sui-space-4);
     z-index: var(--sui-z-dialog, 1000);
     max-block-size: none;
   }
@@ -106,9 +112,9 @@
     display: flex;
     flex-wrap: nowrap;
     align-items: center;
-    gap: 2px;
+    gap: var(--sui-rte-toolbar-gap, calc(var(--sui-hairline) * 2));
     min-inline-size: 0;
-    padding: 5px;
+    padding: var(--sui-rte-toolbar-padding, var(--sui-space-1));
     margin: var(--sui-space-2) var(--sui-space-3) 0;
     border: var(--sui-hairline) solid var(--sui-rte-border-color);
     border-radius: var(--sui-radius-lg);
@@ -118,7 +124,7 @@
   .sui-rte__divider {
     flex: 0 0 auto;
     inline-size: var(--sui-hairline);
-    block-size: 1.25rem;
+    block-size: var(--sui-space-5);
     background-color: var(--sui-color-outline-variant);
   }
 
@@ -128,11 +134,11 @@
     flex: 0 0 auto;
     align-items: center;
     justify-content: center;
-    inline-size: 2.125rem;
-    block-size: 2.125rem;
+    inline-size: var(--sui-rte-button-size, calc(var(--sui-control-height-sm) + var(--sui-space-1)));
+    block-size: var(--sui-rte-button-size, calc(var(--sui-control-height-sm) + var(--sui-space-1)));
     padding: 0;
     border: 0;
-    border-radius: 0.5625rem;
+    border-radius: var(--sui-radius-md);
     background-color: transparent;
     color: var(--sui-color-on-surface-variant);
     font: inherit;
@@ -184,12 +190,12 @@
   .sui-rte__button[data-tooltip]::after {
     content: attr(data-tooltip);
     position: absolute;
-    inset-block-start: calc(100% + 6px);
+    inset-block-start: calc(100% + var(--sui-rte-toolbar-offset, var(--sui-space-2)));
     inset-inline-start: 50%;
     z-index: 10;
     display: none;
-    max-inline-size: min(14rem, calc(100vw - 2rem));
-    padding: 4px 8px;
+    max-inline-size: min(14rem, calc(100vw - 2 * var(--sui-space-4)));
+    padding: var(--sui-space-1) var(--sui-space-2);
     border-radius: var(--sui-radius-sm);
     background-color: var(--sui-color-inverse-surface);
     color: var(--sui-color-inverse-on-surface);
@@ -235,16 +241,16 @@
 
   .sui-rte__menu {
     position: absolute;
-    inset-block-start: calc(100% + 6px);
+    inset-block-start: calc(100% + var(--sui-rte-toolbar-offset, var(--sui-space-2)));
     inset-inline-end: 0;
     z-index: 5;
     display: flex;
     flex-direction: column;
-    gap: 1px;
+    gap: var(--sui-hairline);
     box-sizing: border-box;
-    min-inline-size: 13rem;
-    max-block-size: min(60vh, 22rem);
-    padding: 4px;
+    min-inline-size: var(--sui-rte-menu-inline, 13rem);
+    max-block-size: min(60vh, var(--sui-rte-menu-block, 22rem));
+    padding: var(--sui-space-1);
     overflow: auto;
     border: var(--sui-hairline) solid var(--sui-rte-border-color);
     border-radius: var(--sui-radius-md);
@@ -257,7 +263,7 @@
 
   .sui-rte__menu[data-side="top"] {
     inset-block-start: auto;
-    inset-block-end: calc(100% + 6px);
+    inset-block-end: calc(100% + var(--sui-rte-toolbar-offset, var(--sui-space-2)));
   }
 
   .sui-rte__menu-item {
@@ -267,7 +273,7 @@
     gap: var(--sui-space-2);
     box-sizing: border-box;
     inline-size: 100%;
-    min-block-size: 2rem;
+    min-block-size: var(--sui-control-height-sm);
     padding: 0 var(--sui-space-2);
     border: 0;
     border-radius: var(--sui-radius-sm);
@@ -305,8 +311,8 @@
     flex: none;
     align-items: center;
     justify-content: center;
-    inline-size: 1.125rem;
-    block-size: 1.125rem;
+    inline-size: var(--sui-icon-size-md);
+    block-size: var(--sui-icon-size-md);
   }
 
   .sui-rte__menu-label {
@@ -341,9 +347,9 @@
     margin-inline: 0;
     color: inherit;
     font-family: var(--sui-font-sans);
-    font-size: 1rem;
+    font-size: var(--sui-type-body-medium-size);
     font-weight: var(--sui-type-body-medium-weight);
-    line-height: 1.7;
+    line-height: var(--sui-type-body-medium-line);
     letter-spacing: var(--sui-type-body-medium-tracking);
     overflow-wrap: anywhere;
     white-space: pre-wrap;
@@ -404,7 +410,7 @@
 
   .sui-rte__content h1 {
     margin-block-start: 1.25em;
-    font-size: 1.875rem;
+    font-size: var(--sui-type-headline-large-size);
     font-weight: var(--sui-type-headline-large-weight);
     line-height: 1.2;
     letter-spacing: var(--sui-type-headline-large-tracking);
@@ -412,7 +418,7 @@
 
   .sui-rte__content h2 {
     margin-block-start: 1.15em;
-    font-size: 1.5rem;
+    font-size: var(--sui-type-headline-medium-size);
     font-weight: var(--sui-type-headline-medium-weight);
     line-height: 1.25;
     letter-spacing: var(--sui-type-headline-medium-tracking);
@@ -420,7 +426,7 @@
 
   .sui-rte__content h3 {
     margin-block-start: 1.1em;
-    font-size: 1.25rem;
+    font-size: var(--sui-type-title-large-size);
     font-weight: var(--sui-type-title-large-weight);
     line-height: 1.3;
     letter-spacing: var(--sui-type-title-large-tracking);
@@ -476,14 +482,14 @@
   }
 
   .sui-rte__content blockquote {
-    padding: 0.5em 1em;
-    border-inline-start: 3px solid var(--sui-color-primary);
+    padding: var(--sui-space-3) var(--sui-space-4);
+    border-inline-start: calc(var(--sui-hairline) * 3) solid var(--sui-color-primary);
     background-color: var(--sui-color-surface-container-low);
     color: var(--sui-color-on-surface-variant);
   }
 
   .sui-rte__content code {
-    padding: 0.1em 0.3em;
+    padding: calc(var(--sui-space-1) / 2) var(--sui-space-1);
     border-radius: var(--sui-radius-xs);
     background-color: var(--sui-color-surface-container);
     font-family: var(--sui-font-mono);
@@ -493,11 +499,11 @@
   .sui-rte__content pre {
     padding: var(--sui-space-3) var(--sui-space-4);
     overflow-x: auto;
-    border-radius: 0.625rem;
+    border-radius: var(--sui-radius-md);
     background-color: var(--sui-color-surface-container);
     font-family: var(--sui-font-mono);
-    font-size: 0.875rem;
-    line-height: 1.6;
+    font-size: var(--sui-type-body-small-size);
+    line-height: var(--sui-type-body-small-line);
     white-space: pre;
   }
 
@@ -510,7 +516,7 @@
   .sui-rte__content a {
     color: var(--sui-color-primary);
     text-decoration: underline;
-    text-decoration-thickness: 1px;
+    text-decoration-thickness: var(--sui-hairline);
     text-underline-offset: 0.2em;
   }
 
@@ -538,7 +544,7 @@
     justify-content: space-between;
     gap: var(--sui-space-3);
     box-sizing: border-box;
-    min-block-size: 2.5rem;
+    min-block-size: var(--sui-control-height-md);
     padding: 0 var(--sui-space-4);
     border-block-start: var(--sui-hairline) solid var(--sui-rte-border-color);
     color: var(--sui-color-on-surface-muted);
@@ -592,7 +598,7 @@
     gap: var(--sui-space-2);
     box-sizing: border-box;
     min-inline-size: 0;
-    block-size: 2.25rem;
+    block-size: calc(var(--sui-control-height-sm) + var(--sui-space-1));
     padding-inline: var(--sui-space-2);
     border: var(--sui-hairline) solid var(--sui-color-outline);
     border-radius: var(--sui-radius-sm);
@@ -633,7 +639,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    block-size: 2.25rem;
+    block-size: calc(var(--sui-control-height-sm) + var(--sui-space-1));
     padding: 0 var(--sui-space-3);
     border: 0;
     border-radius: var(--sui-radius-sm);
@@ -667,7 +673,7 @@
     line-height: var(--sui-type-body-small-line);
   }
 
-  @media (max-width: 600px) {
+  @media (max-width: 37.5em) {
     .sui-rte {
       --sui-rte-padding-block: var(--sui-space-5);
       --sui-rte-padding-inline: var(--sui-space-5);
@@ -678,7 +684,7 @@
     }
 
     .sui-rte__toolbar {
-      padding: 4px;
+      padding: var(--sui-space-1);
       margin-inline: var(--sui-space-2);
     }
 

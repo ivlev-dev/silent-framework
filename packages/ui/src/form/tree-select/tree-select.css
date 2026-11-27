@@ -111,7 +111,9 @@
     gap: var(--sui-space-1);
     box-sizing: border-box;
     inline-size: 100%;
-    min-block-size: inherit;
+    min-block-size: calc(
+      var(--sui-tree-select-block-size) - var(--sui-hairline) * 2
+    );
     padding: var(--sui-space-1) var(--sui-tree-select-padding-inline-end)
       var(--sui-space-1) var(--sui-tree-select-padding-inline-start);
     border-radius: inherit;

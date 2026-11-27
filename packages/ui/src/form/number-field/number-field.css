@@ -22,7 +22,9 @@
     --sui-number-field-affix-color: var(--sui-color-on-surface-variant);
     --sui-number-field-stepper-color: var(--sui-color-on-surface-variant);
     --sui-number-field-stepper-hover: var(--sui-color-surface-container-high);
-    --sui-number-field-stepper-size: var(--sui-touch-target);
+    --sui-number-field-stepper-size: calc(
+      var(--sui-control-height-md) * var(--sui-density)
+    );
 
     position: relative;
     display: flex;
@@ -82,6 +84,9 @@
     --sui-number-field-block-size: calc(
       var(--sui-control-height-sm) * var(--sui-density)
     );
+    --sui-number-field-stepper-size: calc(
+      var(--sui-control-height-sm) * var(--sui-density)
+    );
     --sui-number-field-padding-inline: var(--sui-space-2);
     --sui-number-field-font-size: var(--sui-type-body-small-size);
     --sui-number-field-line-height: var(--sui-type-body-small-line);
@@ -89,6 +94,9 @@
 
   .sui-number-field[data-size="lg"] {
     --sui-number-field-block-size: calc(
+      var(--sui-control-height-lg) * var(--sui-density)
+    );
+    --sui-number-field-stepper-size: calc(
       var(--sui-control-height-lg) * var(--sui-density)
     );
     --sui-number-field-padding-inline: var(--sui-space-4);

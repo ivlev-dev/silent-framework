@@ -251,7 +251,14 @@ describe("Table: скролл и длинные ячейки", () => {
     expect(cells[0]?.hasAttribute("data-truncate")).toBe(false);
     expect(cells[0]?.querySelector(".sui-table__cell-content")).not.toBeNull();
     expect(cells[1]?.hasAttribute("data-truncate")).toBe(true);
+    expect(cells[1]?.querySelector(".sui-table__cell-content")?.getAttribute("title")).toBe(
+      "Очень длинное значение",
+    );
     expect(cells[2]?.getAttribute("data-lines")).toBe("2");
+    expect(cells[2]?.querySelector(".sui-table__cell-content")?.getAttribute("title")).toBe(
+      "Очень длинное значение",
+    );
+    expect(cells[0]?.querySelector(".sui-table__cell-content")?.hasAttribute("title")).toBe(false);
   });
 });
 
@@ -298,6 +305,14 @@ describe("CSS-контракт форм и адаптива", () => {
       expect(/#[0-9a-fA-F]{3,8}\b/u.test(stripped), file).toBe(false);
       expect(/\brgba?\(/u.test(stripped), file).toBe(false);
     }
+  });
+
+  it("кастомный Select повторяет высоты sm/md/lg", () => {
+    const select = read("form/select/select.css");
+    expect(select).toContain('--sui-select-min-block-size');
+    expect(select).toContain('[data-variant="custom"][data-size="sm"]');
+    expect(select).toContain('[data-variant="custom"][data-size="lg"]');
+    expect(select).toContain("min-block-size: var(--sui-select-min-block-size");
   });
 
   it("touch-размеры и адаптивные брейкпоинты на месте", () => {

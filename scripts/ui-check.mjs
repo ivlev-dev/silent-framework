@@ -36,11 +36,14 @@ const staticDir = join(pkgDir, "storybook-static");
 
 const VIEWPORTS = [
   { name: "360x800", width: 360, height: 800, type: "mobile" },
+  { name: "480x900", width: 480, height: 900, type: "mobile" },
   { name: "600x960", width: 600, height: 960, type: "tablet" },
   { name: "840x1112", width: 840, height: 1112, type: "tablet" },
   { name: "1200x900", width: 1200, height: 900, type: "desktop" },
   { name: "1600x1000", width: 1600, height: 1000, type: "desktop" },
+  { name: "1920x1080", width: 1920, height: 1080, type: "desktop" },
   { name: "2560x1440", width: 2560, height: 1440, type: "desktop" },
+  { name: "3840x2160", width: 3840, height: 2160, type: "desktop" },
 ];
 
 const KEY_STORIES = [

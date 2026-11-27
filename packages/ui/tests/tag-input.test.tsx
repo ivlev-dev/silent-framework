@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { flushSync, hydrate } from "@ivlev-dev/silent-core";
 import { renderToString } from "@ivlev-dev/silent-server";
 import { TagInput } from "../src/form/tag-input/index.js";
@@ -474,5 +477,25 @@ describe("TagInput: форма и SSR", () => {
       container.querySelectorAll<HTMLInputElement>('input[type="hidden"]'),
     );
     expect(hidden.map((input) => input.value)).toEqual(["alpha", "beta"]);
+  });
+});
+
+describe("TagInput: ARIA и disabled-контраст", () => {
+  it("aria-expanded живёт на combobox, а не на input", () => {
+    const root = rootOf(mount(handles, TagInput, { label: "Теги", defaultValue: ["React"] }));
+    const input = tagInput(root);
+    expect(input.hasAttribute("aria-expanded")).toBe(false);
+    const combobox = query(root, ".sui-tag-input");
+    expect(combobox.getAttribute("role")).toBe("combobox");
+    expect(combobox.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("disabled-чипы не гасят текст общей прозрачностью", () => {
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "..", "src", "form", "tag-input", "tag-input.css"),
+      "utf8",
+    );
+    expect(css).toContain("[data-disabled] .sui-tag-input__chip");
+    expect(css).not.toMatch(/\.sui-tag-input\[data-disabled\]\s*\{[^}]*opacity:/u);
   });
 });

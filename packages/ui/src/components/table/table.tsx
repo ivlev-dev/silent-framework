@@ -97,6 +97,14 @@ function defaultCell<Row>(row: Row, key: string): Children {
   return String(value);
 }
 
+/** Полный текст обрезанной ячейки — в `title`, чтобы значение было доступно. */
+function cellTitle<Row>(column: TableColumn<Row>, content: Children): string | undefined {
+  if (column.truncate !== true && column.lines === undefined) return undefined;
+  if (typeof content === "string") return content.trim() === "" ? undefined : content;
+  if (typeof content === "number" || typeof content === "bigint") return String(content);
+  return undefined;
+}
+
 function positive(value: number | undefined, fallback: number): number {
   return value !== undefined && Number.isFinite(value) && value > 0
     ? value
@@ -118,22 +126,28 @@ function TableRowList<Row>(props: TableRowListProps<Row>): Node {
     <For each={props.rows} keyOf={(row, index) => props.rowKey(row, index)}>
       {(row, index) => (
         <tr class="sui-table__row">
-          {props.columns.map((column) => (
-            <td
-              class="sui-table__cell"
-              data-align={column.align ?? "start"}
-              data-truncate={column.truncate === true ? "" : undefined}
-              data-lines={column.lines}
-            >
-              <span class="sui-table__cell-content">
-                {resolveSlot(
-                  column.renderCell !== undefined
-                    ? column.renderCell(row, index())
-                    : defaultCell(row, column.key),
-                )}
-              </span>
-            </td>
-          ))}
+          {props.columns.map((column) => {
+            const content = resolveSlot(
+              column.renderCell !== undefined
+                ? column.renderCell(row, index())
+                : defaultCell(row, column.key),
+            );
+            return (
+              <td
+                class="sui-table__cell"
+                data-align={column.align ?? "start"}
+                data-truncate={column.truncate === true ? "" : undefined}
+                data-lines={column.lines}
+              >
+                <span
+                  class="sui-table__cell-content"
+                  title={cellTitle(column, content)}
+                >
+                  {content}
+                </span>
+              </td>
+            );
+          })}
         </tr>
       )}
     </For>
@@ -191,22 +205,28 @@ function VirtualTableRows<Row>(props: VirtualTableRowsProps<Row>): Node {
             aria-rowindex={entry.index + 2}
             ref={props.measure}
           >
-            {props.columns.map((column) => (
-              <td
-                class="sui-table__cell"
-                data-align={column.align ?? "start"}
-                data-truncate={column.truncate === true ? "" : undefined}
-                data-lines={column.lines}
-              >
-                <span class="sui-table__cell-content">
-                  {resolveSlot(
-                    column.renderCell !== undefined
-                      ? column.renderCell(entry.row, entry.index)
-                      : defaultCell(entry.row, column.key),
-                  )}
-                </span>
-              </td>
-            ))}
+            {props.columns.map((column) => {
+              const content = resolveSlot(
+                column.renderCell !== undefined
+                  ? column.renderCell(entry.row, entry.index)
+                  : defaultCell(entry.row, column.key),
+              );
+              return (
+                <td
+                  class="sui-table__cell"
+                  data-align={column.align ?? "start"}
+                  data-truncate={column.truncate === true ? "" : undefined}
+                  data-lines={column.lines}
+                >
+                  <span
+                    class="sui-table__cell-content"
+                    title={cellTitle(column, content)}
+                  >
+                    {content}
+                  </span>
+                </td>
+              );
+            })}
           </tr>
         )
       }

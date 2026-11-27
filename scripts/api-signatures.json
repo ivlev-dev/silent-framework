@@ -2851,7 +2851,7 @@
       },
       "CardProps": {
         "kind": "interface",
-        "signature": "export interface CardProps { readonly variant?: CardVariant | undefined; /** * Интерактивная карточка: `role=\"button\"`, `tabindex=\"0\"` и активация * Enter/Space. Нативный `<button>` не используется, чтобы в слоты можно * было класть ссылки и другие кнопки без вложенной интерактивности. */ readonly interactive?: boolean | undefined; readonly disabled?: boolean | undefined; readonly padding?: SpaceStep | undefined; /** Медиа сверху: изображение, видео, график. */ readonly media?: Children; /** Пропорции медиа: `auto` (натуральные) или фиксированные. */ readonly mediaAspect?: CardMediaAspect | undefined; /** Заголовок/подзаголовок над телом. */ readonly header?: Children; /** Обрезка длинного заголовка по строкам (1–3). */ readonly headerLines?: 1 | 2 | 3 | undefined; /** Действия внизу карточки. */ readonly actions?: Children; readonly onClick?: ((event: MouseEvent | KeyboardEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly children?: Children; readonly ref?: ((node: Element | null) => void) | undefined; }"
+        "signature": "export interface CardProps { readonly variant?: CardVariant | undefined; /** * Интерактивная карточка: `role=\"button\"`, `tabindex=\"0\"` и активация * Enter/Space. Нативный `<button>` не используется, чтобы в слоты можно * было класть ссылки и другие кнопки без вложенной интерактивности. */ readonly interactive?: boolean | undefined; readonly disabled?: boolean | undefined; readonly padding?: SpaceStep | undefined; /** Медиа сверху: изображение, видео, график. */ readonly media?: Children; /** Пропорции медиа: `auto` (натуральные) или фиксированные. */ readonly mediaAspect?: CardMediaAspect | undefined; /** Заголовок/подзаголовок над телом. */ readonly header?: Children; /** Обрезка длинного заголовка по строкам (1–3). */ readonly headerLines?: 1 | 2 | 3 | undefined; /** Действия внизу карточки. */ readonly actions?: Children; /** Подвал отдельным слотом: служебные действия, метаданные, ссылки. */ readonly footer?: Children; readonly onClick?: ((event: MouseEvent | KeyboardEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly children?: Children; readonly ref?: ((node: Element | null) => void) | undefined; }"
       },
       "CardVariant": {
         "kind": "type",
@@ -2904,6 +2904,16 @@
         "kind": "type",
         "signature": "export type ChipVariant = \"assist\" | \"filter\" | \"input\" | \"suggestion\";"
       },
+      "clampColumnWidth": {
+        "kind": "function",
+        "type": "<Row>(column: DataTableColumn<Row>, width: number) => number",
+        "signature": "export declare function clampColumnWidth<Row>(column: DataTableColumn<Row>, width: number): number;"
+      },
+      "clearDataTableSettings": {
+        "kind": "function",
+        "type": "(tableKey: string) => void",
+        "signature": "export declare function clearDataTableSettings(tableKey: string): void;"
+      },
       "CloseIcon": {
         "kind": "function",
         "type": "(props: GlyphProps) => Node",
@@ -2913,6 +2923,29 @@
         "kind": "function",
         "type": "(props: GlyphProps) => Node",
         "signature": "export declare function CodeIcon(props: GlyphProps): Node;"
+      },
+      "ColorFormat": {
+        "kind": "type",
+        "signature": "export type ColorFormat = \"hex\" | \"rgb\" | \"hsl\";"
+      },
+      "ColorPicker": {
+        "kind": "function",
+        "type": "(props: ColorPickerProps) => Node",
+        "signature": "export declare function ColorPicker(props: ColorPickerProps): Node;"
+      },
+      "ColorPickerProps": {
+        "kind": "interface",
+        "signature": "export interface ColorPickerProps { readonly value?: string | undefined; readonly defaultValue?: string | undefined; readonly onValueChange?: ((value: string) => void) | undefined; readonly format?: ColorFormat | undefined; readonly showAlpha?: boolean | undefined; readonly presets?: readonly string[] | undefined; readonly disabled?: boolean | undefined; readonly readOnly?: boolean | undefined; readonly required?: boolean | undefined; readonly label?: Children; readonly hint?: Children; readonly error?: Children; readonly size?: ControlSize | undefined; readonly locale?: string | undefined; readonly name?: string | undefined; readonly id?: string | undefined; readonly placeholder?: string | undefined; readonly clearable?: boolean | undefined; readonly ariaLabel?: string | undefined; readonly open?: boolean | undefined; readonly defaultOpen?: boolean | undefined; readonly onOpenChange?: ((open: boolean) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+      },
+      "colorsEqual": {
+        "kind": "function",
+        "type": "(left: RgbaColor, right: RgbaColor) => boolean",
+        "signature": "export declare function colorsEqual(left: RgbaColor, right: RgbaColor): boolean;"
+      },
+      "columnWidthBounds": {
+        "kind": "function",
+        "type": "<Row>(column: DataTableColumn<Row>) => { readonly min: number; readonly max: number; }",
+        "signature": "export declare function columnWidthBounds<Row>(column: DataTableColumn<Row>): { readonly min: number; readonly max: number; };"
       },
       "Container": {
         "kind": "function",
@@ -2936,6 +2969,11 @@
         "kind": "type",
         "signature": "export type ControlSize = keyof typeof controlHeight;"
       },
+      "createXhrUpload": {
+        "kind": "function",
+        "type": "(url: string, options?: XhrUploadOptions) => FileUploadHandler",
+        "signature": "export declare function createXhrUpload(url: string, options?: XhrUploadOptions): FileUploadHandler;"
+      },
       "cssVar": {
         "kind": "function",
         "type": "(name: string) => string",
@@ -2945,6 +2983,127 @@
         "kind": "variable",
         "type": "SemanticColors",
         "signature": "export declare const darkColors: SemanticColors;"
+      },
+      "DATA_TABLE_STORAGE_PREFIX": {
+        "kind": "variable",
+        "type": "\"sui-data-table:\"",
+        "signature": "export declare const DATA_TABLE_STORAGE_PREFIX = \"sui-data-table:\";"
+      },
+      "DataTable": {
+        "kind": "function",
+        "type": "<Row>(props: DataTableProps<Row>) => Node",
+        "signature": "export declare function DataTable<Row>(props: DataTableProps<Row>): Node;"
+      },
+      "DataTableAlign": {
+        "kind": "type",
+        "signature": "export type DataTableAlign = \"start\" | \"center\" | \"end\";"
+      },
+      "DataTableCardColumn": {
+        "kind": "interface",
+        "signature": "export interface DataTableCardColumn { readonly slot?: DataTableCardSlot | undefined; readonly label?: string | undefined; readonly hidden?: boolean | undefined; }"
+      },
+      "DataTableCardContext": {
+        "kind": "interface",
+        "signature": "export interface DataTableCardContext { readonly selected: boolean; readonly index: number; readonly level: number; readonly expanded: boolean; readonly hasChildren: boolean; readonly toggleExpand: () => void; }"
+      },
+      "DataTableCardSlot": {
+        "kind": "type",
+        "signature": "export type DataTableCardSlot = \"primary\" | \"secondary\" | \"badge\" | \"meta\" | \"actions\";"
+      },
+      "DataTableColumn": {
+        "kind": "interface",
+        "signature": "export interface DataTableColumn<Row> { readonly key: string; readonly header: Children; readonly width?: number | undefined; readonly minWidth?: number | undefined; readonly maxWidth?: number | undefined; readonly resizable?: boolean | undefined; readonly sortable?: boolean | undefined; readonly align?: DataTableAlign | undefined; readonly truncate?: boolean | undefined; readonly render?: ((row: Row, index: number) => Children) | undefined; /** Колонку нельзя скрыть и переместить в настройках. */ readonly locked?: boolean | undefined; /** Видимость по умолчанию; по умолчанию `true`. */ readonly defaultVisible?: boolean | undefined; /** Как колонка попадает в карточку: слот, подпись и скрытие. */ readonly card?: DataTableCardColumn | undefined; }"
+      },
+      "DataTableDensity": {
+        "kind": "type",
+        "signature": "export type DataTableDensity = \"compact\" | \"standard\";"
+      },
+      "DataTableLayout": {
+        "kind": "type",
+        "signature": "export type DataTableLayout = \"table\" | \"cards\";"
+      },
+      "DataTableProps": {
+        "kind": "interface",
+        "signature": "export interface DataTableProps<Row> { readonly tableKey: string; readonly columns: readonly DataTableColumn<Row>[]; readonly rows: readonly Row[]; readonly rowKey: (row: Row, index: number) => string | number; readonly loading?: boolean | undefined; readonly error?: Children; readonly total: number; readonly page: number; readonly pageSize: number; readonly pageSizeOptions?: readonly number[] | undefined; readonly sortKey?: string | undefined; readonly sortDirection?: DataTableSortDirection | undefined; readonly onSort?: ((key: string, direction: DataTableSortDirection) => void) | undefined; readonly onPageChange?: ((page: number) => void) | undefined; readonly onPageSizeChange?: ((size: number) => void) | undefined; readonly onRowClick?: ((row: Row) => void) | undefined; readonly toolbar?: Children; readonly empty?: Children; readonly selection?: DataTableSelection | undefined; readonly density?: DataTableDensity | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; /** Заголовок и подзаголовок над таблицей. */ readonly title?: Children; readonly subtitle?: Children; /** Дополнительные действия в тулбаре. */ readonly actions?: Children; /** Явный layout. Без пропса узкий экран переключает таблицу в карточки. */ readonly layout?: DataTableLayout | undefined; readonly defaultLayout?: DataTableLayout | undefined; readonly onLayoutChange?: ((layout: DataTableLayout) => void) | undefined; /** Показывать кнопку настроек таблицы. По умолчанию `true`. */ readonly settings?: boolean | undefined; /** Карточка строки; без рендерера строится из колонок. */ readonly renderCard?: ((row: Row, context: DataTableCardContext) => Children) | undefined; readonly selectionBarPosition?: DataTableSelectionBarPosition | undefined; readonly stickyHeader?: boolean | undefined; readonly stickyFooter?: boolean | undefined; readonly scrollMode?: DataTableScrollMode | undefined; readonly tree?: DataTableTree<Row> | undefined; /** Доступное имя переключателя layout. */ readonly layoutLabel?: string | undefined; }"
+      },
+      "DataTableScrollMode": {
+        "kind": "type",
+        "signature": "export type DataTableScrollMode = \"contained\" | \"page\";"
+      },
+      "DataTableSelection": {
+        "kind": "interface",
+        "signature": "export interface DataTableSelection { readonly selected: ReadonlySet<string | number>; readonly onChange: (keys: ReadonlySet<string | number>) => void; /** Действия массового выбора: удалить, изменить и т. п. */ readonly actions?: Children; readonly isRowSelectable?: ((row: unknown, index: number) => boolean) | undefined; readonly selectOnRowClick?: boolean | undefined; }"
+      },
+      "DataTableSelectionBarPosition": {
+        "kind": "type",
+        "signature": "export type DataTableSelectionBarPosition = \"top\" | \"bottom\";"
+      },
+      "DataTableSettings": {
+        "kind": "interface",
+        "signature": "export interface DataTableSettings { readonly order: readonly string[]; readonly widths: Readonly<Record<string, number>>; readonly visible?: Readonly<Record<string, boolean>> | undefined; readonly density?: DataTableDensity | null | undefined; readonly layout?: DataTableLayout | null | undefined; readonly stickyHeader?: boolean | null | undefined; readonly stickyFooter?: boolean | null | undefined; }"
+      },
+      "DataTableSortDirection": {
+        "kind": "type",
+        "signature": "export type DataTableSortDirection = \"ascending\" | \"descending\";"
+      },
+      "dataTableStorageKey": {
+        "kind": "function",
+        "type": "(tableKey: string) => string",
+        "signature": "export declare function dataTableStorageKey(tableKey: string): string;"
+      },
+      "DataTableTree": {
+        "kind": "interface",
+        "signature": "export interface DataTableTree<Row> { readonly getChildren: (row: Row) => readonly Row[]; readonly hasChildren?: ((row: Row) => boolean) | undefined; readonly expandedKeys?: ReadonlySet<string> | undefined; readonly defaultExpandedKeys?: readonly string[] | undefined; readonly onExpandedChange?: ((keys: ReadonlySet<string>) => void) | undefined; readonly loadingKeys?: ReadonlySet<string> | undefined; readonly onLoadChildren?: ((row: Row) => void) | undefined; readonly cascadeSelection?: boolean | undefined; readonly getSearchText?: ((row: Row) => string) | undefined; readonly searchQuery?: string | undefined; }"
+      },
+      "DateParseOptions": {
+        "kind": "interface",
+        "signature": "export interface DateParseOptions { readonly format?: string | undefined; readonly locale?: string | undefined; readonly parse?: ((text: string) => Date | null) | undefined; }"
+      },
+      "DatePicker": {
+        "kind": "function",
+        "type": "(props: DatePickerProps) => Node",
+        "signature": "export declare function DatePicker(props: DatePickerProps): Node;"
+      },
+      "DatePickerProps": {
+        "kind": "interface",
+        "signature": "export interface DatePickerProps { readonly value?: Date | string | null | undefined; readonly defaultValue?: Date | string | null | undefined; readonly onValueChange?: ((value: Date | null) => void) | undefined; readonly min?: Date | undefined; readonly max?: Date | undefined; readonly disabled?: boolean | undefined; readonly readOnly?: boolean | undefined; readonly required?: boolean | undefined; readonly label?: Children; readonly hint?: Children; readonly error?: Children; readonly size?: ControlSize | undefined; readonly locale?: string | undefined; readonly format?: string | undefined; readonly parse?: ((text: string) => Date | null) | undefined; readonly name?: string | undefined; readonly id?: string | undefined; readonly placeholder?: string | undefined; readonly clearable?: boolean | undefined; readonly firstDayOfWeek?: number | undefined; readonly ariaLabel?: string | undefined; readonly open?: boolean | undefined; readonly defaultOpen?: boolean | undefined; readonly onOpenChange?: ((open: boolean) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+      },
+      "DateRangePicker": {
+        "kind": "function",
+        "type": "(props: DateRangePickerProps) => Node",
+        "signature": "export declare function DateRangePicker(props: DateRangePickerProps): Node;"
+      },
+      "DateRangePickerProps": {
+        "kind": "interface",
+        "signature": "export interface DateRangePickerProps { readonly value?: DateRangeValue | null | undefined; readonly defaultValue?: DateRangeValue | null | undefined; readonly onValueChange?: ((value: DateRangeValue) => void) | undefined; readonly min?: Date | undefined; readonly max?: Date | undefined; readonly disabled?: boolean | undefined; readonly readOnly?: boolean | undefined; readonly required?: boolean | undefined; readonly label?: Children; readonly hint?: Children; readonly error?: Children; readonly size?: ControlSize | undefined; readonly locale?: string | undefined; readonly format?: string | undefined; readonly name?: string | undefined; readonly endName?: string | undefined; readonly id?: string | undefined; readonly placeholder?: string | undefined; readonly clearable?: boolean | undefined; readonly firstDayOfWeek?: number | undefined; readonly presets?: readonly DateRangePreset[] | false | undefined; readonly ariaLabel?: string | undefined; readonly open?: boolean | undefined; readonly defaultOpen?: boolean | undefined; readonly onOpenChange?: ((open: boolean) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+      },
+      "DateRangePreset": {
+        "kind": "interface",
+        "signature": "export interface DateRangePreset { readonly key: string; readonly label: Children; readonly range: (today: Date) => DateRangeValue; }"
+      },
+      "DateRangeValue": {
+        "kind": "interface",
+        "signature": "export interface DateRangeValue { readonly start: Date | null; readonly end: Date | null; }"
+      },
+      "DEFAULT_COLOR_PRESETS": {
+        "kind": "variable",
+        "type": "readonly string[]",
+        "signature": "export declare const DEFAULT_COLOR_PRESETS: readonly string[];"
+      },
+      "DEFAULT_COLUMN_MAX_WIDTH": {
+        "kind": "variable",
+        "type": "960",
+        "signature": "export declare const DEFAULT_COLUMN_MAX_WIDTH = 960;"
+      },
+      "DEFAULT_COLUMN_MIN_WIDTH": {
+        "kind": "variable",
+        "type": "64",
+        "signature": "export declare const DEFAULT_COLUMN_MIN_WIDTH = 64;"
+      },
+      "DEFAULT_DATE_RANGE_PRESETS": {
+        "kind": "variable",
+        "type": "readonly DateRangePreset[]",
+        "signature": "export declare const DEFAULT_DATE_RANGE_PRESETS: readonly DateRangePreset[];"
       },
       "DEFAULT_LOCALE": {
         "kind": "variable",
@@ -3077,6 +3236,11 @@
         "kind": "type",
         "signature": "export type FabVariant = \"primary\" | \"secondary\" | \"tertiary\" | \"surface\";"
       },
+      "FALLBACK_COLUMN_WIDTH": {
+        "kind": "variable",
+        "type": "160",
+        "signature": "export declare const FALLBACK_COLUMN_WIDTH = 160;"
+      },
       "Field": {
         "kind": "function",
         "type": "(props: FieldProps) => Node",
@@ -3121,6 +3285,47 @@
         "kind": "interface",
         "signature": "export interface FileSelectionContext { readonly signal: AbortSignal; }"
       },
+      "FileUpload": {
+        "kind": "function",
+        "type": "(props: FileUploadProps) => Node",
+        "signature": "export declare function FileUpload(props: FileUploadProps): Node;"
+      },
+      "FileUploadContext": {
+        "kind": "interface",
+        "signature": "export interface FileUploadContext { readonly onProgress: (percent: number) => void; readonly signal: AbortSignal; }"
+      },
+      "FileUploadHandler": {
+        "kind": "type",
+        "signature": "export type FileUploadHandler = (file: File, context: FileUploadContext) => Promise<FileUploadResult>;"
+      },
+      "FileUploadItem": {
+        "kind": "interface",
+        "signature": "export interface FileUploadItem { readonly id: string; readonly name: string; readonly size: number; readonly type: string; readonly status: FileUploadStatus; /** Прогресс в процентах 0–100. */ readonly progress: number; readonly file?: File | undefined; readonly error?: string | undefined; readonly url?: string | undefined; readonly previewUrl?: string | undefined; readonly response?: FileUploadResult | undefined; }"
+      },
+      "FileUploadProps": {
+        "kind": "interface",
+        "signature": "export interface FileUploadProps { /** Controlled-подобный список: внешние изменения синхронизируются. */ readonly files?: readonly FileUploadItem[] | undefined; readonly defaultFiles?: readonly FileUploadItem[] | undefined; readonly onFilesChange?: ((files: readonly FileUploadItem[]) => void) | undefined; readonly multiple?: boolean | undefined; /** `accept` в формате нативного input: MIME, `image/*`, `.pdf`. */ readonly accept?: string | undefined; /** Максимальный размер одного файла в байтах. */ readonly maxSize?: number | undefined; /** Максимум файлов; для одиночного режима всегда 1. */ readonly maxFiles?: number | undefined; readonly upload?: FileUploadHandler | undefined; /** Запускать `upload` сразу после добавления. По умолчанию `true`. */ readonly autoUpload?: boolean | undefined; readonly variant?: FileUploadVariant | undefined; readonly size?: ControlSize | undefined; readonly label?: Children; readonly hint?: Children; readonly error?: Children; readonly name?: string | undefined; readonly id?: string | undefined; readonly required?: boolean | undefined; readonly disabled?: boolean | undefined; readonly readOnly?: boolean | undefined; readonly chooseLabel?: string | undefined; readonly dropLabel?: string | undefined; readonly listLabel?: string | undefined; readonly showPreview?: boolean | undefined; readonly onReject?: ((rejections: readonly FileUploadRejection[]) => void) | undefined; readonly onUploadError?: ((error: unknown, file: File) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly onFocus?: ((event: FocusEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+      },
+      "FileUploadRejection": {
+        "kind": "interface",
+        "signature": "export interface FileUploadRejection { readonly file: File; readonly reason: FileUploadRejectionReason; readonly message: string; }"
+      },
+      "FileUploadRejectionReason": {
+        "kind": "type",
+        "signature": "export type FileUploadRejectionReason = \"accept\" | \"max-size\" | \"max-files\" | \"duplicate\";"
+      },
+      "FileUploadResult": {
+        "kind": "interface",
+        "signature": "export interface FileUploadResult { readonly id?: string | number | undefined; readonly url?: string | undefined; readonly [key: string]: unknown; }"
+      },
+      "FileUploadStatus": {
+        "kind": "type",
+        "signature": "export type FileUploadStatus = \"queued\" | \"uploading\" | \"success\" | \"error\" | \"cancelled\";"
+      },
+      "FileUploadVariant": {
+        "kind": "type",
+        "signature": "export type FileUploadVariant = \"zone\" | \"compact\";"
+      },
       "FormActions": {
         "kind": "function",
         "type": "(props: FormActionsProps) => Node",
@@ -3158,6 +3363,21 @@
         "kind": "function",
         "type": "(props: GlyphProps) => Node",
         "signature": "export declare function FormatClearIcon(props: GlyphProps): Node;"
+      },
+      "formatColor": {
+        "kind": "function",
+        "type": "(color: RgbaColor, format: ColorFormat, showAlpha?: boolean) => string",
+        "signature": "export declare function formatColor(color: RgbaColor, format: ColorFormat, showAlpha?: boolean): string;"
+      },
+      "formatDateValue": {
+        "kind": "function",
+        "type": "(value: Date | null, format?: string | undefined, locale?: string) => string",
+        "signature": "export declare function formatDateValue(value: Date | null, format?: string | undefined, locale?: string): string;"
+      },
+      "formatFileSize": {
+        "kind": "function",
+        "type": "(bytes: number) => string",
+        "signature": "export declare function formatFileSize(bytes: number): string;"
       },
       "FormatH1Icon": {
         "kind": "function",
@@ -3267,6 +3487,24 @@
         "kind": "type",
         "signature": "export type HeadingVariant = \"display-large\" | \"display-medium\" | \"display-small\" | \"headline-large\" | \"headline-medium\" | \"headline-small\" | \"title-large\" | \"title-medium\" | \"title-small\";"
       },
+      "HslColor": {
+        "kind": "interface",
+        "signature": "export interface HslColor { readonly h: number; readonly s: number; readonly l: number; }"
+      },
+      "hslToRgb": {
+        "kind": "function",
+        "type": "(hsl: HslColor) => RgbaColor",
+        "signature": "export declare function hslToRgb(hsl: HslColor): RgbaColor;"
+      },
+      "HsvColor": {
+        "kind": "interface",
+        "signature": "export interface HsvColor { readonly h: number; readonly s: number; readonly v: number; }"
+      },
+      "hsvToRgb": {
+        "kind": "function",
+        "type": "(hsv: HsvColor, alpha?: number) => RgbaColor",
+        "signature": "export declare function hsvToRgb(hsv: HsvColor, alpha?: number): RgbaColor;"
+      },
       "Icon": {
         "kind": "function",
         "type": "(props: IconProps) => Node",
@@ -3310,6 +3548,11 @@
       "InlineProps": {
         "kind": "interface",
         "signature": "export interface InlineProps extends PrimitiveProps { readonly gap?: SpaceStep | undefined; readonly align?: AlignItems | undefined; readonly justify?: JustifyContent | undefined; readonly wrap?: boolean | undefined; }"
+      },
+      "isValidColor": {
+        "kind": "function",
+        "type": "(input: string) => boolean",
+        "signature": "export declare function isValidColor(input: string): boolean;"
       },
       "Label": {
         "kind": "function",
@@ -3370,6 +3613,11 @@
         "type": "(props: GlyphProps) => Node",
         "signature": "export declare function LoadingIcon(props: GlyphProps): Node;"
       },
+      "matchesAccept": {
+        "kind": "function",
+        "type": "(file: File, accept: string | undefined) => boolean",
+        "signature": "export declare function matchesAccept(file: File, accept: string | undefined): boolean;"
+      },
       "mediaDown": {
         "kind": "function",
         "type": "(breakpoint: Breakpoint) => string | null",
@@ -3411,6 +3659,11 @@
       "MenuSeparatorProps": {
         "kind": "interface",
         "signature": "export interface MenuSeparatorProps { readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+      },
+      "mergeColumnOrder": {
+        "kind": "function",
+        "type": "<Row>(columns: readonly DataTableColumn<Row>[], savedOrder: readonly string[]) => readonly string[]",
+        "signature": "export declare function mergeColumnOrder<Row>(columns: readonly DataTableColumn<Row>[], savedOrder: readonly string[]): readonly string[];"
       },
       "MoreHorizIcon": {
         "kind": "function",
@@ -3471,6 +3724,16 @@
         "kind": "interface",
         "signature": "export interface NavigationRailProps { readonly items: readonly NavigationRailItemData[]; readonly value?: string | undefined; readonly defaultValue?: string | undefined; readonly onValueChange?: ((value: string) => void) | undefined; /** Развёрнутый рейл с подписями; по умолчанию свёрнут. */ readonly expanded?: boolean | undefined; /** Слот FAB вверху рейла. */ readonly fab?: Children; /** Доступное имя навигации. По умолчанию — `Основная навигация`. */ readonly label?: string | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; readonly ref?: ((node: Element | null) => void) | undefined; }"
       },
+      "normalizeColor": {
+        "kind": "function",
+        "type": "(color: RgbaColor) => RgbaColor",
+        "signature": "export declare function normalizeColor(color: RgbaColor): RgbaColor;"
+      },
+      "orderColumns": {
+        "kind": "function",
+        "type": "<Row>(columns: readonly DataTableColumn<Row>[], savedOrder: readonly string[]) => readonly DataTableColumn<Row>[]",
+        "signature": "export declare function orderColumns<Row>(columns: readonly DataTableColumn<Row>[], savedOrder: readonly string[]): readonly DataTableColumn<Row>[];"
+      },
       "Pagination": {
         "kind": "function",
         "type": "(props: PaginationProps) => Node",
@@ -3497,6 +3760,16 @@
       "PaletteColor": {
         "kind": "type",
         "signature": "export type PaletteColor = keyof typeof palette;"
+      },
+      "parseColor": {
+        "kind": "function",
+        "type": "(input: string) => RgbaColor | null",
+        "signature": "export declare function parseColor(input: string): RgbaColor | null;"
+      },
+      "parseDateValue": {
+        "kind": "function",
+        "type": "(text: string, options?: DateParseOptions) => Date | null",
+        "signature": "export declare function parseDateValue(text: string, options?: DateParseOptions): Date | null;"
       },
       "Popover": {
         "kind": "function",
@@ -3550,6 +3823,11 @@
         "kind": "type",
         "signature": "export type Radius = keyof typeof radii;"
       },
+      "readDataTableSettings": {
+        "kind": "function",
+        "type": "(tableKey: string) => DataTableSettings",
+        "signature": "export declare function readDataTableSettings(tableKey: string): DataTableSettings;"
+      },
       "readStoredTheme": {
         "kind": "function",
         "type": "(storageKey?: string) => ThemeMode | null",
@@ -3574,6 +3852,30 @@
         "kind": "function",
         "type": "(root?: HTMLElement | null) => void",
         "signature": "export declare function resetThemePalette(root?: HTMLElement | null): void;"
+      },
+      "resolveColumnWidth": {
+        "kind": "function",
+        "type": "<Row>(column: DataTableColumn<Row>, saved: number | undefined) => number | undefined",
+        "signature": "export declare function resolveColumnWidth<Row>(column: DataTableColumn<Row>, saved: number | undefined): number | undefined;"
+      },
+      "resolveColumnWidths": {
+        "kind": "function",
+        "type": "<Row>(columns: readonly DataTableColumn<Row>[], saved: Readonly<Record<string, number>>) => Readonly<Record<string, number>>",
+        "signature": "export declare function resolveColumnWidths<Row>(columns: readonly DataTableColumn<Row>[], saved: Readonly<Record<string, number>>): Readonly<Record<string, number>>;"
+      },
+      "RgbaColor": {
+        "kind": "interface",
+        "signature": "export interface RgbaColor { readonly r: number; readonly g: number; readonly b: number; readonly a: number; }"
+      },
+      "rgbToHsl": {
+        "kind": "function",
+        "type": "(color: RgbaColor) => HslColor",
+        "signature": "export declare function rgbToHsl(color: RgbaColor): HslColor;"
+      },
+      "rgbToHsv": {
+        "kind": "function",
+        "type": "(color: RgbaColor) => HsvColor",
+        "signature": "export declare function rgbToHsv(color: RgbaColor): HsvColor;"
       },
       "RichTextCommand": {
         "kind": "type",
@@ -3639,7 +3941,7 @@
       },
       "SelectProps": {
         "kind": "interface",
-        "signature": "export interface SelectProps { readonly options: readonly SelectItem[]; /** Значение: строка/число или массив для `multiple`. */ readonly value?: SelectValue | readonly SelectValue[] | undefined; readonly defaultValue?: SelectValue | readonly SelectValue[] | undefined; readonly onValueChange?: ((value: SelectValue | readonly SelectValue[]) => void) | undefined; readonly field?: BoundField<string | number | readonly string[]> | undefined; /** Ветка рендера. По умолчанию `custom`; `native` — прежний `<select>`. */ readonly variant?: SelectVariant | undefined; readonly label?: Children; readonly hint?: Children; readonly error?: Children; readonly placeholder?: string | undefined; readonly searchPlaceholder?: string | undefined; readonly empty?: Children; readonly loadingText?: Children; readonly multiple?: boolean | undefined; readonly searchable?: SelectSearchable | undefined; readonly clearable?: boolean | undefined; readonly loading?: boolean | undefined; readonly loadOptions?: ((query: string, signal: AbortSignal) => Promise<readonly SelectItem[]>) | undefined; readonly renderOption?: ((option: SelectOption) => Children) | undefined; readonly renderValue?: ((options: readonly SelectOption[]) => Children) | undefined; readonly maxVisible?: number | undefined; readonly open?: boolean | undefined; readonly defaultOpen?: boolean | undefined; readonly onOpenChange?: ((open: boolean) => void) | undefined; readonly name?: string | undefined; readonly id?: string | undefined; readonly required?: boolean | undefined; readonly disabled?: boolean | undefined; readonly readOnly?: boolean | undefined; readonly size?: ControlSize | undefined; readonly bare?: boolean | undefined; readonly describedBy?: string | undefined; /** Доступное имя, если видимой подписи нет. */ readonly ariaLabel?: string | undefined; readonly onChange?: ((event: Event) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly onFocus?: ((event: FocusEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+        "signature": "export interface SelectProps { readonly options: readonly SelectItem[]; /** Значение: строка/число или массив для `multiple`. */ readonly value?: SelectValue | readonly SelectValue[] | undefined; readonly defaultValue?: SelectValue | readonly SelectValue[] | undefined; readonly onValueChange?: ((value: SelectValue | readonly SelectValue[]) => void) | undefined; readonly field?: BoundField<string | number | readonly string[]> | undefined; /** Ветка рендера. По умолчанию `custom`; `native` — прежний `<select>`. */ readonly variant?: SelectVariant | undefined; readonly label?: Children; readonly hint?: Children; readonly error?: Children; readonly placeholder?: string | undefined; readonly searchPlaceholder?: string | undefined; readonly empty?: Children; readonly loadingText?: Children; readonly multiple?: boolean | undefined; readonly searchable?: SelectSearchable | undefined; readonly clearable?: boolean | undefined; readonly loading?: boolean | undefined; /** Задержка запроса `loadOptions` при вводе, мс. По умолчанию `0`. */ readonly searchDelay?: number | undefined; readonly loadErrorText?: Children | undefined; readonly onLoadError?: ((error: unknown) => void) | undefined; readonly loadOptions?: ((query: string, signal: AbortSignal) => Promise<readonly SelectItem[]>) | undefined; readonly renderOption?: ((option: SelectOption) => Children) | undefined; readonly renderValue?: ((options: readonly SelectOption[]) => Children) | undefined; readonly maxVisible?: number | undefined; readonly open?: boolean | undefined; readonly defaultOpen?: boolean | undefined; readonly onOpenChange?: ((open: boolean) => void) | undefined; readonly name?: string | undefined; readonly id?: string | undefined; readonly required?: boolean | undefined; readonly disabled?: boolean | undefined; readonly readOnly?: boolean | undefined; readonly size?: ControlSize | undefined; readonly bare?: boolean | undefined; readonly describedBy?: string | undefined; /** Доступное имя, если видимой подписи нет. */ readonly ariaLabel?: string | undefined; readonly onChange?: ((event: Event) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly onFocus?: ((event: FocusEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
       },
       "SemanticColorRole": {
         "kind": "type",
@@ -3943,6 +4245,21 @@
         "type": "(defaultTheme?: ThemeMode, storageKey?: string) => string",
         "signature": "export declare function themeScriptSource(defaultTheme?: ThemeMode, storageKey?: string): string;"
       },
+      "toCssColor": {
+        "kind": "function",
+        "type": "(color: RgbaColor) => string",
+        "signature": "export declare function toCssColor(color: RgbaColor): string;"
+      },
+      "toHex": {
+        "kind": "function",
+        "type": "(color: RgbaColor, showAlpha?: boolean) => string",
+        "signature": "export declare function toHex(color: RgbaColor, showAlpha?: boolean): string;"
+      },
+      "toHslString": {
+        "kind": "function",
+        "type": "(color: RgbaColor, showAlpha?: boolean) => string",
+        "signature": "export declare function toHslString(color: RgbaColor, showAlpha?: boolean): string;"
+      },
       "ToolbarItem": {
         "kind": "type",
         "signature": "export type ToolbarItem = RichTextCommand | \"|\";"
@@ -3972,6 +4289,44 @@
       "TopAppBarVariant": {
         "kind": "type",
         "signature": "export type TopAppBarVariant = \"small\" | \"medium\" | \"large\";"
+      },
+      "toRgbString": {
+        "kind": "function",
+        "type": "(color: RgbaColor, showAlpha?: boolean) => string",
+        "signature": "export declare function toRgbString(color: RgbaColor, showAlpha?: boolean): string;"
+      },
+      "TreeSelect": {
+        "kind": "function",
+        "type": "(props: TreeSelectProps) => Node",
+        "signature": "export declare function TreeSelect(props: TreeSelectProps): Node;"
+      },
+      "TreeSelectCascade": {
+        "kind": "type",
+        "signature": "export type TreeSelectCascade = TreeCascade;"
+      },
+      "TreeSelectEmit": {
+        "kind": "type",
+        "signature": "export type TreeSelectEmit = TreeEmit;"
+      },
+      "TreeSelectExpandTrigger": {
+        "kind": "type",
+        "signature": "export type TreeSelectExpandTrigger = \"icon\" | \"row\";"
+      },
+      "TreeSelectNode": {
+        "kind": "type",
+        "signature": "export type TreeSelectNode = TreeNode;"
+      },
+      "TreeSelectProps": {
+        "kind": "interface",
+        "signature": "export interface TreeSelectProps { readonly nodes: readonly TreeSelectNode[]; /** * Асинхронный источник узлов. `parent` отсутствует для корневого поиска, * а `query` пуст при ленивой загрузке детей. */ readonly load?: ((query: string, parent?: TreeSelectNode) => Promise<readonly TreeSelectNode[]>) | undefined; /** Задержка асинхронного поиска, мс. По умолчанию `250`. */ readonly searchDelay?: number | undefined; /** Текст ошибки загрузки; по умолчанию — сообщение исключения. */ readonly loadError?: Children; readonly onLoadError?: ((error: unknown) => void) | undefined; /** Значение: узел или массив узлов для `multiple`. */ readonly value?: TreeSelectValue | undefined; readonly defaultValue?: TreeSelectValue | undefined; readonly onValueChange?: ((value: TreeSelectValue) => void) | undefined; readonly field?: BoundField<string | number | readonly string[]> | undefined; readonly multiple?: boolean | undefined; /** * Каскад выбора. По умолчанию `both` для `multiple` и `independent` * для одиночного выбора. */ readonly cascade?: TreeSelectCascade | undefined; /** Какие узлы попадают в значение. По умолчанию `leaves`. */ readonly emit?: TreeSelectEmit | undefined; /** Можно ли выбирать узлы с детьми. По умолчанию `true`. */ readonly selectableParents?: boolean | undefined; readonly expanded?: readonly TreeNodeValue[] | undefined; readonly defaultExpanded?: readonly TreeNodeValue[] | undefined; /** * Алиас `expanded` в терминах ключей. Имеет приоритет над `expanded`. */ readonly expandedKeys?: readonly TreeNodeValue[] | undefined; readonly defaultExpandedKeys?: readonly TreeNodeValue[] | undefined; readonly onExpandedChange?: ((expanded: readonly TreeNodeValue[]) => void) | undefined; /** Что раскрывает узел: иконка или вся строка. По умолчанию `row`. */ readonly expandOnClick?: TreeSelectExpandTrigger | undefined; /** Показывать поиск в панели. По умолчанию `true`. */ readonly searchable?: boolean | undefined; /** `keep-ancestors` оставляет путь до совпадений. По умолчанию он же. */ readonly searchStrategy?: TreeSelectSearchStrategy | undefined; /** Показывать результаты поиска одним уровнем. По умолчанию `false`. */ readonly flattenOnSearch?: boolean | undefined; /** Чекбоксы строк. По умолчанию включены при `multiple`. */ readonly showCheckboxes?: boolean | undefined; /** Алиас `showCheckboxes`; при `true` включает каскадные чекбоксы. */ readonly checkable?: boolean | undefined; /** Кнопка «Выбрать все» в панели. По умолчанию включена при `multiple`. */ readonly showSelectAll?: boolean | undefined; readonly selectAllLabel?: string | undefined; /** Кнопка очистки значения. По умолчанию включена при `multiple`. */ readonly clearable?: boolean | undefined; readonly clearLabel?: string | undefined; readonly renderOption?: ((node: TreeSelectNode) => Children) | undefined; /** Подпись узла в триггере и чипах. По умолчанию — текст `label`. */ readonly getOptionLabel?: ((node: TreeSelectNode) => string) | undefined; readonly empty?: Children; readonly loading?: boolean | undefined; readonly loadingText?: Children; readonly maxVisibleOptions?: number | undefined; readonly size?: ControlSize | undefined; readonly label?: Children; readonly hint?: Children; readonly error?: Children; readonly placeholder?: string | undefined; readonly name?: string | undefined; readonly id?: string | undefined; readonly required?: boolean | undefined; /** Ошибка без текста: контрол невалиден, сообщения ещё нет. */ readonly invalid?: boolean | undefined; readonly disabled?: boolean | undefined; readonly readOnly?: boolean | undefined; readonly bare?: boolean | undefined; readonly describedBy?: string | undefined; /** Доступное имя, если видимой подписи нет. */ readonly ariaLabel?: string | undefined; readonly onChange?: ((event: Event) => void) | undefined; readonly onBlur?: ((event: FocusEvent) => void) | undefined; readonly onFocus?: ((event: FocusEvent) => void) | undefined; readonly class?: ClassNameValue; readonly style?: StyleInput; readonly attrs?: Attrs; }"
+      },
+      "TreeSelectSearchStrategy": {
+        "kind": "type",
+        "signature": "export type TreeSelectSearchStrategy = TreeSearchStrategy;"
+      },
+      "TreeSelectValue": {
+        "kind": "type",
+        "signature": "export type TreeSelectValue = TreeNodeValue | readonly TreeNodeValue[];"
       },
       "TypeFamily": {
         "kind": "type",
@@ -4041,6 +4396,15 @@
         "kind": "function",
         "type": "(props: GlyphProps) => Node",
         "signature": "export declare function WarningIcon(props: GlyphProps): Node;"
+      },
+      "writeDataTableSettings": {
+        "kind": "function",
+        "type": "(tableKey: string, settings: DataTableSettings) => void",
+        "signature": "export declare function writeDataTableSettings(tableKey: string, settings: DataTableSettings): void;"
+      },
+      "XhrUploadOptions": {
+        "kind": "interface",
+        "signature": "export interface XhrUploadOptions { readonly method?: string | undefined; readonly fieldName?: string | undefined; readonly headers?: Readonly<Record<string, string>> | undefined; readonly withCredentials?: boolean | undefined; readonly responseType?: XMLHttpRequestResponseType | undefined; readonly parse?: ((xhr: XMLHttpRequest, file: File) => FileUploadResult) | undefined; }"
       }
     },
     "@ivlev-dev/silent-validation": {

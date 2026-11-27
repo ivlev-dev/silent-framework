@@ -380,12 +380,17 @@ const uploader = async (file: File) => api.upload(file);
 - `TextField` — однострочное поле, пароль с toggle. `import { TextField } from "@ivlev-dev/silent-ui"`.
 - `Textarea` — многострочное поле с `rows`/counter. `import { Textarea } from "@ivlev-dev/silent-ui"`.
 - `Select` — нативный select, включая `multiple`. `import { Select } from "@ivlev-dev/silent-ui"`.
+- `TreeSelect` — дерево с выбором, каскадом, поиском и ленивой загрузкой. `import { TreeSelect } from "@ivlev-dev/silent-ui"`.
 - `Checkbox` — чекбокс с `indeterminate`. `import { Checkbox } from "@ivlev-dev/silent-ui"`.
 - `RadioGroup` — группа радио с roving tabindex. `import { RadioGroup } from "@ivlev-dev/silent-ui"`.
 - `Switch` — переключатель `role="switch"`. `import { Switch } from "@ivlev-dev/silent-ui"`.
 - `Slider` — range + `<output>`. `import { Slider } from "@ivlev-dev/silent-ui"`.
 - `FileField` — файл с доступным триггером и прогрессом. `import { FileField } from "@ivlev-dev/silent-ui"`.
 - `FieldArray` — повторяемая группа полей. `import { FieldArray } from "@ivlev-dev/silent-ui"`.
+- `NumberField` — число со сте́пперами, единицей и локалью. `import { NumberField } from "@ivlev-dev/silent-ui/form/number-field"`.
+- `OtpInput` — OTP-код с группами, маской и автопереходом. `import { OtpInput } from "@ivlev-dev/silent-ui/form/otp-input"`.
+- `Combobox` — поле с фильтрацией, свободным вводом и асинхронными опциями. `import { Combobox } from "@ivlev-dev/silent-ui/form/combobox"`.
+- `TagInput` — теги с подсказками, лимитами и валидацией. `import { TagInput } from "@ivlev-dev/silent-ui/form/tag-input"`.
 
 ### Обратная связь
 
@@ -401,11 +406,17 @@ const uploader = async (file: File) => api.upload(file);
 - `List` — список, опционально `selectable`. `import { List } from "@ivlev-dev/silent-ui"`.
 - `ListItem` — строка списка с leading/trailing и `lines` (1–3). `import { ListItem } from "@ivlev-dev/silent-ui"`.
 - `Table` — семантическая таблица с управляемой сортировкой; корень скроллится по горизонтали, колонки поддерживают `truncate`/`lines`. `import { Table } from "@ivlev-dev/silent-ui"`.
+- `DataTable` — серверная таблица: пагинация, массовый выбор, ресайз (с фиксацией ширин и px-badge), drag за заголовок, настройки (видимость/порядок/плотность/sticky/layout) в диалоге, раскладка карточек на узком экране, дерево строк и сохранение в `localStorage`. `import { DataTable } from "@ivlev-dev/silent-ui"`.
+- `DatePicker` — дата с календарём и ручным вводом. `import { DatePicker } from "@ivlev-dev/silent-ui"`.
+- `DateRangePicker` — диапазон дат с пресетами. `import { DateRangePicker } from "@ivlev-dev/silent-ui"`.
+- `ColorPicker` — цвет с палитрой, alpha и HEX/RGB/HSL. `import { ColorPicker } from "@ivlev-dev/silent-ui"`.
+- `FileUpload` — зона drag&drop, прогресс, отмена и превью. `import { FileUpload } from "@ivlev-dev/silent-ui"`.
 - `Avatar` — изображение/инициалы/иконка + статус. `import { Avatar } from "@ivlev-dev/silent-ui"`.
 - `Badge` — счётчик, точка или `position` (`top-end`/`top-start`/`bottom-end`/`bottom-start`) у позиционированного родителя. `import { Badge } from "@ivlev-dev/silent-ui"`.
 - `Chip` — assist/filter/input/suggestion. `import { Chip } from "@ivlev-dev/silent-ui"`.
 - `Tag` — статичная метка с удалением. `import { Tag } from "@ivlev-dev/silent-ui"`.
 - `Accordion` — раскрывающиеся секции single/multiple; `truncate` обрезает длинный заголовок одной строкой. `import { Accordion } from "@ivlev-dev/silent-ui"`.
+- `RichTextEditor` — WYSIWYG без `execCommand`, с санитайзером, историей и адаптивным тулбаром. `import { RichTextEditor } from "@ivlev-dev/silent-ui"`.
 
 ### Оверлеи
 
@@ -437,7 +448,7 @@ const uploader = async (file: File) => api.upload(file);
 - **Акцент**: золотой `accent` — для одного ключевого действия на экране (`Button`/`IconButton`/`Badge`). Остальные действия — `filled`/`tonal`/`outlined`/`text`. Не превращайте все поверхности в pill: радиусы 4/6/10/14/20, `full` — только аватары, чипы и круги.
 - **Длина текста**: длинный повествовательный текст ограничивайте `Text.measure` (68ch) или `.sui-measure`; для строк списков, карточек, таблиц и аккордеона используйте осознанную обрезку (`lines`/`truncate`/`headerLines`) вместо «прыгающей» высоты строки. Обрезка не должна скрывать единственное действие.
 - **Формы**: ошибка видна сразу, как только передана; `validating` — отдельное состояние, не подменяет `error`. Подписи секций — `Label.uppercase`, только осознанно. На широких экранах форма ограничивается `FieldGroup.maxWidth`, а не растягивается на всю ширину.
-- **Таблицы**: на узких экранах `Table` скроллит по горизонтали; не уменьшайте шрифт ради влезания. Длинные значения — `TableColumn.truncate`/`lines`, заголовки остаются видимыми.
+- **Таблицы**: на узких экранах `Table` скроллит по горизонтали, `DataTable` переключается в карточки; не уменьшайте шрифт ради влезания. Длинные значения — `DataTableColumn.truncate`/`TableColumn.lines`, полный текст показывайте в `title`. Строки 48/44px, числовые колонки — `align="end"`. Массовые действия закрепляйте сверху, чтобы они не терялись при скролле.
 - **Доступность и движение**: цель нажатия не меньше 44px (48px в cozy/`lg`), focus ring 2px с offset 2px, `prefers-reduced-motion` отключает анимации, иконки без подписи получают `aria-label`/`label`. Storybook `check:ui` держит axe-core critical на нуле.
 - **SSR-гидрация**: не меняйте структуру ради визуального эффекта на клиенте — сервер и клиент должны давать одинаковую разметку (см. «Ограничения v1»).
 

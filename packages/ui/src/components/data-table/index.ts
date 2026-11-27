@@ -18,9 +18,16 @@ export {
 export type { DataTableSettings } from "./settings.js";
 export type {
   DataTableAlign,
+  DataTableCardColumn,
+  DataTableCardContext,
+  DataTableCardSlot,
   DataTableColumn,
   DataTableDensity,
+  DataTableLayout,
   DataTableProps,
+  DataTableScrollMode,
   DataTableSelection,
+  DataTableSelectionBarPosition,
   DataTableSortDirection,
+  DataTableTree,
 } from "./types.js";

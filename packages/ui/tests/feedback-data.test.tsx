@@ -291,8 +291,8 @@ describe("Card", () => {
     expect(card.getAttribute("role")).toBeNull();
   });
 
-  it("padding по умолчанию 4 и переопределяется", () => {
-    expect(rootOf(mount(Card, { children: "x" })).getAttribute("data-padding")).toBe("4");
+  it("padding по умолчанию 5 и переопределяется", () => {
+    expect(rootOf(mount(Card, { children: "x" })).getAttribute("data-padding")).toBe("5");
     expect(rootOf(mount(Card, { padding: 6, children: "x" })).getAttribute("data-padding")).toBe("6");
   });
 
@@ -305,12 +305,13 @@ describe("Card", () => {
     expect(card.getAttribute("data-header-lines")).toBe("2");
   });
 
-  it("слоты media/header/actions и тело", () => {
+  it("слоты media/header/actions/footer и тело", () => {
     const card = rootOf(
       mount(Card, {
         media: <img src="/cover.png" alt="" />,
         header: "Заголовок",
         actions: <button type="button">Действие</button>,
+        footer: <span>Подвал</span>,
         children: "Тело",
       }),
     );
@@ -318,6 +319,7 @@ describe("Card", () => {
     expect(card.querySelector(".sui-card__header")?.textContent).toBe("Заголовок");
     expect(card.querySelector(".sui-card__body")?.textContent).toBe("Тело");
     expect(card.querySelector(".sui-card__actions button")?.textContent).toBe("Действие");
+    expect(card.querySelector(".sui-card__footer")?.textContent).toBe("Подвал");
   });
 
   it("interactive: role=button, tabindex, клик и Enter/Space", () => {

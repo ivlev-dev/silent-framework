@@ -1,8 +1,17 @@
-import type { DataTableColumn } from "./types.js";
+import type {
+  DataTableColumn,
+  DataTableDensity,
+  DataTableLayout,
+} from "./types.js";
 
 export interface DataTableSettings {
   readonly order: readonly string[];
   readonly widths: Readonly<Record<string, number>>;
+  readonly visible?: Readonly<Record<string, boolean>> | undefined;
+  readonly density?: DataTableDensity | null | undefined;
+  readonly layout?: DataTableLayout | null | undefined;
+  readonly stickyHeader?: boolean | null | undefined;
+  readonly stickyFooter?: boolean | null | undefined;
 }
 
 export const DATA_TABLE_STORAGE_PREFIX = "sui-data-table:";
@@ -48,7 +57,26 @@ export function readDataTableSettings(tableKey: string): DataTableSettings {
         }
       }
     }
-    return { order, widths };
+    const visible: Record<string, boolean> = {};
+    const rawVisible = parsed["visible"];
+    if (isRecord(rawVisible)) {
+      for (const [key, value] of Object.entries(rawVisible)) {
+        if (typeof value === "boolean") visible[key] = value;
+      }
+    }
+    const density = parsed["density"];
+    const layout = parsed["layout"];
+    const stickyHeader = parsed["stickyHeader"];
+    const stickyFooter = parsed["stickyFooter"];
+    return {
+      order,
+      widths,
+      visible,
+      density: density === "compact" || density === "standard" ? density : null,
+      layout: layout === "table" || layout === "cards" ? layout : null,
+      stickyHeader: typeof stickyHeader === "boolean" ? stickyHeader : null,
+      stickyFooter: typeof stickyFooter === "boolean" ? stickyFooter : null,
+    };
   } catch {
     return { order: [], widths: {} };
   }
@@ -63,7 +91,15 @@ export function writeDataTableSettings(
   try {
     storage.setItem(
       dataTableStorageKey(tableKey),
-      JSON.stringify({ order: settings.order, widths: settings.widths }),
+      JSON.stringify({
+        order: settings.order,
+        widths: settings.widths,
+        visible: settings.visible ?? {},
+        density: settings.density ?? null,
+        layout: settings.layout ?? null,
+        stickyHeader: settings.stickyHeader ?? null,
+        stickyFooter: settings.stickyFooter ?? null,
+      }),
     );
   } catch {
     return;
