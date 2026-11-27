@@ -651,17 +651,42 @@ describe("DataTable: настройки и раскладка", () => {
     expect(root.getAttribute("data-density")).toBe("compact");
   });
 
-  it("переключатель layout превращает таблицу в карточки и сохраняет выбор", () => {
+  it("переключатель layout в тулбаре превращает таблицу в карточки и сохраняет выбор", () => {
     const handle = mount(baseProps({ renderCard: (row: Row) => <strong>{row.name}</strong> }));
     const root = handle.node as Element;
+    expect(
+      root.querySelector("[data-layout-target='table']")?.getAttribute("aria-pressed"),
+    ).toBe("true");
     root
-      .querySelector<HTMLElement>(".sui-data-table__layout-toggle")
+      .querySelector<HTMLElement>("[data-layout-target='cards']")
       ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     flush();
     expect(root.getAttribute("data-layout")).toBe("cards");
+    expect(
+      root.querySelector("[data-layout-target='cards']")?.getAttribute("aria-pressed"),
+    ).toBe("true");
     expect(root.querySelectorAll(".sui-data-table__card")).toHaveLength(3);
     expect(root.querySelector(".sui-data-table__card strong")?.textContent).toBe("Ада");
     expect(savedSettings("people").layout).toBe("cards");
+  });
+
+  it("на узком экране карточки по умолчанию даже при сохранённой таблице", () => {
+    window.localStorage.setItem(
+      dataTableStorageKey("people"),
+      JSON.stringify({ layout: "table" }),
+    );
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: true,
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => true,
+    }));
+    const handle = mount(baseProps());
+    expect((handle.node as Element).getAttribute("data-layout")).toBe("cards");
   });
 
   it("карточки без card-слотов показывают вторую колонку и метаданные", () => {

@@ -1029,8 +1029,43 @@ body {
 }
 
 @media (min-width: 100em) {
+  :root {
+    --app-shell-max: 100rem;
+  }
+
   .app-metrics {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 120em) {
+  :root {
+    --app-shell-max: 112.5rem;
+  }
+
+  .app-metrics {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .app-dashboard-grid {
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  }
+}
+
+@media (min-width: 160em) {
+  :root {
+    --app-shell-max: 150rem;
+  }
+
+  .app-metrics {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 240em) {
+  :root {
+    --app-shell-max: 175rem;
+    --app-card-padding: 1.75rem;
   }
 }
 
@@ -1098,8 +1133,7 @@ body {
     padding: var(--sui-space-3) var(--sui-space-4);
   }
 
-  .app-table-card .sui-data-table__reset,
-  .app-table-card .sui-data-table__layout-toggle {
+  .app-table-card .sui-data-table__reset {
     display: none;
   }
 }

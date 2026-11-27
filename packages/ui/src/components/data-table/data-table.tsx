@@ -11,6 +11,8 @@ import { clientEffect } from "../../internal/overlay.js";
 import { ExpandMoreIcon } from "../../icons/expand-more.js";
 import { ChevronEndIcon } from "../../icons/chevron-end.js";
 import { MoreVertIcon } from "../../icons/more-vert.js";
+import { CardsIcon } from "../../icons/cards.js";
+import { TableIcon } from "../../icons/table.js";
 import { useUiConfig } from "../../theme/config.js";
 import { Button } from "../button/button.js";
 import { Dialog } from "../dialog/dialog.js";
@@ -680,7 +682,7 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
     props.density ?? settings().density ?? "standard";
 
   const layout = (): DataTableLayout =>
-    layoutOverride() ?? props.layout ?? settings().layout ?? (narrow() ? "cards" : "table");
+    layoutOverride() ?? (narrow() ? "cards" : props.layout ?? settings().layout ?? "table");
 
   const stickyHeader = (): boolean =>
     props.stickyHeader ?? settings().stickyHeader ?? true;
@@ -1245,15 +1247,38 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
               </select>
             </label>
           </Show>
-          <Button
-            variant="text"
-            size="sm"
-            class="sui-data-table__layout-toggle"
-            attrs={{ "aria-pressed": layout() === "cards" ? "true" : "false" }}
-            onClick={() => setLayout(layout() === "cards" ? "table" : "cards")}
+          <div
+            class="sui-data-table__view-toggle"
+            role="group"
+            aria-label={config.strings.layout ?? "Раскладка таблицы"}
           >
-            {layout() === "cards" ? "Таблица" : "Карточки"}
-          </Button>
+            <button
+              type="button"
+              class="sui-data-table__view-option"
+              data-layout-target="table"
+              aria-pressed={layout() === "table" ? "true" : "false"}
+              title={config.strings.tableView ?? "Таблица"}
+              onClick={() => setLayout("table")}
+            >
+              <TableIcon />
+              <span class="sui-data-table__visually-hidden">
+                {config.strings.tableView ?? "Таблица"}
+              </span>
+            </button>
+            <button
+              type="button"
+              class="sui-data-table__view-option"
+              data-layout-target="cards"
+              aria-pressed={layout() === "cards" ? "true" : "false"}
+              title={config.strings.cardsView ?? "Карточки"}
+              onClick={() => setLayout("cards")}
+            >
+              <CardsIcon />
+              <span class="sui-data-table__visually-hidden">
+                {config.strings.cardsView ?? "Карточки"}
+              </span>
+            </button>
+          </div>
           <Show when={props.settings !== false}>
             <IconButton
               size="sm"
@@ -1574,22 +1599,7 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
               </label>
             </section>
             <section class="sui-data-table__settings-section">
-              <h3 class="sui-data-table__settings-title">Раскладка и закрепление</h3>
-              <label class="sui-data-table__settings-field">
-                <span>Раскладка</span>
-                <select
-                  class="sui-data-table__select"
-                  value={layout()}
-                  onChange={(event) => {
-                    const target = event.target;
-                    if (!(target instanceof HTMLSelectElement)) return;
-                    setLayout(target.value === "cards" ? "cards" : "table");
-                  }}
-                >
-                  <option value="table" selected={layout() === "table"}>Таблица</option>
-                  <option value="cards" selected={layout() === "cards"}>Карточки</option>
-                </select>
-              </label>
+              <h3 class="sui-data-table__settings-title">Закрепление</h3>
               <label class="sui-data-table__settings-check">
                 <input
                   type="checkbox"

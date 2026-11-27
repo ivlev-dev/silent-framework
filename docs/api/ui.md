@@ -405,6 +405,14 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 `function SearchIcon(props: GlyphProps): Node` — Material Symbols `search`.
 
+### `TableIcon`
+
+`function TableIcon(props: GlyphProps): Node` — Material Symbols `grid_on`: режим таблицы. Без `label` декоративна (`aria-hidden`), с `label`/`title` — `role="img"`. В переключателе раскладки: `<button aria-pressed={layout === "table"}><TableIcon /></button>`.
+
+### `CardsIcon`
+
+`function CardsIcon(props: GlyphProps): Node` — Material Symbols `view_agenda`: режим карточек. Без `label` декоративна (`aria-hidden`), с `label`/`title` — `role="img"`.
+
 ### `LoadingIcon`
 
 `function LoadingIcon(props: GlyphProps): Node` — Material Symbols `progress_activity` (четверть кольца).

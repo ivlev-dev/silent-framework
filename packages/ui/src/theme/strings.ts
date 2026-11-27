@@ -24,6 +24,9 @@ export interface UiStrings {
   readonly clear: string;
   readonly sortAscending: string;
   readonly sortDescending: string;
+  readonly layout: string;
+  readonly tableView: string;
+  readonly cardsView: string;
   readonly noData: string;
   /** Подсказка группы чекбоксов: `{count}` подставляется компонентом. */
   readonly minSelections: string;
@@ -60,6 +63,9 @@ export const defaultUiStrings: UiStrings = {
   clear: "Очистить",
   sortAscending: "По возрастанию",
   sortDescending: "По убыванию",
+  layout: "Раскладка таблицы",
+  tableView: "Таблица",
+  cardsView: "Карточки",
   noData: "Нет данных",
   minSelections: "Выберите не менее {count}",
   maxSelections: "Выберите не более {count}",

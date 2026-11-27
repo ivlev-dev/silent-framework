@@ -486,7 +486,7 @@ export const Cards: Story = {
   },
   render: silentStory<DataTableArgs>((args) => DataTableDemo(args)),
   play: async ({ canvasElement }) => {
-    const toggle = canvasElement.querySelector<HTMLButtonElement>(".sui-data-table__layout-toggle");
+    const toggle = canvasElement.querySelector<HTMLButtonElement>("[data-layout-target='cards']");
     if (toggle === null) throw new Error("нет переключателя раскладки");
     await userEvent.click(toggle);
     await expect(canvasElement.querySelectorAll(".sui-data-table__card").length).toBe(5);

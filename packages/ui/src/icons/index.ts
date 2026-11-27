@@ -61,3 +61,6 @@ export { FormatClearIcon } from "./format-clear.js";
 /* Интерфейс */
 export { FullscreenIcon } from "./fullscreen.js";
 export { FullscreenExitIcon } from "./fullscreen-exit.js";
+
+export { TableIcon } from "./table.js";
+export { CardsIcon } from "./cards.js";
