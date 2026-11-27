@@ -8,6 +8,7 @@ coverage
 *.tsbuildinfo
 reference/
 .playwright-mcp/
+examples/ui/.data/
 packages/swc/native/
 php/vendor/
 storybook-static

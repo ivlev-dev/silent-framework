@@ -1,0 +1,23 @@
+{
+  "name": "@ivlev-dev/silent-example-ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 6107",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@ivlev-dev/silent-core": "workspace:*",
+    "@ivlev-dev/silent-reactivity": "workspace:*",
+    "@ivlev-dev/silent-ui": "workspace:*",
+    "@ivlev-dev/silent-form": "workspace:*",
+    "@ivlev-dev/silent-dnd": "workspace:*"
+  },
+  "devDependencies": {
+    "@ivlev-dev/silent-vite": "workspace:*",
+    "typescript": "^7.0.2",
+    "vite": "8.3.6"
+  }
+}

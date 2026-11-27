@@ -26,6 +26,16 @@ export {
   type SelectProps,
   type SelectOption,
 } from "./select/index.js";
+export {
+  TreeSelect,
+  type TreeSelectCascade,
+  type TreeSelectEmit,
+  type TreeSelectExpandTrigger,
+  type TreeSelectNode,
+  type TreeSelectProps,
+  type TreeSelectSearchStrategy,
+  type TreeSelectValue,
+} from "./tree-select/index.js";
 export { Checkbox, type CheckboxProps } from "./checkbox/index.js";
 export {
   RadioGroup,

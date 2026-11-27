@@ -45,6 +45,10 @@ export interface SelectProps {
   readonly searchable?: SelectSearchable | undefined;
   readonly clearable?: boolean | undefined;
   readonly loading?: boolean | undefined;
+  /** Задержка запроса `loadOptions` при вводе, мс. По умолчанию `0`. */
+  readonly searchDelay?: number | undefined;
+  readonly loadErrorText?: Children | undefined;
+  readonly onLoadError?: ((error: unknown) => void) | undefined;
   readonly loadOptions?:
     | ((
         query: string,

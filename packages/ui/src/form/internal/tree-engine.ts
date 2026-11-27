@@ -28,6 +28,13 @@ export interface TreeNode {
   readonly icon?: Children | undefined;
   /** Дополнительные слова для поиска (синонимы, артикулы). */
   readonly keywords?: readonly string[] | undefined;
+  /**
+   * Узел имеет детей, которых ещё нет в `children`: TreeSelect покажет
+   * раскрытие и вызовет `load("", node)`.
+   */
+  readonly hasChildren?: boolean | undefined;
+  /** Алиас `hasChildren` для ленивых деревьев из API. */
+  readonly lazy?: boolean | undefined;
 }
 
 /** Как выбор узла распространяется по дереву. */
@@ -465,7 +472,10 @@ export function flattenTreeView(
       const entry = index.nodes.get(key);
       if (entry === undefined) return;
       const childKeys = entry.childKeys.filter(isVisible);
-      const hasChildren = childKeys.length > 0;
+      const lazyChildren =
+        !searching
+        && (entry.node.hasChildren === true || entry.node.lazy === true);
+      const hasChildren = childKeys.length > 0 || lazyChildren;
       const expanded = hasChildren && (searching || options.expanded.has(key));
       const row = rowFor(
         key,

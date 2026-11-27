@@ -1,9 +1,10 @@
-import type { Children, StyleInput } from "@ivlev-dev/silent-core";
+import type { Child, Children, StyleInput } from "@ivlev-dev/silent-core";
 import {
   For,
   Show,
   createMemo,
   createSignal,
+  onCleanup,
   untrack,
 } from "@ivlev-dev/silent-core";
 import { createVirtualizer } from "@ivlev-dev/silent-virtual";
@@ -131,6 +132,61 @@ interface SummaryItem {
   readonly label: string;
 }
 
+/** Подставляет загруженные дети по ключу родителя, сохраняя порядок. */
+function applyLoadedChildren(
+  nodes: readonly TreeSelectNode[],
+  loaded: ReadonlyMap<string, readonly TreeSelectNode[]>,
+): readonly TreeSelectNode[] {
+  if (loaded.size === 0) return nodes;
+  let changed = false;
+  const next = nodes.map((node) => {
+    const key = String(node.value);
+    const children = loaded.get(key);
+    const resolvedChildren =
+      children === undefined
+        ? node.children === undefined
+          ? undefined
+          : applyLoadedChildren(node.children, loaded)
+        : children;
+    if (resolvedChildren === node.children) return node;
+    changed = true;
+    return resolvedChildren === undefined
+      ? { ...node, hasChildren: false }
+      : { ...node, children: resolvedChildren, hasChildren: false };
+  });
+  return changed ? next : nodes;
+}
+
+/** Подсвечивает совпадения запроса в строковой подписи. */
+function highlightedLabel(text: string, query: string): Child {
+  const needle = query.trim();
+  if (needle === "") return text;
+  const lowerText = text.toLocaleLowerCase();
+  const lowerNeedle = needle.toLocaleLowerCase();
+  const parts: Child[] = [];
+  let cursor = 0;
+  let match = lowerText.indexOf(lowerNeedle, cursor);
+  while (match >= 0 && lowerNeedle !== "") {
+    if (match > cursor) parts.push(text.slice(cursor, match));
+    parts.push(
+      <mark class="sui-tree-select__match">
+        {text.slice(match, match + needle.length)}
+      </mark>,
+    );
+    cursor = match + needle.length;
+    match = lowerText.indexOf(lowerNeedle, cursor);
+  }
+  if (parts.length === 0) return text;
+  if (cursor < text.length) parts.push(text.slice(cursor));
+  return parts;
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error && error.message !== "") return error.message;
+  if (typeof error === "string" && error !== "") return error;
+  return "Не удалось загрузить данные";
+}
+
 /**
  * `TreeSelect` на listbox/tree-движке.
  *
@@ -151,13 +207,18 @@ export function TreeSelect(props: TreeSelectProps): Node {
   const disabled = (): boolean => props.disabled === true;
   const readOnly = (): boolean => props.readOnly === true;
   const selectableParents = (): boolean => props.selectableParents !== false;
-  const showCheckboxes = (): boolean => props.showCheckboxes ?? multiple();
+  const showCheckboxes = (): boolean =>
+    props.checkable ?? props.showCheckboxes ?? multiple();
   const searchable = (): boolean => props.searchable !== false;
   const expandOnRow = (): boolean => props.expandOnClick !== "icon";
   const cascade = (): "independent" | "down" | "up" | "both" =>
     props.cascade ?? (multiple() ? "both" : "independent");
   const emitMode = (): "leaves" | "checked" | "all" => props.emit ?? "leaves";
   const maxVisible = (): number => Math.max(1, props.maxVisibleOptions ?? 8);
+  const searchDelay = (): number => Math.max(0, props.searchDelay ?? 250);
+  const clearable = (): boolean => props.clearable ?? multiple();
+  const showSelectAll = (): boolean => props.showSelectAll ?? multiple();
+  const selectAllLabel = (): string => props.selectAllLabel ?? "Выбрать все";
 
   const labelOf = (): Children =>
     props.label !== undefined ? props.label : props.field?.label;
@@ -190,12 +251,47 @@ export function TreeSelect(props: TreeSelectProps): Node {
   const visible = (): boolean => mounted() && openState.isOpen();
 
   // --- дерево и значения ------------------------------------------------
-  // Индекс пересобирается только при смене массива `nodes`: внутри одного
-  // рендера/flush дерево запрашивается многократно.
+  // Индекс пересобирается только при смене дерева: внутри одного
+  // рендера/flush дерево запрашивается многократно. Ленивые дети и
+  // результаты асинхронного поиска лежат отдельно и накладываются поверх.
+  const [lazyChildren, setLazyChildren] = createSignal<
+    ReadonlyMap<string, readonly TreeSelectNode[]>
+  >(new Map());
+  const [rootNodes, setRootNodes] = createSignal<
+    readonly TreeSelectNode[] | null
+  >(null);
+  const [searchNodes, setSearchNodes] = createSignal<
+    readonly TreeSelectNode[] | null
+  >(null);
+  const mergedNodes = createMemo<readonly TreeSelectNode[]>(() =>
+    applyLoadedChildren(props.nodes, lazyChildren()),
+  );
+  const rootDisplayNodes = createMemo<readonly TreeSelectNode[]>(() => {
+    const roots = rootNodes();
+    return roots === null ? [] : applyLoadedChildren(roots, lazyChildren());
+  });
+  const searchDisplayNodes = createMemo<readonly TreeSelectNode[] | null>(() => {
+    const found = searchNodes();
+    return found === null
+      ? null
+      : applyLoadedChildren(found, lazyChildren());
+  });
+  const baseNodes = (): readonly TreeSelectNode[] =>
+    props.nodes.length === 0 && rootNodes() !== null
+      ? rootDisplayNodes()
+      : mergedNodes();
+  const lookupNodes = createMemo<readonly TreeSelectNode[]>(() => {
+    const base = baseNodes();
+    const found = searchDisplayNodes();
+    if (found === null) return base;
+    // Результаты поиска участвуют в преобразовании значений и подписях
+    // чипов, но не становятся частью видимого дерева при очистке запроса.
+    return [...base, ...found];
+  });
   let cachedNodes: readonly TreeSelectNode[] | null = null;
   let cachedIndex: TreeIndex | null = null;
   const index = (): TreeIndex => {
-    const currentNodes = props.nodes;
+    const currentNodes = lookupNodes();
     if (cachedIndex === null || cachedNodes !== currentNodes) {
       cachedNodes = currentNodes;
       cachedIndex = indexTree(currentNodes);
@@ -222,23 +318,28 @@ export function TreeSelect(props: TreeSelectProps): Node {
       : childrenText(node.label);
   const isSelectableKey = (key: string): boolean => {
     const entry = index().nodes.get(key);
-    if (entry === undefined) return false;
+    if (entry === undefined || entry.node.disabled === true) return false;
     return entry.childKeys.length === 0 || selectableParents();
   };
 
   // --- раскрытие --------------------------------------------------------
+  const expandedProp = (): readonly TreeSelectValue[] | undefined =>
+    props.expandedKeys ?? props.expanded;
+  const defaultExpandedProp = (): readonly TreeSelectValue[] | undefined =>
+    props.defaultExpandedKeys ?? props.defaultExpanded;
   const initialExpanded = (): Set<string> =>
-    new Set((props.defaultExpanded ?? []).map((value) => String(value)));
+    new Set((defaultExpandedProp() ?? []).map((value) => String(value)));
   const [uncontrolledExpanded, setUncontrolledExpanded] =
     createSignal<ReadonlySet<string>>(initialExpanded());
   const expandedKeys = (): ReadonlySet<string> => {
-    if (props.expanded !== undefined) {
-      return new Set(props.expanded.map((value) => String(value)));
+    const controlled = expandedProp();
+    if (controlled !== undefined) {
+      return new Set(controlled.map((value) => String(value)));
     }
     return uncontrolledExpanded();
   };
   const applyExpanded = (next: ReadonlySet<string>): void => {
-    if (props.expanded === undefined) setUncontrolledExpanded(next);
+    if (expandedProp() === undefined) setUncontrolledExpanded(next);
     const current = index();
     props.onExpandedChange?.(
       treeKeysToValues(current, current.order.filter((key) => next.has(key))),
@@ -247,18 +348,178 @@ export function TreeSelect(props: TreeSelectProps): Node {
   const toggleExpanded = (key: string): void => {
     if (disabled()) return;
     const next = new Set(expandedKeys());
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
+    if (next.has(key)) {
+      next.delete(key);
+    } else {
+      next.add(key);
+      void loadChildren(key);
+    }
     applyExpanded(next);
   };
 
   // --- поиск ------------------------------------------------------------
   const [querySignal, setQuerySignal] = createSignal("");
   const searchText = (): string => (visible() ? querySignal() : "");
+  const searching = (): boolean => searchText().trim() !== "";
+
+  const [loadErrorState, setLoadErrorState] = createSignal<Children | null>(
+    null,
+  );
+  const [rootLoading, setRootLoading] = createSignal(false);
+  const [loadingKeys, setLoadingKeys] = createSignal<ReadonlySet<string>>(
+    new Set(),
+  );
+  const loadedKeys = new Set<string>();
+  let searchTimer: ReturnType<typeof setTimeout> | null = null;
+  let searchRequest = 0;
+  let rootsRequest = 0;
+
+  const cancelSearchTimer = (): void => {
+    if (searchTimer !== null) {
+      clearTimeout(searchTimer);
+      searchTimer = null;
+    }
+  };
+  onCleanup(() => {
+    cancelSearchTimer();
+    searchRequest += 1;
+    rootsRequest += 1;
+  });
+
+  const setKeyLoading = (key: string, loading: boolean): void => {
+    const next = new Set(loadingKeys());
+    if (loading) next.add(key);
+    else next.delete(key);
+    setLoadingKeys(next);
+  };
+
+  const loadChildren = async (key: string): Promise<void> => {
+    const load = props.load;
+    if (load === undefined || loadedKeys.has(key)) return;
+    const entry = index().nodes.get(key);
+    if (
+      entry === undefined
+      || (entry.node.children !== undefined && entry.node.children.length > 0)
+    ) {
+      return;
+    }
+    loadedKeys.add(key);
+    setKeyLoading(key, true);
+    try {
+      const children = await load("", entry.node);
+      setLazyChildren((current) => {
+        const next = new Map(current);
+        next.set(key, children);
+        return next;
+      });
+    } catch (error) {
+      loadedKeys.delete(key);
+      const message = props.loadError ?? errorMessage(error);
+      setLoadErrorState(message);
+      props.onLoadError?.(error);
+    } finally {
+      setKeyLoading(key, false);
+    }
+  };
+
+  const loadRoots = async (): Promise<void> => {
+    const load = props.load;
+    if (
+      load === undefined
+      || props.nodes.length > 0
+      || rootNodes() !== null
+    ) {
+      return;
+    }
+    const request = rootsRequest + 1;
+    rootsRequest = request;
+    setRootLoading(true);
+    setLoadErrorState(null);
+    try {
+      const nodes = await load("", undefined);
+      if (request !== rootsRequest) return;
+      setRootNodes(nodes);
+      setSearchNodes(null);
+    } catch (error) {
+      if (request !== rootsRequest) return;
+      setLoadErrorState(props.loadError ?? errorMessage(error));
+      props.onLoadError?.(error);
+    } finally {
+      if (request === rootsRequest) setRootLoading(false);
+    }
+  };
+
+  const runSearch = (text: string): void => {
+    const load = props.load;
+    const query = text.trim();
+    if (load === undefined || query === "") return;
+    const request = searchRequest + 1;
+    searchRequest = request;
+    setRootLoading(true);
+    setLoadErrorState(null);
+    void load(query, undefined)
+      .then((nodes) => {
+        if (request !== searchRequest) return;
+        setSearchNodes(nodes);
+      })
+      .catch((error: unknown) => {
+        if (request !== searchRequest) return;
+        setLoadErrorState(props.loadError ?? errorMessage(error));
+        props.onLoadError?.(error);
+      })
+      .finally(() => {
+        if (request === searchRequest) setRootLoading(false);
+      });
+  };
+
+  // Поиск с задержкой: локальное дерево фильтруется мгновенно, запрос к API
+  // уходит после паузы, а устаревший ответ отбрасывается по номеру запроса.
+  const scheduleSearch = (text: string): void => {
+    cancelSearchTimer();
+    const query = text.trim();
+    if (props.load === undefined) return;
+    // Новый ввод сразу отменяет старый ответ, даже если запрос ещё ждёт
+    // debounce-паузу.
+    searchRequest += 1;
+    setSearchNodes(null);
+    setRootLoading(false);
+    setLoadErrorState(null);
+    if (query === "") return;
+    if (searchDelay() === 0) {
+      runSearch(text);
+      return;
+    }
+    searchTimer = setTimeout(() => {
+      searchTimer = null;
+      runSearch(text);
+    }, searchDelay());
+  };
+  const updateQuery = (text: string): void => {
+    setQuerySignal(text);
+    scheduleSearch(text);
+  };
+
+  const viewNodes = (): readonly TreeSelectNode[] => {
+    if (searching() && props.load !== undefined) {
+      return searchDisplayNodes() ?? baseNodes();
+    }
+    return baseNodes();
+  };
+  let cachedViewNodes: readonly TreeSelectNode[] | null = null;
+  let cachedViewIndex: TreeIndex | null = null;
+  const viewIndex = (): TreeIndex => {
+    const currentNodes = viewNodes();
+    if (cachedViewIndex === null || cachedViewNodes !== currentNodes) {
+      cachedViewNodes = currentNodes;
+      cachedViewIndex = indexTree(currentNodes);
+    }
+    return cachedViewIndex;
+  };
+
   // Мемо: внутри одного flush дерево запрашивается многократно (сводка,
   // окно рендера, `getItemKey` виртуализатора), а `flattenTreeView` — O(n).
   const rows = createMemo<readonly FlatTreeNodeRow[]>(() =>
-    flattenTreeView(index(), {
+    flattenTreeView(viewIndex(), {
       expanded: expandedKeys(),
       selected: selectedSet(),
       cascade: cascade(),
@@ -267,7 +528,6 @@ export function TreeSelect(props: TreeSelectProps): Node {
       flattenOnSearch: props.flattenOnSearch,
     }),
   );
-  const searching = (): boolean => searchText().trim() !== "";
 
   // --- активная строка --------------------------------------------------
   const [activeKeySignal, setActiveKeySignal] = createSignal<string | null>(null);
@@ -443,14 +703,23 @@ export function TreeSelect(props: TreeSelectProps): Node {
   // --- открытие/закрытие ------------------------------------------------
   const open = (): void => {
     if (disabled()) return;
+    cancelSearchTimer();
+    searchRequest += 1;
     setQuerySignal("");
+    setSearchNodes(null);
+    setLoadErrorState(null);
     openState.requestOpen(true);
     syncActive();
+    void loadRoots();
   };
   const close = (restoreFocus: boolean): void => {
     if (!visible()) return;
+    cancelSearchTimer();
+    searchRequest += 1;
     openState.requestOpen(false);
     setQuerySignal("");
+    setSearchNodes(null);
+    setLoadErrorState(null);
     setPendingSearchFocus(false);
     if (restoreFocus) controlElement()?.focus({ preventScroll: true });
   };
@@ -521,6 +790,40 @@ export function TreeSelect(props: TreeSelectProps): Node {
     }
     const next = toggleTreeSelection(index(), selectedKeys(), key, cascade());
     emitExplicit(next.filter((item) => item !== key));
+    controlElement()?.focus({ preventScroll: true });
+  };
+
+  const selectableKeys = (): string[] => {
+    const current = index();
+    return current.order.filter((key) => {
+      const entry = current.nodes.get(key);
+      return entry !== undefined
+        && entry.node.disabled !== true
+        && isSelectableKey(key);
+    });
+  };
+  const allSelected = (): boolean => {
+    const current = index();
+    const keys = current.order.filter((key) => {
+      const entry = current.nodes.get(key);
+      return entry !== undefined
+        && entry.childKeys.length === 0
+        && entry.node.disabled !== true;
+    });
+    if (keys.length === 0) return false;
+    const state = selection();
+    return keys.every((key) => state.checked.get(key) === true);
+  };
+  const toggleSelectAll = (event?: Event): void => {
+    event?.stopPropagation();
+    if (disabled() || readOnly()) return;
+    emitExplicit(allSelected() ? [] : selectableKeys());
+    controlElement()?.focus({ preventScroll: true });
+  };
+  const clearValue = (event?: Event): void => {
+    event?.stopPropagation();
+    if (disabled() || readOnly()) return;
+    emitExplicit([]);
     controlElement()?.focus({ preventScroll: true });
   };
 
@@ -627,7 +930,7 @@ export function TreeSelect(props: TreeSelectProps): Node {
     const key = event.key;
     if (key === "Escape") {
       event.preventDefault();
-      if (querySignal() !== "") setQuerySignal("");
+      if (querySignal() !== "") updateQuery("");
       else close(true);
       return;
     }
@@ -698,7 +1001,7 @@ export function TreeSelect(props: TreeSelectProps): Node {
     if (isPrintable(event, key)) {
       event.preventDefault();
       if (searchable()) {
-        setQuerySignal(querySignal() + key);
+        updateQuery(querySignal() + key);
         setPendingSearchFocus(true);
         return;
       }
@@ -725,7 +1028,7 @@ export function TreeSelect(props: TreeSelectProps): Node {
         event.preventDefault();
         open();
         if (searchable()) {
-          setQuerySignal(querySignal() + key);
+          updateQuery(querySignal() + key);
           setPendingSearchFocus(true);
         } else {
           runTypeahead(key);
@@ -740,7 +1043,7 @@ export function TreeSelect(props: TreeSelectProps): Node {
     const key = event.key;
     if (key === "Escape") {
       event.preventDefault();
-      if (querySignal() !== "") setQuerySignal("");
+      if (querySignal() !== "") updateQuery("");
       else close(true);
       return;
     }
@@ -815,6 +1118,7 @@ export function TreeSelect(props: TreeSelectProps): Node {
       data-index={placement === undefined ? undefined : row.index}
       data-indeterminate={row.indeterminate ? "" : undefined}
       data-disabled={row.option.disabled === true ? "" : undefined}
+      data-loading={loadingKeys().has(row.key) ? "" : undefined}
       data-depth={String(row.depth)}
       data-option-index={row.index}
       data-pinned={placement?.pinned === true ? "" : undefined}
@@ -864,7 +1168,12 @@ export function TreeSelect(props: TreeSelectProps): Node {
             toggleExpanded(row.key);
           }}
         >
-          <ChevronDownIcon size="sm" />
+          <Show
+            when={loadingKeys().has(row.key)}
+            fallback={<ChevronDownIcon size="sm" />}
+          >
+            <span class="sui-tree-select__spinner" aria-hidden="true" />
+          </Show>
         </button>
       </Show>
       <Show when={showCheckboxes()}>
@@ -892,7 +1201,11 @@ export function TreeSelect(props: TreeSelectProps): Node {
           when={props.renderOption !== undefined}
           fallback={
             <>
-              <span class="sui-tree-select__label">{row.node.label}</span>
+              <span class="sui-tree-select__label">
+                {typeof row.node.label === "string"
+                  ? highlightedLabel(row.node.label, searchText())
+                  : row.node.label}
+              </span>
               <Show when={row.node.description}>
                 <span class="sui-tree-select__description">
                   {row.node.description}
@@ -1021,6 +1334,27 @@ export function TreeSelect(props: TreeSelectProps): Node {
             </span>
           </Show>
           <span class="sui-tree-select__indicators">
+            <Show
+              when={
+                clearable()
+                && hasValue()
+                && !disabled()
+                && !readOnly()
+              }
+            >
+              <button
+                type="button"
+                class="sui-tree-select__clear"
+                tabindex="-1"
+                aria-label={props.clearLabel ?? config.strings.clear}
+                onMouseDown={(event: MouseEvent) => {
+                  event.preventDefault();
+                }}
+                onClick={clearValue}
+              >
+                <CloseIcon size="sm" />
+              </button>
+            </Show>
             <span class="sui-tree-select__arrow" aria-hidden="true">
               <ChevronDownIcon size="sm" />
             </span>
@@ -1075,12 +1409,49 @@ export function TreeSelect(props: TreeSelectProps): Node {
                 aria-activedescendant={activeOptionId()}
                 onInput={(event) => {
                   const target = event.currentTarget as HTMLInputElement | null;
-                  setQuerySignal(target?.value ?? "");
+                  updateQuery(target?.value ?? "");
                 }}
                 onKeyDown={onSearchKeyDown}
                 onBlur={handleBlur}
                 onFocus={handleFocus}
               />
+            </Show>
+            <Show when={showSelectAll() || (clearable() && hasValue())}>
+              <div class="sui-tree-select__toolbar">
+                <Show when={showSelectAll()}>
+                  <button
+                    type="button"
+                    class="sui-tree-select__tool"
+                    tabindex="-1"
+                    aria-label={allSelected() ? "Снять выбор" : selectAllLabel()}
+                    onMouseDown={(event: MouseEvent) => {
+                      event.preventDefault();
+                    }}
+                    onClick={toggleSelectAll}
+                  >
+                    {allSelected() ? "Снять выбор" : selectAllLabel()}
+                  </button>
+                </Show>
+                <Show when={clearable() && hasValue()}>
+                  <button
+                    type="button"
+                    class="sui-tree-select__tool"
+                    tabindex="-1"
+                    aria-label={props.clearLabel ?? config.strings.clear}
+                    onMouseDown={(event: MouseEvent) => {
+                      event.preventDefault();
+                    }}
+                    onClick={clearValue}
+                  >
+                    {props.clearLabel ?? config.strings.clear}
+                  </button>
+                </Show>
+              </div>
+            </Show>
+            <Show when={loadErrorState() !== null && rows().length > 0}>
+              <div class="sui-popup__error" role="alert">
+                {loadErrorState()}
+              </div>
             </Show>
             <div
               id={listId}
@@ -1096,15 +1467,24 @@ export function TreeSelect(props: TreeSelectProps): Node {
                 when={rows().length > 0}
                 fallback={
                   <Show
-                    when={props.loading === true}
+                    when={loadErrorState() !== null}
                     fallback={
-                      <div class="sui-popup__empty">
-                        {props.empty ?? config.strings.noData}
-                      </div>
+                      <Show
+                        when={props.loading === true || rootLoading()}
+                        fallback={
+                          <div class="sui-popup__empty">
+                            {props.empty ?? config.strings.noData}
+                          </div>
+                        }
+                      >
+                        <div class="sui-popup__loading" role="status">
+                          {props.loadingText ?? config.strings.loading}
+                        </div>
+                      </Show>
                     }
                   >
-                    <div class="sui-popup__loading" role="status">
-                      {props.loadingText ?? config.strings.loading}
+                    <div class="sui-popup__error" role="alert">
+                      {loadErrorState()}
                     </div>
                   </Show>
                 }

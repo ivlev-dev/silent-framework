@@ -1,5 +1,11 @@
 [workspace]
-members = ["crates/silent-transform", "crates/silent-node", "crates/silent-protocol", "crates/silent-protocol-macros"]
+members = [
+  "crates/silent-transform",
+  "crates/silent-node",
+  "crates/silent-protocol",
+  "crates/silent-protocol-macros",
+  "examples/ui/server"
+]
 resolver = "2"
 
 [workspace.package]

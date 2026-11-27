@@ -367,6 +367,79 @@
     color: var(--sui-color-primary);
   }
 
+  .sui-tree-select__match {
+    border-radius: var(--sui-radius-xs);
+    background-color: var(--sui-color-tertiary-container);
+    color: var(--sui-color-on-tertiary-container);
+  }
+
+  .sui-tree-select__clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 1.5rem;
+    block-size: 1.5rem;
+    padding: 0;
+    border: 0;
+    border-radius: var(--sui-radius-full);
+    background: transparent;
+    color: var(--sui-tree-select-muted-color);
+    cursor: pointer;
+    pointer-events: auto;
+  }
+
+  .sui-tree-select__clear:hover {
+    background-color: var(--sui-color-surface-container-highest);
+    color: var(--sui-color-on-surface);
+  }
+
+  .sui-tree-select__toolbar {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sui-space-2);
+    padding: var(--sui-space-1) var(--sui-space-2);
+    border-block-end: var(--sui-hairline) solid var(--sui-color-outline-variant);
+  }
+
+  .sui-tree-select__tool {
+    min-block-size: var(--sui-touch-target);
+    padding: var(--sui-space-1) var(--sui-space-2);
+    border: 0;
+    border-radius: var(--sui-radius-sm);
+    background: transparent;
+    color: var(--sui-color-primary);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-label-large-size);
+    font-weight: var(--sui-type-label-large-weight);
+    cursor: pointer;
+  }
+
+  .sui-tree-select__tool:hover {
+    background-color: var(--sui-color-surface-container-high);
+  }
+
+  .sui-tree-select__spinner {
+    display: inline-block;
+    inline-size: var(--sui-icon-size-sm);
+    block-size: var(--sui-icon-size-sm);
+    border: 2px solid currentColor;
+    border-block-start-color: transparent;
+    border-radius: var(--sui-radius-full);
+    animation: sui-tree-select-spin 700ms linear infinite;
+  }
+
+  .sui-tree-select__row[data-loading] .sui-tree-select__spinner {
+    color: var(--sui-color-primary);
+  }
+
+  @keyframes sui-tree-select-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
   .sui-tree-select[data-size="sm"] .sui-tree-select__row {
     font-size: var(--sui-type-body-small-size);
     line-height: var(--sui-type-body-small-line);
@@ -397,6 +470,10 @@
     .sui-tree-select__checkbox,
     .sui-tree-select__arrow {
       transition: none;
+    }
+
+    .sui-tree-select__spinner {
+      animation: none;
     }
   }
 }

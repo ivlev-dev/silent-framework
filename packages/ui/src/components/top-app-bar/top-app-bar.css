@@ -87,7 +87,7 @@
     gap: var(--sui-space-1);
     flex: none;
     min-inline-size: 0;
-    max-inline-size: min(50%, 24rem);
+    max-inline-size: min(50vw, 24rem);
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-width: none;
@@ -146,7 +146,7 @@
     }
 
     .sui-top-app-bar__actions {
-      max-inline-size: 45%;
+      max-inline-size: 45vw;
     }
 
     .sui-top-app-bar[data-variant="medium"] .sui-top-app-bar__title,

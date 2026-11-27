@@ -754,12 +754,97 @@ export const SelectStates: Story = {
         <Select id="select-md" options={OPTIONS} label="md" placeholder="Размер md" />
         <Select id="select-lg" size="lg" options={OPTIONS} label="lg" placeholder="Размер lg" />
         <Select id="select-value" options={OPTIONS} label="Значение" value="admin" />
-        <Select id="select-multiple" options={OPTIONS} label="Несколько" multiple value={["user", "admin"]} />
+        <Select id="select-multiple" options={OPTIONS} label="Несколько" multiple value={["user", "admin"]} clearable />
+        <Select id="select-search" options={OPTIONS} label="С поиском" searchable placeholder="Найдите роль" />
         <Select id="select-error" options={OPTIONS} label="Ошибка" error="Выберите роль" />
         <Select id="select-disabled" options={OPTIONS} label="disabled" disabled placeholder="Недоступно" />
       </Stack>
     </Box>
   )),
+};
+
+const ASYNC_CITIES = [
+  "Москва",
+  "Санкт-Петербург",
+  "Новосибирск",
+  "Екатеринбург",
+  "Казань",
+  "Нижний Новгород",
+  "Челябинск",
+  "Самара",
+  "Омск",
+  "Ростов-на-Дону",
+  "Уфа",
+  "Красноярск",
+  "Воронеж",
+  "Пермь",
+  "Волгоград",
+] as const;
+
+export const SelectAsync: Story = {
+  name: "Select / асинхронный поиск",
+  parameters: { controls: { disable: true } },
+  render: silentStory<FormArgs>(() => {
+    const loadOptions = (
+      query: string,
+      signal: AbortSignal,
+    ): Promise<readonly { value: string; label: string }[]> =>
+      new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          const needle = query.trim().toLowerCase();
+          resolve(
+            ASYNC_CITIES
+              .filter((city) => city.toLowerCase().includes(needle))
+              .map((city) => ({ value: city, label: city })),
+          );
+        }, 350);
+        signal.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(timer);
+            reject(new DOMException("Загрузка отменена", "AbortError"));
+          },
+          { once: true },
+        );
+      });
+    return (
+      <Box padding={4} style={{ "max-inline-size": "420px" }}>
+        <Select
+          id="select-async"
+          options={[]}
+          label="Город"
+          placeholder="Начните вводить"
+          searchable
+          searchDelay={250}
+          loadOptions={loadOptions}
+          clearable
+        />
+      </Box>
+    );
+  }),
+};
+
+export const SelectVirtual: Story = {
+  name: "Select / виртуальный список",
+  parameters: { controls: { disable: true } },
+  render: silentStory<FormArgs>(() => {
+    const options = Array.from({ length: 600 }, (_, index) => ({
+      value: `item-${index}`,
+      label: `Опция ${index + 1}`,
+      description: index % 7 === 0 ? "Описание для строки" : undefined,
+    }));
+    return (
+      <Box padding={4} style={{ "max-inline-size": "420px" }}>
+        <Select
+          id="select-virtual"
+          options={options}
+          label="600 опций"
+          placeholder="Откройте список"
+          searchable
+        />
+      </Box>
+    );
+  }),
 };
 
 /* ------------------------------------------------------------------ */

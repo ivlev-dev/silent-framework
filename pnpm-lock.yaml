@@ -396,6 +396,34 @@ importers:
         specifier: 8.3.6
         version: 8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)
 
+  examples/ui:
+    dependencies:
+      '@ivlev-dev/silent-core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@ivlev-dev/silent-dnd':
+        specifier: workspace:*
+        version: link:../../packages/dnd
+      '@ivlev-dev/silent-form':
+        specifier: workspace:*
+        version: link:../../packages/form
+      '@ivlev-dev/silent-reactivity':
+        specifier: workspace:*
+        version: link:../../packages/reactivity
+      '@ivlev-dev/silent-ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+    devDependencies:
+      '@ivlev-dev/silent-vite':
+        specifier: workspace:*
+        version: link:../../packages/vite
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vite:
+        specifier: 8.3.6
+        version: 8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)
+
   packages/core:
     devDependencies:
       '@ivlev-dev/silent-di':
@@ -618,6 +646,9 @@ importers:
 
   packages/ui:
     dependencies:
+      '@ivlev-dev/silent-dnd':
+        specifier: '>=0.14.0 <0.15.0'
+        version: link:../dnd
       '@ivlev-dev/silent-virtual':
         specifier: '>=0.14.0 <0.15.0'
         version: link:../virtual

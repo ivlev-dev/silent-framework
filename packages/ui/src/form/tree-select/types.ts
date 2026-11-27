@@ -22,6 +22,21 @@ export type TreeSelectExpandTrigger = "icon" | "row";
 
 export interface TreeSelectProps {
   readonly nodes: readonly TreeSelectNode[];
+  /**
+   * Асинхронный источник узлов. `parent` отсутствует для корневого поиска,
+   * а `query` пуст при ленивой загрузке детей.
+   */
+  readonly load?:
+    | ((
+        query: string,
+        parent?: TreeSelectNode,
+      ) => Promise<readonly TreeSelectNode[]>)
+    | undefined;
+  /** Задержка асинхронного поиска, мс. По умолчанию `250`. */
+  readonly searchDelay?: number | undefined;
+  /** Текст ошибки загрузки; по умолчанию — сообщение исключения. */
+  readonly loadError?: Children;
+  readonly onLoadError?: ((error: unknown) => void) | undefined;
   /** Значение: узел или массив узлов для `multiple`. */
   readonly value?: TreeSelectValue | undefined;
   readonly defaultValue?: TreeSelectValue | undefined;
@@ -41,6 +56,11 @@ export interface TreeSelectProps {
   readonly selectableParents?: boolean | undefined;
   readonly expanded?: readonly TreeNodeValue[] | undefined;
   readonly defaultExpanded?: readonly TreeNodeValue[] | undefined;
+  /**
+   * Алиас `expanded` в терминах ключей. Имеет приоритет над `expanded`.
+   */
+  readonly expandedKeys?: readonly TreeNodeValue[] | undefined;
+  readonly defaultExpandedKeys?: readonly TreeNodeValue[] | undefined;
   readonly onExpandedChange?:
     | ((expanded: readonly TreeNodeValue[]) => void)
     | undefined;
@@ -54,6 +74,14 @@ export interface TreeSelectProps {
   readonly flattenOnSearch?: boolean | undefined;
   /** Чекбоксы строк. По умолчанию включены при `multiple`. */
   readonly showCheckboxes?: boolean | undefined;
+  /** Алиас `showCheckboxes`; при `true` включает каскадные чекбоксы. */
+  readonly checkable?: boolean | undefined;
+  /** Кнопка «Выбрать все» в панели. По умолчанию включена при `multiple`. */
+  readonly showSelectAll?: boolean | undefined;
+  readonly selectAllLabel?: string | undefined;
+  /** Кнопка очистки значения. По умолчанию включена при `multiple`. */
+  readonly clearable?: boolean | undefined;
+  readonly clearLabel?: string | undefined;
   readonly renderOption?:
     | ((node: TreeSelectNode) => Children)
     | undefined;

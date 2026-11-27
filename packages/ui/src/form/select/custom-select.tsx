@@ -144,7 +144,7 @@ export function CustomSelect(props: SelectProps): Node {
   };
   const visibleItems = (): readonly ListboxItem[] => {
     const text = query();
-    if (text === "") return sourceItems();
+    if (text === "" || props.loadOptions !== undefined) return sourceItems();
     return filterListboxItems(sourceItems(), text);
   };
   const flat = (): readonly FlatListboxOption[] => flattenListbox(visibleItems());
@@ -163,8 +163,24 @@ export function CustomSelect(props: SelectProps): Node {
 
   // --- загрузка опций ---------------------------------------------------
   const [loadingState, setLoadingState] = createSignal(false);
+  const [loadErrorState, setLoadErrorState] = createSignal<Children | null>(
+    null,
+  );
   let controller: AbortController | null = null;
   let requestId = 0;
+  let loadTimer: ReturnType<typeof setTimeout> | null = null;
+  const cancelLoadTimer = (): void => {
+    if (loadTimer !== null) {
+      clearTimeout(loadTimer);
+      loadTimer = null;
+    }
+  };
+  const loadErrorMessage = (error: unknown): Children => {
+    if (props.loadErrorText !== undefined) return props.loadErrorText;
+    if (error instanceof Error && error.message !== "") return error.message;
+    if (typeof error === "string" && error !== "") return error;
+    return "Не удалось загрузить данные";
+  };
   const runLoad = (text: string): void => {
     const load = props.loadOptions;
     if (load === undefined) return;
@@ -174,6 +190,7 @@ export function CustomSelect(props: SelectProps): Node {
     const currentRequest = requestId + 1;
     requestId = currentRequest;
     setLoadingState(true);
+    setLoadErrorState(null);
     void load(text, nextController.signal)
       .then((items) => {
         if (currentRequest !== requestId || nextController.signal.aborted) return;
@@ -184,7 +201,24 @@ export function CustomSelect(props: SelectProps): Node {
         if (currentRequest !== requestId || nextController.signal.aborted) return;
         if (error instanceof DOMException && error.name === "AbortError") return;
         setLoadingState(false);
+        setLoadErrorState(loadErrorMessage(error));
+        props.onLoadError?.(error);
       });
+  };
+  const scheduleLoad = (text: string): void => {
+    cancelLoadTimer();
+    controller?.abort();
+    controller = null;
+    setLoadErrorState(null);
+    const delay = Math.max(0, props.searchDelay ?? 0);
+    if (delay === 0) {
+      runLoad(text);
+      return;
+    }
+    loadTimer = setTimeout(() => {
+      loadTimer = null;
+      runLoad(text);
+    }, delay);
   };
   const isLoading = (): boolean => props.loading === true || loadingState();
 
@@ -192,11 +226,12 @@ export function CustomSelect(props: SelectProps): Node {
     if (!visible() || props.loadOptions === undefined) return;
     const text = query();
     untrack(() => {
-      runLoad(text);
+      scheduleLoad(text);
     });
   });
 
   onCleanup(() => {
+    cancelLoadTimer();
     controller?.abort();
     controller = null;
   });
@@ -222,13 +257,23 @@ export function CustomSelect(props: SelectProps): Node {
   // --- открытие/закрытие ------------------------------------------------
   const open = (): void => {
     if (disabled()) return;
+    cancelLoadTimer();
+    controller?.abort();
+    controller = null;
+    setLoadingState(false);
     setQuery("");
+    setLoadErrorState(null);
     openState.requestOpen(true);
   };
   const close = (restoreFocus: boolean): void => {
     if (!visible()) return;
+    cancelLoadTimer();
+    controller?.abort();
+    controller = null;
+    setLoadingState(false);
     openState.requestOpen(false);
     setQuery("");
+    setLoadErrorState(null);
     if (restoreFocus) triggerElement()?.focus({ preventScroll: true });
   };
   const toggle = (): void => {
@@ -737,15 +782,24 @@ export function CustomSelect(props: SelectProps): Node {
                 when={flat().length > 0}
                 fallback={
                   <Show
-                    when={isLoading()}
+                    when={loadErrorState() !== null}
                     fallback={
-                      <div class="sui-popup__empty">
-                        {props.empty ?? config.strings.noData}
-                      </div>
+                      <Show
+                        when={isLoading()}
+                        fallback={
+                          <div class="sui-popup__empty">
+                            {props.empty ?? config.strings.noData}
+                          </div>
+                        }
+                      >
+                        <div class="sui-popup__loading" role="status">
+                          {props.loadingText ?? config.strings.loading}
+                        </div>
+                      </Show>
                     }
                   >
-                    <div class="sui-popup__loading" role="status">
-                      {props.loadingText ?? config.strings.loading}
+                    <div class="sui-popup__error" role="alert">
+                      {loadErrorState()}
                     </div>
                   </Show>
                 }
@@ -766,6 +820,11 @@ export function CustomSelect(props: SelectProps): Node {
                 <Show when={isLoading()}>
                   <div class="sui-popup__loading" role="status">
                     {props.loadingText ?? config.strings.loading}
+                  </div>
+                </Show>
+                <Show when={loadErrorState() !== null}>
+                  <div class="sui-popup__error" role="alert">
+                    {loadErrorState()}
                   </div>
                 </Show>
               </Show>

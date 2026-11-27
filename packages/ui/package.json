@@ -65,7 +65,8 @@
     "test": "node scripts/build.mjs && vitest run"
   },
   "dependencies": {
-    "@ivlev-dev/silent-virtual": ">=0.14.0 <0.15.0"
+    "@ivlev-dev/silent-virtual": ">=0.14.0 <0.15.0",
+    "@ivlev-dev/silent-dnd": ">=0.14.0 <0.15.0"
   },
   "peerDependencies": {
     "@ivlev-dev/silent-core": ">=0.14.0 <0.15.0",

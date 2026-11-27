@@ -1,0 +1,94 @@
+@layer sui.components {
+  .sui-date-range-picker__popover {
+    --sui-popover-max-inline: 46rem;
+  }
+
+  .sui-date-range-picker__panel {
+    display: grid;
+    grid-template-columns: minmax(7rem, 9.5rem) minmax(0, 1fr);
+    grid-template-areas:
+      "presets months"
+      "presets footer";
+    gap: var(--sui-space-3);
+    min-inline-size: 0;
+  }
+
+  .sui-date-range-picker__presets {
+    grid-area: presets;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sui-space-1);
+    min-inline-size: 0;
+    padding-inline-end: var(--sui-space-3);
+    border-inline-end: var(--sui-hairline) solid var(--sui-color-outline-variant);
+  }
+
+  .sui-date-range-picker__preset {
+    --sui-button-padding-inline: var(--sui-space-2);
+
+    justify-content: flex-start;
+    overflow: hidden;
+  }
+
+  .sui-date-range-picker__months {
+    grid-area: months;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--sui-space-4);
+    min-inline-size: 0;
+  }
+
+  .sui-date-range-picker__footer {
+    grid-area: footer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sui-space-2);
+    border-block-start: var(--sui-hairline) solid var(--sui-color-outline-variant);
+    padding-block-start: var(--sui-space-2);
+  }
+
+  .sui-date-range-picker__hint {
+    color: var(--sui-color-on-surface-variant);
+    font-family: var(--sui-font-sans);
+    font-size: var(--sui-type-label-large-size);
+    font-weight: var(--sui-type-label-large-weight);
+    line-height: var(--sui-type-label-large-line);
+  }
+
+  @media (max-width: 48em) {
+    .sui-date-range-picker__popover {
+      --sui-popover-max-inline: min(26rem, calc(100vw - 2 * var(--sui-space-4)));
+    }
+
+    .sui-date-range-picker__panel {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas:
+        "presets"
+        "months"
+        "footer";
+    }
+
+    .sui-date-range-picker__presets {
+      flex-direction: row;
+      overflow-x: auto;
+      padding-inline-end: 0;
+      padding-block-end: var(--sui-space-2);
+      border-inline-end: 0;
+      border-block-end: var(--sui-hairline) solid var(--sui-color-outline-variant);
+    }
+
+    .sui-date-range-picker__presets .sui-date-range-picker__preset[data-full-width] {
+      flex: none;
+      inline-size: auto;
+    }
+
+    .sui-date-range-picker__months {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .sui-date-range-picker__months > .sui-date-picker__calendar + .sui-date-picker__calendar {
+      display: none;
+    }
+  }
+}

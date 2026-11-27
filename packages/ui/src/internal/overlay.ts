@@ -326,6 +326,23 @@ export function syncTriggerAria(
   setTriggerNodeAria(target, panelId, hasPopup, expanded);
 }
 
+export function useEscapeFocusReturn(
+  isOpen: () => boolean,
+  focus: () => void,
+): void {
+  clientEffect(() => {
+    if (!isOpen()) return;
+    const handler = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape") return;
+      queueMicrotask(focus);
+    };
+    document.addEventListener("keydown", handler);
+    onCleanup(() => {
+      document.removeEventListener("keydown", handler);
+    });
+  });
+}
+
 /** Восстанавливает фокус при закрытии (и при dispose). */
 export function useFocusRestore(isOpen: () => boolean): void {
   clientEffect(() => {

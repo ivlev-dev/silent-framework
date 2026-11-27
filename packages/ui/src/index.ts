@@ -54,6 +54,11 @@ export * from "./components/pagination/index.js";
 
 /* Формы */
 export * from "./components/search-field/index.js";
+export * from "./components/data-table/index.js";
+export * from "./components/date-picker/index.js";
+export * from "./components/date-range-picker/index.js";
+export * from "./components/color-picker/index.js";
+export * from "./components/file-upload/index.js";
 export * from "./components/rich-text-editor/index.js";
 export * from "./form/index.js";
 
