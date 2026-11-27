@@ -32,6 +32,34 @@
 
 - Добавлен PHP-пакет `ivlev-dev/silent-protocol`: атрибуты + рефлексия, примитивы, коллекции, oneof, `DateTime`, enum и лимиты, байт-совместимые с TS/Rust/Kotlin. 62 теста в plain-runner (`php/tests/run.php`), общий вектор `protocol/vectors/user.json` читается из JSON; в CI добавлен job `php` (синтаксис, `composer validate`, тесты), версия `Protocol::VERSION` синхронизируется `scripts/version.mjs` и проверяется `scripts/verify-versions.mjs`.
 
+### SPA-пример и silent-protocol
+
+- `examples/ui` переведён на History API (`@ivlev-dev/silent-router`): `/`, `/projects`, `/team`, `/settings`, deep links, back/forward, фильтры и страница в query, SPA fallback (nginx/Caddy).
+- API и redb-хранилище примера переведены на `silent-protocol`: `application/x-silent-protocol`, бинарные ошибки, лимиты 2 MiB, 12 кросс-языковых векторов Rust↔TS, 71 тест сервера.
+- Route-level code splitting и бюджет бандла: initial JS 56.29 kB gzip (было ~130), route-чанки ≤ 27.6 kB; LCP ~144–160 ms, TBT 0 ms, CLS 0.
+- Исправлено зависание страниц: рендер light-компонентов обёрнут в `untrack`, внешний insert-эффект больше не зацикливается.
+
+### DataTable, формы и темы
+
+- DataTable: drag за весь заголовок (сам `th`), resize без скачка, FLIP, drop-индикатор, настройки с locked-колонкой, density override, cards/tree/bulk, bulk-панель поверх футера, sticky footer, пагинация в футере, квадратные углы.
+- Pagination: реактивная активная страница; исправлено «данные сменились, номер нет».
+- Тёмная тема: soft charcoal `#17181B → #333439`, нейтральный акцент, контраст AA.
+- Настройки примера: панель «Готовность формы» по React-эталону, белый фон, клик → скролл к полю.
+- Кнопки: убрано мигание при уходе курсора (state layer через opacity).
+- Card: явная рамка и мягкая тень; поповеры Color/Date/Tree/Select больше не обрезаются.
+- Даты: круглые дни диапазона, видимый текст выбранных; ColorPicker: hex в любом регистре, swatch поверх checkerboard.
+- Dialog: корректный выход из top layer при controlled-закрытии.
+- `packages/core`: `untrack` вокруг рендера light-компонента (регрессионный тест).
+
+### Rust и Kotlin UI
+
+- Rust: damage-регионы и idle-skip, кэш текста/layout (паника при resize исправлена), hover, resize event→present ~2–3 ms, скролл с chaining, таблица 56/48, отдельная страница «Проекты» с данными по silent-protocol, soft-black тема, Wayland.
+- Kotlin: hover-path и damage только региона, 0% CPU в простое, dashboard 1:1 с web, DataTable (56/48, пагинация, bulk, sticky, drag/resize), галерея, HTTP-клиент и декод silent-protocol, Select/TreeSelect через PopupController, Android-сборка.
+
+### Документация
+
+- Добавлены `docs/STATUS.md` и `TODO.md` с текущим состоянием, известными проблемами и планом.
+
 ## 0.12.0
 
 ### Гидрация и сборка
