@@ -61,7 +61,16 @@ class AndroidPainter(private val canvas: Canvas) : Painter {
         paint.color = color.argb.toInt()
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = strokeWidth
-        canvas.drawRoundRect(x, y, x + width, y + height, radius, radius, paint)
+        val inset = strokeWidth / 2f
+        canvas.drawRoundRect(
+            x + inset,
+            y + inset,
+            x + width - inset,
+            y + height - inset,
+            radius,
+            radius,
+            paint,
+        )
         paint.style = Paint.Style.FILL
     }
 

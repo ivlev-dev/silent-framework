@@ -3,12 +3,18 @@ package dev.ivlev.silent.ui.desktop
 import dev.ivlev.silent.ui.demo.AppVM
 import dev.ivlev.silent.ui.demo.AppView
 import dev.ivlev.silent.ui.demo.Route
+import dev.ivlev.silent.ui.data.UiThread
+import dev.ivlev.silent.ui.widgets.PopupController
+import dev.ivlev.silent.ui.widgets.PopupKey
 import dev.ivlev.silent.ui.di.DependencyContainer
-import dev.ivlev.silent.ui.di.container
 import dev.ivlev.silent.ui.form.FieldBinding
 import dev.ivlev.silent.ui.layout.BuildContext
 import dev.ivlev.silent.ui.layout.ClickTarget
 import dev.ivlev.silent.ui.layout.HitTester
+import dev.ivlev.silent.ui.layout.HitTarget
+import dev.ivlev.silent.ui.layout.HoverState
+import dev.ivlev.silent.ui.layout.Offset
+import dev.ivlev.silent.ui.layout.UiCursor
 import dev.ivlev.silent.ui.layout.Rect
 import dev.ivlev.silent.ui.layout.RenderNode
 import dev.ivlev.silent.ui.layout.findAllTextFields
@@ -21,11 +27,16 @@ import dev.ivlev.silent.ui.reactive.DependencyTracker
 import dev.ivlev.silent.ui.reactive.Scope
 import dev.ivlev.silent.ui.tokens.Typography
 import dev.ivlev.silent.ui.widgets.FieldType
+import dev.ivlev.silent.ui.widgets.Button
+import dev.ivlev.silent.ui.widgets.DataTable
 import dev.ivlev.silent.ui.widgets.TextField
 import org.jetbrains.skia.Canvas
+import org.jetbrains.skia.Image
+import org.jetbrains.skia.Surface
 import org.jetbrains.skiko.GraphicsApi
 import org.jetbrains.skiko.SkiaLayer
 import org.jetbrains.skiko.SkikoRenderDelegate
+import java.awt.Cursor
 import java.awt.Font
 import java.awt.Point
 import java.awt.event.ComponentAdapter
@@ -51,12 +62,27 @@ import javax.swing.event.DocumentListener
 import kotlin.math.roundToInt
 
 class DesktopApp(
-    private val di: DependencyContainer = container(),
+    private val di: DependencyContainer = desktopContainer(),
+    initialRoute: Route? = null,
+    initialSection: String? = null,
+    initialNav: String? = null,
 ) {
-    private val vm: AppVM = di.resolve()
+    init {
+        UiThread.install { action -> javax.swing.SwingUtilities.invokeLater(action) }
+    }
+
+    private val vm: AppVM = di.resolve<AppVM>().also { resolved ->
+        if (initialRoute != null) resolved.route = initialRoute
+        if (initialSection != null) resolved.gallery.section.set(initialSection)
+        if (initialNav != null) resolved.dashboard.selectedNav = initialNav
+        if (initialNav == "projects") resolved.dashboard.refreshProjectsBlocking()
+    }
     private val rootComponent: ViewComponent = component(vm, AppView(vm))
     private val measurer = SkikoTextMeasurer()
-    private val tracker = DependencyTracker { requestRedraw() }
+    private val tracker = DependencyTracker {
+        frameDirty = true
+        requestRedraw(rebuild = true)
+    }
     private val scope = Scope()
     private val hitTester = HitTester()
     private val frame = JFrame("Silent UI · Kotlin")
@@ -72,6 +98,23 @@ class DesktopApp(
     private var updatingEditor = false
     private var uiScale = 1f
     private var editorConfigKey = ""
+    private var dragTarget: HitTarget? = null
+    private var dragStartX = 0f
+    private var dragStartY = 0f
+    private var dragMoved = false
+    private var frameDirty = true
+    private var cachedWidth = 0f
+    private var cachedHeight = 0f
+    private val hoverState = HoverState()
+    private var hoverPoint: Offset? = null
+    private var frameSurface: Surface? = null
+    private var frameImage: Image? = null
+    private var pendingDamage: dev.ivlev.silent.ui.layout.Rect? = null
+    private var surfaceWidth = 0
+    private var surfaceHeight = 0
+    private var hoverDemoLocked = false
+    var lastHoverDamage: dev.ivlev.silent.ui.layout.Rect? = null
+        private set
 
     init {
         frame.defaultCloseOperation = JFrame.DO_NOTHING_ON_CLOSE
@@ -106,19 +149,95 @@ class DesktopApp(
                 renderFrame(canvas, width, height)
             }
         }
-        layer.addMouseListener(object : MouseAdapter() {
-            override fun mousePressed(event: MouseEvent) {
-                handleClick(event.x.toFloat() / uiScale, event.y.toFloat() / uiScale)
+        val mouseAdapter = object : MouseAdapter() {
+            override fun mouseMoved(event: MouseEvent) {
+                if (hoverDemoLocked) return
+                updateHover(
+                    event.x.toFloat() / uiScale,
+                    event.y.toFloat() / uiScale,
+                )
             }
-        })
+
+            override fun mouseExited(event: MouseEvent) {
+                val damage = hoverState.clear()
+                hoverPoint = null
+                layer.cursor = Cursor.getDefaultCursor()
+                if (damage != null) {
+                    lastHoverDamage = damage
+                    requestRedraw(rebuild = false, damage = damage)
+                }
+            }
+
+            override fun mousePressed(event: MouseEvent) {
+                PopupController.close()
+                val x = event.x.toFloat() / uiScale
+                val y = event.y.toFloat() / uiScale
+                updateHover(x, y)
+                root?.let { node ->
+                    hitTester.hitResult(node, x, y)?.let { result ->
+                        val adjusted = result.copy(
+                            bounds = result.target.hoverBoundsAt(x, y, result.bounds),
+                        )
+                        hoverState.press(adjusted)
+                        hoverPoint = Offset(x, y)
+                        requestRedraw(rebuild = false, damage = adjusted.bounds)
+                    }
+                }
+                val target = root?.let { hitTester.hit(it, x, y) }
+                if (target is DataTable) {
+                    dragTarget = target
+                    dragStartX = x
+                    dragStartY = y
+                    dragMoved = false
+                    target.dragStartAt(x, y)
+                    requestRedraw()
+                } else {
+                    handleClick(x, y)
+                }
+            }
+
+            override fun mouseDragged(event: MouseEvent) {
+                val target = dragTarget ?: return
+                val x = event.x.toFloat() / uiScale
+                val y = event.y.toFloat() / uiScale
+                dragMoved = dragMoved || kotlin.math.abs(x - dragStartX) > 3f || kotlin.math.abs(y - dragStartY) > 3f
+                target.dragMoveTo(x, y)
+                layer.cursor = Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR)
+                requestRedraw(rebuild = false)
+            }
+
+            override fun mouseReleased(event: MouseEvent) {
+                val target = dragTarget ?: return
+                val x = event.x.toFloat() / uiScale
+                val y = event.y.toFloat() / uiScale
+                target.dragEndAt(x, y)
+                if (!dragMoved) target.activateAt(dragStartX, dragStartY)
+                dragTarget = null
+                val pressedDamage = hoverState.release()
+                layer.cursor = Cursor.getDefaultCursor()
+                requestRedraw(rebuild = false, damage = pressedDamage)
+            }
+
+            override fun mouseClicked(event: MouseEvent) {
+                if (event.clickCount < 2) return
+                val target = root?.let {
+                    hitTester.hit(it, event.x.toFloat() / uiScale, event.y.toFloat() / uiScale)
+                } ?: return
+                target.doubleClickAt(event.x.toFloat() / uiScale, event.y.toFloat() / uiScale)
+                requestRedraw()
+            }
+        }
+        layer.addMouseListener(mouseAdapter)
+        layer.addMouseMotionListener(mouseAdapter)
         layer.addMouseWheelListener { event: MouseWheelEvent -> handleWheel(event) }
         layer.addComponentListener(object : ComponentAdapter() {
             override fun componentResized(event: ComponentEvent) {
-                requestRedraw()
+                frameDirty = true
+                requestRedraw(rebuild = true)
             }
 
             override fun componentMoved(event: ComponentEvent) {
-                requestRedraw()
+                requestRedraw(rebuild = false)
             }
         })
         frame.contentPane.add(layer)
@@ -132,9 +251,33 @@ class DesktopApp(
             "silent-focus-last",
         )
         frame.rootPane.actionMap.put("silent-focus-last", action { focusFirstField(backwards = true) })
+        frame.rootPane.inputMap.put(
+            KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
+            "silent-escape",
+        )
+        frame.rootPane.actionMap.put("silent-escape", action {
+            if (!PopupController.handleKey(PopupKey.Escape) && vm.route == Route.GALLERY) {
+                vm.gallery.closeOverlays()
+            }
+        })
+        fun popupKey(keyCode: Int, name: String, key: PopupKey) {
+            frame.rootPane.inputMap.put(KeyStroke.getKeyStroke(keyCode, 0), name)
+            frame.rootPane.actionMap.put(name, action {
+                if (PopupController.handleKey(key)) requestRedraw()
+            })
+        }
+        popupKey(KeyEvent.VK_UP, "silent-popup-up", PopupKey.Up)
+        popupKey(KeyEvent.VK_DOWN, "silent-popup-down", PopupKey.Down)
+        popupKey(KeyEvent.VK_HOME, "silent-popup-home", PopupKey.Home)
+        popupKey(KeyEvent.VK_END, "silent-popup-end", PopupKey.End)
+        popupKey(KeyEvent.VK_ENTER, "silent-popup-enter", PopupKey.Enter)
         scope.effect {
             val route = vm.route
-            frame.title = if (route == Route.LOGIN) "Silent UI · Login" else "Silent UI · Dashboard"
+            frame.title = when (route) {
+                Route.LOGIN -> "Silent UI · Login"
+                Route.DASHBOARD -> "Silent UI · Dashboard"
+                Route.GALLERY -> "Silent UI · Gallery"
+            }
         }
         frame.addWindowListener(object : WindowAdapter() {
             override fun windowClosing(event: WindowEvent) {
@@ -152,9 +295,47 @@ class DesktopApp(
         requestRedraw()
     }
 
+    fun startHoverDemo(kind: String) {
+        hoverDemoLocked = true
+        javax.swing.Timer(900) {
+            val node = root ?: return@Timer
+            val hit = when (kind) {
+                "table" -> findNode(node) { widget ->
+                    widget is DataTable
+                }?.let { table -> table to (table.bounds.y + 44f + 24f) }
+
+                "nav" -> findNode(node) { widget ->
+                    widget is dev.ivlev.silent.ui.layout.NavItemWidget && !widget.selected
+                }?.let { nav -> nav to (nav.bounds.y + nav.bounds.height / 2f) }
+
+                "field" -> findNode(node) { widget ->
+                    widget is TextField
+                }?.let { field -> field to (field.bounds.y + field.bounds.height / 2f) }
+
+                else -> findNode(node) { widget ->
+                    widget is Button && widget.enabled && !widget.loading && widget.text == "Filled"
+                }?.let { button -> button to (button.bounds.y + button.bounds.height / 2f) }
+            }
+            if (hit != null) {
+                updateHover(hit.first.bounds.x + 8f, hit.second)
+            }
+        }.apply { isRepeats = false }.start()
+    }
+
+    private fun findNode(node: RenderNode, predicate: (dev.ivlev.silent.ui.layout.Widget) -> Boolean): RenderNode? {
+        if (predicate(node.widget)) return node
+        node.children.forEach { child ->
+            val found = findNode(child, predicate)
+            if (found != null) return found
+        }
+        return null
+    }
+
     fun dispose() {
         overlayWindow.isVisible = false
         overlayWindow.dispose()
+        frameImage?.close()
+        frameSurface?.close()
         tracker.dispose()
         scope.dispose()
         rootComponent.dispose()
@@ -193,10 +374,25 @@ class DesktopApp(
         override fun actionPerformed(event: java.awt.event.ActionEvent) = block()
     }
 
-    private fun requestRedraw() {
+    private fun requestRedraw(rebuild: Boolean = true, damage: dev.ivlev.silent.ui.layout.Rect? = null) {
+        if (rebuild) {
+            frameDirty = true
+            pendingDamage = null
+        } else if (damage != null) {
+            pendingDamage = pendingDamage?.let { mergeDamage(it, damage) } ?: damage
+            lastHoverDamage = damage
+        }
         SwingUtilities.invokeLater {
             if (frame.isDisplayable) layer.needRedraw()
         }
+    }
+
+    private fun mergeDamage(first: dev.ivlev.silent.ui.layout.Rect, second: dev.ivlev.silent.ui.layout.Rect): dev.ivlev.silent.ui.layout.Rect {
+        val left = minOf(first.x, second.x)
+        val top = minOf(first.y, second.y)
+        val right = maxOf(first.right, second.right)
+        val bottom = maxOf(first.bottom, second.bottom)
+        return dev.ivlev.silent.ui.layout.Rect(left, top, right - left, bottom - top)
     }
 
     private fun renderFrame(canvas: Canvas, width: Int, height: Int) {
@@ -213,12 +409,50 @@ class DesktopApp(
             viewportHeight = viewHeight,
             density = totalScale,
         )
+        val rebuild = frameDirty || root == null ||
+            viewWidth != cachedWidth || viewHeight != cachedHeight
+        if (width != surfaceWidth || height != surfaceHeight || frameSurface == null) {
+            frameSurface?.close()
+            frameImage?.close()
+            frameImage = null
+            pendingDamage = null
+            frameSurface = Surface.makeRasterN32Premul(width, height)
+            surfaceWidth = width
+            surfaceHeight = height
+        }
+        val surface = frameSurface ?: return
+        val cachedImage = frameImage
+        val damage = if (!rebuild && cachedImage != null) pendingDamage else null
+        val target = surface.canvas
+        if (damage != null && cachedImage != null) {
+            target.drawImage(cachedImage, 0f, 0f)
+        } else {
+            target.clear(theme.colors.surface.argb.toInt())
+        }
         tracker.track {
-            val node = layoutRoot(rootComponent, context, viewWidth, viewHeight)
-            root = node
-            canvas.save()
-            canvas.scale(totalScale, totalScale)
-            val painter = SkikoPainter(canvas)
+            val node = if (rebuild) {
+                layoutRoot(rootComponent, context, viewWidth, viewHeight).also {
+                    root = it
+                    cachedWidth = viewWidth
+                    cachedHeight = viewHeight
+                    frameDirty = false
+                }
+            } else {
+                root ?: layoutRoot(rootComponent, context, viewWidth, viewHeight).also { root = it }
+            }
+            target.save()
+            if (damage != null) {
+                target.clipRect(
+                    org.jetbrains.skia.Rect.makeXYWH(
+                        damage.x * totalScale,
+                        damage.y * totalScale,
+                        damage.width * totalScale,
+                        damage.height * totalScale,
+                    ),
+                )
+            }
+            target.scale(totalScale, totalScale)
+            val painter = SkikoPainter(target)
             UiRenderer(
                 painter = painter,
                 theme = theme,
@@ -228,9 +462,17 @@ class DesktopApp(
                     binding != null && sameBinding(field.binding, binding)
                 },
                 focusedField = { null },
+                hoveredPath = hoverState.hoverPath,
+                pressedPath = hoverState.pressedPath,
+                hoverPoint = hoverPoint,
             ).render(node)
-            canvas.restore()
+            target.restore()
         }
+        val snapshot = surface.makeImageSnapshot()
+        frameImage?.close()
+        frameImage = snapshot
+        canvas.drawImage(snapshot, 0f, 0f)
+        pendingDamage = null
         syncEditor()
     }
 
@@ -249,6 +491,32 @@ class DesktopApp(
 
     private fun computeUiScale(): Float = resolveUiScale()
 
+    private fun updateHover(x: Float, y: Float) {
+        val node = root ?: return
+        val result = hitTester.hitResult(node, x, y)
+        val adjusted = result?.let {
+            it.copy(bounds = it.target.hoverBoundsAt(x, y, it.bounds))
+        }
+        val previousPath = hoverState.hoverPath
+        val previousBounds = hoverState.hoverBounds
+        val damage = hoverState.updateHover(adjusted)
+        hoverPoint = if (adjusted != null) Offset(x, y) else null
+        layer.cursor = cursorFor(result?.target, x, y)
+        if (adjusted?.path != previousPath || adjusted?.bounds != previousBounds) {
+            lastHoverDamage = damage
+            requestRedraw(rebuild = false, damage = damage)
+        }
+    }
+
+    private fun cursorFor(target: HitTarget?, x: Float, y: Float): Cursor = when (target?.cursorAt(x, y) ?: UiCursor.Default) {
+        UiCursor.Default -> Cursor.getDefaultCursor()
+        UiCursor.Pointer -> Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+        UiCursor.Text -> Cursor.getPredefinedCursor(Cursor.TEXT_CURSOR)
+        UiCursor.Grab -> Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+        UiCursor.Grabbing -> Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR)
+        UiCursor.ColResize -> Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR)
+    }
+
     private fun handleClick(x: Float, y: Float) {
         val node = root ?: return
         val target = hitTester.hit(node, x, y)
@@ -257,13 +525,17 @@ class DesktopApp(
             return
         }
         hideEditor()
-        if (target is ClickTarget) target.activate()
+        if (target is ClickTarget) target.activateAt(x, y)
         requestRedraw()
     }
 
     private fun handleWheel(event: MouseWheelEvent) {
-        if (vm.route != Route.DASHBOARD) return
-        vm.dashboard.scroll.scrollBy(event.preciseWheelRotation.toFloat() * 56f)
+        val delta = event.preciseWheelRotation.toFloat() * 56f
+        when (vm.route) {
+            Route.DASHBOARD -> vm.dashboard.scroll.scrollBy(delta)
+            Route.GALLERY -> vm.gallery.scroll.scrollBy(delta)
+            Route.LOGIN -> return
+        }
         requestRedraw()
     }
 
@@ -356,7 +628,7 @@ class DesktopApp(
             bounds.x + 12f,
             bounds.y + labelHeight + 4f,
             (bounds.width - 24f).coerceAtLeast(0f),
-            40f,
+            (field.controlHeight - 8f).coerceAtLeast(1f),
         )
         val widthPx = (fieldRect.width * uiScale).roundToInt().coerceAtLeast(1)
         val heightPx = (fieldRect.height * uiScale).roundToInt().coerceAtLeast(1)
@@ -438,6 +710,15 @@ class DesktopApp(
     internal fun debugClick(x: Float, y: Float) {
         handleClick(x, y)
     }
+
+    internal fun debugHover(x: Float, y: Float) {
+        updateHover(x, y)
+    }
+
+    internal fun debugHoverPath(): List<Int> = hoverState.hoverPath
+
+    internal fun debugDamageArea(): Float =
+        lastHoverDamage?.let { it.width * it.height } ?: 0f
 
     internal fun debugActiveEditor(): JTextField? = activeEditor
 

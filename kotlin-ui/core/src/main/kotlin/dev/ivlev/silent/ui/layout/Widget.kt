@@ -88,30 +88,88 @@ fun layoutRoot(
     return widget.build(context, bounds)
 }
 
+data class HitResult(
+    val target: HitTarget,
+    val path: List<Int>,
+    val bounds: Rect,
+)
+
+enum class UiCursor {
+    Default,
+    Pointer,
+    Text,
+    Grab,
+    Grabbing,
+    ColResize,
+}
+
 class HitTester {
-    fun hit(root: RenderNode, x: Float, y: Float): HitTarget? {
+    fun hit(root: RenderNode, x: Float, y: Float): HitTarget? = hitResult(root, x, y)?.target
+
+    fun hitResult(root: RenderNode, x: Float, y: Float): HitResult? {
         if (!root.bounds.contains(x, y)) return null
-        for (child in root.children.asReversed()) {
-            val result = hit(child, x, y)
-            if (result != null) return result
-        }
-        return (root.widget as? HitTarget)?.takeIf { it.acceptsInput }
+        val path = mutableListOf<Int>()
+        return hitAt(root, x, y, path)
     }
 
-    fun hitTextField(root: RenderNode, x: Float, y: Float): TextField? {
-        val target = hit(root, x, y)
-        return target as? TextField
+    private fun hitAt(node: RenderNode, x: Float, y: Float, path: MutableList<Int>): HitResult? {
+        if (!node.bounds.contains(x, y)) return null
+        node.children.forEachIndexed { index, child ->
+            path.add(index)
+            val result = hitAt(child, x, y, path)
+            if (result != null) return result
+            path.removeAt(path.lastIndex)
+        }
+        val target = (node.widget as? HitTarget)?.takeIf { it.acceptsInput }
+        return target?.let { HitResult(it, path.toList(), node.bounds) }
     }
+
+    fun hitTextField(root: RenderNode, x: Float, y: Float): TextField? =
+        hit(root, x, y) as? TextField
 }
 
 interface HitTarget {
     val acceptsInput: Boolean
+    val cursor: UiCursor
+        get() = UiCursor.Default
+    fun cursorAt(x: Float, y: Float): UiCursor = cursor
+    fun hoverBoundsAt(x: Float, y: Float, bounds: Rect): Rect = bounds
     fun activate()
+    fun activateAt(x: Float, y: Float) = activate()
     fun secondaryActivate() = Unit
+    fun dragStartAt(x: Float, y: Float) = Unit
+    fun dragMoveTo(x: Float, y: Float) = Unit
+    fun dragEndAt(x: Float, y: Float) = Unit
+    fun doubleClickAt(x: Float, y: Float) = Unit
 }
 
 interface ClickTarget : HitTarget {
+    override val cursor: UiCursor
+        get() = UiCursor.Pointer
     fun click()
+}
+
+class HitRegion(
+    private val onClick: () -> Unit,
+    private val enabled: Boolean = true,
+) : Widget(), ClickTarget {
+    override val cursor: UiCursor
+        get() = UiCursor.Pointer
+    override val acceptsInput: Boolean
+        get() = enabled
+
+    override fun activate() {
+        click()
+    }
+
+    override fun click() {
+        if (enabled) onClick()
+    }
+
+    override fun measure(context: BuildContext, constraints: Constraints): Size = Size.Zero
+
+    override fun build(context: BuildContext, bounds: Rect): RenderNode =
+        RenderNode(this, bounds, emptyList())
 }
 
 fun RenderNode.findAllTextFields(): List<Pair<TextField, Rect>> {
@@ -154,4 +212,40 @@ fun RenderNode.findVisibleTextFields(): List<Pair<TextField, Rect>> {
     }
     walk(this, null)
     return result
+}
+
+
+fun RenderNode.findByPath(path: List<Int>): RenderNode? {
+    var node: RenderNode = this
+    path.forEach { index ->
+        node = node.children.getOrNull(index) ?: return null
+    }
+    return node
+}
+
+class SizedBox(
+    val width: Float? = null,
+    val height: Float? = null,
+    val background: ((dev.ivlev.silent.ui.tokens.Theme) -> dev.ivlev.silent.ui.tokens.Color)? = null,
+    content: () -> Widget,
+) : Widget() {
+    private val child: Widget = isolateWidgets(content)
+
+    override fun measure(context: BuildContext, constraints: Constraints): Size {
+        val childSize = child.measure(
+            context,
+            Constraints(
+                0f,
+                width ?: constraints.maxWidth,
+                0f,
+                height ?: constraints.maxHeight,
+            ),
+        )
+        return constraints.constrain(
+            Size(width ?: childSize.width, height ?: childSize.height),
+        )
+    }
+
+    override fun build(context: BuildContext, bounds: Rect): RenderNode =
+        RenderNode(this, bounds, listOf(child.build(context, bounds)))
 }

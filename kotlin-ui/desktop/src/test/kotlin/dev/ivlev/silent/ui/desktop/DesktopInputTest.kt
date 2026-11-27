@@ -9,6 +9,7 @@ import dev.ivlev.silent.ui.layout.findAllTextFields
 import dev.ivlev.silent.ui.widgets.Button
 import dev.ivlev.silent.ui.widgets.Checkbox
 import dev.ivlev.silent.ui.widgets.TextField
+import dev.ivlev.silent.ui.layout.Rect
 import java.awt.GraphicsEnvironment
 import javax.swing.SwingUtilities
 import kotlin.test.Test
@@ -56,6 +57,33 @@ class DesktopInputTest {
         SwingUtilities.invokeAndWait { instance.debugPressEnter() }
         assertEquals(Route.DASHBOARD, instance.debugVm().route)
 
+        SwingUtilities.invokeAndWait { instance.dispose() }
+    }
+
+    @Test
+    fun hoverTracksTargetAndDamage() {
+        if (GraphicsEnvironment.isHeadless()) return
+        val di = container {
+            bind<AuthApi> { FakeAuthApi(delayMs = 0) }
+        }
+        var app: DesktopApp? = null
+        SwingUtilities.invokeAndWait {
+            app = DesktopApp(di)
+            app!!.debugLayout(1280f, 850f)
+        }
+        val instance = app ?: return
+        val root = instance.debugRoot() ?: return
+        val target = findWidget(root, dev.ivlev.silent.ui.widgets.Checkbox::class.java) ?: return
+        val node = findNode(root, target) ?: return
+        SwingUtilities.invokeAndWait {
+            instance.debugHover(node.bounds.x + 10f, node.bounds.y + 10f)
+        }
+        assertTrue(instance.debugHoverPath().isNotEmpty())
+        assertTrue(instance.debugDamageArea() > 0f)
+        val previous = instance.debugDamageArea()
+        SwingUtilities.invokeAndWait { instance.debugHover(1f, 1f) }
+        assertTrue(instance.debugHoverPath().isEmpty())
+        assertTrue(instance.debugDamageArea() >= previous)
         SwingUtilities.invokeAndWait { instance.dispose() }
     }
 

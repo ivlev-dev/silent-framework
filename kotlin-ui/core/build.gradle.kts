@@ -38,6 +38,8 @@ tasks.matching { it.name.startsWith("ksp") }.configureEach {
 }
 
 dependencies {
+    api("dev.ivlev.silent:silent-protocol:0.14.0")
+    ksp("dev.ivlev.silent:silent-protocol-ksp:0.14.0")
     ksp(project(":ksp"))
     testImplementation(kotlin("test-junit5"))
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")

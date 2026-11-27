@@ -17,6 +17,7 @@ import dev.ivlev.silent.ui.paint.textBlockHeight
 import dev.ivlev.silent.ui.paint.wrapText
 import dev.ivlev.silent.ui.tokens.Color
 import dev.ivlev.silent.ui.tokens.Control
+import dev.ivlev.silent.ui.tokens.ControlSize
 import dev.ivlev.silent.ui.tokens.Radii
 import dev.ivlev.silent.ui.tokens.Spacing
 import dev.ivlev.silent.ui.tokens.TextStyle
@@ -60,8 +61,12 @@ class Heading(
 
 enum class ButtonVariant {
     Primary,
+    Tonal,
     Secondary,
     Ghost,
+    Filled,
+    Outlined,
+    Text,
 }
 
 class Button(
@@ -69,6 +74,10 @@ class Button(
     val enabled: Boolean = true,
     val loading: Boolean = false,
     val variant: ButtonVariant = ButtonVariant.Primary,
+    val size: ControlSize = ControlSize.MD,
+    val leadingIcon: String? = null,
+    val trailingIcon: String? = null,
+    val hovered: Boolean = false,
     val fullWidth: Boolean = false,
     val onClick: () -> Unit,
 ) : Widget(), ClickTarget {
@@ -85,11 +94,13 @@ class Button(
 
     override fun measure(context: BuildContext, constraints: Constraints): Size {
         val label = if (loading) "$text…" else text
+        val iconWidth = if (leadingIcon != null || trailingIcon != null || loading) size.iconSize + Spacing.x2 else 0f
         val width = when {
             fullWidth && constraints.maxWidth.isFinite() -> constraints.maxWidth
-            else -> context.textMeasurer.width(label, Typography.labelLarge) + Spacing.x6 * 2f
+            else -> context.textMeasurer.width(label, size.textStyle) +
+                size.horizontalPadding * 2f + iconWidth
         }
-        return constraints.constrain(Size(width, Control.heightLg))
+        return constraints.constrain(Size(width, size.height))
     }
 
     override fun build(context: BuildContext, bounds: Rect): RenderNode =
@@ -100,6 +111,8 @@ class IconButton(
     val glyph: String,
     val label: String? = null,
     val enabled: Boolean = true,
+    val size: ControlSize = ControlSize.MD,
+    val variant: ButtonVariant = ButtonVariant.Ghost,
     val onClick: () -> Unit,
 ) : Widget(), ClickTarget {
     override val acceptsInput: Boolean
@@ -114,7 +127,7 @@ class IconButton(
     }
 
     override fun measure(context: BuildContext, constraints: Constraints): Size =
-        constraints.constrain(Size(Control.touchTarget, Control.touchTarget))
+        constraints.constrain(Size(maxOf(Control.touchTarget, size.height), maxOf(Control.touchTarget, size.height)))
 
     override fun build(context: BuildContext, bounds: Rect): RenderNode =
         RenderNode(this, bounds, emptyList())
@@ -184,7 +197,14 @@ class Select<T>(
     val label: String? = null,
     val placeholder: String = "Выберите",
     val enabled: Boolean = true,
+    val open: Boolean = false,
+    val size: ControlSize = ControlSize.LG,
+    val externalError: String? = null,
+    val popupId: String = binding.key.ifBlank { label ?: "select" },
+    val onSelect: (T) -> Unit = {},
 ) : Widget(), ClickTarget {
+    fun isOpen(): Boolean = open || PopupController.isOpen(popupId)
+
     override val acceptsInput: Boolean
         get() = enabled && options.isNotEmpty()
 
@@ -195,9 +215,7 @@ class Select<T>(
     override fun click() {
         if (!acceptsInput) return
         val currentIndex = options.indexOfFirst { it.value == binding.value }
-        val next = options[(currentIndex + 1).mod(options.size)]
-        binding.value = next.value
-        binding.touch()
+        PopupController.toggle(popupId, currentIndex.coerceAtLeast(0))
     }
 
     val selectedLabel: String
@@ -206,11 +224,68 @@ class Select<T>(
     override fun measure(context: BuildContext, constraints: Constraints): Size {
         val width = if (constraints.maxWidth.isFinite()) constraints.maxWidth else 300f
         val labelHeight = if (label != null) 24f else 0f
-        return constraints.constrain(Size(width, labelHeight + Control.heightLg))
+        val errorHeight = if (externalError != null) 20f else 0f
+        return constraints.constrain(
+            Size(width, labelHeight + size.height + errorHeight + if (isOpen()) options.size * 40f + 8f else 0f),
+        )
     }
 
-    override fun build(context: BuildContext, bounds: Rect): RenderNode =
-        RenderNode(this, bounds, emptyList())
+    override fun build(context: BuildContext, bounds: Rect): RenderNode {
+        if (!isOpen()) return RenderNode(this, bounds, emptyList())
+        val currentIndex = options.indexOfFirst { it.value == binding.value }
+        PopupController.highlighted.set(
+            PopupController.highlighted.value.coerceIn(0, (options.size - 1).coerceAtLeast(0)),
+        )
+        PopupController.installHandler { key ->
+            val last = options.lastIndex
+            when (key) {
+                PopupKey.Up -> {
+                    PopupController.highlighted.set((PopupController.highlighted.value - 1).coerceAtLeast(0))
+                    true
+                }
+                PopupKey.Down -> {
+                    PopupController.highlighted.set((PopupController.highlighted.value + 1).coerceAtMost(last))
+                    true
+                }
+                PopupKey.Home -> {
+                    PopupController.highlighted.set(0)
+                    true
+                }
+                PopupKey.End -> {
+                    PopupController.highlighted.set(last.coerceAtLeast(0))
+                    true
+                }
+                PopupKey.Enter -> {
+                    options.getOrNull(PopupController.highlighted.value)?.let { option ->
+                        binding.value = option.value
+                        binding.touch()
+                        onSelect(option.value)
+                    }
+                    PopupController.close()
+                    true
+                }
+                PopupKey.Escape -> {
+                    PopupController.close()
+                    true
+                }
+            }
+        }
+        val labelHeight = if (label != null) 24f else 0f
+        val top = bounds.y + labelHeight + size.height + 4f
+        val nodes = options.mapIndexed { index, option ->
+            dev.ivlev.silent.ui.layout.HitRegion(onClick = {
+                binding.value = option.value
+                binding.touch()
+                onSelect(option.value)
+                PopupController.close()
+            }, enabled = enabled).build(
+                context,
+                Rect(bounds.x, top + 4f + index * 40f, bounds.width, 40f),
+            )
+        }
+        if (currentIndex < 0) PopupController.highlighted.set(0)
+        return RenderNode(this, bounds, nodes)
+    }
 }
 
 class CardScope internal constructor()
@@ -224,9 +299,22 @@ class Card(
     val background: ((Theme) -> Color)? = { it.colors.surfaceContainerLowest },
     val borderColor: ((Theme) -> Color)? = { it.colors.outlineVariant },
     val fillHeight: Boolean = false,
+    val height: Float? = null,
+    val minHeight: Float = 0f,
+    val interactive: Boolean = false,
+    val onClick: () -> Unit = {},
     content: CardScope.() -> Unit,
-) : Widget() {
+) : Widget(), ClickTarget {
     val children: List<Widget> = collectWidgets { CardScope().content() }
+
+    override val acceptsInput: Boolean
+        get() = interactive
+
+    override fun activate() = click()
+
+    override fun click() {
+        if (interactive) onClick()
+    }
 
     private fun paddingFor(context: BuildContext): Float =
         if (context.viewportWidth >= wideThreshold) widePadding else padding
@@ -239,12 +327,12 @@ class Card(
         val contentWidth = sizes.maxOfOrNull { it.width } ?: 0f
         val contentHeight = sizes.maxOfOrNull { it.height } ?: 0f
         val width = (contentWidth + padding * 2f).coerceAtMost(limit)
-        val height = if (fillHeight && constraints.maxHeight.isFinite()) {
+        val resolvedHeight = height ?: if (fillHeight && constraints.maxHeight.isFinite()) {
             constraints.maxHeight
         } else {
-            contentHeight + padding * 2f
+            maxOf(contentHeight + padding * 2f, minHeight)
         }
-        return constraints.constrain(Size(width, height))
+        return constraints.constrain(Size(width, resolvedHeight))
     }
 
     override fun build(context: BuildContext, bounds: Rect): RenderNode {
@@ -257,8 +345,8 @@ class Card(
         )
         val nodes = children.map { child ->
             val size = child.measure(context, Constraints(0f, inner.width, 0f, inner.height))
-            val height = if (fillHeight) inner.height else minOf(size.height, inner.height)
-            child.build(context, Rect(inner.x, inner.y, inner.width, height))
+            val childHeight = if (fillHeight || height != null) inner.height else minOf(size.height, inner.height)
+            child.build(context, Rect(inner.x, inner.y, inner.width, childHeight))
         }
         return RenderNode(this, bounds, nodes)
     }
@@ -315,17 +403,23 @@ enum class FieldType {
 }
 
 interface TextInputTarget : HitTarget {
+    override val cursor: dev.ivlev.silent.ui.layout.UiCursor
+        get() = dev.ivlev.silent.ui.layout.UiCursor.Text
     val binding: FieldBinding<String>
     val fieldType: FieldType
     val enabled: Boolean
 }
 
-class TextField(
+open class TextField(
     override val binding: FieldBinding<String>,
     val label: String? = null,
     val hint: String? = null,
     val type: FieldType = FieldType.Text,
     override val enabled: Boolean = true,
+    val size: ControlSize = ControlSize.LG,
+    open val externalError: String? = null,
+    val focused: Boolean = false,
+    val readOnly: Boolean = false,
 ) : Widget(), TextInputTarget {
     constructor(
         property: KMutableProperty0<String>,
@@ -333,7 +427,8 @@ class TextField(
         hint: String? = null,
         type: FieldType = FieldType.Text,
         enabled: Boolean = true,
-    ) : this(bind(property), label, hint, type, enabled)
+        size: ControlSize = ControlSize.LG,
+    ) : this(bind(property), label, hint, type, enabled, size)
 
     override val fieldType: FieldType
         get() = type
@@ -345,11 +440,17 @@ class TextField(
         binding.touch()
     }
 
+    val controlError: String?
+        get() = externalError ?: binding.error
+
+    val controlHeight: Float
+        get() = size.height
+
     override fun measure(context: BuildContext, constraints: Constraints): Size {
         val width = if (constraints.maxWidth.isFinite()) constraints.maxWidth else 320f
-        val labelHeight = if (label != null) 22f else 0f
-        val errorHeight = if (binding.error != null) 18f else 0f
-        return constraints.constrain(Size(width, labelHeight + Control.heightLg + errorHeight))
+        val labelHeight = if (label != null) LABEL_HEIGHT else 0f
+        val errorHeight = if (controlError != null) ERROR_HEIGHT else 0f
+        return constraints.constrain(Size(width, labelHeight + controlHeight + errorHeight))
     }
 
     override fun build(context: BuildContext, bounds: Rect): RenderNode =
@@ -365,9 +466,17 @@ class Table(
     val headers: List<String>,
     val rows: List<List<String>>,
     val columnWeights: List<Float> = List(headers.size) { 1f },
-    val rowHeight: Float = 44f,
-    val headerHeight: Float = 40f,
-) : Widget() {
+    val columnAligns: List<TextAlign> = List(headers.size) { TextAlign.Start },
+    val statusColumn: Int? = null,
+    val tagsColumn: Int? = null,
+    val rowHeight: Float = 48f,
+    val headerHeight: Float = 44f,
+) : Widget(), HitTarget {
+    override val acceptsInput: Boolean
+        get() = true
+
+    override fun activate() = Unit
+
     override fun measure(context: BuildContext, constraints: Constraints): Size {
         val width = if (constraints.maxWidth.isFinite()) constraints.maxWidth else 640f
         val height = headerHeight + rows.size * rowHeight + 8f
@@ -381,18 +490,36 @@ class Table(
 
 enum class TagTone {
     Neutral,
+    Primary,
     Success,
     Warning,
     Error,
+    Info,
 }
 
 class Tag(
     val text: String,
     val tone: TagTone = TagTone.Neutral,
-) : Widget() {
+    val compact: Boolean = false,
+    val onClick: (() -> Unit)? = null,
+) : Widget(), ClickTarget {
+    override val acceptsInput: Boolean
+        get() = true
+
+    override fun activate() = click()
+
+    override fun click() {
+        onClick?.invoke()
+    }
+
+    fun textStyle(): dev.ivlev.silent.ui.tokens.TextStyle =
+        if (compact) Typography.labelSmall else Typography.labelMedium
+
+    fun height(): Float = if (compact) 20f else 24f
+
     override fun measure(context: BuildContext, constraints: Constraints): Size {
-        val width = context.textMeasurer.width(text, Typography.labelSmall) + Spacing.x2 * 2f
-        return constraints.constrain(Size(width, 24f))
+        val width = context.textMeasurer.width(text, textStyle()) + Spacing.x2 * 2f
+        return constraints.constrain(Size(width, height()))
     }
 
     override fun build(context: BuildContext, bounds: Rect): RenderNode =

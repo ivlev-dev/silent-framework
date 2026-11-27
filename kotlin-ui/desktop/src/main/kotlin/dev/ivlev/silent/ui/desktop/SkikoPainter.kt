@@ -65,7 +65,17 @@ class SkikoPainter(private val canvas: Canvas) : Painter {
         paint.color = color.argb.toInt()
         paint.mode = PaintMode.STROKE
         paint.strokeWidth = strokeWidth
-        canvas.drawRRect(RRect.makeLTRB(x, y, x + width, y + height, radius), paint)
+        val inset = strokeWidth / 2f
+        canvas.drawRRect(
+            RRect.makeLTRB(
+                x + inset,
+                y + inset,
+                x + width - inset,
+                y + height - inset,
+                radius,
+            ),
+            paint,
+        )
         paint.mode = PaintMode.FILL
     }
 

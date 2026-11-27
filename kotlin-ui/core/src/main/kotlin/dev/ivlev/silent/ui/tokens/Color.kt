@@ -103,7 +103,7 @@ object Radii {
     const val lg: Float = 14f
     const val xl: Float = 20f
     const val full: Float = 999f
-    const val card: Float = lg
+    const val card: Float = 16f
     const val control: Float = md
 }
 
@@ -115,4 +115,27 @@ object Control {
     const val iconSm: Float = 14f
     const val iconMd: Float = 18f
     const val iconLg: Float = 22f
+}
+
+enum class ControlSize(val height: Float, val horizontalPadding: Float, val iconSize: Float) {
+    SM(Control.heightSm, 12f, Control.iconSm),
+    MD(Control.heightMd, 16f, Control.iconMd),
+    LG(Control.heightLg, 20f, Control.iconLg),
+    ;
+
+    val textStyle: TextStyle
+        get() = when (this) {
+            SM -> Typography.labelMedium
+            MD -> Typography.labelLarge
+            LG -> Typography.bodyMedium
+        }
+}
+
+enum class Tone {
+    Neutral,
+    Primary,
+    Success,
+    Warning,
+    Error,
+    Info,
 }

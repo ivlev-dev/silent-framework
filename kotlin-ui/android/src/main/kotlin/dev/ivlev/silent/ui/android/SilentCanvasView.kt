@@ -10,6 +10,7 @@ import android.text.TextWatcher
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
+import android.view.PointerIcon
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
@@ -22,6 +23,10 @@ import dev.ivlev.silent.ui.demo.AppVM
 import dev.ivlev.silent.ui.demo.Route
 import dev.ivlev.silent.ui.layout.BuildContext
 import dev.ivlev.silent.ui.layout.HitTester
+import dev.ivlev.silent.ui.layout.HitTarget
+import dev.ivlev.silent.ui.layout.HoverState
+import dev.ivlev.silent.ui.layout.Offset
+import dev.ivlev.silent.ui.layout.UiCursor
 import dev.ivlev.silent.ui.layout.Rect
 import dev.ivlev.silent.ui.layout.RenderNode
 import dev.ivlev.silent.ui.layout.findVisibleTextFields
@@ -32,6 +37,8 @@ import dev.ivlev.silent.ui.reactive.DependencyTracker
 import dev.ivlev.silent.ui.tokens.Theme
 import dev.ivlev.silent.ui.tokens.Typography
 import dev.ivlev.silent.ui.widgets.FieldType
+import dev.ivlev.silent.ui.widgets.DataTable
+import dev.ivlev.silent.ui.widgets.PopupController
 import dev.ivlev.silent.ui.widgets.TextField
 import kotlin.math.abs
 
@@ -44,6 +51,7 @@ class SilentCanvasView(
     private val measurer = AndroidTextMeasurer()
     private val hitTester = HitTester()
     private val tracker = DependencyTracker {
+        frameDirty = true
         postInvalidateOnAnimation()
     }
     private val editors = LinkedHashMap<String, EditText>()
@@ -61,11 +69,24 @@ class SilentCanvasView(
     private var insetTop = 0
     private var insetRight = 0
     private var insetBottom = 0
+    private var dragTarget: HitTarget? = null
+    private var dragStartX = 0f
+    private var dragStartY = 0f
+    private var dragMoved = false
+    private var frameDirty = true
+    private var cachedWidth = 0f
+    private var cachedHeight = 0f
+    private val hoverState = HoverState()
+    private var hoverPoint: Offset? = null
 
     init {
         setWillNotDraw(false)
         isClickable = true
         isFocusable = true
+        setOnHoverListener { _, event ->
+            handleHover(event)
+            true
+        }
         setOnApplyWindowInsetsListener { _, insets ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 val bars = insets.getInsets(WindowInsets.Type.systemBars())
@@ -98,9 +119,18 @@ class SilentCanvasView(
         val heightDp = (height - insetTop - insetBottom).toFloat() / density
         if (widthDp <= 0f || heightDp <= 0f) return
         val context = BuildContext(theme, measurer, widthDp, heightDp, density)
+        val rebuild = frameDirty || root == null || widthDp != cachedWidth || heightDp != cachedHeight
         tracker.track {
-            val node = layoutRoot(rootComponent, context, widthDp, heightDp)
-            root = node
+            val node = if (rebuild || root == null) {
+                layoutRoot(rootComponent, context, widthDp, heightDp).also {
+                    root = it
+                    cachedWidth = widthDp
+                    cachedHeight = heightDp
+                    frameDirty = false
+                }
+            } else {
+                root!!
+            }
             canvas.save()
             canvas.translate(insetLeft.toFloat(), insetTop.toFloat())
             canvas.scale(density, density)
@@ -110,6 +140,9 @@ class SilentCanvasView(
                 theme = theme,
                 measurer = measurer,
                 hideFieldText = { true },
+                hoveredPath = hoverState.hoverPath,
+                pressedPath = hoverState.pressedPath,
+                hoverPoint = hoverPoint,
             ).render(node)
             canvas.restore()
         }
@@ -144,7 +177,7 @@ class SilentCanvasView(
                 bounds.x + 12f,
                 bounds.y + labelHeight + 4f,
                 (bounds.width - 24f).coerceAtLeast(1f),
-                40f,
+                (field.controlHeight - 8f).coerceAtLeast(1f),
             )
             if (editorBounds[key] != rect) {
                 editorBounds[key] = rect
@@ -224,10 +257,31 @@ class SilentCanvasView(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                PopupController.close()
                 pointerDownX = event.x
                 pointerDownY = event.y
                 lastPointerY = event.y
                 dragging = false
+                val x = (event.x - insetLeft) / density
+                val y = (event.y - insetTop) / density
+                val target = root?.let { hitTester.hit(it, x, y) }
+                root?.let { node ->
+                    hitTester.hitResult(node, x, y)?.let { result ->
+                        val adjusted = result.copy(
+                            bounds = result.target.hoverBoundsAt(x, y, result.bounds),
+                        )
+                        hoverState.press(adjusted)
+                        hoverPoint = Offset(x, y)
+                        invalidateDp(adjusted.bounds)
+                    }
+                }
+                if (target is DataTable) {
+                    dragTarget = target
+                    dragStartX = x
+                    dragStartY = y
+                    dragMoved = false
+                    target.dragStartAt(x, y)
+                }
                 return true
             }
 
@@ -235,25 +289,66 @@ class SilentCanvasView(
                 if (abs(event.y - pointerDownY) > touchSlop || abs(event.x - pointerDownX) > touchSlop) {
                     dragging = true
                 }
-                if (dragging && vm.route == Route.DASHBOARD) {
+                val x = (event.x - insetLeft) / density
+                val y = (event.y - insetTop) / density
+                val target = dragTarget
+                if (target != null) {
+                    dragMoved = dragMoved || abs(x - dragStartX) > 3f || abs(y - dragStartY) > 3f
+                    target.dragMoveTo(x, y)
+                    requestRedraw(rebuild = false)
+                } else if (dragging) {
                     val delta = (event.y - lastPointerY) / density
-                    vm.dashboard.scroll.scrollBy(-delta)
+                    when (vm.route) {
+                        Route.DASHBOARD -> vm.dashboard.scroll.scrollBy(-delta)
+                        Route.GALLERY -> vm.gallery.scroll.scrollBy(-delta)
+                        Route.LOGIN -> Unit
+                    }
                 }
                 lastPointerY = event.y
                 return true
             }
 
             MotionEvent.ACTION_UP -> {
-                if (!dragging) {
-                    handleTap(
-                        (event.x - insetLeft) / density,
-                        (event.y - insetTop) / density,
-                    )
+                val x = (event.x - insetLeft) / density
+                val y = (event.y - insetTop) / density
+                val target = dragTarget
+                hoverState.release()
+                invalidateDp(null)
+                if (target != null) {
+                    target.dragEndAt(x, y)
+                    if (!dragMoved) target.activateAt(dragStartX, dragStartY)
+                    dragTarget = null
+                    requestRedraw(rebuild = false)
+                } else if (!dragging) {
+                    handleTap(x, y)
                 }
                 return true
             }
         }
         return super.onTouchEvent(event)
+    }
+
+    fun showHoverDemo() {
+        val node = root ?: return
+        val target = findNode(node) { widget ->
+            widget is dev.ivlev.silent.ui.widgets.Button && widget.enabled && !widget.loading && widget.text == "Filled"
+        } ?: return
+        val x = target.bounds.x + 8f
+        val y = target.bounds.y + target.bounds.height / 2f
+        val result = hitTester.hitResult(node, x, y) ?: return
+        val adjusted = result.copy(bounds = result.target.hoverBoundsAt(x, y, result.bounds))
+        hoverState.updateHover(adjusted)
+        hoverPoint = Offset(x, y)
+        invalidateDp(adjusted.bounds)
+    }
+
+    private fun findNode(node: RenderNode, predicate: (dev.ivlev.silent.ui.layout.Widget) -> Boolean): RenderNode? {
+        if (predicate(node.widget)) return node
+        node.children.forEach { child ->
+            val found = findNode(child, predicate)
+            if (found != null) return found
+        }
+        return null
     }
 
     private fun handleTap(x: Float, y: Float) {
@@ -269,13 +364,71 @@ class SilentCanvasView(
             return
         }
         if (target is dev.ivlev.silent.ui.layout.ClickTarget) {
-            target.activate()
+            target.activateAt(x, y)
             requestRedraw()
         }
     }
 
-    private fun requestRedraw() {
+    private fun requestRedraw(rebuild: Boolean = true) {
+        if (rebuild) frameDirty = true
         postInvalidateOnAnimation()
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        frameDirty = true
+    }
+
+    private fun handleHover(event: MotionEvent) {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_HOVER_EXIT -> {
+                val damage = hoverState.clear()
+                hoverPoint = null
+                pointerIcon = PointerIcon.getSystemIcon(context, PointerIcon.TYPE_DEFAULT)
+                invalidateDp(damage)
+            }
+
+            MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE -> {
+                val x = (event.x - insetLeft) / density
+                val y = (event.y - insetTop) / density
+                val node = root ?: return
+                val result = hitTester.hitResult(node, x, y)
+                val adjusted = result?.let {
+                    it.copy(bounds = it.target.hoverBoundsAt(x, y, it.bounds))
+                }
+                val previousPath = hoverState.hoverPath
+                val previousBounds = hoverState.hoverBounds
+                val damage = hoverState.updateHover(adjusted)
+                hoverPoint = if (adjusted != null) Offset(x, y) else null
+                pointerIcon = PointerIcon.getSystemIcon(context, pointerType(result?.target, x, y))
+                if (adjusted?.path != previousPath || adjusted?.bounds != previousBounds) {
+                    invalidateDp(damage)
+                }
+            }
+        }
+    }
+
+    private fun pointerType(target: HitTarget?, x: Float, y: Float): Int =
+        when (target?.cursorAt(x, y) ?: UiCursor.Default) {
+            UiCursor.Default -> PointerIcon.TYPE_DEFAULT
+            UiCursor.Pointer -> PointerIcon.TYPE_HAND
+            UiCursor.Text -> PointerIcon.TYPE_TEXT
+            UiCursor.Grab -> PointerIcon.TYPE_GRAB
+            UiCursor.Grabbing -> PointerIcon.TYPE_GRABBING
+            UiCursor.ColResize -> PointerIcon.TYPE_HORIZONTAL_DOUBLE_ARROW
+        }
+
+    private fun invalidateDp(rect: Rect?) {
+        if (rect == null) {
+            invalidate()
+            return
+        }
+        invalidate(
+            (insetLeft + rect.x * density).toInt(),
+            (insetTop + rect.y * density).toInt(),
+            (insetLeft + rect.right * density).toInt(),
+            (insetTop + rect.bottom * density).toInt(),
+        )
     }
 
     private fun updateSystemBars(theme: Theme) {

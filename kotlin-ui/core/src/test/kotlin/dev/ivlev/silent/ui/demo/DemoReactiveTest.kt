@@ -52,12 +52,24 @@ class DemoReactiveTest {
 
     @Test
     fun dashboardComputedFiltersProjects() {
-        val vm = DashboardVM(FakeProjectsRepository())
+        val vm = DashboardVM(FakeProjectsRepository(), FailingProjectsApi())
         vm.mount()
         assertEquals(6, vm.filteredProjects.size)
-        vm.query = "silent"
+        assertEquals(6, vm.stats.size)
+        assertEquals(4, vm.statuses.size)
+        assertEquals(8, vm.owners.size)
+        assertEquals(12, vm.tags.size)
+        assertEquals(240, vm.statuses.first().total)
+        vm.query = "вольный"
         assertEquals(2, vm.filteredProjects.size)
         vm.selectedNav = "projects"
         assertEquals("Проекты", vm.heading)
     }
+}
+
+private class FailingProjectsApi : dev.ivlev.silent.ui.data.ProjectsApi {
+    override fun projects(query: dev.ivlev.silent.ui.data.ProjectQuery): dev.ivlev.silent.ui.data.ApiProjectPage =
+        error("offline")
+
+    override fun meta(): dev.ivlev.silent.ui.data.ApiProjectMeta = error("offline")
 }

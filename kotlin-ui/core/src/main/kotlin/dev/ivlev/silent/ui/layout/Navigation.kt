@@ -42,7 +42,7 @@ class NavigationRail(
     val selectedId: () -> String,
     val onSelect: (String) -> Unit,
     val expanded: Boolean = true,
-    val width: Float = if (expanded) 232f else 80f,
+    val width: Float = if (expanded) 260f else 80f,
     val brand: String = "Silent UI",
 ) : Widget() {
     private val itemWidgets: List<NavItemWidget> = isolateWidgets {
@@ -109,7 +109,7 @@ class AdaptiveScaffold(
     val selectedId: () -> String,
     val onSelect: (String) -> Unit,
     val content: Widget,
-    val railWidth: Float = 232f,
+    val railWidth: Float = 260f,
     val barHeight: Float = 68f,
 ) : Widget() {
     private val rail: NavigationRail = isolateWidgets {

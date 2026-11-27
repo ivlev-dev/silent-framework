@@ -215,4 +215,30 @@ class LayoutTest {
         hit.activate()
         assertEquals(listOf("button"), clicked)
     }
+
+    @Test
+    fun cardHeightFillsInnerContent() {
+        val card = dev.ivlev.silent.ui.widgets.Card(height = 160f) {
+            Spacer(height = 10f)
+        }
+        val ctx = context(300f)
+        val size = card.measure(ctx, Constraints(0f, 300f, 0f, 1000f))
+        assertEquals(160f, size.height)
+        val node = card.build(ctx, Rect(0f, 0f, 300f, 160f))
+        assertEquals(128f, node.children[0].bounds.height)
+    }
+
+    @Test
+    fun columnSpaceBetweenKeepsMinimumGap() {
+        val column = Column(gap = 12f, fillHeight = true, justify = Justify.SpaceBetween) {
+            Spacer(height = 38f)
+            Spacer(height = 34f)
+            Spacer(height = 40f)
+        }
+        val ctx = context(200f, 136f)
+        val node = column.build(ctx, Rect(0f, 0f, 200f, 136f))
+        assertEquals(0f, node.children[0].bounds.y)
+        assertEquals(50f, node.children[1].bounds.y)
+        assertEquals(96f, node.children[2].bounds.y)
+    }
 }

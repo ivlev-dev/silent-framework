@@ -8,7 +8,65 @@ interface TextMeasurer {
     fun descent(style: TextStyle): Float
 }
 
+object TextLayoutCache {
+    private data class Key(
+        val text: String,
+        val style: TextStyle,
+        val maxWidth: Int,
+        val maxLines: Int,
+        val measurerId: Int,
+    )
+
+    private val entries = object : LinkedHashMap<Key, List<String>>(256, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Key, List<String>>): Boolean =
+            size > 512
+    }
+
+    var hits: Long = 0
+        private set
+    var misses: Long = 0
+        private set
+
+    fun wrap(
+        text: String,
+        style: TextStyle,
+        maxWidth: Float,
+        maxLines: Int,
+        measurer: TextMeasurer,
+    ): List<String> {
+        val key = Key(text, style, maxWidth.toInt(), maxLines, System.identityHashCode(measurer))
+        synchronized(entries) {
+            entries[key]?.let {
+                hits += 1
+                return it
+            }
+            misses += 1
+        }
+        val result = wrapTextUncached(text, style, maxWidth, measurer, maxLines)
+        synchronized(entries) {
+            entries[key] = result
+        }
+        return result
+    }
+
+    fun clear() {
+        synchronized(entries) {
+            entries.clear()
+            hits = 0
+            misses = 0
+        }
+    }
+}
+
 fun wrapText(
+    text: String,
+    style: TextStyle,
+    maxWidth: Float,
+    measurer: TextMeasurer,
+    maxLines: Int = Int.MAX_VALUE,
+): List<String> = TextLayoutCache.wrap(text, style, maxWidth, maxLines, measurer)
+
+private fun wrapTextUncached(
     text: String,
     style: TextStyle,
     maxWidth: Float,

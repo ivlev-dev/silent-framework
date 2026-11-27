@@ -13,6 +13,8 @@ class Box(
     val verticalAlign: Align = Align.Start,
     val fillWidth: Boolean = true,
     val fillHeight: Boolean = false,
+    val width: Float? = null,
+    val height: Float? = null,
     val minHeight: Float = 0f,
     val background: ((Theme) -> Color)? = null,
     val borderColor: ((Theme) -> Color)? = null,
@@ -27,13 +29,15 @@ class Box(
         verticalAlign: Align = Align.Start,
         fillWidth: Boolean = true,
         fillHeight: Boolean = false,
+        width: Float? = null,
+        height: Float? = null,
         minHeight: Float = 0f,
         background: ((Theme) -> Color)? = null,
         borderColor: ((Theme) -> Color)? = null,
         radius: Float = 0f,
         child: Widget,
     ) : this(
-        padding, align, verticalAlign, fillWidth, fillHeight, minHeight, background, borderColor, radius, {},
+        padding, align, verticalAlign, fillWidth, fillHeight, width, height, minHeight, background, borderColor, radius, {},
     ) {
         childrenOverride = listOf(child)
     }
@@ -50,12 +54,12 @@ class Box(
         }
         val contentWidth = childSizes.maxOfOrNull { it.width } ?: 0f
         val contentHeight = childSizes.maxOfOrNull { it.height } ?: 0f
-        val width = if (fillWidth && constraints.maxWidth.isFinite()) constraints.maxWidth else contentWidth + padding * 2f
-        val height = when {
+        val resolvedWidth = width ?: if (fillWidth && constraints.maxWidth.isFinite()) constraints.maxWidth else contentWidth + padding * 2f
+        val resolvedHeight = height ?: when {
             fillHeight && constraints.maxHeight.isFinite() -> constraints.maxHeight
             else -> maxOf(contentHeight + padding * 2f, minHeight)
         }
-        return constraints.constrain(Size(width, height))
+        return constraints.constrain(Size(resolvedWidth, resolvedHeight))
     }
 
     override fun build(context: BuildContext, bounds: Rect): RenderNode {
@@ -212,10 +216,12 @@ class Column(
             }
             val node = child.build(context, Rect(x, y, width, height))
             y += height
-            if (justify == Justify.SpaceBetween && childrenList.size > 1) {
-                y += (inner.height - contentHeight) / (childrenList.size - 1)
-            } else if (index < childrenList.lastIndex) {
-                y += gap
+            if (index < childrenList.lastIndex) {
+                y += if (justify == Justify.SpaceBetween && childrenList.size > 1) {
+                    maxOf(gap, (inner.height - fixedHeight) / (childrenList.size - 1))
+                } else {
+                    gap
+                }
             }
             node
         }
