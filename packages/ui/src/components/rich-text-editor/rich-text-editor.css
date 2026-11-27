@@ -11,7 +11,7 @@
     --sui-rte-padding-block: var(--sui-space-7);
     --sui-rte-padding-inline: var(--sui-space-7);
     --sui-rte-radius: 1.125rem;
-    --sui-rte-measure: var(--sui-measure);
+    --sui-rte-measure: none;
     --sui-rte-bg: var(--sui-color-surface-container-lowest);
     --sui-rte-toolbar-bg: var(--sui-color-surface-container-low);
     --sui-rte-border-color: var(--sui-color-outline-variant);
@@ -338,7 +338,7 @@
     flex: 1 1 auto;
     inline-size: 100%;
     max-inline-size: var(--sui-rte-measure);
-    margin-inline: auto;
+    margin-inline: 0;
     color: inherit;
     font-family: var(--sui-font-sans);
     font-size: 1rem;
