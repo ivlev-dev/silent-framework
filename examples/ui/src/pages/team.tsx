@@ -15,6 +15,7 @@ import type { ProjectMeta } from "../api/types.js";
 import { errorMessage } from "../api/client.js";
 import { initialsOf } from "../lib/format.js";
 import { ErrorState, PageHeader } from "../ui/states.js";
+import { StatCard } from "../ui/stat-card.js";
 import { TeamIcon } from "../ui/icons.js";
 
 const ROLES = [
@@ -46,7 +47,7 @@ export function TeamPage(props: TeamPageProps): Node {
     props.meta.pending() && props.meta.data() === undefined;
 
   return (
-    <Stack gap={5} class="app-page">
+    <Stack gap={6} class="app-page">
       <PageHeader
         title="Команда"
         description="Владельцы проектов и рабочие теги из GET /api/meta."
@@ -62,42 +63,40 @@ export function TeamPage(props: TeamPageProps): Node {
       </Show>
 
       <Show when={props.meta.error() === undefined}>
-        <div class="app-metrics app-metrics--team">
-          <Card variant="outlined" padding={4}>
-            <Inline gap={3} align="center">
-              <span class="app-stat__icon" data-tone="primary" aria-hidden="true">
-                <TeamIcon />
-              </span>
-              <Stack gap={1}>
-                <Text variant="label-medium" tone="muted">
-                  Участников
-                </Text>
-                <Heading level={3}>
-                  {loading() ? <Skeleton variant="text" width={48} /> : String(owners().length)}
-                </Heading>
-              </Stack>
-            </Inline>
-          </Card>
-          <Card variant="outlined" padding={4}>
-            <Stack gap={2}>
-              <Text variant="label-medium" tone="muted">
-                Сквозные теги
-              </Text>
-              <Inline gap={1} wrap>
-                <Show
-                  when={!loading()}
-                  fallback={<Skeleton variant="text" width="72%" />}
-                >
-                  <For each={tags()}>
-                    {(tag) => (
-                      <Tag size="sm" variant="info">
-                        #{tag}
-                      </Tag>
-                    )}
-                  </For>
-                </Show>
-              </Inline>
-            </Stack>
+        <div class="app-team-summary">
+          <StatCard
+            title="Участников"
+            value={
+              loading() ? (
+                <Skeleton variant="text" width={48} height={28} />
+              ) : (
+                String(owners().length)
+              )
+            }
+            hint="Владельцы проектов из справочника"
+            icon={<TeamIcon />}
+            tone="primary"
+          />
+          <Card
+            variant="outlined"
+            padding={5}
+            header={<Heading level={3}>Сквозные теги</Heading>}
+            class="app-dashboard-panel"
+          >
+            <Show
+              when={!loading()}
+              fallback={<Skeleton variant="text" width="72%" />}
+            >
+              <div class="app-chip-line">
+                <For each={tags()}>
+                  {(tag) => (
+                    <Tag size="sm" variant="info">
+                      #{tag}
+                    </Tag>
+                  )}
+                </For>
+              </div>
+            </Show>
           </Card>
         </div>
 
@@ -107,7 +106,7 @@ export function TeamPage(props: TeamPageProps): Node {
             <div class="app-members" aria-hidden="true">
               <For each={[0, 1, 2, 3, 4, 5, 6, 7]}>
                 {() => (
-                  <Card variant="outlined" padding={4}>
+                  <Card variant="outlined" padding={5}>
                     <Stack gap={3}>
                       <Skeleton variant="circle" width={48} height={48} />
                       <Skeleton variant="text" width="68%" />
@@ -137,35 +136,36 @@ export function TeamPage(props: TeamPageProps): Node {
                   const availability = AVAILABILITY[index() % AVAILABILITY.length] ?? AVAILABILITY[0];
                   const role = ROLES[index() % ROLES.length] ?? ROLES[0];
                   return (
-                    <Card variant="outlined" padding={4} class="app-member-card">
-                      <Stack gap={3}>
-                        <Inline justify="between" align="start" gap={2}>
-                          <Avatar
-                            initials={initialsOf(owner)}
-                            alt={owner}
-                            size="lg"
-                            status={availability.status}
-                            statusLabel={availability.label}
-                          />
-                          <Tag variant={availability.variant} size="sm">
-                            {availability.label}
-                          </Tag>
-                        </Inline>
+                    <Card variant="outlined" padding={5} class="app-member-card">
+                      <div class="app-member-card__identity">
+                        <Avatar
+                          initials={initialsOf(owner)}
+                          alt={owner}
+                          size="lg"
+                          status={availability.status}
+                          statusLabel={availability.label}
+                        />
                         <Stack gap={1}>
-                          <Text variant="title-small">{owner}</Text>
-                          <Text variant="body-small" tone="muted">
+                          <Text
+                            variant="title-small"
+                            class="app-member-card__name"
+                            attrs={{ title: owner }}
+                          >
+                            {owner}
+                          </Text>
+                          <Text variant="body-small" tone="muted" truncate>
                             {role}
                           </Text>
                         </Stack>
-                        <Inline gap={1} wrap>
-                          <Tag variant="secondary" size="sm">
-                            Владелец проектов
-                          </Tag>
-                          <Tag variant="neutral" size="sm">
-                            ID {String(index() + 1)}
-                          </Tag>
-                        </Inline>
-                      </Stack>
+                      </div>
+                      <div class="app-member-card__footer">
+                        <Tag variant={availability.variant} size="sm">
+                          {availability.label}
+                        </Tag>
+                        <Tag variant="secondary" size="sm">
+                          Владелец проектов
+                        </Tag>
+                      </div>
                     </Card>
                   );
                 }}

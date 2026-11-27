@@ -20,8 +20,10 @@ export function PageHeader(props: PageHeaderProps): Node {
   return (
     <div class="app-page-header">
       <div class="app-page-header__text">
-        <Heading level={2}>{props.title}</Heading>
-        <Text tone="muted">{props.description}</Text>
+        <Heading level={2} class="app-page-header__title">
+          {props.title}
+        </Heading>
+        <Text class="app-page-header__description">{props.description}</Text>
       </div>
       {props.actions === undefined ? null : (
         <Inline gap={2} wrap class="app-page-header__actions">
@@ -58,20 +60,20 @@ export function ErrorState(props: ErrorStateProps): Node {
 
 export interface SkeletonCardsProps {
   readonly count?: number;
-  readonly height?: number;
 }
 
 export function SkeletonCards(props: SkeletonCardsProps): Node {
   const count = props.count ?? 4;
   return (
     <div class="app-metrics" aria-hidden="true">
-      {Array.from({ length: count }, (_value, index) => (
-        <Card variant="outlined" padding={4}>
-          <Stack gap={2}>
-            <Skeleton variant="text" width={index % 2 === 0 ? "48%" : "64%"} />
-            <Skeleton variant="rect" width="38%" height={props.height ?? 36} />
-            <Skeleton variant="text" width="72%" />
-          </Stack>
+      {Array.from({ length: count }, () => (
+        <Card variant="outlined" padding={4} class="app-stat-skeleton">
+          <div class="app-stat__head">
+            <Skeleton variant="text" width="52%" />
+            <Skeleton variant="circle" width={38} height={38} />
+          </div>
+          <Skeleton variant="text" width="34%" height={28} />
+          <Skeleton variant="text" width="76%" />
         </Card>
       ))}
     </div>

@@ -98,7 +98,7 @@ export function SettingsPage(props: SettingsPageProps): Node {
   };
 
   return (
-    <Stack gap={5} class="app-page">
+    <Stack gap={6} class="app-page">
       <PageHeader
         title="Настройки"
         description="Витрина контролов Silent UI и форма профиля на @ivlev-dev/silent-form."
@@ -114,36 +114,35 @@ export function SettingsPage(props: SettingsPageProps): Node {
         />
       </Show>
 
-      <Card variant="outlined" padding={4} class="app-completion">
-        <Stack gap={2}>
-          <Inline justify="between" align="center" wrap gap={2}>
-            <Heading level={3}>Заполнение профиля</Heading>
-            <Tag variant="primary" size="sm">
-              {String(completion().percent)}%
-            </Tag>
-          </Inline>
-          <Progress
-            label={`Заполнено ${String(completion().percent)}%`}
-            value={completion().percent}
-            showValue
-          />
-          <Text variant="body-small" tone="muted">
-            Заполнено {String(completion().percent)}% · обязательные{" "}
-            {String(completion().requiredFilled)} из{" "}
-            {String(completion().requiredTotal)} · полей{" "}
-            {String(completion().filled)} из {String(completion().total)}
-          </Text>
-        </Stack>
-      </Card>
+      <div class="app-settings-layout">
+        <aside class="app-settings-aside">
+          <Card variant="outlined" padding={4} class="app-completion">
+            <div class="app-completion__line">
+              <Text variant="label-medium">Заполнение профиля</Text>
+              <Tag variant="primary" size="sm">
+                {String(completion().percent)}%
+              </Tag>
+            </div>
+            <Progress
+              label={`Заполнено ${String(completion().percent)}%`}
+              value={completion().percent}
+              size="md"
+            />
+            <Text variant="body-small" tone="muted">
+              Обязательные {String(completion().requiredFilled)} из{" "}
+              {String(completion().requiredTotal)} · поля{" "}
+              {String(completion().filled)} из {String(completion().total)}
+            </Text>
+          </Card>
+        </aside>
 
-      <form class="app-settings-form" novalidate onSubmit={save}>
-        <Stack gap={4}>
+        <form class="app-settings-form" novalidate onSubmit={save}>
           <Card
             variant="outlined"
-            padding={4}
+            padding={5}
             header={<Heading level={3}>Личные данные</Heading>}
           >
-            <FieldGroup columns={3}>
+            <FieldGroup columns={3} class="app-settings-grid">
               <TextField field={form.getFieldProps("fullName")} />
               <TextField type="email" field={form.getFieldProps("email")} />
               <TextField field={form.getFieldProps("role")} />
@@ -155,10 +154,10 @@ export function SettingsPage(props: SettingsPageProps): Node {
 
           <Card
             variant="outlined"
-            padding={4}
+            padding={5}
             header={<Heading level={3}>О себе</Heading>}
           >
-            <FieldGroup columns={2}>
+            <FieldGroup columns={2} class="app-settings-grid">
               <TextField field={form.getFieldProps("website")} />
               <Textarea
                 field={form.getFieldProps("bio")}
@@ -171,10 +170,10 @@ export function SettingsPage(props: SettingsPageProps): Node {
 
           <Card
             variant="outlined"
-            padding={4}
+            padding={5}
             header={<Heading level={3}>Оформление</Heading>}
           >
-            <FieldGroup columns={2}>
+            <FieldGroup columns={2} class="app-settings-grid">
               <ColorPicker
                 label="Акцентный цвет"
                 value={form.accent}
@@ -226,10 +225,10 @@ export function SettingsPage(props: SettingsPageProps): Node {
 
           <Card
             variant="outlined"
-            padding={4}
+            padding={5}
             header={<Heading level={3}>Предпочтения</Heading>}
           >
-            <FieldGroup columns={1}>
+            <FieldGroup columns={2} class="app-settings-grid">
               <Switch
                 field={form.getFieldProps("notifications")}
                 label="Уведомления"
@@ -245,10 +244,10 @@ export function SettingsPage(props: SettingsPageProps): Node {
 
           <Card
             variant="outlined"
-            padding={4}
+            padding={5}
             header={<Heading level={3}>Интерфейс</Heading>}
           >
-            <Stack gap={4}>
+            <FieldGroup columns={2} class="app-settings-grid">
               <Stack gap={2}>
                 <Text variant="label-medium">Тема</Text>
                 <SegmentedButton
@@ -278,12 +277,12 @@ export function SettingsPage(props: SettingsPageProps): Node {
                   }}
                 />
               </Stack>
-            </Stack>
+            </FieldGroup>
           </Card>
 
           <Card
             variant="outlined"
-            padding={4}
+            padding={5}
             header={
               <Inline gap={2} align="center">
                 <UploadIcon />
@@ -317,32 +316,30 @@ export function SettingsPage(props: SettingsPageProps): Node {
             </Stack>
           </Card>
 
-          <Card variant="outlined" padding={4}>
-            <div class="app-settings-form__actions">
-              <FormActions
-                align="between"
-                actions={
-                  <>
-                    <Button variant="text" onClick={reset} type="button">
-                      Сбросить
-                    </Button>
-                    <Button type="submit" loading={form.isSubmitting}>
-                      Сохранить настройки
-                    </Button>
-                  </>
-                }
-              />
-            </div>
+          <Card variant="outlined" padding={4} class="app-settings-actions">
+            <FormActions
+              align="between"
+              actions={
+                <>
+                  <Button variant="text" onClick={reset} type="button">
+                    Сбросить
+                  </Button>
+                  <Button type="submit" loading={form.isSubmitting}>
+                    Сохранить настройки
+                  </Button>
+                </>
+              }
+            />
           </Card>
-        </Stack>
 
-        <Show when={form.isSubmitting}>
-          <div class="app-form-overlay" role="status" aria-live="polite">
-            <Spinner size="lg" label="Сохранение" />
-            <Text>Сохраняем настройки…</Text>
-          </div>
-        </Show>
-      </form>
+          <Show when={form.isSubmitting}>
+            <div class="app-form-overlay" role="status" aria-live="polite">
+              <Spinner size="lg" label="Сохранение" />
+              <Text>Сохраняем настройки…</Text>
+            </div>
+          </Show>
+        </form>
+      </div>
     </Stack>
   );
 }

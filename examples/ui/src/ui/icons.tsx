@@ -72,6 +72,14 @@ export function FilterIcon(): Node {
   );
 }
 
+export function TrashIcon(): Node {
+  return (
+    <Icon>
+      <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-3 5h12l-.8 12.1A2 2 0 0 1 15.2 22H8.8a2 2 0 0 1-2-1.9L6 8Zm4 3v7h2v-7h-2Zm4 0v7h2v-7h-2Z" />
+    </Icon>
+  );
+}
+
 export function WalletIcon(): Node {
   return (
     <Icon>

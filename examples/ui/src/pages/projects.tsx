@@ -17,6 +17,8 @@ import {
   EmptyState,
   FieldGroup,
   FormActions,
+  Heading,
+  IconButton,
   Inline,
   Select,
   SearchIcon,
@@ -25,6 +27,7 @@ import {
   Tag,
   Text,
   TextField,
+  AddIcon,
   type DataTableColumn,
   type DataTableSortDirection,
   type SelectOption,
@@ -59,9 +62,10 @@ import {
   type ProjectFilters,
 } from "../search-form.js";
 import { showToast } from "../ui/toast.js";
-import { FilterIcon } from "../ui/icons.js";
+import { FilterIcon, TrashIcon } from "../ui/icons.js";
 import { createMediaQuery } from "../ui/media.js";
 import { ErrorState, PageHeader } from "../ui/states.js";
+import { TagLine } from "../ui/tags.js";
 
 function projectColumns(
   onDelete: (project: Project) => void,
@@ -70,26 +74,39 @@ function projectColumns(
     {
       key: "name",
       header: "Название",
-      width: 200,
+      width: 210,
       minWidth: 180,
       maxWidth: 380,
       sortable: true,
       truncate: true,
+      card: { slot: "primary" },
+      render: (project) => (
+        <span class="app-cell-ellipsis" title={project.name}>
+          {project.name}
+        </span>
+      ),
     },
     {
       key: "owner",
       header: "Владелец",
-      width: 150,
-      minWidth: 130,
+      width: 160,
+      minWidth: 140,
       sortable: true,
       truncate: true,
+      card: { slot: "secondary" },
+      render: (project) => (
+        <span class="app-cell-ellipsis" title={project.owner}>
+          {project.owner}
+        </span>
+      ),
     },
     {
       key: "status",
       header: "Статус",
-      width: 140,
-      minWidth: 120,
+      width: 120,
+      minWidth: 110,
       sortable: true,
+      card: { slot: "badge" },
       render: (project) => (
         <Tag variant={statusVariant(project.status)} size="sm">
           {statusLabel(project.status)}
@@ -99,55 +116,56 @@ function projectColumns(
     {
       key: "tags",
       header: "Теги",
-      width: 170,
-      minWidth: 150,
-      render: (project) => (
-        <Inline gap={1} wrap>
-          <For each={project.tags}>
-            {(tag) => (
-              <Tag size="sm" variant="neutral">
-                #{tag}
-              </Tag>
-            )}
-          </For>
-        </Inline>
-      ),
+      width: 190,
+      minWidth: 160,
+      card: { slot: "meta", label: "Теги" },
+      render: (project) => <TagLine tags={project.tags} />,
     },
     {
       key: "budget",
       header: "Бюджет",
-      width: 140,
-      minWidth: 120,
+      width: 136,
+      minWidth: 128,
       align: "end",
       sortable: true,
-      render: (project) => formatBudget(project.budget),
+      card: { slot: "meta", label: "Бюджет" },
+      render: (project) => (
+        <span class="app-num">{formatBudget(project.budget)}</span>
+      ),
     },
     {
       key: "createdAt",
       header: "Создан",
-      width: 130,
-      minWidth: 110,
+      width: 128,
+      minWidth: 120,
       align: "end",
       sortable: true,
-      render: (project) => formatDate(project.createdAt),
+      card: { slot: "meta", label: "Создан" },
+      render: (project) => (
+        <span class="app-num">{formatDate(project.createdAt)}</span>
+      ),
     },
     {
       key: "actions",
-      header: "Действия",
-      width: 130,
-      minWidth: 120,
-      maxWidth: 160,
+      header: "",
+      width: 64,
+      minWidth: 56,
+      maxWidth: 72,
       align: "end",
       resizable: false,
+      locked: true,
+      card: { slot: "actions" },
       render: (project) => (
-        <Button
-          variant="text"
+        <IconButton
+          label={`Удалить проект «${project.name}»`}
           size="sm"
+          variant="standard"
+          class="app-row-action"
+          attrs={{ title: "Удалить проект" }}
           onClick={() => onDelete(project)}
-          attrs={{ "aria-label": `Удалить проект «${project.name}»` }}
         >
-          Удалить
-        </Button>
+          <TrashIcon />
+        </IconButton>
       ),
     },
   ];
@@ -193,6 +211,7 @@ function filterChips(filters: ProjectFilters): readonly FilterChip[] {
 
 export interface ProjectsPageProps {
   readonly meta: Resource<ProjectMeta>;
+  readonly compact: boolean;
 }
 
 export function ProjectsPage(props: ProjectsPageProps): Node {
@@ -219,6 +238,7 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
   const [sheetOpen, setSheetOpen] = createSignal(false);
 
   const isMobile = createMediaQuery("(max-width: 959px)");
+
 
   const query = createMemo<ProjectQuery>(() => {
     const key = sortKey();
@@ -417,13 +437,13 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
   };
 
   const searchFields = (): Node => (
-    <FieldGroup columns={3} class="app-search-grid">
+    <FieldGroup columns={3} class="app-filter-grid">
       <TextField
+        class="app-field--search"
         type="search"
         field={searchForm.getFieldProps("q")}
         leading={<SearchIcon />}
         placeholder="Название или владелец"
-        hint="Enter применяет фильтры"
       />
       <Select
         field={searchForm.getFieldProps("status")}
@@ -450,17 +470,17 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
         min={0}
         step={1000}
         unit="₽"
-        placeholder="—"
+        placeholder="0"
       />
       <NumberField
         field={searchForm.getFieldProps("budgetMax")}
         min={0}
         step={1000}
         unit="₽"
-        placeholder="—"
+        placeholder="0"
       />
       <DateRangePicker
-        class="app-search-grid__wide"
+        class="app-field--period"
         label="Период создания"
         value={{
           start: parseIsoDate(searchForm.dateFrom),
@@ -478,19 +498,38 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
     </FieldGroup>
   );
 
+  const chipsView = (): Node => (
+    <div class="app-active-filters">
+      <For each={chips()}>
+        {(chip) => (
+          <Tag
+            variant="secondary"
+            size="sm"
+            removable
+            removeLabel={`Убрать фильтр «${chip.label}»`}
+            onRemove={() => clearFilter(chip.key)}
+          >
+            {chip.label}
+          </Tag>
+        )}
+      </For>
+    </div>
+  );
+
   const searchActions = (): Node => (
     <FormActions
       align="between"
+      class="app-filters__actions"
       actions={
         <>
-          <Inline gap={3} wrap align="center">
+          <div class="app-filters__status">
             <Button variant="text" onClick={resetFilters}>
               Сбросить
             </Button>
             <Text variant="body-small" tone="muted">
               Активных фильтров: {String(activeCount())}
             </Text>
-          </Inline>
+          </div>
           <Button type="submit" leading={<FilterIcon />}>
             Применить
           </Button>
@@ -509,20 +548,16 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
       }}
     >
       {searchFields()}
+      <Show when={chips().length > 0}>{chipsView()}</Show>
       {searchActions()}
     </form>
   );
 
   return (
-    <Stack gap={4} class="app-page">
+    <Stack gap={6} class="app-page">
       <PageHeader
         title="Проекты"
         description="Серверная таблица: фильтры, сортировка, пагинация, выбор строк и CRUD."
-        actions={
-          <Button onClick={openCreate} leading={<FilterIcon />}>
-            Новый проект
-          </Button>
-        }
       />
 
       <Show when={props.meta.error() !== undefined}>
@@ -538,63 +573,53 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
       <Show
         when={!isMobile()}
         fallback={
-          <Inline gap={2} wrap align="center" class="app-mobile-filters">
-            <Button variant="tonal" onClick={() => setSheetOpen(true)} leading={<FilterIcon />}>
+          <div class="app-mobile-filters">
+            <Button
+              variant="tonal"
+              onClick={() => setSheetOpen(true)}
+              leading={<FilterIcon />}
+            >
               Фильтры
             </Button>
             <Show when={activeCount() > 0}>
               <Tag variant="primary" size="sm">
                 {String(activeCount())}
               </Tag>
+              <Button variant="text" size="sm" onClick={resetFilters}>
+                Сбросить
+              </Button>
             </Show>
-            <Button variant="text" size="sm" onClick={resetFilters}>
-              Сбросить
-            </Button>
-          </Inline>
+          </div>
         }
       >
-        <Card variant="outlined" padding={4} class="app-search-card">
-          <Stack gap={3}>
-            <Inline justify="between" align="center" wrap gap={2}>
-              <Inline gap={2} align="center">
+        <Card variant="outlined" padding={0} class="app-search-card">
+          <div class="app-filters">
+            <div class="app-filters__head">
+              <div class="app-filters__title">
                 <FilterIcon />
-                <Text variant="title-small">Фильтры</Text>
-              </Inline>
+                <Heading level={3} variant="title-medium">
+                  Фильтры
+                </Heading>
+              </div>
               <Show when={activeCount() > 0}>
                 <Tag variant="primary" size="sm">
                   Активно: {String(activeCount())}
                 </Tag>
               </Show>
-            </Inline>
+            </div>
             {searchFormView()}
-          </Stack>
+          </div>
         </Card>
       </Show>
 
-      <Show when={chips().length > 0}>
-        <Inline gap={1} wrap class="app-active-filters">
-          <For each={chips()}>
-            {(chip) => (
-              <Tag
-                variant="secondary"
-                size="sm"
-                removable
-                removeLabel={`Убрать фильтр «${chip.label}»`}
-                onRemove={() => clearFilter(chip.key)}
-              >
-                {chip.label}
-              </Tag>
-            )}
-          </For>
-          <Button variant="text" size="sm" onClick={resetFilters}>
-            Сбросить всё
-          </Button>
-        </Inline>
+      <Show when={isMobile() && chips().length > 0}>
+        <div class="app-active-filters">{chipsView()}</div>
       </Show>
 
       <Card variant="outlined" padding={0} class="app-table-card">
         <DataTable
           tableKey="projects"
+          class="app-projects-table"
           columns={columns}
           rows={rows()}
           rowKey={(project) => project.id}
@@ -605,6 +630,7 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
           sortKey={sortKey()}
           sortDirection={sortDirection()}
           loading={listing.pending()}
+          density={props.compact ? "compact" : "standard"}
           error={
             listing.error() === undefined ? undefined : (
               <Inline gap={2} wrap align="center">
@@ -646,41 +672,34 @@ export function ProjectsPage(props: ProjectsPageProps): Node {
           selection={{
             selected: selected(),
             onChange: setSelected,
+            actions: (
+              <Button
+                size="sm"
+                variant="filled"
+                leading={<TrashIcon />}
+                onClick={() => setBulkDeleteOpen(true)}
+              >
+                Удалить
+              </Button>
+            ),
           }}
           onSort={changeSort}
           onPageChange={changePage}
           onPageSizeChange={changePageSize}
           onRowClick={openEdit}
           toolbar={
-            <Inline justify="between" align="center" wrap gap={2} class="app-table-toolbar">
-              <Inline gap={2} wrap align="center">
-                <Text variant="label-medium">
-                  {String(total())} {total() === 1 ? "проект" : "проектов"}
-                </Text>
-                <Show when={selectedIds().length > 0}>
-                  <Tag variant="primary" size="sm">
-                    Выбрано: {String(selectedIds().length)}
-                  </Tag>
-                  <Button
-                    variant="text"
-                    size="sm"
-                    onClick={() => setBulkDeleteOpen(true)}
-                  >
-                    Удалить выбранные
-                  </Button>
-                </Show>
+            <div class="app-table-toolbar">
+              <Inline justify="between" align="center" wrap gap={2}>
+                <Inline gap={2} wrap align="center">
+                  <Text variant="label-large" class="app-table-toolbar__count">
+                    {String(total())} {total() === 1 ? "проект" : "проектов"}
+                  </Text>
+                </Inline>
+                <Button size="sm" onClick={openCreate} leading={<AddIcon />}>
+                  Новый проект
+                </Button>
               </Inline>
-              <Inline gap={2} wrap align="center">
-                <Show when={!isMobile()}>
-                  <Button variant="text" size="sm" onClick={resetFilters}>
-                    Сбросить фильтры
-                  </Button>
-                  <Button size="sm" onClick={openCreate}>
-                    Создать
-                  </Button>
-                </Show>
-              </Inline>
-            </Inline>
+            </div>
           }
           attrs={{ "aria-label": "Таблица проектов" }}
         />

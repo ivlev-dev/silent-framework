@@ -147,16 +147,15 @@ export function App(): Node {
             <span class="app-brand" aria-hidden="true">
               S
             </span>
-            <span class="app-rail-brand__text">Silent Projects</span>
           </div>
         }
       />
 
       <div class="app__main">
         <TopAppBar
-          title={SECTION_TITLES[section()]}
+          class="app-topbar"
+          title="Silent Projects"
           sticky
-          elevated
           leading={
             <span class="app-topbar-brand" aria-hidden="true">
               S
@@ -184,13 +183,14 @@ export function App(): Node {
           <Show when={section() === "dashboard"}>
             <DashboardPage
               meta={meta}
+              compact={density() === "compact"}
               onOpenProjects={() => {
                 navigate("projects");
               }}
             />
           </Show>
           <Show when={section() === "projects"}>
-            <ProjectsPage meta={meta} />
+            <ProjectsPage meta={meta} compact={density() === "compact"} />
           </Show>
           <Show when={section() === "team"}>
             <TeamPage meta={meta} />

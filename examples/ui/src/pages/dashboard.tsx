@@ -31,6 +31,7 @@ import {
 } from "../lib/format.js";
 import { SkeletonCards, ErrorState, PageHeader } from "../ui/states.js";
 import { StatCard } from "../ui/stat-card.js";
+import { TagLine } from "../ui/tags.js";
 import {
   ChartIcon,
   FolderIcon,
@@ -46,11 +47,32 @@ interface DashboardStats {
 }
 
 const RECENT_COLUMNS: readonly TableColumn<Project>[] = [
-  { key: "name", header: "Проект", truncate: true, lines: 1 },
-  { key: "owner", header: "Владелец", truncate: true },
+  {
+    key: "name",
+    header: "Проект",
+    width: 190,
+    truncate: true,
+    renderCell: (project) => (
+      <span class="app-cell-ellipsis" title={project.name}>
+        {project.name}
+      </span>
+    ),
+  },
+  {
+    key: "owner",
+    header: "Владелец",
+    width: 140,
+    truncate: true,
+    renderCell: (project) => (
+      <span class="app-cell-ellipsis" title={project.owner}>
+        {project.owner}
+      </span>
+    ),
+  },
   {
     key: "status",
     header: "Статус",
+    width: 110,
     renderCell: (project) => (
       <Tag variant={statusVariant(project.status)} size="sm">
         {statusLabel(project.status)}
@@ -58,16 +80,28 @@ const RECENT_COLUMNS: readonly TableColumn<Project>[] = [
     ),
   },
   {
+    key: "tags",
+    header: "Теги",
+    width: 170,
+    renderCell: (project) => <TagLine tags={project.tags} />,
+  },
+  {
     key: "budget",
     header: "Бюджет",
+    width: 100,
     align: "end",
-    renderCell: (project) => formatBudget(project.budget),
+    renderCell: (project) => (
+      <span class="app-num">{formatBudget(project.budget)}</span>
+    ),
   },
   {
     key: "createdAt",
     header: "Создан",
+    width: 120,
     align: "end",
-    renderCell: (project) => formatDate(project.createdAt),
+    renderCell: (project) => (
+      <span class="app-num">{formatDate(project.createdAt)}</span>
+    ),
   },
 ];
 
@@ -104,6 +138,7 @@ async function loadStats(): Promise<DashboardStats> {
 
 export interface DashboardPageProps {
   readonly meta: Resource<ProjectMeta>;
+  readonly compact: boolean;
   readonly onOpenProjects: () => void;
 }
 
@@ -125,7 +160,7 @@ export function DashboardPage(props: DashboardPageProps): Node {
   const metaReady = (): ProjectMeta | undefined => props.meta.data();
 
   return (
-    <Stack gap={5} class="app-page">
+    <Stack gap={6} class="app-page">
       <PageHeader
         title="Dashboard"
         description="Сводка портфеля проектов: статусы, владельцы и теги из реального API."
@@ -150,11 +185,11 @@ export function DashboardPage(props: DashboardPageProps): Node {
         <Show
           when={!loading()}
           fallback={
-            <Stack gap={4}>
+            <Stack gap={6}>
               <SkeletonCards count={6} />
-              <Card variant="outlined" padding={4}>
+              <Card variant="outlined" padding={5}>
                 <Stack gap={3}>
-                  <Skeleton variant="text" width="32%" />
+                  <Skeleton variant="text" width="28%" />
                   <Skeleton variant="rect" width="100%" height={160} />
                 </Stack>
               </Card>
@@ -163,9 +198,9 @@ export function DashboardPage(props: DashboardPageProps): Node {
         >
           <div class="app-metrics">
             <StatCard
-              title="Всего проектов"
+              title="Проекты"
               value={String(total())}
-              hint={`${String(total())} в портфеле · ${String(counts().review)} ждут ревью`}
+              hint={`${String(counts().active)} в работе · ${String(counts().review)} на ревью`}
               icon={<FolderIcon />}
               tone="primary"
             />
@@ -193,7 +228,7 @@ export function DashboardPage(props: DashboardPageProps): Node {
             <StatCard
               title="Владельцев"
               value={metaReady() === undefined ? "—" : String(metaReady()?.owners.length ?? 0)}
-              hint="Активные участники из meta"
+              hint="Участники из справочника"
               icon={<TeamIcon />}
             />
             <StatCard
@@ -207,44 +242,51 @@ export function DashboardPage(props: DashboardPageProps): Node {
           <div class="app-dashboard-grid">
             <Card
               variant="outlined"
-              padding={4}
-              header={<Heading level={3}>Распределение по статусам</Heading>}
+              padding={5}
+              header={
+                <div class="app-panel-head">
+                  <Heading level={3}>Статусы</Heading>
+                  <Text variant="body-small" tone="muted">
+                    {String(total())} проектов
+                  </Text>
+                </div>
+              }
               class="app-dashboard-panel"
             >
-              <Stack gap={4}>
+              <div class="app-status-list">
                 <For each={PROJECT_STATUSES}>
                   {(status) => {
                     const count = (): number => counts()[status] ?? 0;
+                    const percent = (): number => formatPercent(count(), total());
                     return (
-                      <Stack gap={1}>
-                        <Inline justify="between" align="center" gap={2}>
-                          <Inline gap={2} align="center">
-                            <Tag variant={statusVariant(status)} size="sm">
-                              {statusLabel(status)}
-                            </Tag>
-                            <Text variant="body-small" tone="muted">
-                              {String(count())} из {String(total())}
-                            </Text>
-                          </Inline>
-                          <Text variant="label-medium">
-                            {String(formatPercent(count(), total()))}%
-                          </Text>
-                        </Inline>
+                      <div class="app-status-row">
+                        <div class="app-status-row__head">
+                          <Tag variant={statusVariant(status)} size="sm">
+                            {statusLabel(status)}
+                          </Tag>
+                          <span class="app-status-row__count">
+                            {String(count())} из {String(total())}
+                          </span>
+                          <span class="app-status-row__percent">
+                            {String(percent())}%
+                          </span>
+                        </div>
                         <Progress
+                          class="app-status-bar"
                           label={`Доля статуса «${statusLabel(status)}»`}
-                          value={formatPercent(count(), total())}
-                          size="sm"
+                          value={percent()}
+                          size="md"
                         />
-                      </Stack>
+                      </div>
                     );
                   }}
                 </For>
-              </Stack>
+              </div>
             </Card>
 
             <Card
               variant="outlined"
-              padding={4}
+              padding={5}
               header={<Heading level={3}>Команда и теги</Heading>}
               class="app-dashboard-panel"
             >
@@ -259,11 +301,16 @@ export function DashboardPage(props: DashboardPageProps): Node {
                 }
               >
                 <Stack gap={4}>
-                  <Stack gap={2}>
-                    <Text variant="label-medium" tone="muted">
-                      Владельцы
-                    </Text>
-                    <Inline gap={1} wrap>
+                  <div class="app-meta-block">
+                    <div class="app-meta-block__label">
+                      <Text variant="label-medium" tone="muted">
+                        Владельцы
+                      </Text>
+                      <Text variant="body-small" tone="muted">
+                        {String(metaReady()?.owners.length ?? 0)}
+                      </Text>
+                    </div>
+                    <div class="app-chip-line">
                       <For each={metaReady()?.owners ?? []}>
                         {(owner) => (
                           <Tag size="sm" variant="secondary">
@@ -271,13 +318,18 @@ export function DashboardPage(props: DashboardPageProps): Node {
                           </Tag>
                         )}
                       </For>
-                    </Inline>
-                  </Stack>
-                  <Stack gap={2}>
-                    <Text variant="label-medium" tone="muted">
-                      Теги
-                    </Text>
-                    <Inline gap={1} wrap>
+                    </div>
+                  </div>
+                  <div class="app-meta-block">
+                    <div class="app-meta-block__label">
+                      <Text variant="label-medium" tone="muted">
+                        Теги
+                      </Text>
+                      <Text variant="body-small" tone="muted">
+                        {String(metaReady()?.tags.length ?? 0)}
+                      </Text>
+                    </div>
+                    <div class="app-chip-line">
                       <For each={metaReady()?.tags ?? []}>
                         {(tag) => (
                           <Tag size="sm" variant="info">
@@ -285,8 +337,8 @@ export function DashboardPage(props: DashboardPageProps): Node {
                           </Tag>
                         )}
                       </For>
-                    </Inline>
-                  </Stack>
+                    </div>
+                  </div>
                 </Stack>
               </Show>
             </Card>
@@ -294,26 +346,34 @@ export function DashboardPage(props: DashboardPageProps): Node {
 
           <Card
             variant="outlined"
-            padding={4}
+            padding={0}
             header={
-              <Inline justify="between" align="center" wrap gap={2}>
-                <Heading level={3}>Последние проекты</Heading>
+              <div class="app-panel-head">
+                <div class="app-panel-head__text">
+                  <Heading level={3}>Последние проекты</Heading>
+                  <span class="app-panel-head__description">
+                    Пять последних записей портфеля
+                  </span>
+                </div>
                 <Button variant="text" size="sm" onClick={props.onOpenProjects}>
                   Открыть таблицу
                 </Button>
-              </Inline>
+              </div>
             }
-            class="app-dashboard-panel"
+            class="app-dashboard-panel app-flush-card"
           >
-            <div class="app-table-scroll">
-              <Table
-                columns={RECENT_COLUMNS}
-                rows={stats.data()?.recent ?? []}
-                rowKey={(project) => project.id}
-                caption="Последние созданные проекты"
-                empty={<EmptyState compact title="Пока нет проектов" />}
-              />
-            </div>
+            <Table
+              class="app-recent-table"
+              columns={RECENT_COLUMNS}
+              rows={stats.data()?.recent ?? []}
+              rowKey={(project) => project.id}
+              rowHeight={props.compact ? 44 : 48}
+              dense={props.compact}
+              stickyHeader
+              maxHeight={360}
+              label="Последние созданные проекты"
+              empty={<EmptyState compact title="Пока нет проектов" />}
+            />
           </Card>
         </Show>
       </Show>
