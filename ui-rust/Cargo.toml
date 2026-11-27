@@ -1,0 +1,33 @@
+[workspace]
+resolver = "2"
+members = ["derive", "core", "render", "platform", "accessibility", "demo"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+ui-core = { path = "core" }
+ui-derive = { path = "derive" }
+ui-render = { path = "render" }
+ui-platform = { path = "platform" }
+ui-accessibility = { path = "accessibility" }
+
+wgpu = "30.0.2"
+winit = "0.30.13"
+cosmic-text = "0.19"
+glyphon = "0.12"
+lyon = "1.0.19"
+accesskit = "0.25.2"
+pollster = "0.4"
+bytemuck = { version = "1.25", features = ["derive"] }
+png = "0.18"
+log = "0.4"
+env_logger = "0.11"
+thiserror = "2"
+arboard = "3"
+
+[profile.release]
+opt-level = 2
+lto = "thin"

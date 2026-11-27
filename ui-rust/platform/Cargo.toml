@@ -1,0 +1,16 @@
+[package]
+name = "ui-platform"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ui-core = { workspace = true }
+ui-render = { workspace = true }
+wgpu = { workspace = true }
+winit = { workspace = true }
+pollster = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+arboard = { workspace = true }
+thiserror = { workspace = true }

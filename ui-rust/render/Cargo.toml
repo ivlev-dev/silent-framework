@@ -1,0 +1,17 @@
+[package]
+name = "ui-render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ui-core = { workspace = true }
+wgpu = { workspace = true }
+cosmic-text = { workspace = true }
+glyphon = { workspace = true }
+lyon = { workspace = true }
+pollster = { workspace = true }
+bytemuck = { workspace = true }
+png = { workspace = true }
+log = { workspace = true }
+thiserror = { workspace = true }

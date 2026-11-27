@@ -1,0 +1,9 @@
+[package]
+name = "ui-accessibility"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ui-core = { workspace = true }
+accesskit = { workspace = true }
