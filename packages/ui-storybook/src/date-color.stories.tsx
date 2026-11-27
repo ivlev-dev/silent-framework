@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/html-vite";
-import { fn } from "storybook/test";
+import { expect, fn } from "storybook/test";
 import { createSignal, type Children } from "@ivlev-dev/silent-core";
 import { ColorPicker } from "@ivlev-dev/silent-ui/color-picker";
 import { DatePicker, parseDateValue } from "@ivlev-dev/silent-ui/date-picker";
@@ -254,6 +254,74 @@ export const ColorPickerPlayground: Story = {
     area?.dispatchEvent(
       new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
     );
+  },
+};
+
+export const CalendarRange: Story = {
+  name: "Календарь: диапазон",
+  render: () => stage(
+    <DateRangePicker
+      id="story-calendar-range"
+      label="Период отчёта"
+      locale="ru-RU"
+      defaultOpen
+      defaultValue={{
+        start: new Date(2026, 10, 3),
+        end: new Date(2026, 10, 18),
+      }}
+    />,
+  ),
+  play: async ({ canvasElement }) => {
+    const start = canvasElement.querySelector<HTMLElement>(
+      ".sui-date-picker__cell[data-range-start] .sui-date-picker__day",
+    );
+    const end = canvasElement.querySelector<HTMLElement>(
+      ".sui-date-picker__cell[data-range-end] .sui-date-picker__day",
+    );
+    const inner = canvasElement.querySelector<HTMLElement>(
+      ".sui-date-picker__cell[data-in-range]:not([data-range-start]):not([data-range-end]) .sui-date-picker__day",
+    );
+    if (start === null || end === null || inner === null) {
+      throw new Error("не найдены дни диапазона");
+    }
+    await expect(start.hasAttribute("data-selected")).toBe(true);
+    await expect(end.hasAttribute("data-selected")).toBe(true);
+    await expect(start.textContent).toBe("3");
+    await expect(end.textContent).toBe("18");
+    await expect(getComputedStyle(start).borderRadius).toBe("999px");
+    await expect(getComputedStyle(inner).backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+    const startColor = getComputedStyle(start).color;
+    const startBack = getComputedStyle(start).backgroundColor;
+    await expect(startColor).not.toBe("rgba(0, 0, 0, 0)");
+    await expect(startColor).not.toBe(startBack);
+  },
+};
+
+export const ColorSwatches: Story = {
+  name: "Цвет: swatch и lowercase hex",
+  render: () => stage(
+    <div style={{ display: "flex", "flex-direction": "column", gap: "var(--sui-space-4)" }}>
+      <ColorPicker label="Верхний регистр" defaultValue="#1F4E6B" />
+      <ColorPicker label="Нижний регистр" defaultValue="#1f6b45" />
+      <ColorPicker label="Короткий hex" defaultValue="#F0A" />
+      <ColorPicker label="Пустое значение" defaultValue="" placeholder="Не выбран" />
+    </div>,
+  ),
+  play: async ({ canvasElement }) => {
+    const controls = canvasElement.querySelectorAll<HTMLElement>(".sui-color-picker__control");
+    await expect(controls.length).toBe(4);
+    const first = controls[0];
+    const second = controls[1];
+    if (first === undefined || second === undefined) throw new Error("нет контролов цвета");
+    await expect(first.textContent).toContain("#1f4e6b");
+    await expect(second.textContent).toContain("#1f6b45");
+    const swatch = first.querySelector<HTMLElement>(".sui-color-picker__swatch");
+    await expect(swatch?.style.getPropertyValue("--sui-color-picker-swatch")).toBe(
+      "rgba(31, 78, 107, 1)",
+    );
+    await expect(swatch?.hasAttribute("data-empty")).toBe(false);
+    const empty = controls[3]?.querySelector<HTMLElement>(".sui-color-picker__swatch");
+    await expect(empty?.hasAttribute("data-empty")).toBe(true);
   },
 };
 

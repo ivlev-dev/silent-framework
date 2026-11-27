@@ -27,6 +27,10 @@
     font-family: var(--sui-font-sans);
     font-size: var(--sui-type-body-medium-size);
     line-height: var(--sui-type-body-medium-line);
+    overflow: visible;
+  }
+
+  .sui-card[data-clip] {
     overflow: hidden;
   }
 
@@ -61,6 +65,8 @@
   .sui-card__media {
     display: grid;
     margin: calc(var(--sui-card-padding) * -1) calc(var(--sui-card-padding) * -1) 0;
+    border-start-start-radius: var(--sui-card-radius);
+    border-start-end-radius: var(--sui-card-radius);
     aspect-ratio: var(--sui-card-media-aspect, auto);
     overflow: hidden;
   }

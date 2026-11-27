@@ -112,15 +112,17 @@ import { UiConfigProvider } from "@ivlev-dev/silent-ui";
 
 ## Палитра и кастомизация
 
-Базовая палитра — холодный ink, глубокий teal, mist и ivory-бумага:
+Базовая палитра — холодный ink, глубокий teal, mist и ivory-бумага (светлая тема и брендовые акценты):
 
 | Имя | HEX | Назначение |
 | --- | --- | --- |
-| ink-900 | `#081A2E` | основной текст light, surface dark, scrim |
-| ink-800 | `#0E2A47` | primary light, inverse-surface, container-low dark |
-| teal-700 | `#1F4E6B` | secondary light, accent dark, elevated dark |
-| mist-300 | `#9FB8C9` | primary/accent dark, tertiary light |
+| ink-900 | `#081A2E` | основной текст light, scrim light |
+| ink-800 | `#0E2A47` | primary light, inverse-surface light |
+| teal-700 | `#1F4E6B` | secondary light, accent light |
+| mist-300 | `#9FB8C9` | tertiary/accent light |
 | ivory-50 | `#F2F5F7` | surface light, текст на ink |
+
+Тёмная тема использует отдельную soft-black/charcoal палитру: поверхности `#17181B` → `#333439`, тёплый neutral `primary #D9D5CB`, `secondary #C4C1B9`, `accent #C9C5BB`, текст `#ECECEF`. Брендовая палитра задаёт только light-роли.
 
 Публичные алиасы прежней палитры (значения обновлены, имена сохранены): `ivory #F2F5F7`, `almond #E6EDF2`, `mist #9FB8C9`, `navy #0E2A47`, `noir #081A2E`, `gold #1F4E6B`, `navy-deep #081A2E`, `navy-mid #0E2A47`, `navy-dark #061424`, `white #FFFFFF`.
 
@@ -128,23 +130,23 @@ import { UiConfigProvider } from "@ivlev-dev/silent-ui";
 
 | Роль | light | dark |
 | --- | --- | --- |
-| `surface` | `#F2F5F7` | `#081A2E` |
-| `surface-container` | `#EDF2F5` | `#12324F` |
-| `on-surface` | `#081A2E` | `#F2F5F7` |
-| `on-surface-variant` | `#3A566B` | `#C9D8E2` |
-| `primary` | `#0E2A47` | `#9FB8C9` |
-| `on-primary` | `#F2F5F7` | `#081A2E` |
-| `primary-container` | `#D9E4EC` | `#1F4E6B` |
-| `secondary` | `#1F4E6B` | `#C9D8E2` |
-| `accent` / `on-accent` | `#9FB8C9` / `#081A2E` | `#1F4E6B` / `#F2F5F7` |
-| `outline` | `#638198` | `#7E9AB0` |
+| `surface` | `#F2F5F7` | `#17181B` |
+| `surface-container` | `#EDF2F5` | `#232428` |
+| `on-surface` | `#081A2E` | `#ECECEF` |
+| `on-surface-variant` | `#3A566B` | `#C9C9D0` |
+| `primary` | `#0E2A47` | `#D9D5CB` |
+| `on-primary` | `#F2F5F7` | `#141416` |
+| `primary-container` | `#D9E4EC` | `#34343A` |
+| `secondary` | `#1F4E6B` | `#C4C1B9` |
+| `accent` / `on-accent` | `#9FB8C9` / `#081A2E` | `#C9C5BB` / `#141416` |
+| `outline` | `#638198` | `#85858F` |
 | `error` | `#A8322A` | `#F2B8B5` |
 | `success` | `#1F6B45` | `#8FD3A8` |
 | `warning` | `#7A5200` | `#E8C56A` |
 
-`accent`/`on-accent` — отдельная пара для mist-кнопок и хайлайтов; имена прежних ролей сохранены. Полный набор (`primary-fixed*`, `surface-container-*`, `inverse-*`, `scrim`, `shadow` и контейнеры состояний) раскладывается в `lightColors`/`darkColors` и `themes.css`. Все пары текст/фон проходят WCAG AA (4.5:1; `outline` на поверхностях и focus ring — 3:1), контраст проверяется unit-тестом. `outline` и `on-surface-muted` пришлось минимально усилить относительно исходной палитры (`#6E8CA3` → `#638198`, `#5A7285` → `#4C6477`), а в тёмной теме elevated-поверхности — приглушить (`#1F4E6B` → `#1C4B68`), иначе AA на них не выполнялся.
+`accent`/`on-accent` — отдельная пара для CTA и хайлайтов; имена прежних ролей сохранены. Полный набор (`primary-fixed*`, `surface-container-*`, `inverse-*`, `scrim`, `shadow` и контейнеры состояний) раскладывается в `lightColors`/`darkColors` и `themes.css`. Все пары текст/фон проходят WCAG AA (4.5:1; `outline` на поверхностях и focus ring — 3:1), контраст проверяется unit-тестом. В светлой теме `outline` и `on-surface-muted` минимально усилены относительно исходных (`#6E8CA3` → `#638198`, `#5A7285` → `#4C6477`), иначе AA на повышенных поверхностях не выполнялся.
 
-Состояния используют прозрачные слои поверх `currentColor` (hover `0.08`, focus/pressed `0.12`, dragged `0.16`); focus ring — 2px с offset 2px, ink в светлой теме и mist в тёмной. Selection — mist с ink-текстом, scrim — ink-900.
+Состояния используют прозрачные слои поверх `currentColor` (hover `0.08`, focus/pressed `0.12`, dragged `0.16`); focus ring — 2px с offset 2px, ink в светлой теме и тёплый neutral в тёмной. Selection — neutral-заливка с тёмным текстом, scrim — ink-900 в светлой теме и `#000000` в тёмной.
 
 Три уровня кастомизации:
 
@@ -402,14 +404,14 @@ const uploader = async (file: File) => api.upload(file);
 
 ### Данные
 
-- `Card` — карточка, опционально интерактивная; `mediaAspect` (`auto`/`square`/`video`/`wide`/`portrait`) и `headerLines` (1–3 строки). `import { Card } from "@ivlev-dev/silent-ui"`.
+- `Card` — карточка, опционально интерактивная; `variant` (`elevated` с мягкой тенью, `outlined` с hairline-рамкой, `filled` без тени), `clip` для обрезки содержимого, `mediaAspect` (`auto`/`square`/`video`/`wide`/`portrait`) и `headerLines` (1–3 строки). `import { Card } from "@ivlev-dev/silent-ui"`.
 - `List` — список, опционально `selectable`. `import { List } from "@ivlev-dev/silent-ui"`.
 - `ListItem` — строка списка с leading/trailing и `lines` (1–3). `import { ListItem } from "@ivlev-dev/silent-ui"`.
 - `Table` — семантическая таблица с управляемой сортировкой; корень скроллится по горизонтали, колонки поддерживают `truncate`/`lines`. `import { Table } from "@ivlev-dev/silent-ui"`.
-- `DataTable` — серверная таблица: пагинация, массовый выбор, ресайз (с фиксацией ширин и px-badge), drag за заголовок, настройки (видимость/порядок/плотность/sticky/layout) в диалоге, раскладка карточек на узком экране, дерево строк и сохранение в `localStorage`. `import { DataTable } from "@ivlev-dev/silent-ui"`.
-- `DatePicker` — дата с календарём и ручным вводом. `import { DatePicker } from "@ivlev-dev/silent-ui"`.
-- `DateRangePicker` — диапазон дат с пресетами. `import { DateRangePicker } from "@ivlev-dev/silent-ui"`.
-- `ColorPicker` — цвет с палитрой, alpha и HEX/RGB/HSL. `import { ColorPicker } from "@ivlev-dev/silent-ui"`.
+- `DataTable` — серверная таблица: пагинация с активной страницей, массовый выбор с панелью в подвале над пагинацией, sticky header/footer, ресайз без скачка (px-чип после первого движения), drag за весь заголовок, настройки (видимость/порядок/плотность/sticky/layout) с locked-колонками и `settingsLabel`, квадратные углы, раскладка карточек на узком экране, дерево строк и сохранение в `localStorage`. `import { DataTable } from "@ivlev-dev/silent-ui"`.
+- `DatePicker` — дата с календарём и ручным вводом; дни круглые, выбранный день с контрастным текстом. `import { DatePicker } from "@ivlev-dev/silent-ui"`.
+- `DateRangePicker` — диапазон дат с пресетами, круглыми днями и видимой подсветкой границ/середины. `import { DateRangePicker } from "@ivlev-dev/silent-ui"`.
+- `ColorPicker` — цвет с палитрой, alpha и HEX/RGB/HSL; HEX нормализуется в нижний регистр, swatch рисуется поверх checkerboard. `import { ColorPicker } from "@ivlev-dev/silent-ui"`.
 - `FileUpload` — зона drag&drop, прогресс, отмена и превью. `import { FileUpload } from "@ivlev-dev/silent-ui"`.
 - `Avatar` — изображение/инициалы/иконка + статус. `import { Avatar } from "@ivlev-dev/silent-ui"`.
 - `Badge` — счётчик, точка или `position` (`top-end`/`top-start`/`bottom-end`/`bottom-start`) у позиционированного родителя. `import { Badge } from "@ivlev-dev/silent-ui"`.
@@ -424,7 +426,7 @@ const uploader = async (file: File) => api.upload(file);
 - `AlertDialog` — подтверждение с фокусом на действиях. `import { AlertDialog } from "@ivlev-dev/silent-ui"`.
 - `Sheet` — боковая/нижняя панель с модальным режимом. `import { Sheet } from "@ivlev-dev/silent-ui"`.
 - `Drawer` — модальная или standard-панель. `import { Drawer } from "@ivlev-dev/silent-ui"`.
-- `Popover` — inline-панель без Portal. `import { Popover } from "@ivlev-dev/silent-ui"`.
+- `Popover` — inline-панель без Portal; на клиенте — в top layer через нативный `popover` API. `import { Popover } from "@ivlev-dev/silent-ui"`.
 - `Menu` — меню с roving tabindex. `import { Menu } from "@ivlev-dev/silent-ui"`.
 - `MenuItem` — пункт меню. `import { MenuItem } from "@ivlev-dev/silent-ui"`.
 - `MenuSeparator` — разделитель пунктов. `import { MenuSeparator } from "@ivlev-dev/silent-ui"`.
@@ -445,10 +447,10 @@ const uploader = async (file: File) => api.upload(file);
 ## UX-правила
 
 - **Иерархия**: один `Heading` первого уровня на экран; display/headline и UI — один современный sans, разница только в размере и весе. Не повышайте уровень заголовка ради размера — для этого есть `variant`.
-- **Акцент**: золотой `accent` — для одного ключевого действия на экране (`Button`/`IconButton`/`Badge`). Остальные действия — `filled`/`tonal`/`outlined`/`text`. Не превращайте все поверхности в pill: радиусы 4/6/10/14/20, `full` — только аватары, чипы и круги.
+- **Акцент**: золотой `accent` — для одного ключевого действия на экране (`Button`/`IconButton`/`Badge`). Остальные действия — `filled`/`tonal`/`outlined`/`text`. Не превращайте все поверхности в pill: радиусы 4/6/10/14/20, `full` — только аватары, чипы, дни календаря и круги.
 - **Длина текста**: длинный повествовательный текст ограничивайте `Text.measure` (68ch) или `.sui-measure`; для строк списков, карточек, таблиц и аккордеона используйте осознанную обрезку (`lines`/`truncate`/`headerLines`) вместо «прыгающей» высоты строки. Обрезка не должна скрывать единственное действие.
 - **Формы**: ошибка видна сразу, как только передана; `validating` — отдельное состояние, не подменяет `error`. Подписи секций — `Label.uppercase`, только осознанно. На широких экранах форма ограничивается `FieldGroup.maxWidth`, а не растягивается на всю ширину.
-- **Таблицы**: на узких экранах `Table` скроллит по горизонтали, `DataTable` переключается в карточки; не уменьшайте шрифт ради влезания. Длинные значения — `DataTableColumn.truncate`/`TableColumn.lines`, полный текст показывайте в `title`. Строки 48/44px, числовые колонки — `align="end"`. Массовые действия закрепляйте сверху, чтобы они не терялись при скролле.
+- **Таблицы**: на узких экранах `Table` скроллит по горизонтали, `DataTable` переключается в карточки; не уменьшайте шрифт ради влезания. Длинные значения — `DataTableColumn.truncate`/`TableColumn.lines`, полный текст показывайте в `title`. Строки 48/42px, числовые колонки — `align="end"`. Углы таблицы квадратные; массовые действия — в подвале над пагинацией, при длинном списке включайте `stickyFooter`, чтобы панель и пагинация не терялись. Перестановка — drag за весь заголовок, а не за отдельную ручку; `locked` оставляйте для колонки-идентификатора и действий.
 - **Доступность и движение**: цель нажатия не меньше 44px (48px в cozy/`lg`), focus ring 2px с offset 2px, `prefers-reduced-motion` отключает анимации, иконки без подписи получают `aria-label`/`label`. Storybook `check:ui` держит axe-core critical на нуле.
 - **SSR-гидрация**: не меняйте структуру ради визуального эффекта на клиенте — сервер и клиент должны давать одинаковую разметку (см. «Ограничения v1»).
 
@@ -464,7 +466,9 @@ pnpm --filter @ivlev-dev/silent-ui-storybook check:ui:strict # CI: без fallba
 pnpm --filter @ivlev-dev/silent-ui-storybook test:ui         # build + строгая браузерная проверка
 ```
 
-Storybook живёт в `packages/ui-storybook` (private): `@storybook/html-vite` без React, `addon-a11y`, `@storybook/addon-docs`, toolbar темы light/dark/auto и плотности compact/default/comfortable. Viewport'ы: 360×800, 600×960, 840×1112, 1200×900, 1600×1000, 2560×1440. `check:ui` сам поднимает локальную статическую сборку и не требует внешнего хоста; для точечного прогона есть `--url`, `--stories`, `--dpr`.
+Storybook живёт в `packages/ui-storybook` (private): `@storybook/html-vite` без React, `addon-a11y`, `@storybook/addon-docs`, toolbar темы light/dark/auto и плотности compact/default/comfortable. Viewport'ы: 360×800, 480×900, 600×960, 840×1112, 1200×900, 1600×1000, 1920×1080, 2560×1440, 3840×2160. `check:ui` сам поднимает локальную статическую сборку и не требует внешнего хоста; для точечного прогона есть `--url`, `--stories`, `--viewports`, `--dpr` и `--screenshots`.
+
+Ключевые `DataTable`-stories содержат `play`-сценарии: `StickyFooter` (положение sticky-подвала), `BulkOverlay` (панель выбора в подвале над пагинацией), `PaginationActive` (`aria-current="page"` и переход), `DensityOverride` (настройка перекрывает prop), `DragWholeHeader` (сам `th` следует за курсором, без ручки) и `LockedColumn` (заблокированная колонка без drag/скрытия). `Card/Variants`, `Card/Clip`, `Date & Color/CalendarRange` и `Date & Color/ColorSwatches` проверяют состояния поверхности, обрезку, круглые дни диапазона и lowercase-HEX со swatch.
 
 Stories разложены по разделам: `Introduction` (MDX: палитра, темы, брейкпоинты, controls), `Foundations` (цвета/темы, типографика, layout), `Components` (эталоны `Button`, `TextField`, `Alert`, `Dialog`, `Table` с тегом `autodocs`) и `Patterns` (форма с валидацией, dashboard, auth, settings, dialog flow). Для HTML-renderer'а Storybook не выводит props из JSDoc, поэтому args table строится из явных `argTypes` в meta; `controls.expanded`, `matchers` и `sort: "requiredFirst"` заданы глобально. Действия подключаются через `fn()` из `storybook/test`.
 

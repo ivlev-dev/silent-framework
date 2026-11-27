@@ -403,27 +403,47 @@ describe("DataTable: перестановка колонок", () => {
     return ths;
   }
 
-  it("drag за заголовок меняет порядок и сохраняет его в localStorage", () => {
+  it("drag за заголовок перестраивает колонки только после drop", async () => {
     const handle = mount(baseProps());
     const root = handle.node as Element;
     const ths = stubHeaders(root);
+    expect(root.querySelector(".sui-data-table__drag-grip")).toBeNull();
 
     pointer(ths[0] as HTMLElement, "pointerdown", 8, 20);
     flush();
-    pointer(document, "pointermove", 140, 20);
+    pointer(document, "pointermove", 130, 20);
     flush();
-    pointer(document, "pointerup", 140, 20);
-    flush();
+    await Promise.resolve();
 
-    expect(headerKeys(root)).toEqual(["role", "name", "score"]);
+    const dragged = root.querySelector<HTMLElement>("th[data-column-key='name']");
+    expect(root.querySelector(".sui-data-table__drag-ghost")).toBeNull();
+    expect(dragged?.hasAttribute("data-dragging")).toBe(true);
+    expect(dragged?.style.transform).toContain("translate3d");
+    expect(dragged?.style.zIndex).toBe("30");
+    expect(headerKeys(root)).toEqual(["name", "role", "score"]);
+    expect(storedSettings("people").order).toBeUndefined();
+    expect(root.querySelector(".sui-data-table__drop-indicator")).not.toBeNull();
+
+    pointer(document, "pointermove", 220, 20);
+    flush();
+    await Promise.resolve();
+    expect(root.querySelector("th[data-drop='after']")).not.toBeNull();
+    expect(headerKeys(root)).toEqual(["name", "role", "score"]);
+
+    pointer(document, "pointerup", 220, 20);
+    flush();
+    await Promise.resolve();
     expect(storedSettings("people").order).toEqual(["role", "name", "score"]);
     expect(
       root.querySelector("tbody tr.sui-data-table__tr td.sui-data-table__td")?.textContent,
     ).toContain("Инженер");
+    expect(root.querySelector(".sui-data-table__drop-indicator")).toBeNull();
+    expect(root.querySelectorAll("th[data-dragging]")).toHaveLength(0);
   });
 
-  it("клик по сортировке не запускает drag", () => {
-    const handle = mount(baseProps());
+  it("клик по сортировке без движения сортирует и не запускает drag", () => {
+    const onSort = vi.fn();
+    const handle = mount(baseProps({ onSort }));
     const root = handle.node as Element;
     stubHeaders(root);
     const sort = root.querySelector<HTMLElement>(
@@ -431,11 +451,58 @@ describe("DataTable: перестановка колонок", () => {
     );
     expect(sort).not.toBeNull();
     if (sort === null) return;
+
     pointer(sort, "pointerdown", 8, 20);
-    pointer(document, "pointermove", 160, 20);
-    pointer(document, "pointerup", 160, 20);
+    pointer(sort, "pointerup", 8, 20);
+    sort.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     flush();
+
+    expect(onSort).toHaveBeenCalledWith("name", "ascending");
     expect(headerKeys(root)).toEqual(["name", "role", "score"]);
+  });
+
+  it("drag с кнопки сортировки переставляет колонку и подавляет клик", () => {
+    const onSort = vi.fn();
+    const handle = mount(baseProps({ onSort }));
+    const root = handle.node as Element;
+    stubHeaders(root);
+    const sort = root.querySelector<HTMLElement>(
+      "th[data-column-key='name'] button.sui-data-table__sort",
+    );
+    if (sort === null) throw new Error("не найдена кнопка сортировки");
+
+    pointer(sort, "pointerdown", 8, 20);
+    pointer(document, "pointermove", 220, 20);
+    flush();
+    pointer(document, "pointerup", 220, 20);
+    flush();
+
+    sort.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    flush();
+
+    expect(onSort).not.toHaveBeenCalled();
+    expect(headerKeys(root)).toEqual(["role", "name", "score"]);
+    expect(storedSettings("people").order).toEqual(["role", "name", "score"]);
+  });
+
+  it("drag не запускается с ресайзера", () => {
+    const handle = mount(baseProps());
+    const root = handle.node as Element;
+    stubHeaders(root);
+    const resizer = root.querySelector<HTMLElement>(
+      "button.sui-data-table__resizer[data-column-key='name']",
+    );
+    if (resizer === null) throw new Error("не найден ресайзер");
+    stubRect(resizer, { left: 120, top: 0, width: 12, height: 40 });
+
+    pointer(resizer, "pointerdown", 120, 20);
+    pointer(document, "pointermove", 40, 20);
+    flush();
+    pointer(document, "pointerup", 40, 20);
+    flush();
+
+    expect(headerKeys(root)).toEqual(["name", "role", "score"]);
+    expect(root.querySelectorAll("th[data-dragging]")).toHaveLength(0);
   });
 });
 
@@ -455,6 +522,41 @@ describe("DataTable: перестановка колонок с клавиату
 
     expect(headerKeys(root)).toEqual(["role", "name", "score"]);
     expect(storedSettings("people").order).toEqual(["role", "name", "score"]);
+  });
+
+  it("реальный drag и FLIP не ломают клавиатуру", async () => {
+    const handle = mount(baseProps());
+    const root = handle.node as Element;
+    const ths = Array.from(root.querySelectorAll<HTMLElement>("th[data-column-key]"));
+    ths.forEach((th, index) => {
+      stubRect(th, { left: index * 120, top: 0, width: 120, height: 40 });
+    });
+
+    pointer(ths[0] as HTMLElement, "pointerdown", 8, 20);
+    pointer(document, "pointermove", 220, 20);
+    pointer(document, "pointerup", 220, 20);
+    flush();
+    await Promise.resolve();
+    expect(headerKeys(root)).toEqual(["role", "name", "score"]);
+    expect(root.querySelector(".sui-data-table__drag-ghost")).toBeNull();
+    expect(root.querySelectorAll("th[data-dragging]")).toHaveLength(0);
+
+    const nameHeader = (): HTMLElement => {
+      const node = root.querySelector<HTMLElement>("th[data-column-key='name']");
+      if (node === null) throw new Error("не найден заголовок");
+      return node;
+    };
+    nameHeader().focus();
+    key(nameHeader(), " ");
+    flush();
+    key(nameHeader(), "ArrowRight");
+    flush();
+    key(nameHeader(), " ");
+    flush();
+
+    expect(headerKeys(root)).toEqual(["role", "score", "name"]);
+    expect(root.querySelectorAll("th[data-armed]")).toHaveLength(0);
+    expect(root.querySelectorAll("th[data-dragging]")).toHaveLength(0);
   });
 });
 
@@ -582,7 +684,7 @@ function treeProps(overrides: Record<string, unknown> = {}): Record<string, unkn
 }
 
 describe("DataTable: ресайз без скачка", () => {
-  it("фиксирует измеренные ширины, показывает px и сохраняет после commit", () => {
+  it("на pointerdown ширины не меняются, chip появляется после движения, commit на pointerup", () => {
     const handle = mount(baseProps());
     const root = handle.node as Element;
     const ths = Array.from(root.querySelectorAll<HTMLElement>("th[data-column-key]"));
@@ -596,13 +698,27 @@ describe("DataTable: ресайз без скачка", () => {
     if (resizer === null) throw new Error("нет ресайзера");
     stubRect(resizer, { left: 120, top: 0, width: 12, height: 40 });
 
-    pointer(resizer, "pointerdown", 120, 20);
-    flush();
     const cols = (): readonly string[] =>
       Array.from(root.querySelectorAll<HTMLTableColElement>("col[data-column-key]"))
         .map((col) => col.style.width);
-    expect(cols()).toEqual(["120px", "140px", "90px"]);
+    const before = cols();
+
+    pointer(resizer, "pointerdown", 120, 20);
+    flush();
+    expect(cols()).toEqual(before);
+    expect(root.querySelector(".sui-data-table__resize-chip")).toBeNull();
     expect(storedSettings("people").widths?.["name"]).toBeUndefined();
+
+    pointer(window, "pointerup", 120, 20);
+    flush();
+    expect(storedSettings("people").widths).toBeUndefined();
+    expect(cols()).toEqual(before);
+
+    pointer(resizer, "pointerdown", 120, 20);
+    flush();
+    pointer(window, "pointermove", 121, 20);
+    flush();
+    expect(root.querySelector(".sui-data-table__resize-chip")).toBeNull();
 
     pointer(window, "pointermove", 150, 20);
     flush();
@@ -719,7 +835,7 @@ describe("DataTable: настройки и раскладка", () => {
     expect(actions?.querySelector("button")?.textContent).toBe("Удалить Ада");
   });
 
-  it("locked-колонка не получает ручку перетаскивания", () => {
+  it("locked-колонка не участвует в перетаскивании, грипа в заголовках нет", () => {
     const columns: readonly DataTableColumn<Row>[] = COLUMNS.map((column) =>
       column.key === "score" ? { ...column, locked: true } : column,
     );
@@ -727,10 +843,216 @@ describe("DataTable: настройки и раскладка", () => {
     const root = handle.node as Element;
     const locked = root.querySelector<HTMLElement>("th[data-column-key='score']");
     expect(locked?.hasAttribute("data-reorderable")).toBe(false);
-    expect(locked?.querySelector(".sui-data-table__drag-grip")).toBeNull();
+    expect(root.querySelector(".sui-data-table__drag-grip")).toBeNull();
     expect(
-      root.querySelector("th[data-column-key='name'] .sui-data-table__drag-grip"),
-    ).not.toBeNull();
+      root.querySelector("th[data-column-key='name']")?.hasAttribute("data-reorderable"),
+    ).toBe(true);
+  });
+
+  it("в настройках показывает подпись и заблокированную строку без управления", () => {
+    const columns: readonly DataTableColumn<Row>[] = [
+      ...COLUMNS,
+      {
+        key: "actions",
+        header: "",
+        settingsLabel: "Действия",
+        locked: true,
+        resizable: false,
+        render: () => <button type="button">Удалить</button>,
+      },
+      { key: "note", header: "", card: { label: "Заметка" } },
+      { key: "extraField", header: "" },
+    ];
+    const handle = mount(baseProps({ columns }));
+    const root = handle.node as Element;
+    root
+      .querySelector<HTMLElement>("button[aria-label='Настройки таблицы']")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    flush();
+
+    const dialog = root.querySelector<HTMLElement>("dialog.sui-dialog");
+    const labels = [...(dialog?.querySelectorAll(".sui-data-table__settings-label") ?? [])]
+      .map((node) => node.textContent?.trim());
+    expect(labels).toContain("Действия");
+    expect(labels).toContain("Заметка");
+    expect(labels).toContain("Extra field");
+
+    const lockedRow = dialog?.querySelector<HTMLElement>(
+      ".sui-data-table__settings-row[data-column-key='actions']",
+    );
+    expect(lockedRow?.hasAttribute("data-locked")).toBe(true);
+    expect(lockedRow?.hasAttribute("draggable")).toBe(false);
+    expect(lockedRow?.querySelector("input[type='checkbox']")).toBeNull();
+    expect(lockedRow?.querySelector(".sui-data-table__settings-lock")).not.toBeNull();
+    expect(lockedRow?.querySelector(".sui-data-table__settings-move")).toBeNull();
+    expect(lockedRow?.querySelector(".sui-data-table__settings-grip")).toBeNull();
+  });
+
+  it("locked-колонку нельзя скрыть, утащить или переставить через соседей", () => {
+    const columns: readonly DataTableColumn<Row>[] = COLUMNS.map((column) =>
+      column.key === "role" ? { ...column, locked: true, defaultVisible: false } : column,
+    );
+    const handle = mount(baseProps({ columns }));
+    const root = handle.node as Element;
+    expect(headerKeys(root)).toEqual(["name", "role", "score"]);
+
+    const ths = Array.from(root.querySelectorAll<HTMLElement>("th[data-column-key]"));
+    ths.forEach((th, index) => {
+      stubRect(th, { left: index * 120, top: 0, width: 120, height: 40 });
+    });
+
+    pointer(ths[1] as HTMLElement, "pointerdown", 128, 20);
+    pointer(document, "pointermove", 20, 20);
+    pointer(document, "pointerup", 20, 20);
+    flush();
+    expect(headerKeys(root)).toEqual(["name", "role", "score"]);
+
+    pointer(ths[0] as HTMLElement, "pointerdown", 8, 20);
+    pointer(document, "pointermove", 300, 20);
+    pointer(document, "pointerup", 300, 20);
+    flush();
+    expect(headerKeys(root)).toEqual(["name", "role", "score"]);
+
+    const name = root.querySelector<HTMLElement>("th[data-column-key='name']");
+    if (name === null) throw new Error("не найден заголовок");
+    key(name, " ");
+    flush();
+    key(name, "ArrowRight");
+    flush();
+    key(name, " ");
+    flush();
+    expect(headerKeys(root)).toEqual(["name", "role", "score"]);
+
+    root
+      .querySelector<HTMLElement>("button[aria-label='Настройки таблицы']")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    flush();
+    const nameRow = root.querySelector<HTMLElement>(
+      ".sui-data-table__settings-row[data-column-key='name']",
+    );
+    nameRow
+      ?.querySelector<HTMLElement>("button[aria-label='Ниже']")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    flush();
+    expect(headerKeys(root)).toEqual(["name", "role", "score"]);
+  });
+
+  it("drag в настройках двигает реальную строку и сохраняет порядок", async () => {
+    const handle = mount(baseProps());
+    const root = handle.node as Element;
+    root
+      .querySelector<HTMLElement>("button[aria-label='Настройки таблицы']")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    flush();
+
+    const rows = Array.from(
+      root.querySelectorAll<HTMLElement>(".sui-data-table__settings-row"),
+    );
+    rows.forEach((row, index) => {
+      stubRect(row, { left: 0, top: index * 40, width: 240, height: 32 });
+    });
+    const nameRow = rows[0];
+    if (nameRow === undefined) throw new Error("не найдена строка настроек");
+
+    pointer(nameRow, "pointerdown", 40, 12);
+    pointer(document, "pointermove", 40, 60);
+    flush();
+    await Promise.resolve();
+    expect(
+      root.querySelector<HTMLElement>(".sui-data-table__settings-row[data-column-key='name']")
+        ?.style.transform,
+    ).toContain("translate3d");
+    expect(headerKeys(root)).toEqual(["name", "role", "score"]);
+    expect(root.querySelector(".sui-data-table__settings-drop")).not.toBeNull();
+
+    pointer(document, "pointerup", 40, 60);
+    flush();
+    await Promise.resolve();
+    expect(storedSettings("people").order).toEqual(["role", "name", "score"]);
+    expect(
+      Array.from(root.querySelectorAll<HTMLElement>(".sui-data-table__settings-row")).map(
+        (row) => row.getAttribute("data-column-key"),
+      ),
+    ).toEqual(["role", "name", "score"]);
+    expect(root.querySelectorAll(".sui-data-table__settings-row[data-dragging]")).toHaveLength(0);
+  });
+
+  it("настройка плотности перекрывает prop и сохраняется как override", () => {
+    const handle = mount(baseProps({ density: "standard" }));
+    const root = handle.node as Element;
+    expect(root.getAttribute("data-density")).toBe("standard");
+
+    root
+      .querySelector<HTMLElement>("button[aria-label='Настройки таблицы']")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    flush();
+    const dialog = root.querySelector<HTMLElement>("dialog.sui-dialog");
+    const densitySelect = dialog?.querySelector<HTMLSelectElement>(
+      "select.sui-data-table__select",
+    );
+    if (densitySelect !== null && densitySelect !== undefined) {
+      densitySelect.value = "compact";
+      densitySelect.dispatchEvent(new Event("change", { bubbles: true }));
+      flush();
+    }
+
+    expect(root.getAttribute("data-density")).toBe("compact");
+    expect(savedSettings("people").density).toBe("compact");
+
+    handle.update(baseProps({ density: "standard" }));
+    expect(root.getAttribute("data-density")).toBe("compact");
+    handle.dispose();
+    const index = handles.indexOf(handle);
+    if (index !== -1) handles.splice(index, 1);
+
+    const remount = mount(baseProps({ density: "standard" }));
+    expect((remount.node as Element).getAttribute("data-density")).toBe("compact");
+  });
+
+  it("selection bar по умолчанию живёт в футере над пагинацией", () => {
+    const selection: DataTableSelection = {
+      selected: new Set<string | number>([1]),
+      onChange: () => {},
+      actions: <button type="button">Удалить</button>,
+    };
+    const handle = mount(baseProps({ selection }));
+    const root = handle.node as Element;
+    const footer = root.querySelector(".sui-data-table__footer");
+    const bar = footer?.querySelector(".sui-data-table__selection-bar");
+    expect(bar).not.toBeNull();
+    expect(bar?.getAttribute("data-position")).toBe("bottom");
+    const main = footer?.querySelector(".sui-data-table__footer-main");
+    expect(bar?.nextElementSibling).toBe(main);
+    expect(main?.querySelector(".sui-data-table__status")).not.toBeNull();
+    expect(main?.querySelector(".sui-data-table__pagination-controls")).not.toBeNull();
+    expect(
+      root.querySelector(".sui-data-table__toolbar .sui-data-table__selection-bar"),
+    ).toBeNull();
+  });
+
+  it("stickyFooter закрепляет и панель массовых действий", () => {
+    const selection: DataTableSelection = {
+      selected: new Set<string | number>([1]),
+      onChange: () => {},
+    };
+    const handle = mount(baseProps({ selection, stickyFooter: true }));
+    const root = handle.node as Element;
+    const footer = root.querySelector(".sui-data-table__footer");
+    expect(footer?.hasAttribute("data-sticky")).toBe(true);
+    expect(footer?.querySelector(".sui-data-table__selection-bar")).not.toBeNull();
+  });
+
+  it("selectionBarPosition=top рендерит панель над таблицей", () => {
+    const selection: DataTableSelection = {
+      selected: new Set<string | number>([1]),
+      onChange: () => {},
+    };
+    const handle = mount(baseProps({ selection, selectionBarPosition: "top" }));
+    const root = handle.node as Element;
+    const bar = root.querySelector<HTMLElement>(".sui-data-table__selection-bar");
+    expect(bar?.getAttribute("data-position")).toBe("top");
+    expect(bar?.parentElement).toBe(root);
+    expect(root.querySelector(".sui-data-table__footer .sui-data-table__selection-bar")).toBeNull();
   });
 
   it("sticky footer помечает подвал и контейнер", () => {
@@ -738,7 +1060,212 @@ describe("DataTable: настройки и раскладка", () => {
     const root = handle.node as Element;
     expect(root.getAttribute("data-sticky-footer")).not.toBeNull();
     expect(root.querySelector(".sui-data-table__footer")?.hasAttribute("data-sticky")).toBe(true);
-    expect(root.getAttribute("data-scroll")).toBe("contained");
+    expect(root.getAttribute("data-scroll")).toBe("internal");
+  });
+});
+
+describe("DataTable: пагинация и стабильная высота", () => {
+  it("показывает компактную пагинацию с краями и статусом диапазона", () => {
+    const onPageChange = vi.fn();
+    const handle = mount(baseProps({ total: 240, page: 5, pageSize: 10, onPageChange }));
+    const root = handle.node as Element;
+    expect(root.querySelector(".sui-pagination")?.getAttribute("data-size")).toBe("sm");
+    expect(root.querySelector("[data-direction='first']")).not.toBeNull();
+    expect(root.querySelector("[data-direction='last']")).not.toBeNull();
+    expect(root.querySelector(".sui-data-table__status")?.textContent).toBe("41–50 из 240");
+    expect(root.querySelector(".sui-pagination__page[aria-current='page']")?.textContent).toBe("5");
+
+    root
+      .querySelector<HTMLElement>("[data-direction='last']")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    flush();
+    expect(onPageChange).toHaveBeenLastCalledWith(24);
+
+    root
+      .querySelector<HTMLElement>("[data-direction='first']")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    flush();
+    expect(onPageChange).toHaveBeenLastCalledWith(1);
+  });
+
+  it("обновляет активную страницу и статус при изменении page", () => {
+    const handle = mount(baseProps({ total: 240, page: 1, pageSize: 10 }));
+    const root = handle.node as Element;
+    handle.update(baseProps({ total: 240, page: 5, pageSize: 10 }));
+    expect(root.querySelector(".sui-pagination__page[aria-current='page']")?.textContent).toBe("5");
+    expect(root.querySelector(".sui-data-table__status")?.textContent).toBe("41–50 из 240");
+  });
+
+  it("фиксирует высоту тела и добивает страницу строками-заполнителями", () => {
+    const handle = mount(baseProps({ total: 95, page: 10, pageSize: 10, rows: [ROWS[0]!] }));
+    const root = handle.node as Element;
+    const scroll = root.querySelector<HTMLElement>(".sui-data-table__scroll");
+    expect(scroll?.style.getPropertyValue("block-size")).toBe("608px");
+    expect(root.querySelectorAll("tr[data-filler]")).toHaveLength(9);
+    expect(root.querySelectorAll("tbody tr.sui-data-table__tr")).toHaveLength(1);
+
+    handle.update(baseProps({ total: 95, page: 10, pageSize: 10, rows: ROWS }));
+    expect(root.querySelector<HTMLElement>(".sui-data-table__scroll")?.style.getPropertyValue("block-size")).toBe("608px");
+    expect(root.querySelectorAll("tr[data-filler]")).toHaveLength(7);
+  });
+
+  it("skeleton-строки совпадают по высоте с данными", () => {
+    const handle = mount(baseProps({ rows: [], loading: true, total: 95, pageSize: 10 }));
+    const root = handle.node as Element;
+    expect(root.querySelectorAll("tr[data-skeleton]")).toHaveLength(10);
+    expect(root.querySelector<HTMLElement>(".sui-data-table__scroll")?.style.getPropertyValue("block-size")).toBe("608px");
+    expect(root.querySelectorAll("tr[data-filler]")).toHaveLength(0);
+  });
+
+  it("компактная плотность меняет высоту строки и тела", () => {
+    const handle = mount(baseProps({ density: "compact", total: 95, pageSize: 10 }));
+    const root = handle.node as Element;
+    expect(root.getAttribute("data-density")).toBe("compact");
+    expect(root.querySelector<HTMLElement>(".sui-data-table__scroll")?.style.getPropertyValue("block-size")).toBe("528px");
+  });
+});
+
+describe("DataTable: режим прокрутки", () => {
+  it("по умолчанию internal, переключается и сохраняется", () => {
+    const handle = mount(baseProps());
+    const root = handle.node as Element;
+    expect(root.getAttribute("data-scroll")).toBe("internal");
+    expect(
+      root.querySelector("[data-action='toggle-scroll-mode']")?.textContent,
+    ).toBe("Скролл: внутри");
+
+    root
+      .querySelector<HTMLElement>("[data-action='toggle-scroll-mode']")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    flush();
+    expect(root.getAttribute("data-scroll")).toBe("external");
+    expect(savedSettings("people").scrollMode).toBe("external");
+
+    handle.dispose();
+    const index = handles.indexOf(handle);
+    if (index !== -1) handles.splice(index, 1);
+    const remount = mount(baseProps({ tableKey: "people" }));
+    expect((remount.node as Element).getAttribute("data-scroll")).toBe("external");
+  });
+
+  it("настройка прокрутки в диалоге пишется в localStorage", () => {
+    const handle = mount(baseProps({ scrollMode: "external" }));
+    const root = handle.node as Element;
+    expect(root.getAttribute("data-scroll")).toBe("external");
+    root
+      .querySelector<HTMLElement>("button[aria-label='Настройки таблицы']")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    flush();
+    const select = root.querySelector<HTMLSelectElement>("select[data-setting='scroll-mode']");
+    if (select === null) throw new Error("нет настройки прокрутки");
+    select.value = "internal";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    flush();
+    expect(root.getAttribute("data-scroll")).toBe("internal");
+    expect(savedSettings("people").scrollMode).toBe("internal");
+  });
+});
+
+describe("DataTable: виртуализация", () => {
+  const MANY = Array.from({ length: 1000 }, (_value, index) => ({
+    id: index + 1,
+    name: `Строка ${String(index + 1)}`,
+    role: "Инженер",
+    score: index,
+  }));
+
+  it("рендерит окно видимых строк и спейсеры вместо 1000 строк", () => {
+    const handle = mount(baseProps({ rows: MANY, total: 1000, pageSize: 1000 }));
+    const root = handle.node as Element;
+    expect(root.hasAttribute("data-virtual")).toBe(true);
+    const rendered = root.querySelectorAll("tbody tr.sui-data-table__tr[data-key]");
+    expect(rendered.length).toBeGreaterThan(0);
+    expect(rendered.length).toBeLessThan(100);
+    expect(root.querySelector("tr[data-spacer]")).not.toBeNull();
+    expect(root.querySelector("table")?.getAttribute("aria-rowcount")).toBe("1001");
+  });
+
+  it("scrollToRow прокручивает окно к последней строке", () => {
+    let api: { scrollToRow: (key: string | number) => void } | null = null;
+    const handle = mount(
+      baseProps({
+        rows: MANY,
+        total: 1000,
+        pageSize: 1000,
+        onReady: (next: { scrollToRow: (key: string | number) => void }) => {
+          api = next;
+        },
+      }),
+    );
+    const root = handle.node as Element;
+    if (api === null) throw new Error("API не передан");
+    (api as { scrollToRow: (key: string | number) => void }).scrollToRow(1000);
+    flush();
+    expect(root.querySelector("tbody tr[data-key='1000']")).not.toBeNull();
+  });
+});
+
+describe("DataTable: inline-редактирование", () => {
+  it("двойной клик открывает редактор, Enter сохраняет значение", () => {
+    const onCellEdit = vi.fn();
+    const columns: readonly DataTableColumn<Row>[] = COLUMNS.map((column) =>
+      column.key === "name" ? { ...column, editable: true } : column,
+    );
+    const handle = mount(baseProps({ columns, onCellEdit }));
+    const root = handle.node as Element;
+    const cell = root.querySelector<HTMLElement>("tbody tr td[data-editable]");
+    if (cell === null) throw new Error("нет редактируемой ячейки");
+    cell.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+    flush();
+    const input = cell.querySelector<HTMLInputElement>("input.sui-data-table__cell-editor");
+    if (input === null) throw new Error("редактор не открылся");
+    input.value = "Ада Ловлейс";
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    flush();
+    expect(onCellEdit).toHaveBeenCalledWith({
+      row: ROWS[0],
+      key: "name",
+      value: "Ада Ловлейс",
+      rowKey: 1,
+    });
+    expect(cell.querySelector("input.sui-data-table__cell-editor")).toBeNull();
+  });
+});
+
+describe("DataTable: перенос узлов дерева", () => {
+  it("перетаскивает строку с грипа и сообщает позицию drop", () => {
+    const onMove = vi.fn();
+    const handle = mount(
+      treeProps({
+        tree: {
+          getChildren: TREE_CHILDREN,
+          defaultExpandedKeys: [1],
+          onMove,
+        },
+      }),
+    );
+    const root = handle.node as Element;
+    const rows = Array.from(root.querySelectorAll<HTMLElement>("tbody tr[data-key]"));
+    rows.forEach((row, index) => {
+      stubRect(row, { left: 0, top: index * 56, width: 600, height: 56 });
+    });
+    const source = root.querySelector<HTMLElement>("tbody tr[data-key='2']");
+    const grip = source?.querySelector<HTMLElement>(".sui-data-table__row-grip");
+    if (grip === null || grip === undefined) throw new Error("нет грипа строки");
+
+    pointer(grip, "pointerdown", 20, 70);
+    pointer(document, "pointermove", 20, 180);
+    flush();
+    expect(root.querySelector("tr[data-drop='before']")).not.toBeNull();
+    pointer(document, "pointerup", 20, 180);
+    flush();
+
+    expect(onMove).toHaveBeenCalledTimes(1);
+    expect(onMove).toHaveBeenCalledWith({
+      row: TREE_ROWS.find((row) => row.id === 2),
+      target: TREE_ROWS.find((row) => row.id === 4),
+      position: "before",
+    });
   });
 });
 

@@ -5,6 +5,7 @@ import {
   formatColor,
   hslToRgb,
   hsvToRgb,
+  isValidColor,
   parseColor,
   rgbToHsl,
   rgbToHsv,
@@ -70,6 +71,19 @@ describe("ColorPicker: преобразования", () => {
     expect(parseColor("rgb(300, 0, 0)")?.r).toBe(255);
   });
 
+  it("парсит HEX в любом регистре, с # и без, 3/4/6/8 цифр", () => {
+    expect(parseColor("#1f6b45")).toEqual({ r: 31, g: 107, b: 69, a: 1 });
+    expect(parseColor("#1F6B45")).toEqual({ r: 31, g: 107, b: 69, a: 1 });
+    expect(parseColor("1f6b45")).toEqual({ r: 31, g: 107, b: 69, a: 1 });
+    expect(parseColor("#F0A")).toEqual({ r: 255, g: 0, b: 170, a: 1 });
+    expect(parseColor("#f0a8")?.a).toBeCloseTo(0.533, 2);
+    expect(parseColor("#1f6b4580")?.a).toBeCloseTo(0.502, 2);
+    expect(isValidColor("#1f6b45")).toBe(true);
+    expect(isValidColor("#F0A")).toBe(true);
+    expect(isValidColor("#1f6b4")).toBe(false);
+    expect(isValidColor("#1f6b45ff00")).toBe(false);
+  });
+
   it("форматирует в выбранный формат и учитывает alpha", () => {
     const color = { r: 255, g: 0, b: 0, a: 0.5 };
     expect(formatColor(color, "hex")).toBe("#ff0000");
@@ -104,8 +118,25 @@ describe("ColorPicker: ввод и alpha", () => {
     expect(trigger.textContent).toContain("#ff0000");
     expect(trigger.getAttribute("aria-haspopup")).toBe("dialog");
     const swatch = query<HTMLElement>(root, ".sui-color-picker__swatch");
-    expect(swatch.style.getPropertyValue("background-color")).toContain("255");
+    expect(swatch.style.getPropertyValue("--sui-color-picker-swatch")).toContain("255");
+    expect(swatch.hasAttribute("data-empty")).toBe(false);
     expect(query<HTMLInputElement>(root, 'input[type="hidden"]').value).toBe("#ff0000");
+  });
+
+  it("заполняет swatch для HEX в нижнем регистре", () => {
+    const root = rootOf(
+      mount(handles, ColorPicker, {
+        label: "Цвет",
+        defaultValue: "#1f6b45",
+      }),
+    );
+    flush();
+    const swatch = query<HTMLElement>(root, ".sui-color-picker__swatch");
+    expect(swatch.style.getPropertyValue("--sui-color-picker-swatch")).toBe(
+      "rgba(31, 107, 69, 1)",
+    );
+    expect(swatch.hasAttribute("data-empty")).toBe(false);
+    expect(query(root, "button.sui-color-picker__control").textContent).toContain("#1f6b45");
   });
 
   it("принимает HEX/RGB/HSL из текстового поля", () => {

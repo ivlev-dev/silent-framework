@@ -65,6 +65,13 @@
     display: none;
   }
 
+  .sui-popup[data-floating-layer] {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    transform: none;
+  }
+
   .sui-popup__search {
     flex: none;
     margin-block-end: var(--sui-space-1);

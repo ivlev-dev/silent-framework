@@ -1,5 +1,6 @@
 export { DataTable } from "./data-table.js";
 export {
+  DATA_TABLE_SETTINGS_VERSION,
   DATA_TABLE_STORAGE_PREFIX,
   DEFAULT_COLUMN_MAX_WIDTH,
   DEFAULT_COLUMN_MIN_WIDTH,
@@ -13,21 +14,27 @@ export {
   readDataTableSettings,
   resolveColumnWidth,
   resolveColumnWidths,
+  resolveScrollMode,
   writeDataTableSettings,
 } from "./settings.js";
 export type { DataTableSettings } from "./settings.js";
 export type {
   DataTableAlign,
+  DataTableApi,
   DataTableCardColumn,
   DataTableCardContext,
   DataTableCardSlot,
+  DataTableCellEdit,
   DataTableColumn,
   DataTableDensity,
   DataTableLayout,
   DataTableProps,
+  DataTableResolvedScrollMode,
   DataTableScrollMode,
   DataTableSelection,
   DataTableSelectionBarPosition,
   DataTableSortDirection,
   DataTableTree,
+  DataTableTreeDropPosition,
+  DataTableTreeMove,
 } from "./types.js";

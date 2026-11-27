@@ -1,22 +1,31 @@
 /*
- * DataTable: серверная таблица с ресайзом, перестановкой колонок и
- * пагинацией. На широких экранах — обычная таблица с липким заголовком;
- * на узких (до 840px) контейнер прокручивается по горизонтали, сохраняя
- * минимальную ширину колонок и не раздувая страницу. Виртуализации нет:
- * на страницу приходится не больше 100 строк.
+ * DataTable: серверная таблица с ресайзом, перестановкой колонок, деревом,
+ * карточками и пагинацией.
+ *
+ * Геометрия фиксирована: заголовок 48px, стандартная строка 56px, компактная
+ * 48px. Высота тела не зависит от количества строк на странице — пустые
+ * строки-заполнители удерживают каркас, поэтому смена страницы и загрузка не
+ * вызывают скачка раскладки.
+ *
+ * По умолчанию прокрутка внутренняя: тело таблицы скроллится, шапка и подвал
+ * остаются на месте. `overscroll-behavior: auto` передаёт прокрутку странице
+ * на границах. `data-scroll="external"` возвращает прокрутку страницы.
+ *
+ * Hover строки — только фон. Рамок и обводок при наведении нет.
  */
 @layer sui.components {
   .sui-data-table {
     --sui-data-table-border-color: var(--sui-color-outline-variant);
-    --sui-data-table-header-bg: var(--sui-color-surface-container-high);
+    --sui-data-table-surface: var(--sui-color-surface-container-lowest);
+    --sui-data-table-header-bg: var(--sui-color-surface-container-low);
     --sui-data-table-header-color: var(--sui-color-on-surface-variant);
     --sui-data-table-row-hover-bg: var(--sui-color-surface-container);
     --sui-data-table-row-selected-bg: var(--sui-color-secondary-container);
-    --sui-data-table-cell-padding-block: var(--sui-space-3);
+    --sui-data-table-row-selected-color: var(--sui-color-on-secondary-container);
+    --sui-data-table-row-size: 3.5rem;
+    --sui-data-table-head-size: 3rem;
+    --sui-data-table-page-rows: 10;
     --sui-data-table-cell-padding-inline: var(--sui-space-4);
-    --sui-data-table-row-block: calc(
-      var(--sui-control-height-lg) * var(--sui-density)
-    );
     --sui-data-table-muted: var(--sui-color-on-surface-variant);
     --sui-data-table-toolbar-gap: var(--sui-space-3);
     --sui-data-table-max-block: 70vh;
@@ -34,10 +43,18 @@
     line-height: var(--sui-type-body-medium-line);
   }
 
+  .sui-data-table[data-density="compact"] {
+    --sui-data-table-row-size: 3rem;
+    --sui-data-table-cell-padding-inline: var(--sui-space-3);
+
+    font-size: var(--sui-type-body-small-size);
+  }
+
+  /* --- тулбар -------------------------------------------------------- */
   .sui-data-table__toolbar {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--sui-space-3);
+    gap: var(--sui-data-table-toolbar-gap);
     align-items: center;
     justify-content: space-between;
     min-inline-size: 0;
@@ -59,6 +76,10 @@
     align-items: center;
     justify-content: flex-end;
     min-inline-size: 0;
+  }
+
+  .sui-data-table__scroll-toggle {
+    white-space: nowrap;
   }
 
   .sui-data-table__view-toggle {
@@ -165,47 +186,50 @@
     overflow-wrap: anywhere;
   }
 
+  /* --- прокрутка ----------------------------------------------------- */
   .sui-data-table__scroll {
     position: relative;
-    border: var(--sui-hairline) solid var(--sui-data-table-border-color);
-    border-radius: var(--sui-radius-card);
-    background-color: var(--sui-color-surface);
-  }
-
-  .sui-data-table__thead .sui-data-table__th:first-child {
-    border-start-start-radius: var(--sui-radius-card);
-  }
-
-  .sui-data-table__thead .sui-data-table__th:last-child {
-    border-start-end-radius: var(--sui-radius-card);
-  }
-
-  .sui-data-table[data-scroll="contained"] .sui-data-table__scroll {
-    max-block-size: var(--sui-data-table-max-block, 70vh);
-    overflow: auto;
-    overscroll-behavior: contain;
-    scrollbar-width: thin;
-  }
-
-  .sui-data-table__reset {
-    flex: none;
-  }
-
-  .sui-data-table__scroll {
     max-inline-size: 100%;
     min-inline-size: 0;
+    border: var(--sui-hairline) solid var(--sui-data-table-border-color);
+    border-radius: var(--sui-radius-none);
+    background-color: var(--sui-data-table-surface);
+    /* Стабильный желоб: появление скроллбара не сдвигает колонки. */
+    scrollbar-gutter: stable;
+  }
+
+  /* Внутренний скролл: фиксированная высота тела, шапка и подвал на месте. */
+  .sui-data-table[data-scroll="internal"] .sui-data-table__scroll {
+    max-block-size: var(--sui-data-table-max-block);
+    overflow: auto;
+    /* На границах прокрутка уходит странице (scroll chaining). */
+    overscroll-behavior: auto;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sui-data-table[data-scroll="external"] .sui-data-table__scroll {
+    overflow: visible;
   }
 
   @media (max-width: 52.5em) {
     .sui-data-table__scroll {
       overflow-x: auto;
-      overscroll-behavior-inline: contain;
+      overscroll-behavior-inline: auto;
       scrollbar-width: thin;
       -webkit-overflow-scrolling: touch;
     }
 
+    .sui-data-table[data-scroll="internal"] .sui-data-table__scroll {
+      overflow-x: auto;
+    }
+
     .sui-data-table__table {
       min-inline-size: var(--sui-data-table-min-inline);
+    }
+
+    .sui-data-table__scroll-toggle {
+      display: none;
     }
   }
 
@@ -213,18 +237,25 @@
     inline-size: 100%;
     max-inline-size: 100%;
     min-inline-size: 0;
+    border-radius: var(--sui-radius-none);
     border-collapse: separate;
     border-spacing: 0;
     table-layout: fixed;
+    background-color: var(--sui-data-table-surface);
   }
 
+  .sui-data-table__col {
+    min-inline-size: 0;
+  }
+
+  /* --- заголовок ----------------------------------------------------- */
   .sui-data-table__thead .sui-data-table__th {
     position: sticky;
     inset-block-start: 0;
     z-index: 2;
-    block-size: var(--sui-data-table-row-block, calc(var(--sui-control-height-lg) * var(--sui-density)));
-    padding: var(--sui-data-table-cell-padding-block)
-      var(--sui-data-table-cell-padding-inline);
+    box-sizing: border-box;
+    block-size: var(--sui-data-table-head-size);
+    padding: 0 var(--sui-data-table-cell-padding-inline);
     border-block-end: var(--sui-hairline) solid var(--sui-data-table-border-color);
     background-color: var(--sui-data-table-header-bg);
     color: var(--sui-data-table-header-color);
@@ -234,16 +265,6 @@
     letter-spacing: var(--sui-type-label-large-tracking);
     text-align: start;
     vertical-align: middle;
-  }
-
-  .sui-data-table__th[data-dragging] {
-    z-index: 3;
-    opacity: 0.9;
-    box-shadow: var(--sui-elevation-2);
-  }
-
-  .sui-data-table__th[data-over] {
-    background-color: var(--sui-color-surface-container-high);
   }
 
   .sui-data-table__th-inner {
@@ -259,48 +280,6 @@
 
   .sui-data-table__th[data-align="end"] .sui-data-table__th-inner {
     justify-content: flex-end;
-  }
-
-  .sui-data-table__drag-handle {
-    display: inline-flex;
-    flex: none;
-    align-items: center;
-    justify-content: center;
-    inline-size: var(--sui-space-6);
-    block-size: var(--sui-space-6);
-    margin: 0;
-    padding: 0;
-    border: 0;
-    border-radius: var(--sui-radius-xs);
-    background: transparent;
-    color: var(--sui-data-table-muted);
-    cursor: grab;
-    touch-action: none;
-    opacity: 0;
-    transition: opacity var(--sui-motion-short-2) var(--sui-easing-standard);
-  }
-
-  .sui-data-table__drag-handle svg {
-    inline-size: var(--sui-space-4);
-    block-size: var(--sui-space-4);
-    fill: currentColor;
-  }
-
-  .sui-data-table__th:hover .sui-data-table__drag-handle,
-  .sui-data-table__drag-handle:focus-visible,
-  .sui-data-table__th[data-dragging] .sui-data-table__drag-handle {
-    opacity: 1;
-  }
-
-  .sui-data-table__drag-handle:active {
-    cursor: grabbing;
-  }
-
-  .sui-data-table__drag-handle:focus-visible,
-  .sui-data-table__sort:focus-visible,
-  .sui-data-table__resizer:focus-visible {
-    outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
-    outline-offset: var(--sui-focus-ring-offset);
   }
 
   .sui-data-table__sort {
@@ -375,6 +354,7 @@
     border: 0;
   }
 
+  /* --- ресайз -------------------------------------------------------- */
   .sui-data-table__resizer {
     position: absolute;
     inset-block: 0;
@@ -408,199 +388,6 @@
     opacity: 1;
   }
 
-  .sui-data-table__tr {
-    transition: background-color var(--sui-motion-short-2) var(--sui-easing-standard);
-  }
-
-  .sui-data-table__tr:focus-visible {
-    outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
-    outline-offset: calc(var(--sui-focus-ring-offset) * -1);
-  }
-
-  .sui-data-table__td {
-    box-sizing: border-box;
-    block-size: var(--sui-data-table-row-block, calc(var(--sui-control-height-lg) * var(--sui-density)));
-    padding: var(--sui-data-table-cell-padding-block)
-      var(--sui-data-table-cell-padding-inline);
-    border-block-end: var(--sui-hairline) solid var(--sui-data-table-border-color);
-    text-align: start;
-    vertical-align: middle;
-  }
-
-  .sui-data-table__tbody .sui-data-table__tr:hover {
-    background-color: var(--sui-data-table-row-hover-bg);
-  }
-
-  .sui-data-table__tr[data-selected] {
-    background-color: var(--sui-data-table-row-selected-bg);
-  }
-
-  .sui-data-table__td[data-align="center"] {
-    text-align: center;
-  }
-
-  .sui-data-table__td[data-align="end"] {
-    text-align: end;
-  }
-
-  .sui-data-table__td[data-select],
-  .sui-data-table__th[data-select] {
-    inline-size: var(--sui-space-9);
-    padding-inline: var(--sui-space-3);
-    text-align: center;
-  }
-
-  .sui-data-table__cell-content {
-    display: block;
-    min-inline-size: 0;
-    overflow-wrap: anywhere;
-  }
-
-  .sui-data-table__td[data-truncate] .sui-data-table__cell-content {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .sui-data-table__checkbox {
-    inline-size: var(--sui-space-4);
-    block-size: var(--sui-space-4);
-    margin: 0;
-    accent-color: var(--sui-color-primary);
-    cursor: pointer;
-  }
-
-  .sui-data-table__state-cell {
-    padding: var(--sui-space-6) var(--sui-space-4);
-    border-block-end: var(--sui-hairline) solid var(--sui-data-table-border-color);
-    color: var(--sui-data-table-muted);
-    text-align: center;
-  }
-
-  .sui-data-table__empty {
-    display: flex;
-    justify-content: center;
-  }
-
-  .sui-data-table__error {
-    display: grid;
-    gap: var(--sui-space-1);
-    justify-items: center;
-    color: var(--sui-color-error);
-    overflow-wrap: anywhere;
-  }
-
-  .sui-data-table__tr[data-skeleton] {
-    pointer-events: none;
-  }
-
-  .sui-data-table[data-density="compact"] {
-    --sui-data-table-cell-padding-block: var(--sui-space-2);
-    --sui-data-table-cell-padding-inline: var(--sui-space-3);
-    --sui-data-table-row-block: var(--sui-touch-target);
-
-    font-size: var(--sui-type-body-small-size);
-  }
-
-  .sui-data-table__footer {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--sui-space-3);
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .sui-data-table__footer[data-sticky] {
-    position: sticky;
-    inset-block-end: 0;
-    z-index: 3;
-    padding-block: var(--sui-space-2);
-    border-block-start: var(--sui-hairline) solid
-      var(--sui-data-table-border-color);
-    background-color: var(--sui-color-surface);
-  }
-
-  .sui-data-table__status {
-    color: var(--sui-data-table-muted);
-    font-size: var(--sui-type-body-small-size);
-  }
-
-  .sui-data-table__pagination-controls {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--sui-space-2);
-    align-items: center;
-    min-inline-size: 0;
-  }
-
-  .sui-data-table__page-size {
-    color: var(--sui-data-table-muted);
-    font-size: var(--sui-type-body-small-size);
-  }
-
-  .sui-data-table__select {
-    min-block-size: var(--sui-space-7);
-    padding-block: var(--sui-space-1);
-    padding-inline: var(--sui-space-2);
-    border: var(--sui-hairline) solid var(--sui-data-table-border-color);
-    border-radius: var(--sui-radius-xs);
-    background-color: var(--sui-color-surface);
-    color: var(--sui-color-on-surface);
-    font: inherit;
-    font-size: var(--sui-type-body-small-size);
-  }
-
-  .sui-data-table__select:focus-visible {
-    outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
-    outline-offset: var(--sui-focus-ring-offset);
-  }
-
-
-  /* --- перетаскивание и ресайз -------------------------------------- */
-  .sui-data-table__th[data-reorderable] {
-    cursor: grab;
-    user-select: none;
-  }
-
-  .sui-data-table__th[data-reorderable]:focus-visible {
-    outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
-    outline-offset: calc(var(--sui-focus-ring-offset) * -1);
-  }
-
-  .sui-data-table__th[data-dragging] {
-    opacity: 0.72;
-    cursor: grabbing;
-  }
-
-  .sui-data-table__th[data-over] {
-    box-shadow: inset 0 0 0 var(--sui-focus-ring-width)
-      var(--sui-color-primary);
-  }
-
-  .sui-data-table__drag-grip {
-    display: inline-flex;
-    flex: none;
-    align-items: center;
-    justify-content: center;
-    inline-size: var(--sui-space-4);
-    block-size: var(--sui-space-4);
-    color: var(--sui-data-table-muted);
-    opacity: 0;
-    transition: opacity var(--sui-motion-short-2) var(--sui-easing-standard);
-  }
-
-  .sui-data-table__drag-grip svg {
-    inline-size: var(--sui-space-3);
-    block-size: var(--sui-space-3);
-    fill: currentColor;
-  }
-
-  .sui-data-table__th:hover .sui-data-table__drag-grip,
-  .sui-data-table__th[data-dragging] .sui-data-table__drag-grip,
-  .sui-data-table__th:focus-visible .sui-data-table__drag-grip {
-    opacity: 1;
-  }
-
   .sui-data-table__resizer[data-active] {
     background-color: var(--sui-color-primary-container);
   }
@@ -631,7 +418,140 @@
     cursor: col-resize;
   }
 
-  /* --- числовые ячейки ---------------------------------------------- */
+  /* --- перетаскивание колонок ---------------------------------------- */
+  .sui-data-table__th[data-reorderable] {
+    cursor: grab;
+    user-select: none;
+    transition:
+      opacity var(--sui-motion-short-2) var(--sui-easing-standard),
+      background-color var(--sui-motion-short-2) var(--sui-easing-standard);
+  }
+
+  .sui-data-table__th[data-reorderable]:hover {
+    background-color: var(--sui-color-surface-container);
+  }
+
+  .sui-data-table__th[data-reorderable]:active {
+    cursor: grabbing;
+  }
+
+  .sui-data-table__th[data-reorderable] .sui-data-table__sort {
+    cursor: inherit;
+  }
+
+  .sui-data-table__th[data-reorderable]:focus-visible {
+    outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
+    outline-offset: calc(var(--sui-focus-ring-offset) * -1);
+  }
+
+  /* Сам заголовок следует за курсором; DOM не перестраивается до drop. */
+  .sui-data-table__th[data-dragging] {
+    z-index: 30;
+    opacity: 1;
+    cursor: grabbing;
+    background-color: var(--sui-color-surface-container-highest);
+    box-shadow: var(--sui-elevation-4);
+    will-change: transform;
+  }
+
+  .sui-data-table__th[data-armed] {
+    box-shadow: inset 0 0 0 var(--sui-focus-ring-width) var(--sui-color-primary);
+  }
+
+  /* Индикатор места вставки: линия на границе колонки. */
+  .sui-data-table__drop-indicator {
+    position: absolute;
+    inset-block: var(--sui-space-1);
+    inline-size: 2px;
+    border-radius: var(--sui-radius-full);
+    background-color: var(--sui-color-primary);
+    pointer-events: none;
+    z-index: 4;
+  }
+
+  .sui-data-table__drop-indicator[data-edge="before"] {
+    inset-inline-start: -1px;
+  }
+
+  .sui-data-table__drop-indicator[data-edge="after"] {
+    inset-inline-end: -1px;
+  }
+
+  /* --- строки и ячейки ----------------------------------------------- */
+  .sui-data-table__tr {
+    block-size: var(--sui-data-table-row-size);
+    transition: background-color var(--sui-motion-short-2) var(--sui-easing-standard);
+  }
+
+  .sui-data-table__tr:focus-visible {
+    outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
+    outline-offset: calc(var(--sui-focus-ring-offset) * -1);
+  }
+
+  .sui-data-table__td {
+    box-sizing: border-box;
+    block-size: var(--sui-data-table-row-size);
+    padding: 0 var(--sui-data-table-cell-padding-inline);
+    border-block-end: var(--sui-hairline) solid var(--sui-data-table-border-color);
+    text-align: start;
+    vertical-align: middle;
+  }
+
+  .sui-data-table__tbody .sui-data-table__tr:last-child .sui-data-table__td {
+    border-block-end: 0;
+  }
+
+  /* Hover — только фон. Никаких рамок и outline. */
+  .sui-data-table__tbody .sui-data-table__tr:hover {
+    background-color: var(--sui-data-table-row-hover-bg);
+  }
+
+  .sui-data-table__tr[data-selected],
+  .sui-data-table__tr[data-selected]:hover {
+    background-color: var(--sui-data-table-row-selected-bg);
+    color: var(--sui-data-table-row-selected-color);
+  }
+
+  .sui-data-table__td[data-align="center"],
+  .sui-data-table__th[data-align="center"] {
+    text-align: center;
+  }
+
+  .sui-data-table__td[data-align="end"],
+  .sui-data-table__th[data-align="end"] {
+    text-align: end;
+  }
+
+  .sui-data-table__td[data-select],
+  .sui-data-table__th[data-select] {
+    inline-size: var(--sui-space-9);
+    padding-inline: var(--sui-space-3);
+    text-align: center;
+  }
+
+  .sui-data-table__td[data-grip],
+  .sui-data-table__th[data-grip] {
+    inline-size: var(--sui-space-8);
+    padding-inline: var(--sui-space-1);
+    text-align: center;
+  }
+
+  .sui-data-table__cell-content {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sui-space-1);
+    align-items: center;
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .sui-data-table__td[data-truncate] .sui-data-table__cell-content {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .sui-data-table__td[data-numeric] {
     font-variant-numeric: tabular-nums;
   }
@@ -639,6 +559,87 @@
   .sui-data-table__td .sui-tag,
   .sui-data-table__td .sui-chip {
     white-space: nowrap;
+    text-decoration: none;
+  }
+
+  .sui-data-table__checkbox {
+    inline-size: var(--sui-space-4);
+    block-size: var(--sui-space-4);
+    margin: 0;
+    accent-color: var(--sui-color-primary);
+    cursor: pointer;
+    vertical-align: middle;
+  }
+
+  .sui-data-table__state-cell {
+    padding: var(--sui-space-6) var(--sui-space-4);
+    border-block-end: var(--sui-hairline) solid var(--sui-data-table-border-color);
+    color: var(--sui-data-table-muted);
+    text-align: center;
+  }
+
+  .sui-data-table__empty {
+    display: flex;
+    justify-content: center;
+  }
+
+  .sui-data-table__error {
+    display: grid;
+    gap: var(--sui-space-1);
+    justify-items: center;
+    color: var(--sui-color-error);
+    overflow-wrap: anywhere;
+  }
+
+  .sui-data-table__tr[data-skeleton] {
+    pointer-events: none;
+  }
+
+  /* Заполнители держат высоту страницы; спейсеры — окно виртуализации. */
+  .sui-data-table__spacer-cell,
+  .sui-data-table__filler .sui-data-table__td {
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  .sui-data-table__spacer {
+    block-size: auto;
+  }
+
+  .sui-data-table__filler {
+    block-size: var(--sui-data-table-row-size);
+  }
+
+  .sui-data-table__filler .sui-data-table__spacer-cell {
+    block-size: var(--sui-data-table-row-size);
+  }
+
+  .sui-data-table[data-virtual] .sui-data-table__td {
+    /* Виртуализированные строки не зависят от высоты содержимого. */
+    overflow: hidden;
+  }
+
+  /* --- inline-редактирование ----------------------------------------- */
+  .sui-data-table__td[data-editable] {
+    cursor: text;
+  }
+
+  .sui-data-table__cell-editor {
+    box-sizing: border-box;
+    inline-size: 100%;
+    block-size: calc(var(--sui-data-table-row-size) - var(--sui-space-4));
+    padding: 0 var(--sui-space-2);
+    border: var(--sui-hairline) solid var(--sui-color-primary);
+    border-radius: var(--sui-radius-xs);
+    background-color: var(--sui-data-table-surface);
+    color: var(--sui-color-on-surface);
+    font: inherit;
+  }
+
+  .sui-data-table__cell-editor:focus {
+    outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
+    outline-offset: 0;
   }
 
   /* --- дерево -------------------------------------------------------- */
@@ -685,7 +686,150 @@
     inline-size: var(--sui-space-6);
   }
 
-  /* --- массовые действия -------------------------------------------- */
+  .sui-data-table__row-grip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: var(--sui-space-6);
+    block-size: var(--sui-space-6);
+    padding: 0;
+    border: 0;
+    border-radius: var(--sui-radius-sm);
+    background: transparent;
+    color: var(--sui-data-table-muted);
+    cursor: grab;
+    touch-action: none;
+    opacity: 0;
+    transition: opacity var(--sui-motion-short-2) var(--sui-easing-standard);
+  }
+
+  .sui-data-table__row-grip svg {
+    inline-size: var(--sui-space-3);
+    block-size: var(--sui-space-3);
+    fill: currentColor;
+  }
+
+  .sui-data-table__tr:hover .sui-data-table__row-grip,
+  .sui-data-table__row-grip:focus-visible,
+  .sui-data-table__tr[data-row-dragging] .sui-data-table__row-grip {
+    opacity: 1;
+  }
+
+  .sui-data-table__row-grip:active {
+    cursor: grabbing;
+  }
+
+  .sui-data-table__row-grip:focus-visible {
+    outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
+    outline-offset: 0;
+  }
+
+  /* Индикатор переноса узла: линия сверху/снизу или подсветка «внутрь». */
+  .sui-data-table__tr[data-drop="before"] > .sui-data-table__td {
+    box-shadow: inset 0 2px 0 0 var(--sui-color-primary);
+  }
+
+  .sui-data-table__tr[data-drop="after"] > .sui-data-table__td {
+    box-shadow: inset 0 -2px 0 0 var(--sui-color-primary);
+  }
+
+  .sui-data-table__tr[data-drop="inside"] {
+    background-color: var(--sui-color-primary-container);
+    color: var(--sui-color-on-primary-container);
+  }
+
+  .sui-data-table__tr[data-row-dragging] {
+    opacity: 0.6;
+  }
+
+  /* --- подвал и пагинация -------------------------------------------- */
+  .sui-data-table__footer {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sui-space-2);
+    min-inline-size: 0;
+    border-radius: var(--sui-radius-none);
+  }
+
+  .sui-data-table__footer-main {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: var(--sui-space-3);
+    align-items: center;
+    justify-content: space-between;
+    min-inline-size: 0;
+    min-block-size: var(--sui-control-height-sm);
+  }
+
+  .sui-data-table__footer[data-sticky] {
+    position: sticky;
+    inset-block-end: 0;
+    z-index: 3;
+    padding-block: var(--sui-space-2);
+    border-block-start: var(--sui-hairline) solid var(--sui-data-table-border-color);
+    background-color: var(--sui-data-table-surface);
+  }
+
+  .sui-data-table__status {
+    flex: 0 0 auto;
+    color: var(--sui-data-table-muted);
+    font-size: var(--sui-type-body-small-size);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .sui-data-table__pagination-controls {
+    display: flex;
+    flex: 0 1 auto;
+    flex-wrap: nowrap;
+    gap: var(--sui-space-2);
+    align-items: center;
+    justify-content: flex-end;
+    min-inline-size: 0;
+  }
+
+  .sui-data-table__pagination-controls .sui-pagination__list {
+    justify-content: flex-end;
+  }
+
+  .sui-data-table__page-size {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+  }
+
+  .sui-data-table__select {
+    block-size: var(--sui-control-height-sm);
+    min-block-size: var(--sui-control-height-sm);
+    padding-block: 0;
+    padding-inline: var(--sui-space-2);
+    border: var(--sui-hairline) solid var(--sui-data-table-border-color);
+    border-radius: var(--sui-radius-xs);
+    background-color: var(--sui-data-table-surface);
+    color: var(--sui-color-on-surface);
+    font: inherit;
+    font-size: var(--sui-type-body-small-size);
+  }
+
+  .sui-data-table__select:focus-visible {
+    outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
+    outline-offset: var(--sui-focus-ring-offset);
+  }
+
+  .sui-data-table__footer[data-selection] .sui-data-table__footer-main {
+    visibility: hidden;
+  }
+
+  .sui-data-table__footer .sui-data-table__selection-bar {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    align-content: center;
+    border-radius: var(--sui-radius-none);
+  }
+
+  /* --- массовые действия --------------------------------------------- */
   .sui-data-table__selection-bar {
     display: flex;
     flex-wrap: wrap;
@@ -713,6 +857,7 @@
     font-size: var(--sui-type-label-large-size);
     font-weight: var(--sui-type-label-large-weight);
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 
   .sui-data-table__selection-actions {
@@ -743,9 +888,12 @@
     padding: var(--sui-space-5);
     border: var(--sui-hairline) solid var(--sui-data-table-border-color);
     border-radius: var(--sui-radius-card);
-    background-color: var(--sui-color-surface-container-low);
+    background-color: var(--sui-data-table-surface);
     color: var(--sui-color-on-surface);
     cursor: default;
+    /* Большие наборы: браузер не верстает и не красит невидимые карточки. */
+    content-visibility: auto;
+    contain-intrinsic-block-size: auto 11rem;
   }
 
   .sui-data-table__card[data-selected] {
@@ -837,6 +985,7 @@
     padding: var(--sui-space-5);
     border: var(--sui-hairline) solid var(--sui-data-table-border-color);
     border-radius: var(--sui-radius-card);
+    background-color: var(--sui-data-table-surface);
   }
 
   .sui-data-table__card-expander {
@@ -871,16 +1020,73 @@
   }
 
   .sui-data-table__settings-row {
+    position: relative;
     display: flex;
     gap: var(--sui-space-2);
     align-items: center;
     min-inline-size: 0;
     padding: var(--sui-space-1) var(--sui-space-2);
     border-radius: var(--sui-radius-sm);
+    cursor: grab;
+    user-select: none;
+    transition:
+      background-color var(--sui-motion-short-2) var(--sui-easing-standard),
+      opacity var(--sui-motion-short-2) var(--sui-easing-standard),
+      box-shadow var(--sui-motion-short-2) var(--sui-easing-standard);
   }
 
   .sui-data-table__settings-row:hover {
     background-color: var(--sui-color-surface-container-high);
+  }
+
+  .sui-data-table__settings-row[data-dragging] {
+    z-index: 5;
+    opacity: 1;
+    background-color: var(--sui-color-surface-container-highest);
+    box-shadow: var(--sui-elevation-3);
+    cursor: grabbing;
+    will-change: transform;
+  }
+
+  .sui-data-table__settings-drop {
+    position: absolute;
+    inset-inline: var(--sui-space-2);
+    block-size: 2px;
+    border-radius: var(--sui-radius-full);
+    background-color: var(--sui-color-primary);
+    pointer-events: none;
+  }
+
+  .sui-data-table__settings-drop[data-edge="before"] {
+    inset-block-start: -1px;
+  }
+
+  .sui-data-table__settings-drop[data-edge="after"] {
+    inset-block-end: -1px;
+  }
+
+  .sui-data-table__settings-row[data-locked] {
+    color: var(--sui-data-table-muted);
+    cursor: default;
+  }
+
+  .sui-data-table__settings-row[data-locked]:hover {
+    background-color: transparent;
+  }
+
+  .sui-data-table__settings-lock {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    inline-size: var(--sui-space-4);
+    block-size: var(--sui-space-4);
+    color: var(--sui-data-table-muted);
+  }
+
+  .sui-data-table__settings-lock svg {
+    inline-size: var(--sui-space-3);
+    block-size: var(--sui-space-3);
   }
 
   .sui-data-table__settings-grip {
@@ -956,9 +1162,32 @@
     min-inline-size: var(--sui-space-10);
   }
 
+  /* --- адаптив ------------------------------------------------------- */
+  @media (max-width: 63.99em) {
+    .sui-data-table__scroll-toggle {
+      display: none;
+    }
+  }
+
+  @media (max-width: 52.5em) {
+    .sui-data-table__footer-main {
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .sui-data-table__status {
+      margin-inline-end: auto;
+    }
+
+    .sui-data-table__pagination-controls {
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+  }
+
   @media (pointer: coarse) {
     .sui-data-table__sort,
-    .sui-data-table__drag-handle,
+    .sui-data-table__row-grip,
     .sui-data-table__resizer {
       min-block-size: var(--sui-touch-target);
     }
@@ -969,20 +1198,27 @@
       block-size: var(--sui-touch-target);
     }
 
-    .sui-data-table__drag-handle {
+    .sui-data-table__row-grip,
+    .sui-data-table__resizer-grip {
       opacity: 1;
     }
 
-    .sui-data-table__resizer-grip {
-      opacity: 1;
+    .sui-data-table__settings-grip {
+      min-block-size: var(--sui-touch-target);
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
     .sui-data-table__tr,
     .sui-data-table__sort-icon,
-    .sui-data-table__drag-handle,
-    .sui-data-table__resizer-grip {
+    .sui-data-table__resizer-grip,
+    .sui-data-table__row-grip,
+    .sui-data-table__settings-row {
+      transition: none;
+    }
+
+    .sui-data-table__th[data-dragging],
+    .sui-data-table__settings-row[data-dragging] {
       transition: none;
     }
   }

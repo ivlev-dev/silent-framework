@@ -23,6 +23,7 @@ export interface CardProps {
   readonly header?: Children;
   /** Обрезка длинного заголовка по строкам (1–3). */
   readonly headerLines?: 1 | 2 | 3 | undefined;
+  readonly clip?: boolean | undefined;
   /** Действия внизу карточки. */
   readonly actions?: Children;
   /** Подвал отдельным слотом: служебные действия, метаданные, ссылки. */
@@ -53,6 +54,7 @@ export function Card(props: CardProps): Node {
       data-variant={props.variant ?? "elevated"}
       data-padding={props.padding ?? 5}
       data-media-aspect={props.mediaAspect ?? "auto"}
+      data-clip={props.clip === true ? "" : undefined}
       data-header-lines={props.headerLines}
       data-interactive={interactive ? "" : undefined}
       role={interactive ? "button" : undefined}

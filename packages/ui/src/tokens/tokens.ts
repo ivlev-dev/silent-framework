@@ -17,7 +17,8 @@ export {
 
 /**
  * Палитра бренда: холодный ink, глубокий teal, туманный mist и ivory-бумага.
- * Одна на светлую и тёмную темы; старые ключи сохранены как алиасы.
+ * Основа светлой темы и брендовых акцентов; тёмная тема — отдельный soft black.
+ * Старые ключи сохранены как алиасы.
  */
 export const palette = {
   "ink-900": "#081A2E",
@@ -184,31 +185,31 @@ export const lightColors: SemanticColors = {
 };
 
 /**
- * Тёмная тема: ink-900 surface (`#081A2E` → elevated `#1C4B68`), ivory-текст
- * и mist primary/accent с ink-900-текстом на заливке.
+ * Тёмная тема: soft black/charcoal surface (`#17181B` → elevated `#333439`),
+ * neutral-текст и тёплый neutral primary/accent с тёмным текстом на заливке.
  */
 export const darkColors: SemanticColors = {
-  primary: "#9FB8C9",
-  "on-primary": "#081A2E",
-  "primary-container": "#1F4E6B",
-  "on-primary-container": "#F2F5F7",
-  "primary-fixed": "#9FB8C9",
-  "primary-fixed-dim": "#7E99AC",
-  "on-primary-fixed": "#081A2E",
-  "on-primary-fixed-variant": "#D9E4EC",
+  primary: "#D9D5CB",
+  "on-primary": "#141416",
+  "primary-container": "#34343A",
+  "on-primary-container": "#EDEAE2",
+  "primary-fixed": "#D9D5CB",
+  "primary-fixed-dim": "#B9B5AB",
+  "on-primary-fixed": "#141416",
+  "on-primary-fixed-variant": "#C9C5BB",
 
-  secondary: "#C9D8E2",
-  "on-secondary": "#081A2E",
-  "secondary-container": "#0E2A47",
-  "on-secondary-container": "#F2F5F7",
+  secondary: "#C4C1B9",
+  "on-secondary": "#141416",
+  "secondary-container": "#2C2D32",
+  "on-secondary-container": "#E7E4DC",
 
-  tertiary: "#9FB8C9",
-  "on-tertiary": "#081A2E",
-  "tertiary-container": "#2A4A66",
-  "on-tertiary-container": "#F2F5F7",
+  tertiary: "#A9B3AC",
+  "on-tertiary": "#141416",
+  "tertiary-container": "#2C342F",
+  "on-tertiary-container": "#DCE5DC",
 
-  accent: "#1F4E6B",
-  "on-accent": "#F2F5F7",
+  accent: "#C9C5BB",
+  "on-accent": "#141416",
 
   error: "#F2B8B5",
   "on-error": "#3B0A0A",
@@ -225,30 +226,28 @@ export const darkColors: SemanticColors = {
   "warning-container": "#4E3A0A",
   "on-warning-container": "#F6E0B0",
 
-  surface: "#081A2E",
-  "surface-dim": "#050F1C",
-  // AA-правка: #1C4B68 вместо #1F4E6B — 4.5:1 для mist-текста.
-  "surface-bright": "#1C4B68",
-  "surface-container-lowest": "#061424",
-  "surface-container-low": "#0E2A47",
-  "surface-container": "#12324F",
-  "surface-container-high": "#173B5A",
-  "surface-container-highest": "#1C4B68",
+  surface: "#17181B",
+  "surface-dim": "#101114",
+  "surface-bright": "#3A3B41",
+  "surface-container-lowest": "#131417",
+  "surface-container-low": "#1D1E22",
+  "surface-container": "#232428",
+  "surface-container-high": "#2A2B30",
+  "surface-container-highest": "#333439",
 
-  "on-surface": "#F2F5F7",
-  "on-surface-variant": "#C9D8E2",
-  "on-surface-muted": "#9FB8C9",
+  "on-surface": "#ECECEF",
+  "on-surface-variant": "#C9C9D0",
+  "on-surface-muted": "#A5A5AE",
 
-  // AA-правка: #7E9AB0 — 3:1 на elevated teal-поверхности.
-  outline: "#7E9AB0",
-  "outline-variant": "#2A4A66",
+  outline: "#85858F",
+  "outline-variant": "#3C3D44",
 
-  scrim: "#030A14",
-  shadow: "#030A14",
+  scrim: "#000000",
+  shadow: "#000000",
 
-  "inverse-surface": "#F2F5F7",
-  "inverse-on-surface": "#0E2A47",
-  "inverse-primary": "#0E2A47",
+  "inverse-surface": "#ECECEF",
+  "inverse-on-surface": "#1D1E22",
+  "inverse-primary": "#3A3B41",
 };
 
 /** Список ролей в стабильном порядке — для тестов и генераторов. */

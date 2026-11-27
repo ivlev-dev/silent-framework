@@ -21,7 +21,7 @@ export interface NavigationRailItemData {
 export interface NavigationRailItemProps {
   readonly label: Children;
   readonly icon?: Children;
-  readonly selected?: boolean | undefined;
+  readonly selected?: boolean | (() => boolean) | undefined;
   readonly badge?: Children;
   readonly badgeLabel?: string | undefined;
   readonly disabled?: boolean | undefined;
@@ -38,7 +38,8 @@ export interface NavigationRailItemProps {
  * визуально скрывает CSS, поэтому скринридер читает пункт одинаково.
  */
 export function NavigationRailItem(props: NavigationRailItemProps): Node {
-  const selected = props.selected === true;
+  const isSelected = (): boolean =>
+    typeof props.selected === "function" ? props.selected() : props.selected === true;
   const disabled = props.disabled === true;
 
   const activate = (event: MouseEvent): void => {
@@ -56,14 +57,14 @@ export function NavigationRailItem(props: NavigationRailItemProps): Node {
         ref={props.ref}
         class={["sui-navigation-rail__item", props.class]}
         style={props.style}
-        data-selected={selected ? "" : undefined}
+        data-selected={isSelected() ? "" : undefined}
         data-disabled={disabled ? "" : undefined}
       >
         <a
           class="sui-navigation-rail__link"
           href={props.href}
-          data-selected={selected ? "" : undefined}
-          aria-current={selected ? "page" : undefined}
+          data-selected={isSelected() ? "" : undefined}
+          aria-current={isSelected() ? "page" : undefined}
           aria-disabled={disabled ? "true" : undefined}
           tabindex={disabled ? -1 : undefined}
           onClick={activate}
@@ -90,14 +91,14 @@ export function NavigationRailItem(props: NavigationRailItemProps): Node {
       ref={props.ref}
       class={["sui-navigation-rail__item", props.class]}
       style={props.style}
-      data-selected={selected ? "" : undefined}
+      data-selected={isSelected() ? "" : undefined}
       data-disabled={disabled ? "" : undefined}
     >
       <button
         class="sui-navigation-rail__button"
         type="button"
-        data-selected={selected ? "" : undefined}
-        aria-current={selected ? "page" : undefined}
+        data-selected={isSelected() ? "" : undefined}
+        aria-current={isSelected() ? "page" : undefined}
         disabled={disabled}
         onClick={activate}
       >
@@ -176,7 +177,7 @@ export function NavigationRail(props: NavigationRailProps): Node {
               badgeLabel={item.badgeLabel}
               disabled={item.disabled}
               href={item.href}
-              selected={currentKey() === item.key}
+              selected={() => currentKey() === item.key}
               onClick={(event) => {
                 select(item.key);
                 item.onClick?.(event);

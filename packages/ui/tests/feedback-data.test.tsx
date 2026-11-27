@@ -296,6 +296,14 @@ describe("Card", () => {
     expect(rootOf(mount(Card, { padding: 6, children: "x" })).getAttribute("data-padding")).toBe("6");
   });
 
+  it("по умолчанию не клипает содержимое, clip включает обрезку", () => {
+    expect(rootOf(mount(Card, { children: "x" })).hasAttribute("data-clip")).toBe(false);
+    expect(rootOf(mount(Card, { clip: true, children: "x" })).hasAttribute("data-clip")).toBe(true);
+    const css = readCss("card/card.css");
+    expect(css).toContain("overflow: visible");
+    expect(css).toContain(".sui-card[data-clip]");
+  });
+
   it("mediaAspect и headerLines задают пропорции и обрезку заголовка", () => {
     expect(rootOf(mount(Card, { children: "x" })).getAttribute("data-media-aspect")).toBe("auto");
     const card = rootOf(

@@ -153,7 +153,7 @@ function sample(): Node {
           </Text>
           <Text variant="label-medium" tone="muted">LABEL · 12–13PX</Text>
         </Stack>
-        <Text tone="muted">Вспомогательный текст — приглушённый teal.</Text>
+        <Text tone="muted">Вспомогательный текст — приглушённый neutral.</Text>
         <Box padding={3} background="primary-container" radius="md">
           <Text tone="primary">primary-container</Text>
         </Box>

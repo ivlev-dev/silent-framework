@@ -366,7 +366,7 @@ export function ColorPicker(props: ColorPickerProps): Node {
               <span
                 class="sui-color-picker__swatch"
                 data-empty={parsed() === null ? "" : undefined}
-                style={{ "background-color": displayColor() }}
+                style={{ "--sui-color-picker-swatch": displayColor() }}
                 aria-hidden="true"
               />
               <span class="sui-color-picker__value">

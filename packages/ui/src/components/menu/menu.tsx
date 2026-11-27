@@ -75,6 +75,7 @@ export function Menu(props: MenuProps): Node {
     panel,
     isOpen: visible,
     preferred: () => "bottom",
+    topLayer: props.trigger !== undefined && props.trigger !== null,
   });
 
   const close = (restore: boolean): void => {

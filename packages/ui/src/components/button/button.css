@@ -65,18 +65,6 @@
     opacity: var(--sui-state-pressed);
   }
 
-  @supports (color: color-mix(in srgb, currentColor 8%, transparent)) {
-    .sui-button:hover:not(:disabled)::after {
-      background: color-mix(in srgb, currentColor 8%, transparent);
-      opacity: 1;
-    }
-
-    .sui-button:active:not(:disabled)::after {
-      background: color-mix(in srgb, currentColor 12%, transparent);
-      opacity: 1;
-    }
-  }
-
   .sui-button:focus-visible {
     outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
     outline-offset: var(--sui-focus-ring-offset);

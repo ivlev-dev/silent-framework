@@ -1,5 +1,5 @@
 @layer sui.components {
-  .sui-date-range-picker__popover {
+  .sui-popover.sui-date-range-picker__popover {
     display: block;
     inline-size: 100%;
     --sui-popover-max-inline: 46rem;
@@ -64,7 +64,7 @@
   }
 
   @media (max-width: 48em) {
-    .sui-date-range-picker__popover {
+    .sui-popover.sui-date-range-picker__popover {
       --sui-popover-max-inline: min(26rem, calc(100vw - 2 * var(--sui-space-4)));
     }
 

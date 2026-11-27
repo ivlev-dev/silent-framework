@@ -43,7 +43,7 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `palette`
 
-`const palette` — исходная брендовая палитра: `ink-900 #081A2E`, `ink-800 #0E2A47`, `teal-700 #1F4E6B`, `mist-300 #9FB8C9`, `ivory-50 #F2F5F7`; публичные алиасы прежней палитры (`ivory #F2F5F7`, `almond #E6EDF2`, `mist #9FB8C9`, `navy #0E2A47`, `noir #081A2E`, `gold #1F4E6B`, `navy-deep #081A2E`, `navy-mid #0E2A47`, `navy-dark #061424`, `white #FFFFFF`) и прежние ключи ролей (`primary`, `secondary`, `tertiary`, `neutralDarkest`, `neutralDark`, `neutralLightest`) сохранены для обратной совместимости.
+`const palette` — брендовая палитра светлой темы: `ink-900 #081A2E`, `ink-800 #0E2A47`, `teal-700 #1F4E6B`, `mist-300 #9FB8C9`, `ivory-50 #F2F5F7`; публичные алиасы прежней палитры (`ivory #F2F5F7`, `almond #E6EDF2`, `mist #9FB8C9`, `navy #0E2A47`, `noir #081A2E`, `gold #1F4E6B`, `navy-deep #081A2E`, `navy-mid #0E2A47`, `navy-dark #061424`, `white #FFFFFF`) и прежние ключи ролей (`primary`, `secondary`, `tertiary`, `neutralDarkest`, `neutralDark`, `neutralLightest`) сохранены для обратной совместимости. Тёмная тема палитрой не задаётся — у неё отдельный soft-black набор ролей.
 
 ### `PaletteColor`
 
@@ -55,7 +55,7 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `darkColors`
 
-`const darkColors: SemanticColors` — те же роли для тёмной темы. Значения дублируют `themes.css`; расхождение ломает тест.
+`const darkColors: SemanticColors` — те же роли для тёмной soft-black/charcoal темы: поверхности `#17181B` → `#333439`, текст `#ECECEF`, тёплый neutral `primary #D9D5CB` и `accent #C9C5BB`. Значения дублируют `themes.css`; расхождение ломает тест.
 
 ### `SemanticColors`
 
@@ -807,11 +807,11 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `Card`
 
-`function Card(props: CardProps): Node` — карточка-контейнер: `variant` (`elevated`/`filled`/`outlined`), `media` + `mediaAspect`, `header` + `headerLines`, `actions`, `footer`, `padding`. Заголовок и тело разделены ритмом `--sui-card-gap`, подвал — линией и `--sui-card-footer-gap`. При `interactive` — ARIA-семантика кнопки на `div` (Enter/Space), чтобы в слоты можно было класть ссылки.
+`function Card(props: CardProps): Node` — карточка-контейнер: `variant` (`elevated`/`filled`/`outlined`), `media` + `mediaAspect`, `header` + `headerLines`, `actions`, `footer`, `padding`. `elevated` — мягкая тень `--sui-elevation-1`; `outlined` — hairline-рамка `outline-variant` без тени; `filled` — плотная поверхность `surface-container-highest` без тени. Заголовок и тело разделены ритмом `--sui-card-gap`, подвал — линией и `--sui-card-footer-gap`. По умолчанию карточка не клипает содержимое: поповеры и меню выходят за её границы; `clip` включает обрезку для медиа и таблиц. При `interactive` — ARIA-семантика кнопки на `div` (Enter/Space), чтобы в слоты можно было класть ссылки.
 
 ### `CardProps`
 
-`interface CardProps` — пропсы `Card`: `variant`, `interactive`, `disabled`, `padding`, `media`, `mediaAspect`, `header`, `headerLines` (1–3 строки перед обрезкой), `actions`, `footer`, `onClick`, `class`, `style`, `attrs`, `children`, `ref`.
+`interface CardProps` — пропсы `Card`: `variant`, `interactive`, `disabled`, `padding`, `media`, `mediaAspect`, `header`, `headerLines` (1–3 строки перед обрезкой), `clip` (обрезать содержимое по границам), `actions`, `footer`, `onClick`, `class`, `style`, `attrs`, `children`, `ref`.
 
 ### `CardVariant`
 
@@ -863,15 +863,15 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `DataTable`
 
-`function DataTable<Row>(props: DataTableProps<Row>): Node` — серверная таблица: липкий заголовок, ресайз и перестановка колонок перетаскиванием за заголовок (клик по сортировке и ресайзер не запускают drag), клавиатура (`Space`, стрелки) на заголовке, сохранение порядка/ширин/видимости/плотности/раскладки в `localStorage` по `tableKey`, массовый выбор с панелью действий, настройки в диалоге, раскладка `table`/`cards` (узкий экран переключается автоматически при отсутствии явного `layout`), дерево строк и `loading`/`error`/`empty`. Ресайз фиксирует измеренные ширины, показывает текущее значение в badge и сохраняет после pointerup; `Home`/двойной клик сбрасывают ширину. Содержимое обрезанных ячеек получает `title`.
+`function DataTable<Row>(props: DataTableProps<Row>): Node` — серверная таблица: липкий заголовок и подвал (`stickyHeader`/`stickyFooter`), ресайз и перестановка колонок перетаскиванием за весь заголовок (`th`), а не за отдельную ручку; клик по сортировке и ресайзер не запускают drag, клавиатура (`Space`, стрелки) на заголовке. Во время drag сам `th` следует за курсором (`translate3d`), остальные колонки перестраиваются с FLIP-анимацией. Порядок, ширины и видимость колонок, плотность, раскладка и закрепление сохраняются в `localStorage` по `tableKey`. Ресайз не меняет ширины на `pointerdown`: чип с px появляется после первого движения за порог, commit — на `pointerup`; `Home`/двойной клик сбрасывают ширину. Массовый выбор показывает панель действий в подвале над пагинацией (`selectionBarPosition="bottom"`, по умолчанию) или над таблицей (`"top"`); при `stickyFooter` панель закрепляется вместе с подвалом. Настройки в диалоге: видимость и порядок колонок, подпись `settingsLabel`, `locked`-колонки без чекбокса и перемещения, плотность и закрепление. Раскладка `table`/`cards` (узкий экран переключается автоматически при отсутствии явного `layout`), дерево строк, `loading`/`error`/`empty`. Углы таблицы квадратные (`--sui-radius-none`). Содержимое обрезанных ячеек получает `title`.
 
 ### `DataTableProps`
 
-`interface DataTableProps<Row>` — пропсы: `tableKey` (ключ сохранённых настроек), `columns`, `rows`, `rowKey`, `loading`, `error`, `total`, `page`, `pageSize`, `pageSizeOptions` (по умолчанию `[10, 20, 50, 100]`), `sortKey`, `sortDirection`, `onSort`, `onPageChange`, `onPageSizeChange`, `onRowClick`, `toolbar`, `empty`, `selection`, `density` (`compact`/`standard`), `title`, `subtitle`, `actions`, `layout` (`table`/`cards`), `defaultLayout`, `onLayoutChange`, `settings`, `renderCard`, `selectionBarPosition` (`top`/`bottom`), `stickyHeader`, `stickyFooter`, `scrollMode` (`page`/`contained`), `tree`, `layoutLabel`, `class`, `style`, `attrs`.
+`interface DataTableProps<Row>` — пропсы: `tableKey` (ключ сохранённых настроек), `columns`, `rows`, `rowKey`, `loading`, `error`, `total`, `page`, `pageSize`, `pageSizeOptions` (по умолчанию `[10, 20, 50, 100]`), `sortKey`, `sortDirection`, `onSort`, `onPageChange`, `onPageSizeChange`, `onRowClick`, `toolbar`, `empty`, `selection`, `density` (`compact`/`standard`; значение по умолчанию, пока в настройках нет override), `title`, `subtitle`, `actions`, `layout` (`table`/`cards`), `defaultLayout`, `onLayoutChange`, `settings`, `renderCard`, `selectionBarPosition` (`top`/`bottom`, по умолчанию `bottom`), `stickyHeader` (по умолчанию `true`), `stickyFooter` (по умолчанию `false`), `scrollMode` (`page`/`contained`), `tree`, `layoutLabel`, `class`, `style`, `attrs`.
 
 ### `DataTableColumn`
 
-`interface DataTableColumn<Row>` — колонка: `key`, `header`, `width`, `minWidth`, `maxWidth`, `resizable`, `sortable`, `align`, `truncate`, `render`, `locked` (нельзя скрыть), `defaultVisible` и `card` (слот/подпись карточки).
+`interface DataTableColumn<Row>` — колонка: `key`, `header`, `width`, `minWidth`, `maxWidth`, `resizable`, `sortable`, `align`, `truncate`, `render`, `locked` (колонку нельзя скрыть, переставить и утащить; в настройках она без чекбокса и кнопок перемещения), `settingsLabel` (подпись в настройках, по умолчанию берётся из `header`), `defaultVisible` и `card` (слот/подпись карточки).
 
 ### `DataTableAlign`
 
@@ -879,7 +879,7 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `DataTableDensity`
 
-`type DataTableDensity = "compact" | "standard"` — плотность строк: 48/44px.
+`type DataTableDensity = "compact" | "standard"` — плотность строк: 48px (standard) и 42px (compact, `--sui-density: 0.875`). Значение из настроек перекрывает prop `density` до сброса вида.
 
 ### `DataTableLayout`
 
@@ -891,7 +891,7 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `DataTableSelectionBarPosition`
 
-`type DataTableSelectionBarPosition = "top" | "bottom"` — где закреплена панель массовых действий.
+`type DataTableSelectionBarPosition = "top" | "bottom"` — где показывать панель массовых действий: `bottom` (по умолчанию) — в подвале над пагинацией, `top` — над таблицей. При `stickyFooter` нижняя панель закрепляется вместе с подвалом.
 
 ### `DataTableCardSlot`
 
@@ -919,7 +919,7 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `DataTableSettings`
 
-`interface DataTableSettings` — сохранённые настройки таблицы: `order` (ключи колонок) и `widths` (ширины по ключам).
+`interface DataTableSettings` — сохранённые настройки таблицы: `order` (ключи колонок), `widths` (ширины по ключам), `visible` (видимость по ключам), `density` (override плотности), `layout` (`table`/`cards`), `stickyHeader` и `stickyFooter` (`boolean | null`).
 
 ### `DATA_TABLE_STORAGE_PREFIX`
 
@@ -943,7 +943,7 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `readDataTableSettings`
 
-`function readDataTableSettings(tableKey: string): DataTableSettings` — читает порядок и ширины; при недоступном `localStorage` или битом JSON возвращает пустой снимок.
+`function readDataTableSettings(tableKey: string): DataTableSettings` — читает порядок, ширины, видимость, плотность, раскладку и закрепление; при недоступном `localStorage` или битом JSON возвращает пустой снимок.
 
 ### `writeDataTableSettings`
 
@@ -979,7 +979,7 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `DatePicker`
 
-`function DatePicker(props: DatePickerProps): Node` — поле даты с календарём в `Popover`: ручной ввод, маска формата, выбор дня, `min`/`max`, очистка, `Escape` и возврат фокуса, roving tabindex в сетке дней. Значение — `Date` или строка формата; скрытый `input` отправляет ISO-дату в форму.
+`function DatePicker(props: DatePickerProps): Node` — поле даты с календарём в `Popover`: ручной ввод, маска формата, выбор дня, `min`/`max`, очистка, `Escape` и возврат фокуса, roving tabindex в сетке дней. Дни — круглые кнопки (`--sui-radius-full`), выбранный и входящий в диапазон день сохраняет видимый контрастный текст. Значение — `Date` или строка формата; скрытый `input` отправляет ISO-дату в форму.
 
 ### `DatePickerProps`
 
@@ -987,7 +987,7 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `DateRangePicker`
 
-`function DateRangePicker(props: DateRangePickerProps): Node` — диапазон дат: два поля (начало/конец), общий календарь с подсветкой диапазона, пресеты (`7 дней`, `30 дней`, `Этот месяц`), `min`/`max`, очистка и возврат фокуса.
+`function DateRangePicker(props: DateRangePickerProps): Node` — диапазон дат: два поля (начало/конец), общий календарь с подсветкой диапазона, пресеты (`7 дней`, `30 дней`, `Этот месяц`), `min`/`max`, очистка и возврат фокуса. Дни диапазона — отдельные круглые кнопки: границы `data-range-start`/`data-range-end` получают заливку `selected`, промежуточные — `range`; текст остаётся видимым на обеих заливках. Подсказка показывает число дней через `daysBetween`.
 
 ### `DateRangePickerProps`
 
@@ -1019,7 +1019,7 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `ColorPicker`
 
-`function ColorPicker(props: ColorPickerProps): Node` — выбор цвета: поле с превью и HEX-вводом, панель с saturation/value, hue, alpha, пресетами и кнопками «Готово»/«Очистить»; поддерживает `#RGB`, `#RRGGBB`, `rgb()`/`hsl()`, клавиатуру и возврат фокуса.
+`function ColorPicker(props: ColorPickerProps): Node` — выбор цвета: поле с превью (swatch через `--sui-color-picker-swatch`, включая checkerboard для прозрачности) и HEX-вводом, панель с saturation/value, hue, alpha, пресетами и кнопками «Готово»/«Очистить». HEX-значение нормализуется в нижний регистр (`#1f4e6b`); поддерживает `#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA` в любом регистре, `rgb()`/`hsl()`, клавиатуру и возврат фокуса.
 
 ### `ColorPickerProps`
 
@@ -1047,7 +1047,7 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `parseColor`
 
-`function parseColor(input: string): RgbaColor | null` — разбирает HEX/RGB/HSL, включая alpha.
+`function parseColor(input: string): RgbaColor | null` — разбирает HEX (3/4/6/8 цифр, с `#` или без, в любом регистре), RGB и HSL, включая alpha; пустая строка и мусор → `null`.
 
 ### `isValidColor`
 
@@ -1055,11 +1055,11 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `normalizeColor`
 
-`function normalizeColor(input: string): string | null` — канонический `#RRGGBB`/`#RRGGBBAA`.
+`function normalizeColor(color: RgbaColor): RgbaColor` — зажимает каналы в 0–255 и alpha в 0–1.
 
 ### `formatColor`
 
-`function formatColor(color: RgbaColor, format?: ColorFormat): string` — строка в выбранном формате.
+`function formatColor(color: RgbaColor, format?: ColorFormat, showAlpha = false): string` — строка в выбранном формате; HEX — в нижнем регистре.
 
 ### `colorsEqual`
 
@@ -1067,15 +1067,15 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `toHex`
 
-`function toHex(color: RgbaColor): string` — HEX-строка.
+`function toHex(color: RgbaColor, showAlpha = false): string` — HEX-строка в нижнем регистре.
 
 ### `toRgbString`
 
-`function toRgbString(color: RgbaColor): string` — `rgb()`/`rgba()`.
+`function toRgbString(color: RgbaColor, showAlpha = false): string` — `rgb()`/`rgba()`.
 
 ### `toHslString`
 
-`function toHslString(color: RgbaColor): string` — `hsl()`/`hsla()`.
+`function toHslString(color: RgbaColor, showAlpha = false): string` — `hsl()`/`hsla()`.
 
 ### `toCssColor`
 
@@ -1245,7 +1245,7 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `Popover`
 
-`function Popover(props: PopoverProps): Node` — inline-поповер: anchor + абсолютная панель без Portal (SSR-контекст не теряется). На сервере закрыт; закрытие — клик вне и Escape, фокус возвращается на anchor.
+`function Popover(props: PopoverProps): Node` — inline-поповер: anchor + панель без Portal (SSR-контекст не теряется). На клиенте панель выносится в top layer нативным `popover` API и позиционируется `position: fixed`, поэтому её не обрезают карточки и соседние поля; без поддержки API остаётся абсолютная панель. На сервере закрыт; закрытие — клик вне и Escape, фокус возвращается на anchor.
 
 ### `PopoverProps`
 
@@ -1257,7 +1257,7 @@ import "@ivlev-dev/silent-ui/styles.css";
 
 ### `Menu`
 
-`function Menu(props: MenuProps): Node` — меню с roving tabindex: `role="menu"`, стрелки/Home/End/Enter/Escape. Панель inline, на сервере закрыта и открывается после mount.
+`function Menu(props: MenuProps): Node` — меню с roving tabindex: `role="menu"`, стрелки/Home/End/Enter/Escape. Панель inline в DOM, на клиенте — в top layer через нативный `popover` API, на сервере закрыта и открывается после mount.
 
 ### `MenuProps`
 

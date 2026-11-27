@@ -585,6 +585,7 @@ export function TreeSelect(props: TreeSelectProps): Node {
     panel: panelElement,
     isOpen: visible,
     preferred: () => "bottom",
+    matchAnchorWidth: true,
   });
 
   // --- виртуализация ----------------------------------------------------

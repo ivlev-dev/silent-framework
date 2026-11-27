@@ -203,19 +203,19 @@ describe("токены", () => {
     expect(failures).toEqual([]);
   });
 
-  it("акцент — mist в light, teal в dark, текст на заливке — ink/ivory", () => {
+  it("акцент — mist в light, neutral в dark, текст на заливке — ink/тёмный", () => {
     expect(lightColors.accent).toBe("#9FB8C9");
     expect(lightColors["on-accent"]).toBe("#081A2E");
-    expect(darkColors.accent).toBe("#1F4E6B");
-    expect(darkColors["on-accent"]).toBe("#F2F5F7");
+    expect(darkColors.accent).toBe("#C9C5BB");
+    expect(darkColors["on-accent"]).toBe("#141416");
   });
 
-  it("focus ring использует primary: ink в light, mist в dark", () => {
+  it("focus ring использует primary: ink в light, neutral в dark", () => {
     // Ring — UI-элемент, 3:1 достаточно; проверяем на поверхности и на себе.
     expect(contrast(lightColors.primary, lightColors.surface)).toBeGreaterThanOrEqual(3);
     expect(contrast(darkColors.primary, darkColors.surface)).toBeGreaterThanOrEqual(3);
     expect(lightColors.primary).toBe("#0E2A47");
-    expect(darkColors.primary).toBe("#9FB8C9");
+    expect(darkColors.primary).toBe("#D9D5CB");
   });
 
   it("themes.css повторяет TS-значения ролей", () => {
@@ -228,7 +228,7 @@ describe("токены", () => {
     }
     // rgba-подложка тени должна соответствовать цвету shadow.
     expect(light["shadow-rgb"]).toBe("14, 42, 71");
-    expect(dark["shadow-rgb"]).toBe("3, 10, 20");
+    expect(dark["shadow-rgb"]).toBe("0, 0, 0");
   });
 
   it("themes.css поддерживает light/dark/auto и системный fallback", () => {

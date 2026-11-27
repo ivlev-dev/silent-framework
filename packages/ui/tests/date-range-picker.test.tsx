@@ -88,6 +88,18 @@ describe("DateRangePicker: выбор и подсветка", () => {
     expect(panel(root).hidden).toBe(true);
   });
 
+  it("подсказка длительности считает календарные дни", () => {
+    const root = rootOf(
+      mount(handles, DateRangePicker, {
+        label: "Период",
+        defaultValue: { start: new Date(2026, 10, 10), end: new Date(2026, 10, 12) },
+      }),
+    );
+    flush();
+    open(root);
+    expect(root.querySelector(".sui-date-range-picker__hint")?.textContent).toBe("3 дня");
+  });
+
   it("подсвечивает диапазон и превью между датами", () => {
     const root = rootOf(
       mount(handles, DateRangePicker, {

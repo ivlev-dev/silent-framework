@@ -500,6 +500,151 @@ export interface FloatingOptions {
   readonly gap?: number | undefined;
   /** Минимальный отступ от края viewport. По умолчанию 12px. */
   readonly margin?: number | undefined;
+  readonly topLayer?: boolean | undefined;
+  readonly matchAnchorWidth?: boolean | undefined;
+}
+
+export interface FloatingPosition {
+  readonly side: FloatingSide;
+  readonly left: number;
+  readonly top: number;
+}
+
+function clampToRange(value: number, min: number, max: number): number {
+  if (max < min) return min;
+  return Math.min(Math.max(value, min), max);
+}
+
+export function resolveFloatingPosition(
+  anchor: FloatingRect,
+  panel: FloatingViewport,
+  viewport: FloatingViewport,
+  preferred: FloatingSide,
+  gap = 8,
+  margin = 12,
+  rtl = false,
+): FloatingPosition {
+  const roomBlock = panel.height + gap + margin;
+  const roomInline = panel.width + gap + margin;
+  const below = viewport.height - anchor.bottom;
+  const above = anchor.top;
+  const startIsLeft = !rtl;
+  const inlineStartSpace = startIsLeft
+    ? anchor.left
+    : viewport.width - anchor.right;
+  const inlineEndSpace = startIsLeft
+    ? viewport.width - anchor.right
+    : anchor.left;
+
+  let side = preferred;
+  if (preferred === "bottom" && below < roomBlock && above >= roomBlock) {
+    side = "top";
+  } else if (preferred === "top" && above < roomBlock && below >= roomBlock) {
+    side = "bottom";
+  } else if (
+    preferred === "start"
+    && inlineStartSpace < roomInline
+    && inlineEndSpace >= roomInline
+  ) {
+    side = "end";
+  } else if (
+    preferred === "end"
+    && inlineEndSpace < roomInline
+    && inlineStartSpace >= roomInline
+  ) {
+    side = "start";
+  }
+
+  let left: number;
+  let top: number;
+
+  if (side === "top" || side === "bottom") {
+    left = rtl ? anchor.right - panel.width : anchor.left;
+    left = clampToRange(
+      left,
+      margin,
+      viewport.width - margin - panel.width,
+    );
+    top = side === "bottom"
+      ? anchor.bottom + gap
+      : anchor.top - gap - panel.height;
+    top = clampToRange(
+      top,
+      margin,
+      viewport.height - margin - panel.height,
+    );
+  } else {
+    if (side === "start") {
+      left = startIsLeft
+        ? anchor.left - gap - panel.width
+        : anchor.right + gap;
+    } else {
+      left = startIsLeft
+        ? anchor.right + gap
+        : anchor.left - gap - panel.width;
+    }
+    left = clampToRange(
+      left,
+      margin,
+      viewport.width - margin - panel.width,
+    );
+    top = clampToRange(
+      anchor.top,
+      margin,
+      viewport.height - margin - panel.height,
+    );
+  }
+
+  return { side, left, top };
+}
+
+interface PopoverCapable extends HTMLElement {
+  showPopover(): void;
+  hidePopover(): void;
+}
+
+function isPopoverCapable(panel: HTMLElement): panel is PopoverCapable {
+  const candidate = panel as Partial<PopoverCapable>;
+  return typeof candidate.showPopover === "function"
+    && typeof candidate.hidePopover === "function";
+}
+
+function showTopLayer(panel: HTMLElement): boolean {
+  if (!isPopoverCapable(panel)) return false;
+  panel.hidden = false;
+  panel.setAttribute("popover", "manual");
+  try {
+    if (!panel.matches(":popover-open")) panel.showPopover();
+  } catch {
+    panel.removeAttribute("popover");
+    return false;
+  }
+  panel.setAttribute("data-floating-layer", "");
+  panel.parentElement?.setAttribute("data-floating-layer", "");
+  return true;
+}
+
+function hideTopLayer(panel: HTMLElement): void {
+  if (isPopoverCapable(panel)) {
+    try {
+      if (panel.matches(":popover-open")) panel.hidePopover();
+    } catch {
+      /* панель уже удалена из документа */
+    }
+  }
+  panel.removeAttribute("popover");
+  panel.removeAttribute("data-floating-layer");
+  panel.parentElement?.removeAttribute("data-floating-layer");
+  panel.hidden = true;
+  panel.style.removeProperty("position");
+  panel.style.removeProperty("inset");
+  panel.style.removeProperty("left");
+  panel.style.removeProperty("top");
+  panel.style.removeProperty("right");
+  panel.style.removeProperty("bottom");
+  panel.style.removeProperty("width");
+  panel.style.removeProperty("inline-size");
+  panel.style.removeProperty("min-inline-size");
 }
 
 /**
@@ -575,7 +720,57 @@ export function useFloating(options: FloatingOptions): () => FloatingSide {
     const panel = options.panel();
     if (anchor === null || panel === null) return;
 
+    const layer = options.topLayer !== false && showTopLayer(panel);
+    let frame = 0;
+
     const update = (): void => {
+      const anchorRect = anchor.getBoundingClientRect();
+      if (layer) {
+        if (options.matchAnchorWidth === true && anchorRect.width > 0) {
+          panel.style.setProperty("inline-size", `${anchorRect.width}px`);
+          panel.style.setProperty("min-inline-size", `${anchorRect.width}px`);
+        }
+        panel.style.setProperty("position", "fixed");
+        panel.style.setProperty("left", "0px");
+        panel.style.setProperty("top", "0px");
+        panel.style.setProperty("right", "auto");
+        panel.style.setProperty("bottom", "auto");
+        const panelRect = panel.getBoundingClientRect();
+        if (
+          (anchorRect.width === 0 && anchorRect.height === 0)
+          || (panelRect.width === 0 && panelRect.height === 0)
+        ) {
+          if (frame === 0) {
+            frame = window.requestAnimationFrame(() => {
+              frame = 0;
+              update();
+            });
+          }
+          return;
+        }
+        const direction = window.getComputedStyle(anchor).direction;
+        const position = resolveFloatingPosition(
+          anchorRect,
+          panelRect,
+          { width: window.innerWidth, height: window.innerHeight },
+          options.preferred(),
+          options.gap,
+          options.margin,
+          direction === "rtl",
+        );
+        setSide(position.side);
+        panel.style.setProperty("left", `${position.left}px`);
+        panel.style.setProperty("top", `${position.top}px`);
+        panel.style.setProperty("--sui-floating-inline-shift", "0px");
+        panel.style.setProperty("--sui-floating-block-shift", "0px");
+        if (position.side === options.preferred()) {
+          panel.removeAttribute("data-flip");
+        } else {
+          panel.setAttribute("data-flip", "");
+        }
+        return;
+      }
+
       /*
        * Измеряем панель без прошлого сдвига: иначе shift учитывается в
        * следующем измерении и обнуляется на повторном вызове (scroll/resize),
@@ -583,7 +778,6 @@ export function useFloating(options: FloatingOptions): () => FloatingSide {
        */
       panel.style.setProperty("--sui-floating-inline-shift", "0px");
       panel.style.setProperty("--sui-floating-block-shift", "0px");
-      const anchorRect = anchor.getBoundingClientRect();
       const panelRect = panel.getBoundingClientRect();
       if (
         (anchorRect.width === 0 && anchorRect.height === 0)
@@ -618,6 +812,8 @@ export function useFloating(options: FloatingOptions): () => FloatingSide {
     onCleanup(() => {
       window.removeEventListener("resize", update);
       document.removeEventListener("scroll", update, { capture: true });
+      if (frame !== 0) window.cancelAnimationFrame(frame);
+      if (layer) hideTopLayer(panel);
     });
   });
   return side;

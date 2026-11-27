@@ -1,4 +1,4 @@
-import type { Child, Children } from "@ivlev-dev/silent-core";
+import type { Child, Children, StyleInput } from "@ivlev-dev/silent-core";
 import {
   For,
   Show,
@@ -7,6 +7,7 @@ import {
   onCleanup,
   useId,
 } from "@ivlev-dev/silent-core";
+import { createVirtualizer } from "@ivlev-dev/silent-virtual";
 import { clientEffect } from "../../internal/overlay.js";
 import { ExpandMoreIcon } from "../../icons/expand-more.js";
 import { ChevronEndIcon } from "../../icons/chevron-end.js";
@@ -30,16 +31,20 @@ import {
   readDataTableSettings,
   resolveColumnWidth,
   resolveColumnWidths,
+  resolveScrollMode,
   writeDataTableSettings,
 } from "./settings.js";
 import type {
+  DataTableApi,
   DataTableCardContext,
   DataTableColumn,
   DataTableDensity,
   DataTableLayout,
   DataTableProps,
+  DataTableResolvedScrollMode,
   DataTableSelection,
   DataTableSortDirection,
+  DataTableTreeDropPosition,
 } from "./types.js";
 
 interface DataTableSettingsState {
@@ -50,6 +55,7 @@ interface DataTableSettingsState {
   readonly layout: DataTableLayout | null;
   readonly stickyHeader: boolean | null;
   readonly stickyFooter: boolean | null;
+  readonly scrollMode: DataTableResolvedScrollMode | null;
 }
 
 const EMPTY_SETTINGS: DataTableSettingsState = {
@@ -60,13 +66,106 @@ const EMPTY_SETTINGS: DataTableSettingsState = {
   layout: null,
   stickyHeader: null,
   stickyFooter: null,
+  scrollMode: null,
 };
+
 const DEFAULT_PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
 const SKELETON_WIDTHS = ["72%", "54%", "88%", "64%", "46%"] as const;
+const ROW_HEIGHT_STANDARD = 56;
+const ROW_HEIGHT_COMPACT = 48;
+const HEADER_HEIGHT = 48;
 const RESIZE_STEP = 8;
 const RESIZE_STEP_LARGE = 32;
+const RESIZE_THRESHOLD = 3;
+const DRAG_THRESHOLD = 6;
+const DRAG_HYSTERESIS = 4;
+const FLIP_TIMEOUT = 400;
 const TREE_INDENT = 20;
 const NARROW_QUERY = "(max-width: 63.99em)";
+const VIRTUAL_THRESHOLD = 40;
+const VIRTUAL_OVERSCAN = 10;
+const MAX_SKELETON_ROWS = 100;
+const MAX_FILLER_ROWS = 500;
+const HEADER_SELECTOR = "thead th[data-column-key]";
+const SETTINGS_SELECTOR = ".sui-data-table__settings-row[data-column-key]";
+const SPACER_TOP_KEY = "\u0000sui-data-table-spacer-top";
+const SPACER_BOTTOM_KEY = "\u0000sui-data-table-spacer-bottom";
+
+interface RectSnapshot {
+  readonly left: number;
+  readonly top: number;
+}
+
+interface DropTarget {
+  readonly key: string;
+  readonly edge: "before" | "after";
+}
+
+interface RowDropTarget {
+  readonly key: string | number;
+  readonly position: DataTableTreeDropPosition;
+}
+
+function snapshotRects(
+  root: ParentNode | null,
+  selector: string,
+): Map<string, RectSnapshot> {
+  const result = new Map<string, RectSnapshot>();
+  if (root === null) return result;
+  root.querySelectorAll<HTMLElement>(selector).forEach((node) => {
+    const key = node.getAttribute("data-column-key");
+    if (key === null) return;
+    const rect = node.getBoundingClientRect();
+    result.set(key, { left: rect.left, top: rect.top });
+  });
+  return result;
+}
+
+function animateReflow(
+  before: Map<string, RectSnapshot>,
+  root: ParentNode | null,
+  selector: string,
+): void {
+  if (typeof window === "undefined" || before.size === 0) return;
+  if (
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  ) {
+    return;
+  }
+  queueMicrotask(() => {
+    if (root === null) return;
+    root.querySelectorAll<HTMLElement>(selector).forEach((node) => {
+      const key = node.getAttribute("data-column-key");
+      if (key === null) return;
+      const previous = before.get(key);
+      if (previous === undefined) return;
+      const rect = node.getBoundingClientRect();
+      const dx = previous.left - rect.left;
+      const dy = previous.top - rect.top;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+      node.style.transition = "none";
+      node.style.transform = `translate(${String(dx)}px, ${String(dy)}px)`;
+      const play = (): void => {
+        node.style.transition =
+          "transform var(--sui-motion-short-4) var(--sui-easing-emphasized)";
+        node.style.transform = "";
+        const clear = (): void => {
+          node.style.transition = "";
+          node.style.transform = "";
+          node.removeEventListener("transitionend", clear);
+        };
+        node.addEventListener("transitionend", clear);
+        window.setTimeout(clear, FLIP_TIMEOUT);
+      };
+      if (typeof window.requestAnimationFrame === "function") {
+        window.requestAnimationFrame(play);
+      } else {
+        play();
+      }
+    });
+  });
+}
 
 function widthStyle(width: number | undefined): Record<string, string> | undefined {
   if (width === undefined) return undefined;
@@ -84,6 +183,16 @@ function defaultCell<Row>(row: Row, key: string): Children {
   return String(value);
 }
 
+function rawCellValue<Row>(row: Row, key: string): string {
+  const value = (row as unknown as Record<string, unknown>)[key];
+  if (value === undefined || value === null) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "bigint" || typeof value === "boolean") {
+    return String(value);
+  }
+  return "";
+}
+
 function cellTitle<Row>(column: DataTableColumn<Row>, content: Children): string | undefined {
   if (column.truncate !== true) return undefined;
   if (typeof content === "string") return content.trim() === "" ? undefined : content;
@@ -99,7 +208,7 @@ function cellContent<Row>(column: DataTableColumn<Row>, row: Row, index: number)
 
 function statusTemplate(start: number, end: number, total: number): string {
   if (total <= 0) return "Нет строк";
-  return `${start}–${end} из ${total}`;
+  return `${String(start)}–${String(end)} из ${String(total)}`;
 }
 
 function GripIcon(): Node {
@@ -113,6 +222,47 @@ function GripIcon(): Node {
       <circle cx="10" cy="12" r="1.2" />
     </svg>
   );
+}
+
+function LockIcon(): Node {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path
+        d="M5 7V5.5a3 3 0 0 1 6 0V7"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.5"
+        stroke-linecap="round"
+      />
+      <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" fill="currentColor" />
+    </svg>
+  );
+}
+
+function humanizeColumnKey(key: string): string {
+  const words = key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[\s_-]+/)
+    .filter((part) => part !== "");
+  if (words.length === 0) return key;
+  return words
+    .map((part, index) =>
+      index === 0 ? `${part.charAt(0).toUpperCase()}${part.slice(1)}` : part.toLowerCase(),
+    )
+    .join(" ");
+}
+
+function settingsLabelFor<Row>(column: DataTableColumn<Row>): string {
+  if (column.settingsLabel !== undefined && column.settingsLabel.trim() !== "") {
+    return column.settingsLabel.trim();
+  }
+  if (typeof column.header === "string" && column.header.trim() !== "") {
+    return column.header.trim();
+  }
+  const cardLabel = column.card?.label;
+  if (cardLabel !== undefined && cardLabel.trim() !== "") return cardLabel.trim();
+  if (column.key === "actions") return "Действия";
+  return humanizeColumnKey(column.key);
 }
 
 const NO_WRITE = (): void => {};
@@ -166,9 +316,9 @@ interface HeaderCellProps<Row> {
   readonly sorted: () => boolean;
   readonly direction: () => DataTableSortDirection | undefined;
   readonly reorderable: boolean;
-  readonly dragging: boolean;
-  readonly over: boolean;
-  readonly armed: boolean;
+  readonly dragging: () => boolean;
+  readonly dropEdge: () => "before" | "after" | null;
+  readonly armed: () => boolean;
   readonly onSort: ((key: string, direction: DataTableSortDirection) => void) | undefined;
   readonly onResizeCommit: (widths: Readonly<Record<string, number>>) => void;
   readonly onResizeReset: (key: string) => void;
@@ -183,6 +333,7 @@ interface ResizeSession {
   readonly frozen: Readonly<Record<string, number>>;
   readonly key: string;
   lastWidth: number;
+  active: boolean;
   readonly move: (event: PointerEvent) => void;
   readonly end: (event: PointerEvent) => void;
 }
@@ -214,20 +365,16 @@ function HeaderCell<Row>(props: HeaderCellProps<Row>): Node {
     return Math.min(bounds.max, Math.max(bounds.min, value));
   };
 
-  const freezeWidths = (): Readonly<Record<string, number>> => {
+  const measureWidths = (): Readonly<Record<string, number>> => {
     const table = props.tableElement();
     const widths: Record<string, number> = {};
     if (table === null) return widths;
-    const headers = table.querySelectorAll<HTMLElement>("thead th[data-column-key]");
-    headers.forEach((header) => {
+    table.querySelectorAll<HTMLElement>("thead th[data-column-key]").forEach((header) => {
       const key = header.getAttribute("data-column-key");
       if (key === null) return;
       const width = header.getBoundingClientRect().width;
       if (width <= 0) return;
-      const rounded = Math.round(width);
-      widths[key] = rounded;
-      const col = colFor(key);
-      if (col !== null) col.style.width = `${rounded}px`;
+      widths[key] = Math.round(width);
     });
     return widths;
   };
@@ -245,16 +392,13 @@ function HeaderCell<Row>(props: HeaderCellProps<Row>): Node {
         // Синтетические события и jsdom могут не поддерживать capture.
       }
     }
-    const frozen = freezeWidths();
+    const frozen = measureWidths();
     const header = resizer?.closest<HTMLElement>("th");
     const measured = header?.getBoundingClientRect().width ?? 0;
     const startWidth =
       frozen[props.column.key] ??
       (measured > 0 ? Math.round(measured) : props.width() ?? FALLBACK_COLUMN_WIDTH);
-    const col = colFor(props.column.key);
-    if (col !== null) col.style.width = `${Math.round(startWidth)}px`;
     document.body.classList.add("sui-data-table--resizing");
-    setResizing(Math.round(startWidth));
 
     const next: ResizeSession = {
       startX: event.clientX,
@@ -262,9 +406,18 @@ function HeaderCell<Row>(props: HeaderCellProps<Row>): Node {
       frozen,
       key: props.column.key,
       lastWidth: Math.round(startWidth),
+      active: false,
       move: (moveEvent: PointerEvent) => {
         const current = session;
         if (current === null) return;
+        if (!current.active) {
+          if (Math.abs(moveEvent.clientX - current.startX) < RESIZE_THRESHOLD) return;
+          current.active = true;
+          for (const [key, width] of Object.entries(current.frozen)) {
+            const frozenCol = colFor(key);
+            if (frozenCol !== null) frozenCol.style.width = `${width}px`;
+          }
+        }
         const px = clampWidth(Math.round(current.startWidth + moveEvent.clientX - current.startX));
         current.lastWidth = px;
         const target = colFor(current.key);
@@ -273,7 +426,7 @@ function HeaderCell<Row>(props: HeaderCellProps<Row>): Node {
       },
       end: (endEvent: PointerEvent) => {
         const current = session;
-        if (current !== null) {
+        if (current !== null && current.active) {
           const target = colFor(current.key);
           if (target !== null) target.style.width = `${current.lastWidth}px`;
           props.onResizeCommit({ ...current.frozen, [current.key]: current.lastWidth });
@@ -318,10 +471,7 @@ function HeaderCell<Row>(props: HeaderCellProps<Row>): Node {
   const headerTitle =
     typeof props.column.header === "string" ? props.column.header : undefined;
   const headerLabel = () =>
-    headerTitle ?? (typeof props.column.header === "string" ? props.column.header : props.column.key);
-  const sortTransform = props.dragging
-    ? { transform: "translateY(-1px)", transition: undefined }
-    : undefined;
+    headerTitle ?? props.column.key;
   const resizerLabel = `Изменить ширину колонки «${headerLabel()}»`;
   const dragLabel = `Перетащить колонку «${headerLabel()}»`;
 
@@ -334,9 +484,9 @@ function HeaderCell<Row>(props: HeaderCellProps<Row>): Node {
       data-sortable={props.column.sortable === true ? "" : undefined}
       data-sorted={props.sorted() ? "" : undefined}
       data-reorderable={props.reorderable ? "" : undefined}
-      data-armed={props.armed ? "" : undefined}
-      data-dragging={props.dragging ? "" : undefined}
-      data-over={props.over ? "" : undefined}
+      data-armed={props.armed() ? "" : undefined}
+      data-dragging={props.dragging() ? "" : undefined}
+      data-drop={props.dropEdge() ?? undefined}
       tabindex={props.reorderable ? 0 : undefined}
       aria-roledescription={props.reorderable ? "Перетаскиваемый заголовок колонки" : undefined}
       aria-label={props.reorderable ? dragLabel : undefined}
@@ -348,19 +498,14 @@ function HeaderCell<Row>(props: HeaderCellProps<Row>): Node {
             : undefined
       }
       onPointerDown={(event: PointerEvent) => {
+        if (!props.reorderable) return;
         props.onHeaderPointerDown(props.column.key, event, event.currentTarget as HTMLElement);
       }}
       onKeyDown={(event: KeyboardEvent) => {
         props.onHeaderKeyDown(props.column.key, event);
       }}
-      style={sortTransform}
     >
       <div class="sui-data-table__th-inner">
-        <Show when={props.reorderable}>
-          <span class="sui-data-table__drag-grip" aria-hidden="true">
-            <GripIcon />
-          </span>
-        </Show>
         <Show
           when={props.column.sortable === true}
           fallback={
@@ -424,6 +569,12 @@ function HeaderCell<Row>(props: HeaderCellProps<Row>): Node {
           </button>
         </Show>
       </div>
+      <Show when={props.dropEdge() === "before"}>
+        <span class="sui-data-table__drop-indicator" data-edge="before" aria-hidden="true" />
+      </Show>
+      <Show when={props.dropEdge() === "after"}>
+        <span class="sui-data-table__drop-indicator" data-edge="after" aria-hidden="true" />
+      </Show>
     </th>
   );
 }
@@ -436,19 +587,58 @@ interface DataTableRowProps<Row> {
   readonly selectable: boolean;
   readonly onSelectionChange: ((key: string | number, selected: boolean) => void) | undefined;
   readonly onRowClick: ((row: Row) => void) | undefined;
+  readonly onCellEdit: DataTableProps<Row>["onCellEdit"];
   readonly tree: boolean;
   readonly onToggleExpand: ((key: string | number) => void) | undefined;
   readonly loadingChildren: boolean;
+  readonly showGrip: boolean;
+  readonly draggingRow: () => boolean;
+  readonly dropPosition: () => DataTableTreeDropPosition | null;
+  readonly onGripPointerDown: (
+    key: string | number,
+    event: PointerEvent,
+    node: HTMLElement,
+  ) => void;
 }
 
 function DataTableRow<Row>(props: DataTableRowProps<Row>): Node {
+  const [editingKey, setEditingKey] = createSignal<string | null>(null);
+
+  const startEdit = (column: DataTableColumn<Row>, event: MouseEvent): void => {
+    if (column.editable !== true || props.onCellEdit === undefined) return;
+    if (
+      event.target instanceof Element &&
+      event.target.closest("button, input, a[href], select, textarea") !== null
+    ) {
+      return;
+    }
+    event.preventDefault();
+    setEditingKey(column.key);
+  };
+
+  const commitEdit = (column: DataTableColumn<Row>, value: string): void => {
+    if (editingKey() !== column.key) return;
+    setEditingKey(null);
+    props.onCellEdit?.({
+      row: props.row,
+      key: column.key,
+      value,
+      rowKey: props.flat.key,
+    });
+  };
+
+  const rowLabel = `${String(props.flat.index + 1)}`;
+
   return (
     <tr
       class="sui-data-table__tr"
       data-key={String(props.flat.key)}
+      data-index={props.flat.index}
       data-level={props.tree ? props.flat.level : undefined}
       data-selected={props.selected ? "" : undefined}
       data-expanded={props.flat.expanded ? "" : undefined}
+      data-drop={props.dropPosition() ?? undefined}
+      data-row-dragging={props.draggingRow() ? "" : undefined}
       tabindex={props.onRowClick !== undefined ? 0 : undefined}
       onClick={(event) => {
         if (props.onRowClick === undefined) return;
@@ -465,11 +655,30 @@ function DataTableRow<Row>(props: DataTableRowProps<Row>): Node {
         props.onRowClick(props.row);
       }}
     >
+      <Show when={props.showGrip}>
+        <td class="sui-data-table__td" data-grip="">
+          <button
+            class="sui-data-table__row-grip"
+            type="button"
+            aria-label={`Перетащить строку ${rowLabel}`}
+            title="Перетащить строку"
+            onPointerDown={(event: PointerEvent) => {
+              props.onGripPointerDown(
+                props.flat.key,
+                event,
+                event.currentTarget as HTMLElement,
+              );
+            }}
+          >
+            <GripIcon />
+          </button>
+        </td>
+      </Show>
       <Show when={props.onSelectionChange !== undefined}>
         <td class="sui-data-table__td" data-select="">
           <TableCheckbox
             checked={() => props.selected}
-            label={`Выбрать строку ${String(props.flat.index + 1)}`}
+            label={`Выбрать строку ${rowLabel}`}
             disabled={!props.selectable}
             onChange={(checked) => {
               props.onSelectionChange?.(props.flat.key, checked);
@@ -480,68 +689,111 @@ function DataTableRow<Row>(props: DataTableRowProps<Row>): Node {
       {props.columns.map((column, columnIndex) => {
         const content = cellContent(column, props.row, props.flat.index);
         const showTree = props.tree && columnIndex === 0;
+        const editing = (): boolean => editingKey() === column.key;
         return (
           <td
             class="sui-data-table__td"
             data-align={column.align ?? "start"}
             data-truncate={column.truncate === true ? "" : undefined}
             data-numeric={column.align === "end" ? "" : undefined}
+            data-editable={
+              column.editable === true && props.onCellEdit !== undefined ? "" : undefined
+            }
+            onDblClick={(event: MouseEvent) => {
+              startEdit(column, event);
+            }}
           >
             <Show
-              when={showTree}
+              when={editing}
               fallback={
-                <span
-                  class="sui-data-table__cell-content"
-                  title={cellTitle(column, content)}
-                >
-                  {content}
-                </span>
-              }
-            >
-              <span
-                class="sui-data-table__tree-cell"
-                style={{ "padding-inline-start": `${String(props.flat.level * TREE_INDENT)}px` }}
-              >
                 <Show
-                  when={props.flat.hasChildren}
-                  fallback={<span class="sui-data-table__tree-spacer" aria-hidden="true" />}
+                  when={showTree}
+                  fallback={
+                    <span
+                      class="sui-data-table__cell-content"
+                      title={cellTitle(column, content)}
+                    >
+                      {content}
+                    </span>
+                  }
                 >
-                  <button
-                    class="sui-data-table__tree-toggle"
-                    type="button"
-                    aria-label={props.flat.expanded ? "Свернуть ветку" : "Развернуть ветку"}
-                    aria-expanded={props.flat.expanded ? "true" : "false"}
-                    data-loading={props.loadingChildren ? "" : undefined}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      props.onToggleExpand?.(props.flat.key);
-                    }}
-                    onKeyDown={(event: KeyboardEvent) => {
-                      if (event.key === "ArrowRight" && !props.flat.expanded) {
-                        event.preventDefault();
-                        props.onToggleExpand?.(props.flat.key);
-                      }
-                      if (event.key === "ArrowLeft" && props.flat.expanded) {
-                        event.preventDefault();
-                        props.onToggleExpand?.(props.flat.key);
-                      }
-                    }}
+                  <span
+                    class="sui-data-table__tree-cell"
+                    style={{ "padding-inline-start": `${String(props.flat.level * TREE_INDENT)}px` }}
                   >
                     <Show
-                      when={props.flat.expanded}
-                      fallback={<ChevronEndIcon size="sm" />}
+                      when={props.flat.hasChildren}
+                      fallback={<span class="sui-data-table__tree-spacer" aria-hidden="true" />}
                     >
-                      <ExpandMoreIcon size="sm" />
+                      <button
+                        class="sui-data-table__tree-toggle"
+                        type="button"
+                        aria-label={props.flat.expanded ? "Свернуть ветку" : "Развернуть ветку"}
+                        aria-expanded={props.flat.expanded ? "true" : "false"}
+                        data-loading={props.loadingChildren ? "" : undefined}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          props.onToggleExpand?.(props.flat.key);
+                        }}
+                        onKeyDown={(event: KeyboardEvent) => {
+                          if (event.key === "ArrowRight" && !props.flat.expanded) {
+                            event.preventDefault();
+                            props.onToggleExpand?.(props.flat.key);
+                          }
+                          if (event.key === "ArrowLeft" && props.flat.expanded) {
+                            event.preventDefault();
+                            props.onToggleExpand?.(props.flat.key);
+                          }
+                        }}
+                      >
+                        <Show
+                          when={props.flat.expanded}
+                          fallback={<ChevronEndIcon size="sm" />}
+                        >
+                          <ExpandMoreIcon size="sm" />
+                        </Show>
+                      </button>
                     </Show>
-                  </button>
+                    <span
+                      class="sui-data-table__cell-content"
+                      title={cellTitle(column, content)}
+                    >
+                      {content}
+                    </span>
+                  </span>
                 </Show>
-                <span
-                  class="sui-data-table__cell-content"
-                  title={cellTitle(column, content)}
-                >
-                  {content}
-                </span>
-              </span>
+              }
+            >
+              <input
+                class="sui-data-table__cell-editor"
+                type="text"
+                aria-label={`Редактировать ${settingsLabelFor(column)}`}
+                value={rawCellValue(props.row, column.key)}
+                ref={(node: Element | null) => {
+                  if (node instanceof HTMLInputElement) {
+                    node.focus();
+                    node.select();
+                  }
+                }}
+                onClick={(event) => {
+                  event.stopPropagation();
+                }}
+                onKeyDown={(event: KeyboardEvent) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    const target = event.currentTarget;
+                    if (target instanceof HTMLInputElement) commitEdit(column, target.value);
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    setEditingKey(null);
+                  }
+                }}
+                onBlur={(event: FocusEvent) => {
+                  const target = event.currentTarget;
+                  if (target instanceof HTMLInputElement) commitEdit(column, target.value);
+                }}
+              />
             </Show>
           </td>
         );
@@ -555,65 +807,91 @@ interface SettingsColumnRowProps {
   readonly label: string;
   readonly locked: boolean;
   readonly visible: boolean;
+  readonly dragging: () => boolean;
+  readonly dropEdge: () => "before" | "after" | null;
   readonly onToggle: (visible: boolean) => void;
   readonly onMove: (direction: -1 | 1) => void;
-  readonly onDragStart: () => void;
-  readonly onDrop: () => void;
+  readonly onPointerDown: (event: PointerEvent, node: HTMLElement) => void;
 }
 
 function SettingsColumnRow(props: SettingsColumnRowProps): Node {
   return (
     <li
       class="sui-data-table__settings-row"
-      draggable="true"
-      onDragStart={(event: DragEvent) => {
-        event.dataTransfer?.setData("text/plain", props.columnKey);
-        props.onDragStart();
-      }}
-      onDragOver={(event: DragEvent) => {
-        event.preventDefault();
-      }}
-      onDrop={(event: DragEvent) => {
-        event.preventDefault();
-        props.onDrop();
+      data-column-key={props.columnKey}
+      data-locked={props.locked ? "" : undefined}
+      data-dragging={props.dragging() ? "" : undefined}
+      data-drop={props.dropEdge() ?? undefined}
+      onPointerDown={(event: PointerEvent) => {
+        if (props.locked) return;
+        if (
+          event.target instanceof Element &&
+          event.target.closest("input, button") !== null
+        ) {
+          return;
+        }
+        props.onPointerDown(event, event.currentTarget as HTMLElement);
       }}
     >
-      <span class="sui-data-table__settings-grip" aria-hidden="true">
-        <GripIcon />
-      </span>
+      <Show when={props.dropEdge() === "before"}>
+        <span class="sui-data-table__settings-drop" data-edge="before" aria-hidden="true" />
+      </Show>
+      <Show when={props.dropEdge() === "after"}>
+        <span class="sui-data-table__settings-drop" data-edge="after" aria-hidden="true" />
+      </Show>
+      {props.locked ? null : (
+        <span class="sui-data-table__settings-grip" aria-hidden="true">
+          <GripIcon />
+        </span>
+      )}
       <label class="sui-data-table__settings-label">
-        <input
-          type="checkbox"
-          checked={props.visible}
-          disabled={props.locked}
-          onChange={(event) => {
-            const target = event.target;
-            if (target instanceof HTMLInputElement) props.onToggle(target.checked);
-          }}
-        />
+        {props.locked ? (
+          <span
+            class="sui-data-table__settings-lock"
+            title="Колонка заблокирована"
+            aria-label="Колонка заблокирована"
+          >
+            <LockIcon />
+          </span>
+        ) : (
+          <input
+            type="checkbox"
+            checked={props.visible}
+            onChange={(event) => {
+              const target = event.target;
+              if (target instanceof HTMLInputElement) props.onToggle(target.checked);
+            }}
+          />
+        )}
         <span>{props.label}</span>
       </label>
-      <span class="sui-data-table__settings-move">
-        <button
-          class="sui-data-table__settings-move-button"
-          type="button"
-          aria-label="Выше"
-          onClick={() => props.onMove(-1)}
-        >
-          ↑
-        </button>
-        <button
-          class="sui-data-table__settings-move-button"
-          type="button"
-          aria-label="Ниже"
-          onClick={() => props.onMove(1)}
-        >
-          ↓
-        </button>
-      </span>
+      {props.locked ? null : (
+        <span class="sui-data-table__settings-move">
+          <button
+            class="sui-data-table__settings-move-button"
+            type="button"
+            aria-label="Выше"
+            onClick={() => props.onMove(-1)}
+          >
+            ↑
+          </button>
+          <button
+            class="sui-data-table__settings-move-button"
+            type="button"
+            aria-label="Ниже"
+            onClick={() => props.onMove(1)}
+          >
+            ↓
+          </button>
+        </span>
+      )}
     </li>
   );
 }
+
+type BodyEntry<Row> =
+  | { readonly kind: "row"; readonly flat: FlatRow<Row>; readonly key: string }
+  | { readonly kind: "spacer"; readonly key: string; readonly height: number };
 
 export function DataTable<Row>(props: DataTableProps<Row>): Node {
   const config = useUiConfig();
@@ -623,16 +901,85 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
   const [loaded, setLoaded] = createSignal(false);
   const [narrow, setNarrow] = createSignal(false);
   const [layoutOverride, setLayoutOverride] = createSignal<DataTableLayout | null>(null);
+  const [scrollOverride, setScrollOverride] =
+    createSignal<DataTableResolvedScrollMode | null>(null);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [draggingKey, setDraggingKey] = createSignal<string | null>(null);
   const [armedKey, setArmedKey] = createSignal<string | null>(null);
-  const [overKey, setOverKey] = createSignal<string | null>(null);
+  const [dropTarget, setDropTarget] = createSignal<DropTarget | null>(null);
   const [internalExpanded, setInternalExpanded] = createSignal<ReadonlySet<string>>(
     new Set((props.tree?.defaultExpandedKeys ?? []).map(String)),
   );
   const [tableElement, setTableElement] = createSignal<HTMLTableElement | null>(null);
-  let settingsDragKey: string | null = null;
-  let headerDrag: { key: string; startX: number; moved: boolean } | null = null;
+  const [scrollElement, setScrollElement] = createSignal<HTMLElement | null>(null);
+  const [settingsList, setSettingsList] = createSignal<HTMLUListElement | null>(null);
+  const [densityOverride, setDensityOverride] = createSignal<DataTableDensity | null>(null);
+  const [settingsDragKey, setSettingsDragKey] = createSignal<string | null>(null);
+  const [settingsDrop, setSettingsDrop] = createSignal<DropTarget | null>(null);
+  const [draggingRow, setDraggingRow] = createSignal<string | number | null>(null);
+  const [rowDrop, setRowDrop] = createSignal<RowDropTarget | null>(null);
+
+  let headerDrag: {
+    key: string;
+    startX: number;
+    startY: number;
+    offsetX: number;
+    offsetY: number;
+    order: readonly string[];
+    moved: boolean;
+    node: HTMLElement | null;
+    tx: number;
+    ty: number;
+    lastX: number;
+    lastY: number;
+    frame: number | null;
+  } | null = null;
+  let settingsDrag: {
+    key: string;
+    startY: number;
+    offsetY: number;
+    order: readonly string[];
+    moved: boolean;
+    node: HTMLElement | null;
+    ty: number;
+    lastY: number;
+    frame: number | null;
+  } | null = null;
+  let rowDrag: {
+    key: string | number;
+    row: Row;
+    startY: number;
+    moved: boolean;
+    target: RowDropTarget | null;
+    frame: number | null;
+    lastY: number;
+    pointerId: number | undefined;
+    node: HTMLElement | null;
+  } | null = null;
+  let headerDragCleanup: (() => void) | null = null;
+  let settingsDragCleanup: (() => void) | null = null;
+  let rowDragCleanup: (() => void) | null = null;
+  let suppressClick = false;
+  let suppressTimer: number | null = null;
+
+  const scheduleSuppressReset = (): void => {
+    suppressClick = true;
+    if (typeof window === "undefined") return;
+    if (suppressTimer !== null) window.clearTimeout(suppressTimer);
+    suppressTimer = window.setTimeout(() => {
+      suppressTimer = null;
+      suppressClick = false;
+    }, 0);
+  };
+
+  onCleanup(() => {
+    headerDragCleanup?.();
+    settingsDragCleanup?.();
+    rowDragCleanup?.();
+    if (suppressTimer !== null && typeof window !== "undefined") {
+      window.clearTimeout(suppressTimer);
+    }
+  });
 
   clientEffect(() => {
     const stored = readDataTableSettings(props.tableKey);
@@ -644,7 +991,9 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
       layout: stored.layout ?? null,
       stickyHeader: stored.stickyHeader ?? null,
       stickyFooter: stored.stickyFooter ?? null,
+      scrollMode: stored.scrollMode ?? null,
     });
+    setDensityOverride(stored.density ?? null);
     setLoaded(true);
   });
 
@@ -666,7 +1015,8 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
   );
 
   const isVisible = (column: DataTableColumn<Row>): boolean =>
-    settings().visible[column.key] ?? column.defaultVisible !== false;
+    column.locked === true ||
+    (settings().visible[column.key] ?? column.defaultVisible !== false);
 
   const orderedColumns = createMemo(() =>
     orderedAllColumns().filter((column) => isVisible(column)),
@@ -679,7 +1029,10 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
     resolveColumnWidth(column, settings().widths[column.key]);
 
   const density = (): DataTableDensity =>
-    props.density ?? settings().density ?? "standard";
+    densityOverride() ?? settings().density ?? props.density ?? "standard";
+
+  const rowHeight = (): number =>
+    density() === "compact" ? ROW_HEIGHT_COMPACT : ROW_HEIGHT_STANDARD;
 
   const layout = (): DataTableLayout =>
     layoutOverride() ?? (narrow() ? "cards" : props.layout ?? settings().layout ?? "table");
@@ -689,6 +1042,14 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
 
   const stickyFooter = (): boolean =>
     props.stickyFooter ?? settings().stickyFooter ?? false;
+
+  const scrollMode = (): DataTableResolvedScrollMode =>
+    scrollOverride() ??
+    resolveScrollMode(props.scrollMode) ??
+    settings().scrollMode ??
+    "internal";
+
+  const internalScroll = (): boolean => scrollMode() === "internal";
 
   const persist = (next: DataTableSettingsState): void => {
     writeDataTableSettings(props.tableKey, next);
@@ -727,7 +1088,54 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
   const resetView = (): void => {
     setSettings(EMPTY_SETTINGS);
     setLayoutOverride(null);
+    setDensityOverride(null);
+    setScrollOverride(null);
     clearDataTableSettings(props.tableKey);
+  };
+
+  const preservesLocked = (order: readonly string[]): boolean => {
+    const current = orderedKeys();
+    return props.columns.every(
+      (column) =>
+        column.locked !== true || order.indexOf(column.key) === current.indexOf(column.key),
+    );
+  };
+
+  const applyOrder = (
+    order: readonly string[],
+    persistOrder: boolean,
+  ): boolean => {
+    if (!preservesLocked(order)) return false;
+    const table = tableElement();
+    const list = settingsList();
+    const headerBefore = snapshotRects(table, HEADER_SELECTOR);
+    const settingsBefore = snapshotRects(list, SETTINGS_SELECTOR);
+    if (persistOrder) {
+      commitSettings({ ...settings(), order });
+    } else {
+      setSettings({ ...settings(), order });
+    }
+    animateReflow(headerBefore, tableElement(), HEADER_SELECTOR);
+    animateReflow(settingsBefore, settingsList(), SETTINGS_SELECTOR);
+    return true;
+  };
+
+  const insertionOrder = (
+    current: readonly string[],
+    fromKey: string,
+    toKey: string,
+    edge: "before" | "after",
+  ): readonly string[] | null => {
+    if (fromKey === toKey) return null;
+    const from = current.indexOf(fromKey);
+    const target = current.indexOf(toKey);
+    if (from === -1 || target === -1) return null;
+    const next = [...current];
+    const [moved] = next.splice(from, 1);
+    if (moved === undefined) return null;
+    const targetIndex = next.indexOf(toKey);
+    next.splice(edge === "after" ? targetIndex + 1 : targetIndex, 0, moved);
+    return preservesLocked(next) ? next : null;
   };
 
   const moveColumn = (key: string, direction: -1 | 1): void => {
@@ -735,24 +1143,10 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
     const from = current.indexOf(key);
     const to = from + direction;
     if (from === -1 || to < 0 || to >= current.length) return;
-    const next = [...current];
-    const [moved] = next.splice(from, 1);
-    if (moved === undefined) return;
-    next.splice(to, 0, moved);
-    commitSettings({ ...settings(), order: next });
-  };
-
-  const reorderColumn = (fromKey: string, toKey: string): void => {
-    if (fromKey === toKey) return;
-    const current = orderedKeys();
-    const from = current.indexOf(fromKey);
-    const to = current.indexOf(toKey);
-    if (from === -1 || to === -1) return;
-    const next = [...current];
-    const [moved] = next.splice(from, 1);
-    if (moved === undefined) return;
-    next.splice(to, 0, moved);
-    commitSettings({ ...settings(), order: next });
+    const target = current[to];
+    if (target === undefined) return;
+    const next = insertionOrder(current, key, target, direction < 0 ? "before" : "after");
+    if (next !== null) applyOrder(next, true);
   };
 
   const setLayout = (next: DataTableLayout): void => {
@@ -762,12 +1156,25 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
   };
 
   const toggleColumn = (key: string, visible: boolean): void => {
+    if (suppressClick) {
+      suppressClick = false;
+      return;
+    }
+    const column = props.columns.find((entry) => entry.key === key);
+    if (column === undefined || column.locked === true) return;
     commitSettings({ ...settings(), visible: { ...settings().visible, [key]: visible } });
   };
 
   const changeDensity = (value: string): void => {
     const next: DataTableDensity = value === "compact" ? "compact" : "standard";
+    setDensityOverride(next);
     commitSettings({ ...settings(), density: next });
+  };
+
+  const changeScrollMode = (value: string): void => {
+    const next = resolveScrollMode(value as DataTableResolvedScrollMode) ?? "internal";
+    setScrollOverride(next);
+    commitSettings({ ...settings(), scrollMode: next });
   };
 
   const changeStickyHeader = (value: boolean): void => {
@@ -778,11 +1185,168 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
     commitSettings({ ...settings(), stickyFooter: value });
   };
 
+  const headerNode = (key: string): HTMLElement | null => {
+    const table = tableElement();
+    if (table === null) return null;
+    for (const header of table.querySelectorAll<HTMLElement>(HEADER_SELECTOR)) {
+      if (header.getAttribute("data-column-key") === key) return header;
+    }
+    return null;
+  };
+
+  const settingsNode = (key: string): HTMLElement | null => {
+    const list = settingsList();
+    if (list === null) return null;
+    for (const row of list.querySelectorAll<HTMLElement>(SETTINGS_SELECTOR)) {
+      if (row.getAttribute("data-column-key") === key) return row;
+    }
+    return null;
+  };
+
+  const clearHeaderTransform = (node: HTMLElement | null): void => {
+    if (node === null) return;
+    node.style.transition = "";
+    node.style.transform = "";
+    node.style.willChange = "";
+    node.style.zIndex = "";
+  };
+
+  const positionHeaderDrag = (clientX: number, clientY: number): void => {
+    const drag = headerDrag;
+    if (drag === null || !drag.moved) return;
+    const node = headerNode(drag.key);
+    if (node === null) return;
+    if (node !== drag.node) {
+      drag.node = node;
+      drag.tx = 0;
+      drag.ty = 0;
+    }
+    const rect = node.getBoundingClientRect();
+    drag.tx += clientX - drag.offsetX - rect.left;
+    drag.ty += clientY - drag.offsetY - rect.top;
+    node.style.transition = "none";
+    node.style.transform = `translate3d(${String(drag.tx)}px, ${String(drag.ty)}px, 0)`;
+    node.style.zIndex = "30";
+    node.style.willChange = "transform";
+  };
+
+  const positionSettingsDrag = (clientY: number): void => {
+    const drag = settingsDrag;
+    if (drag === null || !drag.moved) return;
+    const node = settingsNode(drag.key);
+    if (node === null) return;
+    if (node !== drag.node) {
+      drag.node = node;
+      drag.ty = 0;
+    }
+    const rect = node.getBoundingClientRect();
+    drag.ty += clientY - drag.offsetY - rect.top;
+    node.style.transition = "none";
+    node.style.transform = `translate3d(0, ${String(drag.ty)}px, 0)`;
+    node.style.zIndex = "5";
+    node.style.willChange = "transform";
+  };
+
+  const findHeaderTarget = (clientX: number, draggedKey: string): DropTarget | null => {
+    const table = tableElement();
+    if (table === null) return null;
+    let fallback: DropTarget | null = null;
+    for (const header of table.querySelectorAll<HTMLElement>(HEADER_SELECTOR)) {
+      const key = header.getAttribute("data-column-key");
+      if (key === null || key === draggedKey) continue;
+      const rect = header.getBoundingClientRect();
+      if (rect.width <= 0) continue;
+      const midpoint = rect.left + rect.width / 2;
+      const edge: "before" | "after" = clientX < midpoint ? "before" : "after";
+      if (clientX >= rect.left && clientX <= rect.right) {
+        const distance = Math.abs(clientX - midpoint);
+        const previous = dropTarget();
+        if (
+          previous !== null &&
+          previous.key === key &&
+          previous.edge !== edge &&
+          distance < DRAG_HYSTERESIS
+        ) {
+          return previous;
+        }
+        return { key, edge };
+      }
+      if (fallback === null && clientX < rect.left) {
+        fallback = { key, edge: "before" };
+      }
+    }
+    return fallback;
+  };
+
+  const findSettingsTarget = (clientY: number, draggedKey: string): DropTarget | null => {
+    const list = settingsList();
+    if (list === null) return null;
+    for (const row of list.querySelectorAll<HTMLElement>(SETTINGS_SELECTOR)) {
+      const key = row.getAttribute("data-column-key");
+      if (key === null || key === draggedKey) continue;
+      const rect = row.getBoundingClientRect();
+      if (rect.height <= 0) continue;
+      const midpoint = rect.top + rect.height / 2;
+      if (clientY < rect.top || clientY > rect.bottom) continue;
+      const edge: "before" | "after" = clientY < midpoint ? "before" : "after";
+      const distance = Math.abs(clientY - midpoint);
+      const previous = settingsDrop();
+      if (
+        previous !== null &&
+        previous.key === key &&
+        previous.edge !== edge &&
+        distance < DRAG_HYSTERESIS
+      ) {
+        return previous;
+      }
+      return { key, edge };
+    }
+    return null;
+  };
+
+  const requestFrame = (callback: () => void): number | null => {
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      return window.requestAnimationFrame(callback);
+    }
+    callback();
+    return null;
+  };
+
+  const cancelFrame = (frame: number | null): void => {
+    if (
+      frame !== null &&
+      typeof window !== "undefined" &&
+      typeof window.cancelAnimationFrame === "function"
+    ) {
+      window.cancelAnimationFrame(frame);
+    }
+  };
+
   const onHeaderPointerDown = (key: string, event: PointerEvent, node: HTMLElement): void => {
     if (event.button !== 0) return;
-    if (event.target instanceof Element && event.target.closest("button") !== null) return;
-    headerDrag = { key, startX: event.clientX, moved: false };
-    const startX = event.clientX;
+    if (
+      event.target instanceof Element &&
+      event.target.closest(".sui-data-table__resizer") !== null
+    ) {
+      return;
+    }
+    suppressClick = false;
+    const rect = node.getBoundingClientRect();
+    headerDrag = {
+      key,
+      startX: event.clientX,
+      startY: event.clientY,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+      order: orderedKeys(),
+      moved: false,
+      node,
+      tx: 0,
+      ty: 0,
+      lastX: event.clientX,
+      lastY: event.clientY,
+      frame: null,
+    };
     const pointerId = (event as PointerEvent & { pointerId?: number }).pointerId;
     if (pointerId !== undefined && typeof node.setPointerCapture === "function") {
       try {
@@ -791,34 +1355,44 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
         // jsdom
       }
     }
+    const updateTarget = (): void => {
+      const current = headerDrag;
+      if (current === null || !current.moved) return;
+      const target = findHeaderTarget(current.lastX, current.key);
+      if (target === null) {
+        setDropTarget(null);
+        return;
+      }
+      const next = insertionOrder(current.order, current.key, target.key, target.edge);
+      setDropTarget(next === null ? null : target);
+    };
     const move = (moveEvent: PointerEvent): void => {
       const current = headerDrag;
       if (current === null) return;
-      if (!current.moved && Math.abs(moveEvent.clientX - startX) < 6) return;
-      current.moved = true;
-      setDraggingKey(current.key);
-      const table = tableElement();
-      if (table === null) return;
-      const headers = [...table.querySelectorAll<HTMLElement>("thead th[data-column-key]")];
-      const target = headers.find((header) => {
-        const rect = header.getBoundingClientRect();
-        return moveEvent.clientX >= rect.left && moveEvent.clientX <= rect.right;
+      const dx = moveEvent.clientX - current.startX;
+      const dy = moveEvent.clientY - current.startY;
+      if (!current.moved) {
+        if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
+        current.moved = true;
+        suppressClick = true;
+        setDraggingKey(current.key);
+      }
+      current.lastX = moveEvent.clientX;
+      current.lastY = moveEvent.clientY;
+      positionHeaderDrag(moveEvent.clientX, moveEvent.clientY);
+      if (current.frame !== null) return;
+      current.frame = requestFrame(() => {
+        if (current !== null) current.frame = null;
+        updateTarget();
       });
-      const over = target?.getAttribute("data-column-key") ?? null;
-      setOverKey(over);
     };
-    const finish = (): void => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", finish);
-      window.removeEventListener("pointercancel", finish);
+    const finish = (commit: boolean): void => {
+      headerDragCleanup?.();
+      headerDragCleanup = null;
       const current = headerDrag;
       headerDrag = null;
-      setDraggingKey(null);
-      const target = overKey();
-      setOverKey(null);
-      if (current !== null && current.moved && target !== null) {
-        reorderColumn(current.key, target);
-      }
+      if (current === null) return;
+      cancelFrame(current.frame);
       if (pointerId !== undefined && typeof node.releasePointerCapture === "function") {
         try {
           node.releasePointerCapture(pointerId);
@@ -826,13 +1400,181 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
           // jsdom
         }
       }
+      if (!current.moved) {
+        clearHeaderTransform(current.node);
+        setDraggingKey(null);
+        setDropTarget(null);
+        return;
+      }
+      const before = snapshotRects(tableElement(), HEADER_SELECTOR);
+      const nodeNow = headerNode(current.key) ?? current.node;
+      clearHeaderTransform(nodeNow);
+      setDraggingKey(null);
+      setDropTarget(null);
+      if (commit) {
+        const target = findHeaderTarget(current.lastX, current.key);
+        const order =
+          target === null
+            ? null
+            : insertionOrder(current.order, current.key, target.key, target.edge);
+        if (order !== null) {
+          commitSettings({ ...settings(), order });
+          scheduleSuppressReset();
+        }
+      }
+      animateReflow(before, tableElement(), HEADER_SELECTOR);
+      setArmedKey(null);
+    };
+    const onUp = (): void => {
+      finish(true);
+    };
+    const onCancel = (): void => {
+      finish(false);
     };
     window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", finish);
-    window.addEventListener("pointercancel", finish);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    headerDragCleanup = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+    };
+  };
+
+  const onSettingsPointerDown = (
+    key: string,
+    event: PointerEvent,
+    node: HTMLElement,
+  ): void => {
+    if (event.button !== 0) return;
+    suppressClick = false;
+    if (
+      event.target instanceof Element &&
+      event.target.closest("input, button") !== null
+    ) {
+      return;
+    }
+    const rect = node.getBoundingClientRect();
+    settingsDrag = {
+      key,
+      startY: event.clientY,
+      offsetY: event.clientY - rect.top,
+      order: orderedKeys(),
+      moved: false,
+      node,
+      ty: 0,
+      lastY: event.clientY,
+      frame: null,
+    };
+    const pointerId = (event as PointerEvent & { pointerId?: number }).pointerId;
+    if (pointerId !== undefined && typeof node.setPointerCapture === "function") {
+      try {
+        node.setPointerCapture(pointerId);
+      } catch {
+        // jsdom
+      }
+    }
+    const updateTarget = (): void => {
+      const current = settingsDrag;
+      if (current === null || !current.moved) return;
+      const target = findSettingsTarget(current.lastY, current.key);
+      if (target === null) {
+        setSettingsDrop(null);
+        return;
+      }
+      const next = insertionOrder(current.order, current.key, target.key, target.edge);
+      setSettingsDrop(next === null ? null : target);
+    };
+    const move = (moveEvent: PointerEvent): void => {
+      const current = settingsDrag;
+      if (current === null) return;
+      const dy = moveEvent.clientY - current.startY;
+      if (!current.moved) {
+        if (Math.abs(dy) < DRAG_THRESHOLD) return;
+        current.moved = true;
+        suppressClick = true;
+        setSettingsDragKey(current.key);
+      }
+      current.lastY = moveEvent.clientY;
+      positionSettingsDrag(moveEvent.clientY);
+      if (current.frame !== null) return;
+      current.frame = requestFrame(() => {
+        if (current !== null) current.frame = null;
+        updateTarget();
+      });
+    };
+    const finish = (commit: boolean): void => {
+      settingsDragCleanup?.();
+      settingsDragCleanup = null;
+      const current = settingsDrag;
+      settingsDrag = null;
+      if (current === null) return;
+      cancelFrame(current.frame);
+      if (pointerId !== undefined && typeof node.releasePointerCapture === "function") {
+        try {
+          node.releasePointerCapture(pointerId);
+        } catch {
+          // jsdom
+        }
+      }
+      if (!current.moved) {
+        clearHeaderTransform(current.node);
+        setSettingsDragKey(null);
+        setSettingsDrop(null);
+        return;
+      }
+      const before = snapshotRects(settingsList(), SETTINGS_SELECTOR);
+      const nodeNow = settingsNode(current.key) ?? current.node;
+      clearHeaderTransform(nodeNow);
+      setSettingsDragKey(null);
+      setSettingsDrop(null);
+      if (commit) {
+        const target = findSettingsTarget(current.lastY, current.key);
+        const order =
+          target === null
+            ? null
+            : insertionOrder(current.order, current.key, target.key, target.edge);
+        if (order !== null) {
+          commitSettings({ ...settings(), order });
+          scheduleSuppressReset();
+        }
+      }
+      animateReflow(before, settingsList(), SETTINGS_SELECTOR);
+    };
+    const onUp = (): void => {
+      finish(true);
+    };
+    const onCancel = (): void => {
+      finish(false);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    settingsDragCleanup = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+    };
+  };
+
+  const focusHeader = (key: string): void => {
+    if (typeof window === "undefined") return;
+    const apply = (): void => {
+      const table = tableElement();
+      if (table === null) return;
+      const node = [...table.querySelectorAll<HTMLElement>(HEADER_SELECTOR)].find(
+        (header) => header.getAttribute("data-column-key") === key,
+      );
+      node?.focus();
+    };
+    queueMicrotask(apply);
+    if (typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(apply);
+    }
   };
 
   const onHeaderKeyDown = (key: string, event: KeyboardEvent): void => {
+    suppressClick = false;
     if (event.target !== event.currentTarget) return;
     if (event.key === " " || event.key === "Spacebar" || event.key === "Enter") {
       event.preventDefault();
@@ -847,6 +1589,7 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
     moveColumn(key, event.key === "ArrowLeft" ? -1 : 1);
+    focusHeader(key);
   };
 
   const selection = (): DataTableSelection | undefined => props.selection;
@@ -932,17 +1675,27 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
     return result;
   });
 
+  const childrenIndex = createMemo(() => {
+    const index = new Map<string, (string | number)[]>();
+    for (const entry of flatRows()) {
+      if (entry.parentKey === null) continue;
+      const parent = String(entry.parentKey);
+      const list = index.get(parent);
+      if (list === undefined) index.set(parent, [entry.key]);
+      else list.push(entry.key);
+    }
+    return index;
+  });
+
   const descendantKeys = (key: string | number): readonly (string | number)[] => {
     const keys: (string | number)[] = [];
-    const collect = (parent: string | number): void => {
-      for (const entry of flatRows()) {
-        if (entry.parentKey === parent) {
-          keys.push(entry.key);
-          collect(entry.key);
-        }
-      }
-    };
-    collect(key);
+    const stack = [...(childrenIndex().get(String(key)) ?? [])];
+    while (stack.length > 0) {
+      const next = stack.pop();
+      if (next === undefined) continue;
+      keys.push(next);
+      stack.push(...(childrenIndex().get(String(next)) ?? []));
+    }
     return keys;
   };
 
@@ -1047,13 +1800,34 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
   const isLoading = (): boolean => props.loading === true;
   const isEmpty = (): boolean => props.rows.length === 0;
 
+  const bodyRows = (): number => {
+    const size = Number.isFinite(props.pageSize) && props.pageSize > 0
+      ? Math.trunc(props.pageSize)
+      : 0;
+    if (props.total > 0) return Math.min(Math.max(size, props.rows.length), props.total);
+    return Math.max(size, props.rows.length, 1);
+  };
+
   const skeletonRows = (): readonly number[] => {
-    const count = Math.min(Math.max(1, Math.trunc(props.pageSize) || 5), 100);
+    const count = Math.min(Math.max(1, bodyRows()), MAX_SKELETON_ROWS);
     return Array.from({ length: count }, (_value, index) => index);
   };
 
+  const fillerRows = (): readonly number[] => {
+    if (isLoading() || hasError() || isEmpty()) return [];
+    if (virtualEnabled()) return [];
+    const missing = bodyRows() - flatRows().length;
+    if (missing <= 0) return [];
+    return Array.from(
+      { length: Math.min(missing, MAX_FILLER_ROWS) },
+      (_value, index) => index,
+    );
+  };
+
   const columnCount = (): number =>
-    orderedColumns().length + (selection() === undefined ? 0 : 1);
+    orderedColumns().length +
+    (selection() === undefined ? 0 : 1) +
+    (treeDragEnabled() ? 1 : 0);
 
   const tableLabel = (): string => {
     const value = props.attrs?.["aria-label"];
@@ -1134,10 +1908,266 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
       ? props.renderCard(entry.row, cardContext(entry))
       : defaultCard(entry);
 
+  const treeDragEnabled = (): boolean =>
+    props.tree !== undefined && props.tree.onMove !== undefined;
+
+  const virtualEnabled = (): boolean =>
+    props.virtual !== false &&
+    layout() === "table" &&
+    internalScroll() &&
+    flatRows().length > VIRTUAL_THRESHOLD;
+
+  const virtualizer = createVirtualizer({
+    count: () => (virtualEnabled() ? flatRows().length : 0),
+    estimateSize: () => rowHeight(),
+    getItemKey: (index) => {
+      const entry = flatRows()[index];
+      return entry === undefined ? index : entry.key;
+    },
+    overscan: () => props.virtualOverscan ?? VIRTUAL_OVERSCAN,
+    initialViewportSize: 480,
+  });
+
+  clientEffect(() => {
+    const node = scrollElement();
+    virtualizer.setScrollElement(null);
+    if (node === null || !virtualEnabled()) return;
+    let observer: ResizeObserver | null = null;
+    const attach = (): boolean => {
+      if (node.clientHeight <= 0) return false;
+      virtualizer.setScrollElement(node);
+      observer?.disconnect();
+      observer = null;
+      return true;
+    };
+    if (!attach() && typeof ResizeObserver === "function") {
+      observer = new ResizeObserver(() => {
+        attach();
+      });
+      observer.observe(node);
+    }
+    onCleanup(() => {
+      observer?.disconnect();
+      observer = null;
+    });
+  });
+
+  const bodyEntries = createMemo<readonly BodyEntry<Row>[]>(() => {
+    const rows = flatRows();
+    if (!virtualEnabled()) {
+      return rows.map((flat) => ({ kind: "row" as const, flat, key: String(flat.key) }));
+    }
+    const items = virtualizer.virtualItems();
+    const total = virtualizer.totalSize();
+    const visible: BodyEntry<Row>[] = items
+      .map((item) => rows[item.index])
+      .filter((flat): flat is FlatRow<Row> => flat !== undefined)
+      .map((flat) => ({ kind: "row" as const, flat, key: String(flat.key) }));
+    const first = items[0];
+    const last = items[items.length - 1];
+    const top = first === undefined ? 0 : Math.max(0, first.start);
+    const bottom = last === undefined ? 0 : Math.max(0, total - last.end);
+    const result: BodyEntry<Row>[] = [];
+    if (top > 0) {
+      result.push({ kind: "spacer", key: SPACER_TOP_KEY, height: top });
+    }
+    result.push(...visible);
+    if (bottom > 0) {
+      result.push({ kind: "spacer", key: SPACER_BOTTOM_KEY, height: bottom });
+    }
+    return result;
+  });
+
+  const scrollToRow = (
+    key: string | number,
+    align: "start" | "center" | "end" | "auto" = "auto",
+  ): void => {
+    const index = flatRows().findIndex((entry) => entry.key === key);
+    if (index === -1) return;
+    if (virtualEnabled()) {
+      virtualizer.scrollToIndex(index, { align });
+      return;
+    }
+    const scroller = scrollElement();
+    const table = tableElement();
+    if (scroller === null || table === null) return;
+    const row = table.querySelector<HTMLElement>(`tbody tr[data-key="${String(key)}"]`);
+    if (row === null) return;
+    const rowRect = row.getBoundingClientRect();
+    const scrollRect = scroller.getBoundingClientRect();
+    const header = HEADER_HEIGHT;
+    let delta = 0;
+    if (align === "start") delta = rowRect.top - scrollRect.top - header;
+    else if (align === "center") delta = rowRect.top - scrollRect.top - (scroller.clientHeight - rowRect.height) / 2;
+    else if (align === "end") delta = rowRect.bottom - scrollRect.bottom;
+    else if (rowRect.top < scrollRect.top + header) delta = rowRect.top - scrollRect.top - header;
+    else if (rowRect.bottom > scrollRect.bottom) delta = rowRect.bottom - scrollRect.bottom;
+    if (delta !== 0) scroller.scrollTop += delta;
+  };
+
+  const api: DataTableApi = {
+    scrollToRow,
+    scrollToTop: () => {
+      const scroller = scrollElement();
+      if (scroller !== null) scroller.scrollTop = 0;
+      else if (typeof window !== "undefined") window.scrollTo({ top: 0 });
+    },
+  };
+
+  clientEffect(() => {
+    props.onReady?.(api);
+  });
+
+  const rowDragDescendant = (dragged: Row, target: Row): boolean => {
+    const tree = props.tree;
+    if (tree === undefined) return false;
+    const targetKey = String(props.rowKey(target, 0));
+    const stack: Row[] = [...tree.getChildren(dragged)];
+    while (stack.length > 0) {
+      const next = stack.pop();
+      if (next === undefined) continue;
+      if (String(props.rowKey(next, 0)) === targetKey) return true;
+      stack.push(...tree.getChildren(next));
+    }
+    return false;
+  };
+
+  const rowDropAllowed = (
+    row: Row,
+    target: Row,
+    position: DataTableTreeDropPosition,
+  ): boolean => {
+    if (props.tree === undefined) return false;
+    if (row === target) return false;
+    if (rowDragDescendant(row, target)) return false;
+    if (props.tree.canDrop !== undefined) {
+      return props.tree.canDrop(
+        { row, target, position },
+        {
+          rowKey: props.rowKey(row, 0),
+          targetKey: props.rowKey(target, 0),
+        },
+      );
+    }
+    return true;
+  };
+
+  const findRowDropTarget = (clientY: number): RowDropTarget | null => {
+    const table = tableElement();
+    if (table === null) return null;
+    for (const row of table.querySelectorAll<HTMLElement>("tbody tr[data-key]")) {
+      const key = row.getAttribute("data-key");
+      if (key === null) continue;
+      const entry = flatRows().find((candidate) => String(candidate.key) === key);
+      if (entry === undefined) continue;
+      const rect = row.getBoundingClientRect();
+      if (rect.height <= 0) continue;
+      if (clientY < rect.top || clientY > rect.bottom) continue;
+      const ratio = (clientY - rect.top) / rect.height;
+      const position: DataTableTreeDropPosition =
+        ratio < 0.25 ? "before" : ratio > 0.75 ? "after" : "inside";
+      return { key: entry.key, position };
+    }
+    return null;
+  };
+
+  const onGripPointerDown = (
+    key: string | number,
+    event: PointerEvent,
+    node: HTMLElement,
+  ): void => {
+    if (event.button !== 0 || props.tree === undefined || props.tree.onMove === undefined) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const entry = flatRows().find((candidate) => candidate.key === key);
+    if (entry === undefined) return;
+    rowDrag = {
+      key,
+      row: entry.row,
+      startY: event.clientY,
+      moved: false,
+      target: null,
+      frame: null,
+      lastY: event.clientY,
+      pointerId: (event as PointerEvent & { pointerId?: number }).pointerId,
+      node,
+    };
+    const updateTarget = (): void => {
+      const current = rowDrag;
+      if (current === null || !current.moved) return;
+      const target = findRowDropTarget(current.lastY);
+      if (target === null) {
+        setRowDrop(null);
+        return;
+      }
+      const targetEntry = flatRows().find((candidate) => candidate.key === target.key);
+      if (targetEntry === undefined) {
+        setRowDrop(null);
+        return;
+      }
+      const allowed = rowDropAllowed(current.row, targetEntry.row, target.position);
+      setRowDrop(allowed ? target : null);
+    };
+    const move = (moveEvent: PointerEvent): void => {
+      const current = rowDrag;
+      if (current === null) return;
+      if (!current.moved) {
+        if (Math.abs(moveEvent.clientY - current.startY) < DRAG_THRESHOLD) return;
+        current.moved = true;
+        setDraggingRow(current.key);
+      }
+      current.lastY = moveEvent.clientY;
+      if (current.frame !== null) return;
+      current.frame = requestFrame(() => {
+        if (current !== null) current.frame = null;
+        updateTarget();
+      });
+    };
+    const finish = (commit: boolean): void => {
+      rowDragCleanup?.();
+      rowDragCleanup = null;
+      const current = rowDrag;
+      rowDrag = null;
+      if (current === null) return;
+      cancelFrame(current.frame);
+      setDraggingRow(null);
+      setRowDrop(null);
+      if (!commit || !current.moved || props.tree?.onMove === undefined) return;
+      const target = findRowDropTarget(current.lastY);
+      if (target === null) return;
+      const targetEntry = flatRows().find((candidate) => candidate.key === target.key);
+      if (targetEntry === undefined) return;
+      if (!rowDropAllowed(current.row, targetEntry.row, target.position)) return;
+      if (target.position === "inside") {
+        const wasExpanded = targetEntry.expanded;
+        if (!wasExpanded) toggleExpand(targetEntry.key);
+      }
+      props.tree.onMove({
+        row: current.row,
+        target: targetEntry.row,
+        position: target.position,
+      });
+    };
+    const onUp = (): void => {
+      finish(true);
+    };
+    const onCancel = (): void => {
+      finish(false);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    rowDragCleanup = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+    };
+  };
+
   const selectionBar = (): Node => (
     <div
       class="sui-data-table__selection-bar"
-      data-position={props.selectionBarPosition ?? "top"}
+      data-position={props.selectionBarPosition ?? "bottom"}
       role="toolbar"
       aria-label="Действия с выбранными строками"
     >
@@ -1148,9 +2178,9 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
         variant="text"
         size="sm"
         onClick={() => toggleAll(true)}
-        attrs={{ "data-action": "select-page" }}
+        attrs={{ "data-action": "select-all" }}
       >
-        Выбрать все на странице
+        Выбрать всё
       </Button>
       <Button
         variant="text"
@@ -1166,16 +2196,34 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
     </div>
   );
 
+  const scrollInlineStyle = (): StyleInput => {
+    const base: Record<string, string | number> = {
+      "--sui-data-table-row-size": `${String(rowHeight())}px`,
+      "--sui-data-table-head-size": `${String(HEADER_HEIGHT)}px`,
+      "--sui-data-table-page-rows": String(bodyRows()),
+    };
+    if (props.scrollHeight !== undefined) {
+      base["--sui-data-table-max-block"] = props.scrollHeight;
+    }
+    return base;
+  };
+
+  const scrollBodyStyle = (): StyleInput | undefined =>
+    internalScroll()
+      ? { blockSize: `${String(HEADER_HEIGHT + bodyRows() * rowHeight())}px` }
+      : undefined;
+
   return (
     <div
       {...props.attrs}
       class={["sui-data-table", props.class]}
-      style={props.style}
+      style={[scrollInlineStyle(), props.style]}
       data-density={density()}
       data-layout={layout()}
       data-loading={isLoading() ? "" : undefined}
       data-loaded={loaded() ? "" : undefined}
-      data-scroll={props.scrollMode ?? "page"}
+      data-scroll={scrollMode()}
+      data-virtual={virtualEnabled() ? "" : undefined}
       data-sticky-footer={stickyFooter() ? "" : undefined}
     >
       <Show when={props.title !== undefined || props.subtitle !== undefined}>
@@ -1279,6 +2327,20 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
               </span>
             </button>
           </div>
+          <Button
+            variant="text"
+            size="sm"
+            class="sui-data-table__scroll-toggle"
+            attrs={{
+              "data-action": "toggle-scroll-mode",
+              "aria-pressed": internalScroll() ? "true" : "false",
+            }}
+            onClick={() => {
+              changeScrollMode(internalScroll() ? "external" : "internal");
+            }}
+          >
+            {internalScroll() ? "Скролл: внутри" : "Скролл: страница"}
+          </Button>
           <Show when={props.settings !== false}>
             <IconButton
               size="sm"
@@ -1300,7 +2362,7 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
           </Show>
         </div>
       </div>
-      <Show when={(props.selectionBarPosition ?? "top") === "top" && selectedCount() > 0}>
+      <Show when={(props.selectionBarPosition ?? "bottom") === "top" && selectedCount() > 0}>
         {selectionBar()}
       </Show>
       <Show
@@ -1378,7 +2440,13 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
           </div>
         }
       >
-        <div class="sui-data-table__scroll">
+        <div
+          class="sui-data-table__scroll"
+          style={scrollBodyStyle()}
+          ref={(node: Element | null) => {
+            setScrollElement(node instanceof HTMLElement ? node : null);
+          }}
+        >
           <table
             ref={(node: Element | null) => setTableElement(node instanceof HTMLTableElement ? node : null)}
             class="sui-data-table__table"
@@ -1391,6 +2459,9 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
             data-sticky-header={stickyHeader() ? "" : undefined}
           >
             <colgroup>
+              <Show when={treeDragEnabled()}>
+                <col class="sui-data-table__col" style={{ width: "32px" }} />
+              </Show>
               <Show when={selection() !== undefined}>
                 <col class="sui-data-table__col" style={{ width: "48px" }} />
               </Show>
@@ -1404,6 +2475,11 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
             </colgroup>
             <thead class="sui-data-table__thead">
               <tr class="sui-data-table__tr">
+                <Show when={treeDragEnabled()}>
+                  <th class="sui-data-table__th" scope="col" data-grip="">
+                    <span class="sui-data-table__visually-hidden">Перетаскивание</span>
+                  </th>
+                </Show>
                 <Show when={selection() !== undefined}>
                   <th class="sui-data-table__th" scope="col" data-select="">
                     <TableCheckbox
@@ -1414,32 +2490,50 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
                     />
                   </th>
                 </Show>
-                {orderedColumns().map((column) => (
-                  <HeaderCell
-                    column={column}
-                    width={() => effectiveWidth(column)}
-                    sorted={() =>
-                      props.sortKey === column.key && props.sortDirection !== undefined
-                    }
-                    direction={() => (props.sortKey === column.key ? props.sortDirection : undefined)}
-                    reorderable={column.locked !== true && orderedColumns().length > 1}
-                    dragging={draggingKey() === column.key}
-                    over={overKey() === column.key && draggingKey() !== column.key}
-                    armed={armedKey() === column.key}
-                    onSort={props.onSort}
-                    onResizeCommit={resizeCommit}
-                    onResizeReset={resizeReset}
-                    onHeaderPointerDown={onHeaderPointerDown}
-                    onHeaderKeyDown={onHeaderKeyDown}
-                    tableElement={tableElement}
-                  />
-                ))}
+                {orderedColumns().map((column) => {
+                  return (
+                    <HeaderCell
+                      column={column}
+                      width={() => effectiveWidth(column)}
+                      sorted={() =>
+                        props.sortKey === column.key && props.sortDirection !== undefined
+                      }
+                      direction={() => (props.sortKey === column.key ? props.sortDirection : undefined)}
+                      reorderable={column.locked !== true && orderedColumns().length > 1}
+                      dragging={() => draggingKey() === column.key}
+                      dropEdge={() => {
+                        const current = dropTarget();
+                        return current !== null &&
+                          current.key === column.key &&
+                          draggingKey() !== column.key
+                          ? current.edge
+                          : null;
+                      }}
+                      armed={() => armedKey() === column.key}
+                      onSort={(sortKey, direction) => {
+                        if (suppressClick) {
+                          suppressClick = false;
+                          return;
+                        }
+                        props.onSort?.(sortKey, direction);
+                      }}
+                      onResizeCommit={resizeCommit}
+                      onResizeReset={resizeReset}
+                      onHeaderPointerDown={onHeaderPointerDown}
+                      onHeaderKeyDown={onHeaderKeyDown}
+                      tableElement={tableElement}
+                    />
+                  );
+                })}
               </tr>
             </thead>
             <tbody class="sui-data-table__tbody">
               <Show when={isLoading()}>
                 {skeletonRows().map((rowIndex) => (
                   <tr class="sui-data-table__tr" data-skeleton="">
+                    <Show when={treeDragEnabled()}>
+                      <td class="sui-data-table__td" data-grip="" />
+                    </Show>
                     <Show when={selection() !== undefined}>
                       <td class="sui-data-table__td" data-select="">
                         <Skeleton variant="rect" width={20} height={20} />
@@ -1477,67 +2571,110 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
                 </tr>
               </Show>
               <Show when={!isLoading() && !hasError() && !isEmpty()}>
-                <For each={flatRows()} keyOf={(entry) => entry.key}>
-                  {(entry) => (
-                    <DataTableRow
-                      row={entry.row}
-                      flat={entry}
-                      columns={orderedColumns()}
-                      selected={selection()?.selected.has(entry.key) === true}
-                      selectable={isSelectable(entry.row, entry.index)}
-                      onSelectionChange={
-                        selection() === undefined ? undefined : toggleSelection
-                      }
-                      onRowClick={rowsInteractive() ? handleRowActivate : undefined}
-                      tree={props.tree !== undefined}
-                      onToggleExpand={toggleExpand}
-                      loadingChildren={
-                        props.tree?.loadingKeys?.has(String(entry.key)) === true
-                      }
-                    />
-                  )}
+                <For each={bodyEntries()} keyOf={(entry) => entry.key}>
+                  {(entry) => {
+                    if (entry.kind === "spacer") {
+                      return (
+                        <tr class="sui-data-table__spacer" data-spacer="" aria-hidden="true">
+                          <td
+                            class="sui-data-table__spacer-cell"
+                            colspan={columnCount()}
+                            style={{ blockSize: `${String(entry.height)}px` }}
+                          />
+                        </tr>
+                      );
+                    }
+                    return (
+                      <DataTableRow
+                        row={entry.flat.row}
+                        flat={entry.flat}
+                        columns={orderedColumns()}
+                        selected={selection()?.selected.has(entry.flat.key) === true}
+                        selectable={isSelectable(entry.flat.row, entry.flat.index)}
+                        onSelectionChange={
+                          selection() === undefined ? undefined : toggleSelection
+                        }
+                        onRowClick={rowsInteractive() ? handleRowActivate : undefined}
+                        onCellEdit={props.onCellEdit}
+                        tree={props.tree !== undefined}
+                        onToggleExpand={toggleExpand}
+                        loadingChildren={
+                          props.tree?.loadingKeys?.has(String(entry.flat.key)) === true
+                        }
+                        showGrip={treeDragEnabled()}
+                        dropPosition={() => {
+                          const current = rowDrop();
+                          return current !== null && current.key === entry.flat.key
+                            ? current.position
+                            : null;
+                        }}
+                        draggingRow={() => draggingRow() === entry.flat.key}
+                        onGripPointerDown={onGripPointerDown}
+                      />
+                    );
+                  }}
                 </For>
+                {fillerRows().map(() => (
+                  <tr class="sui-data-table__filler" data-filler="" aria-hidden="true">
+                    <td
+                      class="sui-data-table__spacer-cell"
+                      colspan={columnCount()}
+                    />
+                  </tr>
+                ))}
               </Show>
             </tbody>
           </table>
         </div>
       </Show>
-      <Show when={(props.selectionBarPosition ?? "top") === "bottom" && selectedCount() > 0}>
-        {selectionBar()}
-      </Show>
-      <div class="sui-data-table__footer" data-sticky={stickyFooter() ? "" : undefined}>
-        <span class="sui-data-table__status" aria-live="polite">
-          {statusTemplate(rangeStart(), rangeEnd(), props.total)}
-        </span>
-        <div class="sui-data-table__pagination-controls">
-          <label class="sui-data-table__page-size" for={pageSizeId}>
-            Строк на странице
-          </label>
-          <select
-            id={pageSizeId}
-            class="sui-data-table__select"
-            value={String(props.pageSize)}
-            onChange={(event) => {
-              const target = event.target;
-              if (!(target instanceof HTMLSelectElement)) return;
-              const size = Number(target.value);
-              if (Number.isFinite(size) && size > 0) props.onPageSizeChange?.(size);
-            }}
-          >
-            {pageSizeOptions().map((size) => (
-              <option value={String(size)} selected={size === props.pageSize}>
-                {String(size)}
-              </option>
-            ))}
-          </select>
-          <Show when={props.total > 0}>
-            <Pagination
-              page={currentPage()}
-              pageCount={pageCount()}
-              siblingCount={narrow() ? 0 : 1}
-              onChange={props.onPageChange}
-            />
-          </Show>
+      <div
+        class="sui-data-table__footer"
+        data-sticky={stickyFooter() ? "" : undefined}
+        data-selection={
+          (props.selectionBarPosition ?? "bottom") === "bottom" && selectedCount() > 0
+            ? ""
+            : undefined
+        }
+      >
+        <Show when={(props.selectionBarPosition ?? "bottom") === "bottom" && selectedCount() > 0}>
+          {selectionBar()}
+        </Show>
+        <div class="sui-data-table__footer-main">
+          <span class="sui-data-table__status" aria-live="polite">
+            {statusTemplate(rangeStart(), rangeEnd(), props.total)}
+          </span>
+          <div class="sui-data-table__pagination-controls">
+            <label class="sui-data-table__page-size" for={pageSizeId}>
+              <span class="sui-data-table__visually-hidden">Строк на странице</span>
+              <select
+                id={pageSizeId}
+                class="sui-data-table__select"
+                aria-label="Строк на странице"
+                value={String(props.pageSize)}
+                onChange={(event) => {
+                  const target = event.target;
+                  if (!(target instanceof HTMLSelectElement)) return;
+                  const size = Number(target.value);
+                  if (Number.isFinite(size) && size > 0) props.onPageSizeChange?.(size);
+                }}
+              >
+                {pageSizeOptions().map((size) => (
+                  <option value={String(size)} selected={size === props.pageSize}>
+                    {`${String(size)} / стр.`}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Show when={props.total > 0}>
+              <Pagination
+                page={currentPage()}
+                pageCount={pageCount()}
+                size="sm"
+                siblingCount={narrow() ? 0 : 1}
+                onChange={props.onPageChange}
+              />
+            </Show>
+          </div>
         </div>
       </div>
       <Show when={props.settings !== false}>
@@ -1545,7 +2682,7 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
           open={settingsOpen()}
           onOpenChange={setSettingsOpen}
           title="Настройки таблицы"
-          description="Порядок и видимость колонок, плотность и закрепление."
+          description="Порядок и видимость колонок, плотность, прокрутка и закрепление."
           actions={[
             <Button variant="text" onClick={resetView}>Сбросить</Button>,
             <Button variant="filled" onClick={() => setSettingsOpen(false)}>Готово</Button>,
@@ -1556,25 +2693,37 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
               <h3 class="sui-data-table__settings-title" id={settingsTitleId}>
                 Колонки
               </h3>
-              <ul class="sui-data-table__settings-list">
-                {orderedAllColumns().map((column) => (
-                  <SettingsColumnRow
-                    key={column.key}
-                    columnKey={column.key}
-                    label={typeof column.header === "string" ? column.header : column.key}
-                    locked={column.locked === true}
-                    visible={isVisible(column)}
-                    onToggle={(visible) => toggleColumn(column.key, visible)}
-                    onMove={(direction) => moveColumn(column.key, direction)}
-                    onDragStart={() => {
-                      settingsDragKey = column.key;
-                    }}
-                    onDrop={() => {
-                      if (settingsDragKey !== null) reorderColumn(settingsDragKey, column.key);
-                      settingsDragKey = null;
-                    }}
-                  />
-                ))}
+              <ul
+                ref={(node: Element | null) => {
+                  setSettingsList(node instanceof HTMLUListElement ? node : null);
+                }}
+                class="sui-data-table__settings-list"
+              >
+                {orderedAllColumns().map((column) => {
+                  return (
+                    <SettingsColumnRow
+                      key={column.key}
+                      columnKey={column.key}
+                      label={settingsLabelFor(column)}
+                      locked={column.locked === true}
+                      visible={isVisible(column)}
+                      dragging={() => settingsDragKey() === column.key}
+                      dropEdge={() => {
+                        const current = settingsDrop();
+                        return current !== null &&
+                          current.key === column.key &&
+                          settingsDragKey() !== column.key
+                          ? current.edge
+                          : null;
+                      }}
+                      onToggle={(visible) => toggleColumn(column.key, visible)}
+                      onMove={(direction) => moveColumn(column.key, direction)}
+                      onPointerDown={(event, node) => {
+                        onSettingsPointerDown(column.key, event, node);
+                      }}
+                    />
+                  );
+                })}
               </ul>
             </section>
             <section class="sui-data-table__settings-section">
@@ -1594,6 +2743,43 @@ export function DataTable<Row>(props: DataTableProps<Row>): Node {
                   </option>
                   <option value="compact" selected={density() === "compact"}>
                     Компактная
+                  </option>
+                </select>
+              </label>
+            </section>
+            <section class="sui-data-table__settings-section">
+              <h3 class="sui-data-table__settings-title">Раскладка и прокрутка</h3>
+              <label class="sui-data-table__settings-field">
+                <span>Раскладка</span>
+                <select
+                  class="sui-data-table__select"
+                  value={layout()}
+                  onChange={(event) => {
+                    const target = event.target;
+                    if (!(target instanceof HTMLSelectElement)) return;
+                    setLayout(target.value === "cards" ? "cards" : "table");
+                  }}
+                >
+                  <option value="table" selected={layout() === "table"}>Таблица</option>
+                  <option value="cards" selected={layout() === "cards"}>Карточки</option>
+                </select>
+              </label>
+              <label class="sui-data-table__settings-field">
+                <span>Прокрутка</span>
+                <select
+                  class="sui-data-table__select"
+                  data-setting="scroll-mode"
+                  value={scrollMode()}
+                  onChange={(event) => {
+                    const target = event.target;
+                    if (target instanceof HTMLSelectElement) changeScrollMode(target.value);
+                  }}
+                >
+                  <option value="internal" selected={scrollMode() === "internal"}>
+                    Внутри таблицы
+                  </option>
+                  <option value="external" selected={scrollMode() === "external"}>
+                    Страница
                   </option>
                 </select>
               </label>

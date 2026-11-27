@@ -252,6 +252,7 @@ export function CustomSelect(props: SelectProps): Node {
     panel: panelElement,
     isOpen: visible,
     preferred: () => "bottom",
+    matchAnchorWidth: true,
   });
 
   // --- открытие/закрытие ------------------------------------------------

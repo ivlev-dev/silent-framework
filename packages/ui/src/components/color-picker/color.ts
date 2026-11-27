@@ -19,7 +19,7 @@ export interface HslColor {
   readonly l: number;
 }
 
-const HEX_PATTERN = /^#?([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/iu;
+const HEX_PATTERN = /^#?([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/u;
 const RGB_PATTERN = /^rgba?\((.*)\)$/iu;
 const HSL_PATTERN = /^hsla?\((.*)\)$/iu;
 
@@ -85,7 +85,7 @@ function splitFunctionBody(body: string): readonly string[] {
 }
 
 function parseHex(raw: string): RgbaColor | null {
-  const match = HEX_PATTERN.exec(raw);
+  const match = HEX_PATTERN.exec(raw.trim().toLowerCase());
   if (match === null) return null;
   const value = match[1];
   if (value === undefined) return null;

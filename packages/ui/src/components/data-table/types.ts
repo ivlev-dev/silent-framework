@@ -5,9 +5,16 @@ export type DataTableAlign = "start" | "center" | "end";
 export type DataTableSortDirection = "ascending" | "descending";
 export type DataTableDensity = "compact" | "standard";
 export type DataTableLayout = "table" | "cards";
-export type DataTableScrollMode = "contained" | "page";
+/**
+ * `internal` — прокрутка внутри тела таблицы, шапка и подвал на месте;
+ * `external` — прокручивается страница. `contained`/`page` — устаревшие
+ * алиасы, поддержаны для обратной совместимости.
+ */
+export type DataTableScrollMode = "internal" | "external" | "contained" | "page";
+export type DataTableResolvedScrollMode = "internal" | "external";
 export type DataTableSelectionBarPosition = "top" | "bottom";
 export type DataTableCardSlot = "primary" | "secondary" | "badge" | "meta" | "actions";
+export type DataTableTreeDropPosition = "before" | "inside" | "after";
 
 export interface DataTableCardColumn {
   readonly slot?: DataTableCardSlot | undefined;
@@ -28,10 +35,14 @@ export interface DataTableColumn<Row> {
   readonly render?: ((row: Row, index: number) => Children) | undefined;
   /** Колонку нельзя скрыть и переместить в настройках. */
   readonly locked?: boolean | undefined;
+  /** Подпись в настройках таблицы; по умолчанию берётся из header. */
+  readonly settingsLabel?: string | undefined;
   /** Видимость по умолчанию; по умолчанию `true`. */
   readonly defaultVisible?: boolean | undefined;
   /** Как колонка попадает в карточку: слот, подпись и скрытие. */
   readonly card?: DataTableCardColumn | undefined;
+  /** Ячейку можно редактировать двойным кликом (нужен `onCellEdit`). */
+  readonly editable?: boolean | undefined;
 }
 
 export interface DataTableSelection {
@@ -41,6 +52,12 @@ export interface DataTableSelection {
   readonly actions?: Children;
   readonly isRowSelectable?: ((row: unknown, index: number) => boolean) | undefined;
   readonly selectOnRowClick?: boolean | undefined;
+}
+
+export interface DataTableTreeMove<Row> {
+  readonly row: Row;
+  readonly target: Row;
+  readonly position: DataTableTreeDropPosition;
 }
 
 export interface DataTableTree<Row> {
@@ -54,6 +71,15 @@ export interface DataTableTree<Row> {
   readonly cascadeSelection?: boolean | undefined;
   readonly getSearchText?: ((row: Row) => string) | undefined;
   readonly searchQuery?: string | undefined;
+  /** Перетаскивание узлов; позиция `inside` делает узел дочерним. */
+  readonly onMove?: ((move: DataTableTreeMove<Row>) => void) | undefined;
+  /** Запрет конкретного переноса (например, в собственного потомка). */
+  readonly canDrop?:
+    | ((
+        move: DataTableTreeMove<Row>,
+        context: { readonly rowKey: string | number; readonly targetKey: string | number },
+      ) => boolean)
+    | undefined;
 }
 
 export interface DataTableCardContext {
@@ -63,6 +89,24 @@ export interface DataTableCardContext {
   readonly expanded: boolean;
   readonly hasChildren: boolean;
   readonly toggleExpand: () => void;
+}
+
+export interface DataTableCellEdit<Row> {
+  readonly row: Row;
+  readonly key: string;
+  readonly value: string;
+  readonly rowKey: string | number;
+}
+
+/** Императивный API таблицы: прокрутка к строке без прыжка страницы. */
+export interface DataTableApi {
+  /** Прокрутить к строке по ключу; `align` — как позиционировать. */
+  readonly scrollToRow: (
+    key: string | number,
+    align?: "start" | "center" | "end" | "auto",
+  ) => void;
+  /** Прокрутить тело таблицы к началу. */
+  readonly scrollToTop: () => void;
 }
 
 export interface DataTableProps<Row> {
@@ -84,6 +128,8 @@ export interface DataTableProps<Row> {
   readonly onPageChange?: ((page: number) => void) | undefined;
   readonly onPageSizeChange?: ((size: number) => void) | undefined;
   readonly onRowClick?: ((row: Row) => void) | undefined;
+  /** Сохранить новое значение ячейки. Без колбэка inline-редактирование выключено. */
+  readonly onCellEdit?: ((edit: DataTableCellEdit<Row>) => void) | undefined;
   readonly toolbar?: Children;
   readonly empty?: Children;
   readonly selection?: DataTableSelection | undefined;
@@ -110,7 +156,15 @@ export interface DataTableProps<Row> {
   readonly stickyHeader?: boolean | undefined;
   readonly stickyFooter?: boolean | undefined;
   readonly scrollMode?: DataTableScrollMode | undefined;
+  /** Максимальная высота внутреннего скролла; по умолчанию `70vh`. */
+  readonly scrollHeight?: string | undefined;
+  /** Оконный рендер строк. По умолчанию включён для длинных страниц. */
+  readonly virtual?: boolean | undefined;
+  /** Запас виртуализации в строках с каждой стороны; по умолчанию `10`. */
+  readonly virtualOverscan?: number | undefined;
   readonly tree?: DataTableTree<Row> | undefined;
   /** Доступное имя переключателя layout. */
   readonly layoutLabel?: string | undefined;
+  /** Колбэк с императивным API после монтирования. */
+  readonly onReady?: ((api: DataTableApi) => void) | undefined;
 }

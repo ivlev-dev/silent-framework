@@ -2,6 +2,8 @@ import type {
   DataTableColumn,
   DataTableDensity,
   DataTableLayout,
+  DataTableResolvedScrollMode,
+  DataTableScrollMode,
 } from "./types.js";
 
 export interface DataTableSettings {
@@ -12,9 +14,21 @@ export interface DataTableSettings {
   readonly layout?: DataTableLayout | null | undefined;
   readonly stickyHeader?: boolean | null | undefined;
   readonly stickyFooter?: boolean | null | undefined;
+  readonly scrollMode?: DataTableResolvedScrollMode | null | undefined;
 }
 
 export const DATA_TABLE_STORAGE_PREFIX = "sui-data-table:";
+/** Текущая версия схемы localStorage; старые записи читаются как есть. */
+export const DATA_TABLE_SETTINGS_VERSION = 2;
+
+/** Приводит старое значение `contained`/`page` к актуальному режиму. */
+export function resolveScrollMode(
+  value: DataTableScrollMode | DataTableResolvedScrollMode | null | undefined,
+): DataTableResolvedScrollMode | null {
+  if (value === "internal" || value === "contained") return "internal";
+  if (value === "external" || value === "page") return "external";
+  return null;
+}
 export const DEFAULT_COLUMN_MIN_WIDTH = 64;
 export const DEFAULT_COLUMN_MAX_WIDTH = 960;
 export const FALLBACK_COLUMN_WIDTH = 160;
@@ -68,6 +82,14 @@ export function readDataTableSettings(tableKey: string): DataTableSettings {
     const layout = parsed["layout"];
     const stickyHeader = parsed["stickyHeader"];
     const stickyFooter = parsed["stickyFooter"];
+    const rawScrollMode = parsed["scrollMode"];
+    const scrollMode =
+      rawScrollMode === "internal" ||
+      rawScrollMode === "external" ||
+      rawScrollMode === "contained" ||
+      rawScrollMode === "page"
+        ? resolveScrollMode(rawScrollMode)
+        : null;
     return {
       order,
       widths,
@@ -76,6 +98,7 @@ export function readDataTableSettings(tableKey: string): DataTableSettings {
       layout: layout === "table" || layout === "cards" ? layout : null,
       stickyHeader: typeof stickyHeader === "boolean" ? stickyHeader : null,
       stickyFooter: typeof stickyFooter === "boolean" ? stickyFooter : null,
+      scrollMode,
     };
   } catch {
     return { order: [], widths: {} };
@@ -92,6 +115,7 @@ export function writeDataTableSettings(
     storage.setItem(
       dataTableStorageKey(tableKey),
       JSON.stringify({
+        version: DATA_TABLE_SETTINGS_VERSION,
         order: settings.order,
         widths: settings.widths,
         visible: settings.visible ?? {},
@@ -99,6 +123,7 @@ export function writeDataTableSettings(
         layout: settings.layout ?? null,
         stickyHeader: settings.stickyHeader ?? null,
         stickyFooter: settings.stickyFooter ?? null,
+        scrollMode: settings.scrollMode ?? null,
       }),
     );
   } catch {

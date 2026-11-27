@@ -1,24 +1,32 @@
 /*
- * Постраничная навигация: номера, текущая страница, стрелки, многоточия.
- * Диапазон стабилен; на мобильном многоточия скрываются, кнопки остаются
- * 44px и список не вылезает. В RTL стрелки зеркалятся.
+ * Постраничная навигация: компактный неразрывный ряд — крайние страницы,
+ * стрелки, номера, многоточия. Активная страница выделена заливкой. На
+ * мобильном крайние кнопки и многоточия скрываются: ряд остаётся в одну
+ * строку и не раздувает подвал таблицы.
  */
 @layer sui.components {
   .sui-pagination {
     --sui-pagination-current: var(--sui-color-primary);
     --sui-pagination-on-current: var(--sui-color-on-primary);
+    --sui-pagination-control: calc(var(--sui-control-height-md) * var(--sui-density));
+    --sui-pagination-gap: var(--sui-space-1);
 
     display: block;
     min-inline-size: 0;
     color: var(--sui-color-on-surface);
   }
 
+  .sui-pagination[data-size="sm"] {
+    --sui-pagination-control: calc(var(--sui-control-height-sm) * var(--sui-density));
+    --sui-pagination-gap: 2px;
+  }
+
   .sui-pagination__list {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     justify-content: center;
-    gap: var(--sui-space-1);
+    gap: var(--sui-pagination-gap);
     margin: 0;
     padding: 0;
     min-inline-size: 0;
@@ -27,6 +35,7 @@
 
   .sui-pagination__item {
     display: inline-flex;
+    flex: none;
     align-items: center;
     justify-content: center;
     min-inline-size: 0;
@@ -39,10 +48,10 @@
     align-items: center;
     justify-content: center;
     box-sizing: border-box;
-    min-inline-size: calc(var(--sui-control-height-md) * var(--sui-density));
-    block-size: calc(var(--sui-control-height-md) * var(--sui-density));
-    padding-inline: var(--sui-space-2);
-    border: var(--sui-hairline) solid transparent;
+    min-inline-size: var(--sui-pagination-control);
+    block-size: var(--sui-pagination-control);
+    padding-inline: var(--sui-space-1);
+    border: 0;
     border-radius: var(--sui-radius-full);
     background-color: transparent;
     color: var(--sui-color-on-surface-variant);
@@ -51,14 +60,20 @@
     line-height: 1;
     font-weight: var(--sui-type-label-large-weight);
     letter-spacing: var(--sui-type-label-large-tracking);
+    font-variant-numeric: tabular-nums;
     text-decoration: none;
     cursor: pointer;
     user-select: none;
     -webkit-tap-highlight-color: transparent;
     transition:
       background-color var(--sui-motion-short-3) var(--sui-easing-standard),
-      color var(--sui-motion-short-3) var(--sui-easing-standard),
-      border-color var(--sui-motion-short-3) var(--sui-easing-standard);
+      color var(--sui-motion-short-3) var(--sui-easing-standard);
+  }
+
+  .sui-pagination[data-size="sm"] .sui-pagination__page,
+  .sui-pagination[data-size="sm"] .sui-pagination__arrow,
+  .sui-pagination[data-size="sm"] .sui-pagination__ellipsis {
+    font-size: var(--sui-type-label-medium-size);
   }
 
   .sui-pagination__page:hover:not(:disabled),
@@ -81,6 +96,12 @@
   .sui-pagination__page[data-current]:hover {
     background-color: var(--sui-pagination-current);
     color: var(--sui-pagination-on-current);
+  }
+
+  .sui-pagination__page:focus-visible,
+  .sui-pagination__arrow:focus-visible {
+    outline: var(--sui-focus-ring-width) solid var(--sui-focus-ring-color);
+    outline-offset: calc(var(--sui-focus-ring-offset) * -1);
   }
 
   .sui-pagination__page:disabled,
@@ -112,24 +133,20 @@
     border: 0;
   }
 
-  :dir(rtl) .sui-pagination__arrow[data-direction="previous"] .sui-icon,
-  :dir(rtl) .sui-pagination__arrow[data-direction="next"] .sui-icon {
+  :dir(rtl) .sui-pagination__arrow .sui-icon {
     transform: scaleX(-1);
   }
 
   @media (max-width: 29.9375em) {
-    .sui-pagination__list {
-      gap: var(--sui-space-0);
+    .sui-pagination {
+      --sui-pagination-gap: 0;
     }
 
-    /* Многоточия — декоративные: на узком экране экономим два тапа. */
-    .sui-pagination__item[data-ellipsis] {
+    /* Многоточия и крайние страницы — декоративные: экономим четыре тапа. */
+    .sui-pagination__item[data-ellipsis],
+    .sui-pagination__arrow[data-direction="first"],
+    .sui-pagination__arrow[data-direction="last"] {
       display: none;
-    }
-
-    .sui-pagination__page,
-    .sui-pagination__arrow {
-      padding-inline: var(--sui-space-1);
     }
   }
 

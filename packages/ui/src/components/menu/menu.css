@@ -74,6 +74,13 @@
     margin-top: var(--sui-space-1);
   }
 
+  .sui-menu[data-floating-layer] > .sui-menu__panel {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    transform: none;
+  }
+
   .sui-menu__panel:focus {
     outline: none;
   }

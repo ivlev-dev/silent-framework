@@ -538,6 +538,18 @@ describe("Pagination", () => {
     );
   });
 
+  it("обновляет активную страницу при изменении page", () => {
+    const handle = mount(Pagination, { page: 1, pageCount: 5 });
+    const nav = rootOf(handle);
+    expect(nav.querySelector('[aria-current="page"]')?.textContent).toBe("1");
+    handle.update({ page: 3, pageCount: 5 });
+    flushSync();
+    expect(nav.querySelector('[aria-current="page"]')?.textContent).toBe("3");
+    expect(nav.querySelector(".sui-pagination__status")?.textContent).toBe(
+      "Страница 3 из 5",
+    );
+  });
+
   it("диапазон страниц и многоточия", () => {
     expect(paginationRange(1, 20, 1)).toEqual([
       1, 2, 3, 4, 5, "ellipsis-end", 20,

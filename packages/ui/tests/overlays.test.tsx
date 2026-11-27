@@ -14,7 +14,11 @@ import { Menu, MenuItem, MenuSeparator } from "../src/components/menu/index.js";
 import { Tooltip } from "../src/components/tooltip/index.js";
 import { Snackbar } from "../src/components/snackbar/index.js";
 import { Button } from "../src/components/button/index.js";
-import { resolveFloatingPlacement, registerModal } from "../src/internal/overlay.js";
+import {
+  resolveFloatingPlacement,
+  resolveFloatingPosition,
+  registerModal,
+} from "../src/internal/overlay.js";
 
 interface Handle {
   readonly node: Node;
@@ -700,5 +704,67 @@ describe("Floating placement", () => {
       inlineShift: 0,
       blockShift: 0,
     });
+  });
+
+  it("fixed-позиция ставит панель под триггер и прижимает к краям", () => {
+    const anchor = rect(400, 300, 100, 40);
+    const position = resolveFloatingPosition(
+      anchor,
+      { width: 240, height: 180 },
+      viewport,
+      "bottom",
+    );
+    expect(position).toEqual({ side: "bottom", left: 400, top: 348 });
+
+    const edge = resolveFloatingPosition(
+      rect(1000, 300, 20, 40),
+      { width: 240, height: 180 },
+      viewport,
+      "bottom",
+    );
+    expect(edge.left + 240).toBeLessThanOrEqual(viewport.width - 12);
+  });
+
+  it("fixed-позиция переворачивает панель у нижнего и верхнего края", () => {
+    const below = resolveFloatingPosition(
+      rect(100, 700, 200, 40),
+      { width: 240, height: 200 },
+      viewport,
+      "bottom",
+    );
+    expect(below.side).toBe("top");
+    expect(below.top + 200).toBeLessThanOrEqual(748);
+
+    const above = resolveFloatingPosition(
+      rect(100, 10, 200, 40),
+      { width: 240, height: 200 },
+      viewport,
+      "top",
+    );
+    expect(above.side).toBe("bottom");
+    expect(above.top).toBe(58);
+  });
+
+  it("fixed-позиция учитывает RTL и боковые стороны", () => {
+    const rtl = resolveFloatingPosition(
+      rect(100, 100, 200, 40),
+      { width: 240, height: 120 },
+      viewport,
+      "bottom",
+      8,
+      12,
+      true,
+    );
+    expect(rtl.left).toBe(60);
+
+    const start = resolveFloatingPosition(
+      rect(400, 100, 100, 40),
+      { width: 200, height: 120 },
+      viewport,
+      "start",
+    );
+    expect(start.side).toBe("start");
+    expect(start.left).toBe(192);
+    expect(start.top).toBe(100);
   });
 });

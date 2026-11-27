@@ -27,6 +27,7 @@ import {
   addDays,
   addMonths,
   compareDays,
+  daysBetween,
   formatDateValue,
   formatDayCount,
   isDateDisabled,
@@ -293,7 +294,7 @@ export function DateRangePicker(props: DateRangePickerProps): Node {
   const durationHint = (): string => {
     const current = range();
     if (current.start === null || current.end === null) return "";
-    return formatDayCount(compareDays(current.start, current.end) + 1, locale());
+    return formatDayCount(daysBetween(current.start, current.end) + 1, locale());
   };
 
   const readStart = (): string => isoValue(range().start);

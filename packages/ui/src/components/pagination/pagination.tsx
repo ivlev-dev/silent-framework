@@ -6,14 +6,19 @@ import { Icon } from "../icon/icon.js";
 import { useUiConfig } from "../../theme/config.js";
 
 export type PaginationToken = number | "ellipsis-start" | "ellipsis-end";
+export type PaginationSize = "sm" | "md";
 
 export interface PaginationProps {
   /** Текущая страница, `1..pageCount`. */
   readonly page: number;
   readonly pageCount: number;
   readonly onChange?: ((page: number) => void) | undefined;
-  /** Сколько соседних страниц показывать слева и справа (по умолчанию `1`). */
+  /** Сколько соседних страниц показывать слева и справа (0–1). */
   readonly siblingCount?: number | undefined;
+  /** Кнопки «в начало» и «в конец». По умолчанию `true`. */
+  readonly showEdges?: boolean | undefined;
+  /** Плотность кнопок: `sm` для тулбаров и подвала таблицы. */
+  readonly size?: PaginationSize | undefined;
   readonly disabled?: boolean | undefined;
   /** Доступное имя `nav`; по умолчанию — `Постраничная навигация`. */
   readonly label?: string | undefined;
@@ -21,6 +26,13 @@ export interface PaginationProps {
   readonly style?: StyleInput;
   readonly attrs?: Attrs;
   readonly ref?: ((node: Element | null) => void) | undefined;
+}
+
+const MAX_SIBLINGS = 1;
+
+function normalizeSiblings(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value)) return MAX_SIBLINGS;
+  return Math.min(MAX_SIBLINGS, Math.max(0, Math.trunc(value)));
 }
 
 /**
@@ -33,7 +45,7 @@ export function paginationRange(
   siblingCount = 1,
 ): PaginationToken[] {
   if (pageCount <= 0) return [];
-  const siblings = Math.max(0, Math.trunc(siblingCount));
+  const siblings = normalizeSiblings(siblingCount);
   const capacity = siblings * 2 + 5;
   if (pageCount <= capacity) {
     return Array.from({ length: pageCount }, (_value, index) => index + 1);
@@ -74,37 +86,68 @@ function tokenKey(token: PaginationToken): string {
   return typeof token === "number" ? `page-${token}` : token;
 }
 
-function Chevron(props: { readonly direction: "previous" | "next" }): Node {
+function Chevron(props: {
+  readonly direction: "previous" | "next" | "first" | "last";
+}): Node {
+  const previousPath = "M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z";
+  const nextPath = "M8.59 16.59 10 18l6-6-6-6-1.41 1.41L13.17 12z";
+  const paths =
+    props.direction === "first"
+      ? [previousPath, "M20.41 7.41 19 6l-6 6 6 6 1.41-1.41L15.83 12z"]
+      : props.direction === "last"
+        ? [nextPath, "M3.59 16.59 5 18l6-6-6-6-1.41 1.41L8.17 12z"]
+        : [props.direction === "previous" ? previousPath : nextPath];
   return (
     <Icon size="sm">
-      <path
-        d={
-          props.direction === "previous"
-            ? "M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"
-            : "M8.59 16.59 10 18l6-6-6-6-1.41 1.41L13.17 12z"
-        }
-      />
+      {paths.map((path) => (
+        <path d={path} />
+      ))}
     </Icon>
   );
 }
 
 /**
- * Постраничная навигация: номер страницы, `siblingCount`, многоточия,
- * стрелки, `aria-current="page"`, RU-подписи из `UiConfigProvider`.
+ * Постраничная навигация: компактный ряд «в начало», «назад», номеров
+ * страниц, «вперёд» и «в конец». `siblingCount` ограничен 0–1, на узких
+ * экранах многоточия и крайние кнопки скрываются, ряд не переносится.
  */
 export function Pagination(props: PaginationProps): Node {
   const config = useUiConfig();
-  const count = Number.isFinite(props.pageCount)
-    ? Math.max(0, Math.trunc(props.pageCount))
-    : 0;
-  const rawPage = Number.isFinite(props.page) ? Math.trunc(props.page) : 1;
-  const current = count === 0 ? 1 : Math.min(Math.max(rawPage, 1), count);
+  const count = (): number =>
+    Number.isFinite(props.pageCount) ? Math.max(0, Math.trunc(props.pageCount)) : 0;
+  const current = (): number => {
+    const rawPage = Number.isFinite(props.page) ? Math.trunc(props.page) : 1;
+    return count() === 0 ? 1 : Math.min(Math.max(rawPage, 1), count());
+  };
   const disabled = props.disabled === true;
+  const showEdges = props.showEdges !== false;
 
   const go = (next: number): void => {
-    if (disabled || next < 1 || next > count || next === current) return;
+    if (disabled || next < 1 || next > count() || next === current()) return;
     props.onChange?.(next);
   };
+
+  const arrow = (
+    direction: "first" | "previous" | "next" | "last",
+    label: string,
+    target: number,
+    isDisabled: boolean,
+  ): Node => (
+    <li class="sui-pagination__item">
+      <button
+        class="sui-pagination__arrow"
+        type="button"
+        data-direction={direction}
+        aria-label={label}
+        disabled={disabled || isDisabled}
+        onClick={() => {
+          go(target);
+        }}
+      >
+        <Chevron direction={direction} />
+      </button>
+    </li>
+  );
 
   return (
     <nav
@@ -113,24 +156,15 @@ export function Pagination(props: PaginationProps): Node {
       class={["sui-pagination", props.class]}
       style={props.style}
       aria-label={props.label ?? config.strings.pagination}
+      data-size={props.size ?? "md"}
       data-disabled={disabled ? "" : undefined}
     >
       <ul class="sui-pagination__list">
-        <li class="sui-pagination__item">
-          <button
-            class="sui-pagination__arrow"
-            type="button"
-            data-direction="previous"
-            aria-label={config.strings.previousPage}
-            disabled={disabled || current <= 1}
-            onClick={() => {
-              go(current - 1);
-            }}
-          >
-            <Chevron direction="previous" />
-          </button>
-        </li>
-        <KeyedList each={() => paginationRange(current, count, props.siblingCount ?? 1)} keyOf={tokenKey}>
+        <Show when={showEdges}>
+          {arrow("first", "Первая страница", 1, current() <= 1)}
+        </Show>
+        {arrow("previous", config.strings.previousPage, current() - 1, current() <= 1)}
+        <KeyedList each={() => paginationRange(current(), count(), props.siblingCount)} keyOf={tokenKey}>
           {(token) => (
             <Show
               when={typeof token === "number"}
@@ -144,12 +178,12 @@ export function Pagination(props: PaginationProps): Node {
                 <button
                   class="sui-pagination__page"
                   type="button"
-                  data-current={token === current ? "" : undefined}
-                  aria-current={token === current ? "page" : undefined}
+                  data-current={token === current() ? "" : undefined}
+                  aria-current={token === current() ? "page" : undefined}
                   aria-label={formatStatus(
                     config.strings.pageStatus,
-                    typeof token === "number" ? token : current,
-                    count,
+                    typeof token === "number" ? token : current(),
+                    count(),
                   )}
                   disabled={disabled}
                   onClick={() => {
@@ -162,24 +196,14 @@ export function Pagination(props: PaginationProps): Node {
             </Show>
           )}
         </KeyedList>
-        <li class="sui-pagination__item">
-          <button
-            class="sui-pagination__arrow"
-            type="button"
-            data-direction="next"
-            aria-label={config.strings.nextPage}
-            disabled={disabled || current >= count}
-            onClick={() => {
-              go(current + 1);
-            }}
-          >
-            <Chevron direction="next" />
-          </button>
-        </li>
+        {arrow("next", config.strings.nextPage, current() + 1, current() >= count())}
+        <Show when={showEdges}>
+          {arrow("last", "Последняя страница", count(), current() >= count())}
+        </Show>
       </ul>
-      <Show when={count > 0}>
+      <Show when={count() > 0}>
         <span class="sui-pagination__status" aria-live="polite">
-          {formatStatus(config.strings.pageStatus, current, count)}
+          {formatStatus(config.strings.pageStatus, current(), count())}
         </span>
       </Show>
     </nav>

@@ -1,16 +1,21 @@
 import type { Meta, StoryObj } from "@storybook/html-vite";
-import { fn } from "storybook/test";
+import { expect, fn } from "storybook/test";
 import {
   Avatar,
   Badge,
   Button,
   Card,
+  ColorPicker,
+  DatePicker,
+  DateRangePicker,
   Grid,
   Inline,
   List,
   ListItem,
+  Select,
   Stack,
   Text,
+  TreeSelect,
   type CardMediaAspect,
   type CardVariant,
   type SpacingStep,
@@ -31,6 +36,7 @@ interface CardArgs {
   readonly mediaAspect: CardMediaAspect;
   readonly headerLines: 0 | 1 | 2 | 3;
   readonly showMedia: boolean;
+  readonly clip: boolean;
   readonly onClick: (event: MouseEvent | KeyboardEvent) => void;
 }
 
@@ -42,8 +48,12 @@ const meta = {
       description: {
         component: [
           "Карточка-контейнер: `variant` — поверхность и тень, `padding` — отступы.",
-          "Интерактивность — ARIA-семантика кнопки на `div` (Enter/Space), поэтому",
-          "внутрь можно класть ссылки и кнопки без вложенной интерактивности.",
+          "`elevated` — мягкая тень `--sui-elevation-1`, `outlined` — hairline-рамка",
+          "`outline-variant` без тени, `filled` — плотная поверхность без тени.",
+          "По умолчанию карточка не обрезает содержимое; `clip` включает обрезку по",
+          "границам для медиа и таблиц. Интерактивность — ARIA-семантика кнопки на",
+          "`div` (Enter/Space), поэтому внутрь можно класть ссылки и кнопки без",
+          "вложенной интерактивности.",
         ].join(" "),
       },
       canvas: { sourceState: "shown" },
@@ -91,6 +101,11 @@ const meta = {
       description: "Показать слот медиа",
       table: { defaultValue: { summary: "false" }, category: "Медиа" },
     },
+    clip: {
+      control: "boolean",
+      description: "Обрезать содержимое по границам карточки (для медиа и таблиц)",
+      table: { defaultValue: { summary: "false" } },
+    },
     onClick: { action: "click", description: "Активация интерактивной карточки" },
   },
   args: {
@@ -104,6 +119,7 @@ const meta = {
     mediaAspect: "auto",
     headerLines: 0,
     showMedia: false,
+    clip: false,
     onClick: fn(),
   },
 } satisfies Meta<CardArgs>;
@@ -123,6 +139,7 @@ export const Playground: Story = {
       headerLines={args.headerLines === 0 ? undefined : args.headerLines}
       mediaAspect={args.mediaAspect}
       media={args.showMedia ? <img src={PORTRAIT} alt="Абстрактный портрет" /> : undefined}
+      clip={args.clip}
       actions={<Text variant="label-small" tone="muted">Enter / Space</Text>}
       footer={args.footer === "" ? undefined : <Text variant="label-medium" tone="muted">{args.footer}</Text>}
       onClick={args.onClick}
@@ -137,16 +154,28 @@ export const Variants: Story = {
   render: () => (
     <Grid columns={3} gap={4} min="md">
       <Card variant="elevated" header="Elevated" actions={<Button size="sm">Открыть</Button>}>
-        Тень elevation-1, поверхность surface-container-low.
+        Мягкая тень `--sui-elevation-1` на поверхности surface-container-low.
       </Card>
       <Card variant="filled" header="Filled">
         Плотный фон surface-container-highest без тени.
       </Card>
       <Card variant="outlined" header="Outlined">
-        Граница outline-variant на поверхности surface.
+        Hairline-рамка outline-variant на поверхности surface, без тени.
       </Card>
     </Grid>
   ),
+  play: async ({ canvasElement }) => {
+    const elevated = canvasElement.querySelector<HTMLElement>("[data-variant='elevated']");
+    const filled = canvasElement.querySelector<HTMLElement>("[data-variant='filled']");
+    const outlined = canvasElement.querySelector<HTMLElement>("[data-variant='outlined']");
+    if (elevated === null || filled === null || outlined === null) {
+      throw new Error("не найдены варианты карточки");
+    }
+    await expect(getComputedStyle(elevated).boxShadow).not.toBe("none");
+    await expect(getComputedStyle(filled).boxShadow).toBe("none");
+    await expect(getComputedStyle(outlined).boxShadow).toBe("none");
+    await expect(getComputedStyle(outlined).borderTopColor).not.toBe("rgba(0, 0, 0, 0)");
+  },
 };
 
 export const Media: Story = {
@@ -245,6 +274,107 @@ export const Composition: Story = {
       </Card>
     </Grid>
   ),
+};
+
+export const PopoversInsideCard: Story = {
+  name: "Поповеры внутри карточки",
+  parameters: { controls: { disable: true } },
+  render: () => (
+    <Grid columns={2} gap={4} min="lg">
+      <Card variant="outlined" header="Оформление">
+        <Stack gap={4}>
+          <ColorPicker
+            label="Акцентный цвет"
+            defaultValue="#1F4E6B"
+            defaultOpen
+            clearable={false}
+          />
+          <DatePicker label="Дата" defaultValue="2026-11-20" clearable />
+          <DateRangePicker
+            label="Период"
+            defaultValue={{ start: new Date(2026, 10, 1), end: new Date(2026, 10, 30) }}
+          />
+        </Stack>
+      </Card>
+      <Card variant="outlined" header="Списки">
+        <Stack gap={4}>
+          <Select
+            label="Роль"
+            defaultOpen
+            clearable
+            options={[
+              { value: "design", label: "Дизайнер" },
+              { value: "lead", label: "Руководитель" },
+              { value: "dev", label: "Разработчик" },
+            ]}
+          />
+          <TreeSelect
+            label="Теги"
+            multiple
+            checkable
+            nodes={[
+              {
+                value: "workspace",
+                label: "Рабочее пространство",
+                children: [
+                  { value: "ui", label: "#ui" },
+                  { value: "design", label: "#design" },
+                ],
+              },
+            ]}
+          />
+        </Stack>
+      </Card>
+    </Grid>
+  ),
+};
+
+export const Clip: Story = {
+  name: "Обрезка содержимого",
+  parameters: { controls: { disable: true } },
+  render: () => (
+    <Grid columns={2} gap={4} min="md">
+      <Card variant="outlined" clip header="clip: включён">
+        <div style={{ position: "relative", blockSize: "72px" }}>
+          <div
+            style={{
+              position: "absolute",
+              insetInlineStart: "-48px",
+              insetBlockStart: "50%",
+              inlineSize: "112px",
+              blockSize: "112px",
+              transform: "translateY(-50%)",
+              borderRadius: "var(--sui-radius-full)",
+              background: "var(--sui-color-primary-container)",
+            }}
+          />
+        </div>
+      </Card>
+      <Card variant="outlined" header="clip: выключен">
+        <div style={{ position: "relative", blockSize: "72px" }}>
+          <div
+            style={{
+              position: "absolute",
+              insetInlineStart: "-48px",
+              insetBlockStart: "50%",
+              inlineSize: "112px",
+              blockSize: "112px",
+              transform: "translateY(-50%)",
+              borderRadius: "var(--sui-radius-full)",
+              background: "var(--sui-color-primary-container)",
+            }}
+          />
+        </div>
+      </Card>
+    </Grid>
+  ),
+  play: async ({ canvasElement }) => {
+    const clipped = canvasElement.querySelector<HTMLElement>("[data-clip]");
+    const open = canvasElement.querySelector<HTMLElement>(".sui-card:not([data-clip])");
+    if (clipped === null || open === null) throw new Error("не найдены карточки");
+    await expect(getComputedStyle(clipped).overflow).toBe("hidden");
+    await expect(getComputedStyle(open).overflow).toBe("visible");
+  },
 };
 
 export const WithFooter: Story = {

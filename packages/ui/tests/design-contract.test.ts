@@ -144,4 +144,25 @@ describe("Контракт оформления", () => {
       expect(css(file), file).not.toContain("var(--sui-space-6) var(--sui-space-6)");
     }
   });
+
+  it("swatch красит цвет поверх checkerboard", () => {
+    const source = css("color-picker/color-picker.css");
+    expect(source).toContain("--sui-color-picker-swatch");
+    expect(source).toContain("linear-gradient(");
+    expect(source).toContain("conic-gradient(");
+    expect(source).toContain("var(--sui-color-picker-swatch, transparent)");
+  });
+
+  it("календарь держит диапазон круглым и контрастным", () => {
+    const source = css("date-picker/date-picker.css");
+    expect(source).not.toContain("border-radius: 0");
+    expect(source).toContain(
+      ".sui-date-picker__cell[data-in-range] .sui-date-picker__day",
+    );
+    expect(source).toContain("background-color: var(--sui-date-picker-range)");
+    expect(source).toContain("color: var(--sui-date-picker-selected-text)");
+    expect(source).toContain(
+      ".sui-date-picker__cell[data-range-start] .sui-date-picker__day",
+    );
+  });
 });

@@ -99,6 +99,13 @@
     );
   }
 
+  .sui-popover[data-floating-layer] > .sui-popover__panel {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    transform: none;
+  }
+
   @keyframes sui-popover-in {
     from {
       opacity: 0;

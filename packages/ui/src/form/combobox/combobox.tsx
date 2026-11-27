@@ -324,6 +324,7 @@ export function Combobox(props: ComboboxProps): Node {
     panel: panelElement,
     isOpen: visible,
     preferred: () => "bottom",
+    matchAnchorWidth: true,
   });
 
   // --- открытие ---------------------------------------------------------
